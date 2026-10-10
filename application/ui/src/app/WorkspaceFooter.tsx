@@ -104,7 +104,9 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
               onOpenPage: updates.openPage,
               returnFocus: () => {
                 const { selected, view } = currentState(store.getSnapshot())
-                if (selected) commands.setKeyboardFocus({ id: selected, view })
+                if (!selected) return false
+                commands.setKeyboardFocus({ id: selected, view })
+                return true
               },
             }
           : undefined

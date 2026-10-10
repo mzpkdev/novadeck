@@ -2,13 +2,14 @@ import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { cleanup } from "vitest-browser-react"
 import { page, type Locator } from "vitest/browser"
 
-import { preferencesDialog, recentSwitcher } from "./support/keyboard"
+import { findDialog, pressShortcut, preferencesDialog, recentSwitcher } from "./support/keyboard"
 import {
   commandInput,
   enterNavigateMode,
   expectStaysAbsent,
   expectTypingIn,
   focusStage,
+  navigateChip,
   openWorkspace,
   press,
   terminalTab,
@@ -24,6 +25,7 @@ const ready = () => popover("Novadeck 0.0.80 is ready")
 const available = () => popover("Novadeck 0.0.80 is available")
 const restart = () => ready().getByRole("button", { name: "Restart now" })
 const typing = () => commandInput("Dev server")
+const pill = () => page.getByRole("group", { name: "Subscriptions" }).getByRole("button").first()
 const later = (dialog: Locator) => dialog.getByRole("button", { name: "Later" })
 
 describe("the update notice", () => {
@@ -225,6 +227,42 @@ describe("the update notice", () => {
       await expect.element(typing()).toHaveFocus()
     })
 
+    it("keeps focus in the terminal when its text or padding is clicked", async () => {
+      await noticeUp()
+      await ready().getByText("Novadeck 0.0.80 is ready").click()
+      await expect.element(typing()).toHaveFocus()
+    })
+
+    it("takes focus on the panel itself when the chip opens it, not on a button", async () => {
+      await noticeUp()
+      await later(ready()).click()
+      await chip().click()
+      await expect.element(ready()).toHaveFocus()
+    })
+
+    it("lets Shift+Escape from inside it start navigating, and plain Escape close it", async () => {
+      await noticeUp()
+      await later(ready()).click()
+      await chip().click()
+      await expect.element(ready()).toHaveFocus()
+      await press("{Shift>}{Escape}{/Shift}")
+      await expect.element(navigateChip()).toBeVisible()
+      await expect.element(ready()).toBeVisible()
+    })
+
+    it("returns focus to the chip after a dialog opened from inside it closes", async () => {
+      await noticeUp()
+      await later(ready()).click()
+      await chip().click()
+      await expect.element(ready()).toHaveFocus()
+      await pressShortcut("find")
+      await expect.element(findDialog()).toBeVisible()
+      await expectStaysAbsent(ready())
+      await press("{Escape}")
+      await expect.element(findDialog()).not.toBeInTheDocument()
+      await expect.element(chip()).toHaveFocus()
+    })
+
     it("moves focus in when the chip opens it, and Escape returns it to the chip", async () => {
       await noticeUp()
       await later(ready()).click()
@@ -235,6 +273,35 @@ describe("the update notice", () => {
       await expect.element(ready()).not.toBeInTheDocument()
       await expect.element(chip()).toHaveFocus()
       await expect.element(chip()).toHaveAttribute("aria-expanded", "false")
+    })
+  })
+
+  context("while a subscription's detail or a menu is open", () => {
+    const open = async (): Promise<void> => {
+      await openWorkspace("/?demo=agents&update=ready")
+      const skip = page.getByRole("button", { name: "Skip for now" })
+      if (await skip.query()) await skip.click()
+      await expect.element(ready()).toBeVisible()
+    }
+
+    it("waits behind the subscription's detail, and returns when it closes", async () => {
+      await open()
+      await pill().click()
+      await expect
+        .element(page.getByRole("dialog", { name: "Claude Code subscription" }))
+        .toBeVisible()
+      await expect.element(ready()).not.toBeInTheDocument()
+      await press("{Escape}")
+      await expect.element(ready()).toBeVisible()
+    })
+
+    it("waits behind a menu, and returns when it closes", async () => {
+      await open()
+      await pill().click({ button: "right" })
+      await expect.element(page.getByRole("menuitem", { name: "Move right" })).toBeVisible()
+      await expect.element(ready()).not.toBeInTheDocument()
+      await press("{Escape}")
+      await expect.element(ready()).toBeVisible()
     })
   })
 

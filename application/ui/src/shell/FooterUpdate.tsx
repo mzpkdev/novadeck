@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useState } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 
+import { workspaceOverlayOpen } from "../interaction/dom"
 import { updateKey, type UpdateOffer } from "../model/update"
 
 // The release-note lines the notice shows; the release page has the rest.
@@ -22,12 +23,37 @@ export type FooterUpdateProps = {
   readonly onInstall: () => void
   // Opens the update's release page.
   readonly onOpenPage: () => void
-  // Puts typing focus back in the selected terminal.
-  readonly returnFocus: () => void
+  // Puts typing focus back in the selected terminal; false when there is none.
+  readonly returnFocus: () => boolean
 }
 
 // Where focus goes when a notice closes with focus inside it.
 type Return = "origin" | "terminal"
+
+// Whether a dialog, menu or popover is open, looked at while `active`: they come and go
+// in portals, so there is nothing to subscribe to.
+const useOverlayOpen = (active: boolean): boolean => {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!active) return undefined
+    const look = (): void => setOpen(workspaceOverlayOpen())
+    look()
+    const timer = setInterval(look, 150)
+    return () => clearInterval(timer)
+  }, [active])
+  return active && open
+}
+
+// Notes in `lost` that the notice went away while focus was inside it.
+const KeepFocus = ({ lost }: { readonly lost: { current: boolean } }): null => {
+  useLayoutEffect(
+    () => () => {
+      if (document.activeElement?.closest(".update-panel")) lost.current = true
+    },
+    [lost],
+  )
+  return null
+}
 
 // The notice's content: the headline, a few notes, and what the person can do.
 const UpdateCard = ({
@@ -89,9 +115,10 @@ const UpdateCard = ({
 // An update waiting beside the footer's status: a chip, "Update ready" or "Update
 // available", and the notice above it. The notice is a plain panel, not a dialog or a
 // layer: nothing about it intercepts keys, focus or clicks elsewhere, so typing in a
-// terminal goes on. Raised once per offer, it waits while the footer is hidden or a
-// dialog is open, and never takes focus by itself. The chip opens it as the person's
-// own request, with focus moving in, so Escape there closes it and returns to the chip.
+// terminal goes on. Raised once per offer, it waits while the footer is hidden or any
+// dialog, menu or popover is open, and never takes focus by itself. The chip opens it as
+// the person's own request, with focus moving to the panel, so Escape there closes it and
+// returns to the chip.
 export const FooterUpdate = ({
   update,
   hidden,
@@ -99,7 +126,8 @@ export const FooterUpdate = ({
   readonly update: FooterUpdateProps | undefined
   readonly hidden: boolean
 }): React.JSX.Element => {
-  // The version the person pressed Restart for: a newer one is a new offer, not pending.
+  // The offer the person pressed Restart for: any other offer, a newer version or the
+  // same one turned to a download, is a new one, not pending.
   const [pressed, setPressed] = useState<string>()
   const panel = useRef<HTMLElement>(null)
   const chip = useRef<HTMLButtonElement>(null)
@@ -108,30 +136,48 @@ export const FooterUpdate = ({
   const requested = useRef(false)
   const opener = useRef<"chip" | "auto">("auto")
   const titleId = useId()
+  const panelId = useId()
   const offer = update?.offer
-  const installing = offer?.kind === "ready" && pressed === offer.version
-  const visible = (update?.open ?? false) && !hidden && !update?.blocked && !installing
   const key = offer && updateKey(offer)
+  if (pressed !== undefined && pressed !== key) setPressed(undefined)
+  const installing = offer?.kind === "ready" && pressed === key
+  const overlay = useOverlayOpen((update?.open ?? false) && !hidden)
+  const blocked = (update?.blocked ?? false) || overlay
+  const visible = (update?.open ?? false) && !hidden && !blocked && !installing
   const onShown = update?.onShown
   useEffect(() => {
     if (visible && key !== undefined) onShown?.(key)
   }, [visible, key, onShown])
   useEffect(() => {
     if (!visible || !requested.current) return
-    requested.current = false
-    panel.current?.querySelector("button")?.focus()
+    // A frame on, after the click that asked has been through the workspace's own click
+    // handling, which would hand focus back to the terminal from a panel focused too soon.
+    const frame = requestAnimationFrame(() => {
+      requested.current = false
+      panel.current?.focus()
+    })
+    return () => cancelAnimationFrame(frame)
   }, [visible])
-  // Opening the subscriptions' detail closes the notice, so the two never overlap.
-  const close = update?.onOpenChange
+  // Focus inside the notice when it went away unanswered, as for a dialog the person
+  // opened from it: the dialog would return to a button that is gone, so focus goes to
+  // the chip once nothing else has it.
+  const lost = useRef(false)
   useEffect(() => {
-    if (!visible) return undefined
-    const onClick = (event: MouseEvent): void => {
-      if (event.target instanceof Element && event.target.closest(".footer-usage-pill"))
-        close?.(false)
+    if (blocked || hidden || !lost.current) return undefined
+    lost.current = false
+    let frame = 0
+    let tries = 0
+    const check = (): void => {
+      const active = document.activeElement
+      if (active && active !== document.body) return
+      tries += 1
+      if (tries > 60) return
+      if (tries > 2) chip.current?.focus()
+      else frame = requestAnimationFrame(check)
     }
-    document.addEventListener("click", onClick, true)
-    return () => document.removeEventListener("click", onClick, true)
-  }, [visible, close])
+    frame = requestAnimationFrame(check)
+    return () => cancelAnimationFrame(frame)
+  }, [blocked, hidden])
   const word = offer?.kind === "available" ? "Update available" : "Update ready"
   const finish = (to: Return): void => {
     if (!update) return
@@ -141,8 +187,7 @@ export const FooterUpdate = ({
     opener.current = "auto"
     update.onOpenChange(false)
     if (!inside) return
-    if (back) chip.current?.focus()
-    else update.returnFocus()
+    if (back || !update.returnFocus()) chip.current?.focus()
   }
   return (
     <>
@@ -159,6 +204,7 @@ export const FooterUpdate = ({
             className="footer-action footer-update cursor-pointer font-bold"
             aria-label={`${word}: Novadeck ${offer.version}`}
             aria-expanded={visible}
+            aria-controls={visible ? panelId : undefined}
             disabled={installing}
             onClick={() => {
               if (visible) {
@@ -182,29 +228,29 @@ export const FooterUpdate = ({
           {visible && (
             <section
               ref={panel}
+              id={panelId}
               aria-labelledby={titleId}
               className="floating update-panel"
-              // Its keys and clicks are its own: the workspace's shortcuts leave them alone.
-              data-own-keys
-              // A click on its buttons leaves focus where it was, in a terminal.
-              onMouseDown={(event) => {
-                if (event.target instanceof Element && event.target.closest("button"))
-                  event.preventDefault()
-              }}
+              tabIndex={-1}
+              // A click anywhere on it leaves focus where it was, in a terminal.
+              onMouseDown={(event) => event.preventDefault()}
+              // Plain Escape closes it; with Shift it goes on to the workspace, which
+              // starts navigating.
               onKeyDown={(event) => {
-                if (event.key !== "Escape") return
+                if (event.key !== "Escape" || event.shiftKey) return
                 event.preventDefault()
                 event.stopPropagation()
                 finish("origin")
               }}
             >
+              <KeepFocus lost={lost} />
               <UpdateCard
                 offer={offer}
                 titleId={titleId}
                 onClose={finish}
                 onRestart={() => {
-                  if (pressed === offer.version) return
-                  setPressed(offer.version)
+                  if (pressed === key) return
+                  setPressed(key)
                   update.onInstall()
                 }}
                 onOpenPage={update.onOpenPage}

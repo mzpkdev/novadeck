@@ -83,6 +83,9 @@
 /* The update chip, with the subscription pill's padding for a larger target; open, it
    reads as pressed, as the pill does. */
 .footer-update {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   margin-block: -3px;
   padding: 3px 6px;
   border-radius: var(--radius-control);
@@ -236,6 +239,9 @@
   letter-spacing: normal;
   text-transform: none;
   font-weight: 400;
+}
+.update-panel:focus {
+  outline: none;
 }
 .update-title {
   margin: 0;

@@ -21,7 +21,7 @@ const props = (status: FooterStatus, update?: UpdateOffer, onInstall = () => {})
     offer: update,
     open: false,
     blocked: false,
-    returnFocus: () => {},
+    returnFocus: () => false,
     onOpenChange: () => {},
     onShown: () => {},
     onInstall,
@@ -188,7 +188,7 @@ describe("workspace footer", () => {
             offer,
             open: true,
             blocked,
-            returnFocus: () => {},
+            returnFocus: () => false,
             onOpenChange: () => {},
             onShown,
             onInstall: () => {},
@@ -228,6 +228,31 @@ describe("workspace footer", () => {
         )
         expect(region.closest("footer")).not.toBeNull()
         expect(region.contains(document.activeElement)).toBe(false)
+      })
+
+      it("puts focus on the chip when closed from the keyboard with no terminal to return to", () => {
+        const page = render(raised())
+        mounted.push(page)
+        const later = [...page.container.querySelectorAll("section button")].find(
+          (button) => button.textContent === "Later",
+        ) as HTMLButtonElement
+        later.focus()
+        act(() => later.click())
+        expect(document.activeElement).toBe(chip(page))
+      })
+
+      it("stops showing Restarting once the offer turns into one to download, or back", () => {
+        const page = render(raised())
+        mounted.push(page)
+        const restart = [...page.container.querySelectorAll("section button")].find(
+          (button) => button.textContent === "Restart now",
+        ) as HTMLButtonElement
+        act(() => restart.click())
+        expect(chip(page).textContent).toBe("Restarting…")
+        page.rerender(raised({}, undefined, { ...ready, kind: "available" }))
+        expect(chip(page).textContent).toBe("Update availableUpdate")
+        page.rerender(raised())
+        expect(chip(page).textContent).toBe("Update readyUpdate")
       })
 
       it("shows five notes and says how many more there are, outside the list", () => {

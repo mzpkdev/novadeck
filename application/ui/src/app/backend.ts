@@ -42,13 +42,18 @@ const showcaseRequested = (): boolean =>
   new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("demo") === "showcase"
 
 // Specs open the demo on a host that has an update waiting with `?demo=update`, one the
-// host can't install itself with `?demo=update-available`.
+// host can't install itself with `?demo=update-available`, or beside another variant
+// with `&update=ready` or `&update=available`.
 const requestedUpdate = (): UpdateOffer | undefined => {
-  const demo = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("demo")
-  if (demo === "update") return { kind: "ready", version: "0.0.80", notes: sampleNotes }
-  if (demo === "update-available")
-    return { kind: "available", version: "0.0.80", notes: sampleNotes }
-  return undefined
+  const query = new URLSearchParams(window.location.hash.split("?")[1] ?? "")
+  const demo = query.get("demo")
+  const kind =
+    demo === "update" || query.get("update") === "ready"
+      ? "ready"
+      : demo === "update-available" || query.get("update") === "available"
+        ? "available"
+        : undefined
+  return kind && { kind, version: "0.0.80", notes: sampleNotes }
 }
 
 const demoWithUpdate = (update: UpdateOffer): ReturnType<typeof createDemoBackend> => {
