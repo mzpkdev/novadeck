@@ -95,9 +95,10 @@ const show: Tool<Shown> = {
     "rendered page or a dev server's address, a report, mockup, diagram or generated " +
     "document, the lines you mean, or the one file the user asked you for. Source, tests " +
     "and config you edit as part of a change aren't deliverables; the user reads those in " +
-    "the diff. Set open to true only when they asked to see it; otherwise it waits for " +
-    "them in Novadeck, marked new. Showing the same file or page again updates it beside " +
-    "you, so one item per deliverable.",
+    "the diff. Set open to true only when they asked to see it, which a revision of " +
+    "something you are iterating on with them is; otherwise it waits for them in Novadeck, " +
+    "marked new. Showing the same file or page again updates it beside you, so one item " +
+    "per deliverable; while they have it open, each save shows at once.",
   inputSchema: {
     type: "object",
     properties: {

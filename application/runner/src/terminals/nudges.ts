@@ -129,8 +129,10 @@ export const artifactsNotice =
   "server's address, a report, mockup, diagram or generated document, or the one file the " +
   "user asked you for. Source, tests and config you edit as part of a change aren't " +
   "deliverables; the user reads those in the diff. Show it without open when you finish " +
-  "it, and with open only when they asked to see it. Showing the same file or page again " +
-  "updates it, so one item per deliverable, and close takes away what no longer applies; " +
+  "it, and with open only when they asked to see it, which a revision of something you " +
+  "are iterating on with them is. Showing the same file or page again updates it, so one " +
+  "item per deliverable, and while they have it open each save shows at once; close takes " +
+  "away what no longer applies; " +
   "showing lists what is there. This notice needs no reply."
 
 /** The triggers at which a session hears of its bar: when it begins, and when it lost its context. */
