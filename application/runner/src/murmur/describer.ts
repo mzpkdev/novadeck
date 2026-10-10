@@ -47,10 +47,20 @@ export type Description = { readonly title: string }
 
 export type Describer = {
   /**
-   * Undefined when murmur isn't installed, enabled and working, or when the job was
-   * dropped, superseded or aborted.
+   * What murmur makes of `digest`:
+   * - a `Description`, which is a title;
+   * - `null`, when the model ran and its title was refused (a question, a greeting, a copy
+   *   of an example): the digest said too little, so asking again at once will not help;
+   * - `undefined`, when it did not run: murmur is off, not installed or not working, is
+   *   backing off or busy giving way to voice input, or the job was dropped, superseded or
+   *   aborted.
+   *
+   * `terminal` names the terminal asking, so that refusals are counted for it alone.
    */
-  describe(digest: Digest, signal?: AbortSignal): Promise<Description | undefined>
+  describe(
+    digest: Digest,
+    options?: { readonly signal?: AbortSignal; readonly terminal?: string },
+  ): Promise<Description | null | undefined>
   /**
    * Calls `listener` at once with whether murmur is usable now, then whenever that changes;
    * returns an unsubscribe.

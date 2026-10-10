@@ -465,11 +465,11 @@ describe("describing", () => {
     const { murmur } = await installed(resources, { behaviour: "slow" })
     const early = new AbortController()
     early.abort()
-    expect(await murmur.describe(digest, early.signal)).toBeUndefined()
+    expect(await murmur.describe(digest, { signal: early.signal })).toBeUndefined()
 
     const running = murmur.describe(digest)
     const waiting = new AbortController()
-    const queued = murmur.describe(digest, waiting.signal)
+    const queued = murmur.describe(digest, { signal: waiting.signal })
     waiting.abort()
 
     expect(await queued).toBeUndefined()
@@ -480,7 +480,7 @@ describe("describing", () => {
     const { murmur } = await installed(resources, { behaviour: "slow" })
     const controller = new AbortController()
 
-    const job = murmur.describe(digest, controller.signal)
+    const job = murmur.describe(digest, { signal: controller.signal })
     await sleep(100)
     controller.abort()
 
@@ -519,7 +519,7 @@ describe("an engine that stops answering", () => {
 
     const hung = context.murmur.describe(digest)
     // Another terminal's job, dropped by its own signal, leaves the line at once.
-    const other = context.murmur.describe(digest, AbortSignal.timeout(100))
+    const other = context.murmur.describe(digest, { signal: AbortSignal.timeout(100) })
 
     expect(await other).toBeUndefined()
     expect(await hung).toBeUndefined()
@@ -538,7 +538,8 @@ describe("a reply that is no title", () => {
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
 
-    expect(await context.murmur.describe(digest)).toBeUndefined()
+    // The model ran and its reply was refused: null, not undefined.
+    expect(await context.murmur.describe(digest)).toBeNull()
 
     await writeFile(join(context.directory, "models", "model.gguf"), "plain")
     await context.murmur.set({ enabled: false })
@@ -548,23 +549,68 @@ describe("a reply that is no title", () => {
   })
 })
 
+const fix = async (context: { directory: string; murmur: Murmur }) => {
+  await writeFile(join(context.directory, "models", "model.gguf"), "plain")
+  await context.murmur.set({ enabled: false })
+  await context.murmur.set({ enabled: true })
+}
+
 describe("titles that keep being refused", () => {
-  it("leaves that terminal alone for a while, and no other", async ({ resources }) => {
+  const refuse = async (resources: Parameters<typeof setup>[0]) => {
     const context = await installed(resources, { now: () => 1_000 })
     await writeFile(join(context.directory, "models", "model.gguf"), "garbage")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
+    return context
+  }
+  it("leaves that terminal alone for a while, and no other", async ({ resources }) => {
+    const context = await refuse(resources)
+
+    expect(await context.murmur.describe(digest, { terminal: "a" })).toBeNull()
+    expect(await context.murmur.describe(digest, { terminal: "a" })).toBeNull()
+    await fix(context)
+
+    // Two refusals in a row: held off though the model is fine now. That is undefined: it didn't run.
+    expect(await context.murmur.describe(digest, { terminal: "a" })).toBeUndefined()
+    // Another terminal is asked as ever, even of the same shape.
+    expect(await context.murmur.describe(digest, { terminal: "b" })).toBeDefined()
+    expect(await context.murmur.describe(digest, { terminal: "b" })).not.toBeNull()
+  })
+
+  it("counts a digest's shape when no terminal is named", async ({ resources }) => {
+    const context = await refuse(resources)
+
+    await context.murmur.describe(digest)
+    await context.murmur.describe(digest)
+    await fix(context)
 
     expect(await context.murmur.describe(digest)).toBeUndefined()
-    expect(await context.murmur.describe(digest)).toBeUndefined()
-    await writeFile(join(context.directory, "models", "model.gguf"), "plain")
+    expect(await context.murmur.describe({ ...digest, project: "other" })).toBeDefined()
+  })
+})
+
+describe("a model that copies an example", () => {
+  // The install check refuses a copy too, so the model starts copying after it.
+  const copying = async (resources: Parameters<typeof setup>[0]) => {
+    const context = await installed(resources)
+    await writeFile(join(context.directory, "models", "model.gguf"), "copy")
     await context.murmur.set({ enabled: false })
     await context.murmur.set({ enabled: true })
+    return context.murmur
+  }
 
-    // Two refusals in a row: held off though the model is fine now.
-    expect(await context.murmur.describe(digest)).toBeUndefined()
-    // Another terminal is asked as ever.
-    expect(await context.murmur.describe({ ...digest, project: "other" })).toBeDefined()
+  it("is refused, as the digest says nothing of it", async ({ resources }) => {
+    const murmur = await copying(resources)
+
+    expect(await murmur.describe(digest)).toBeNull()
+  })
+
+  it("is not, when the digest is about that work", async ({ resources }) => {
+    const murmur = await copying(resources)
+
+    expect(
+      await murmur.describe({ ...digest, prompts: ["rotating billing webhook keys, please"] }),
+    ).toEqual({ title: "Rotating billing webhook keys" })
   })
 })
 
@@ -671,7 +717,7 @@ describe("giving way", () => {
     const { murmur } = await installed(resources, { freeMemory: () => 0 })
     const controller = new AbortController()
 
-    const job = murmur.describe(digest, controller.signal)
+    const job = murmur.describe(digest, { signal: controller.signal })
     await sleep(60)
     controller.abort()
 

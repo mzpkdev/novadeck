@@ -110,6 +110,9 @@ const dropped = (signal: AbortSignal | undefined): Promise<void> =>
 
 const mebibyte = 1024 * 1024
 
+// How long the engine may take to start and load the model, for the server and for a job alike.
+const defaultStartMs = 120_000
+
 // macOS counts only never-used pages as free and keeps the rest as cache, so `os.freemem()`
 // always looks short there, and Metal's figure in `--list-devices` is per process and never
 // short. `vm_stat` tells what can be had; if it can't be read, nothing is held back.
@@ -209,7 +212,7 @@ export class Murmur implements Describer {
       ...(this.options.launch && { launch: this.options.launch }),
       idleMs: idleMs ?? defaultIdleMs,
       // A model on an iGPU loads in seconds; this is for a slow disk.
-      startMs: this.options.startMs ?? 120_000,
+      startMs: this.options.startMs ?? defaultStartMs,
     })
   }
 
@@ -613,7 +616,7 @@ export class Murmur implements Describer {
     const content = body?.choices?.[0]?.message?.content
     // The model is held to what it was shown: a title that copies an example is refused.
     return typeof content === "string"
-      ? parseDescription(content, chat.map((message) => message.content).join("\n"))
+      ? parseDescription(content, chat.findLast((message) => message.role === "user")?.content)
       : undefined
   }
 
@@ -624,7 +627,10 @@ export class Murmur implements Describer {
     config: Config,
     signal: AbortSignal,
   ): Promise<Running<Facts>> {
-    const bound = AbortSignal.any([signal, AbortSignal.timeout(this.options.startMs ?? 90_000)])
+    const bound = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(this.options.startMs ?? defaultStartMs),
+    ])
     const acquiring = server.acquire(config)
     acquiring.catch(() => {})
     const expired = new Promise<never>((_, reject) => {
@@ -713,7 +719,11 @@ export class Murmur implements Describer {
     for (const sleeper of this.sleepers) sleeper()
   }
 
-  async describe(digest: Digest, signal?: AbortSignal): Promise<Description | undefined> {
+  async describe(
+    digest: Digest,
+    options: { readonly signal?: AbortSignal; readonly terminal?: string } = {},
+  ): Promise<Description | null | undefined> {
+    const { signal } = options
     if (signal?.aborted || !this.usable()) return undefined
     // Our turn ends when we do, but never before the one ahead of us has.
     const before = this.line
@@ -727,7 +737,7 @@ export class Murmur implements Describer {
       return undefined
     }
     try {
-      return await this.job(digest, signal)
+      return await this.job(digest, signal, options.terminal)
     } finally {
       finish()
     }
@@ -744,6 +754,8 @@ export class Murmur implements Describer {
     const now = Date.now()
     if (this.memory && now - this.memory.at < 5000) return this.memory.bytes
     const bytes = await readVmStat(signal)
+    // An aborted read says nothing of the memory: it is not kept.
+    if (signal?.aborted) return Number.POSITIVE_INFINITY
     this.memory = { at: now, bytes }
     return bytes
   }
@@ -751,9 +763,11 @@ export class Murmur implements Describer {
   private async job(
     digest: Digest,
     signal: AbortSignal | undefined,
-  ): Promise<Description | undefined> {
+    terminal: string | undefined,
+  ): Promise<Description | null | undefined> {
     const chat = messages(redactDigest(digest))
-    const key = digestKey(digest)
+    // Refusals are counted for the terminal asking; without a name, for its digest's shape.
+    const key = terminal === undefined ? digestKey(digest) : JSON.stringify(["terminal", terminal])
     const retryMs = this.options.retryMs ?? 15_000
     for (;;) {
       if (signal?.aborted || !this.usable()) return undefined
@@ -789,7 +803,7 @@ export class Murmur implements Describer {
         const description = await this.complete(config, this.server, chat, controller.signal)
         this.failures = 0
         this.refused(key, description === undefined)
-        return description
+        return description ?? null
       } catch {
         if (signal?.aborted || this.closed) return undefined
         // Stopped by voice, not by a failure: wait and run again.

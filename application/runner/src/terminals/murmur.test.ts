@@ -256,7 +256,8 @@ describe("the descriptions of a terminal", () => {
   it("waits out its quiet: a newer request restarts the wait, and one description is made", async () => {
     const describer = new FakeDescriber()
     const descriptions = new Descriptions(describer)
-    const done = vi.fn<(description: Description, digest: Digest) => void>()
+    const done =
+      vi.fn<(outcome: Description | null | undefined, digest: Digest | undefined) => void>()
     const build = vi.fn<() => Promise<Digest>>(() => Promise.resolve(digest))
     descriptions.request("a", 100, build, done)
     await vi.advanceTimersByTimeAsync(60)
@@ -273,7 +274,8 @@ describe("the descriptions of a terminal", () => {
     const describer = new FakeDescriber()
     describer.hold = true
     const descriptions = new Descriptions(describer)
-    const done = vi.fn<(description: Description, digest: Digest) => void>()
+    const done =
+      vi.fn<(outcome: Description | null | undefined, digest: Digest | undefined) => void>()
     descriptions.request("a", 10, () => Promise.resolve({ ...digest, command: "first" }), done)
     await vi.advanceTimersByTimeAsync(10)
     expect(describer.jobs).toHaveLength(1)
@@ -295,29 +297,46 @@ describe("the descriptions of a terminal", () => {
   it("does not coalesce different terminals", async () => {
     const describer = new FakeDescriber()
     const descriptions = new Descriptions(describer)
-    const done = vi.fn<(description: Description, digest: Digest) => void>()
+    const done =
+      vi.fn<(outcome: Description | null | undefined, digest: Digest | undefined) => void>()
     descriptions.request("a", 10, () => Promise.resolve(digest), done)
     descriptions.request("b", 10, () => Promise.resolve(digest), done)
     await vi.advanceTimersByTimeAsync(10)
     expect(done).toHaveBeenCalledTimes(2)
   })
 
-  it("drops a request whose build has nothing, and an answer from a describer with none", async () => {
+  it("tells a request whose build has nothing, and a describer that did not run, as undefined", async () => {
     const describer = new FakeDescriber({ reply: () => undefined })
     const descriptions = new Descriptions(describer)
-    const done = vi.fn<(description: Description, digest: Digest) => void>()
+    const done =
+      vi.fn<(outcome: Description | null | undefined, digest: Digest | undefined) => void>()
     descriptions.request("a", 10, () => Promise.resolve(undefined), done)
     descriptions.request("b", 10, () => Promise.resolve(digest), done)
     await vi.advanceTimersByTimeAsync(10)
     expect(describer.jobs).toHaveLength(1)
-    expect(done).not.toHaveBeenCalled()
+    expect(done.mock.calls).toEqual([
+      [undefined, undefined],
+      [undefined, digest],
+    ])
+  })
+
+  it("tells a refusal as null, and passes the describer the terminal it asks for", async () => {
+    const describer = new FakeDescriber({ reply: () => null })
+    const descriptions = new Descriptions(describer)
+    const done =
+      vi.fn<(outcome: Description | null | undefined, digest: Digest | undefined) => void>()
+    descriptions.request("terminal-9", 10, () => Promise.resolve(digest), done)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(done).toHaveBeenCalledWith(null, digest)
+    expect(describer.jobs[0]!.terminal).toBe("terminal-9")
   })
 
   it("withdraws a request that waits, and cancels a running job when the terminal is gone", async () => {
     const describer = new FakeDescriber()
     describer.hold = true
     const descriptions = new Descriptions(describer)
-    const done = vi.fn<(description: Description, digest: Digest) => void>()
+    const done =
+      vi.fn<(outcome: Description | null | undefined, digest: Digest | undefined) => void>()
     descriptions.request("a", 10, () => Promise.resolve(digest), done)
     descriptions.withdraw("a")
     await vi.advanceTimersByTimeAsync(10)
@@ -343,7 +362,8 @@ describe("the descriptions of a terminal", () => {
       },
     })
     const descriptions = new Descriptions(describer)
-    const done = vi.fn<(description: Description, digest: Digest) => void>()
+    const done =
+      vi.fn<(outcome: Description | null | undefined, digest: Digest | undefined) => void>()
     descriptions.request("a", 10, () => Promise.resolve(digest), done)
     await vi.advanceTimersByTimeAsync(10)
     expect(done).not.toHaveBeenCalled()
@@ -622,7 +642,7 @@ describe("when an agent's terminal is titled", () => {
   })
 })
 
-describe("a mission murmur could not title", () => {
+describe("a mission murmur did not get to title", () => {
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -630,10 +650,53 @@ describe("a mission murmur could not title", () => {
     vi.useRealTimers()
   })
 
-  it("is asked for once, however many reports follow, until something new arrives", async () => {
+  it("stays owed while murmur backs off, asked again once a minute at most, building nothing between", async () => {
+    let answers = 0
+    const { murmur, describer, reads, written } = create(
+      { work: work(), activity: working() },
+      new FakeDescriber({ reply: () => (answers++ < 2 ? undefined : { title: "Fixing login" }) }),
+    )
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    expect(describer.jobs).toHaveLength(1)
+    const reads1 = reads.facts
+    // Report after report for 50 seconds: no job, and no digest built.
+    for (let count = 0; count < 50; count += 1) {
+      murmur.reported("a", report())
+      // eslint-disable-next-line no-await-in-loop -- Time passes between reports.
+      await settle(1_000)
+    }
+    expect(describer.jobs).toHaveLength(1)
+    expect(reads.facts).toBe(reads1)
+    // After the minute, the next report asks again, once; backed off still, it waits again.
+    await settle(10_000)
+    murmur.reported("a", report())
+    await settle()
+    expect(describer.jobs).toHaveLength(2)
+    for (let count = 0; count < 20; count += 1) murmur.reported("a", report())
+    await settle()
+    expect(describer.jobs).toHaveLength(2)
+    await settle(61_000)
+    murmur.reported("a", report())
+    await settle()
+    expect(describer.jobs).toHaveLength(3)
+    expect(written).toEqual([{ title: "Fixing login" }])
+    expect(describer.jobs.every((job) => job.terminal === "a")).toBe(true)
+  })
+})
+
+describe("a mission murmur refused to title", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("is asked for once after a refusal, however many reports follow, until something new arrives", async () => {
     const { murmur, describer, change } = create(
       { work: work(), activity: working() },
-      new FakeDescriber({ reply: () => undefined }),
+      new FakeDescriber({ reply: () => null }),
     )
     murmur.reported("a", report({ session: true }))
     await settle()
@@ -741,22 +804,37 @@ describe("a summary across root sessions", () => {
     ).toBeNull()
   })
 
-  it("is counted after a runner restart, where it was written is unknown, once the session had a prompt", async () => {
-    const { describer, subjects, change } = create({ agent: null })
-    subjects.set("b", {
-      ...subjects.get("a")!,
-      summary: { id: "b", sessionId: "s", cwd: "/w" } as MurmurSubject["summary"],
-      agent: "claude",
+  it("is not the mission after a runner restart, where it was written is unknown", async () => {
+    const { murmur, describer, change } = create({
+      work: work(),
       activity: idle("ok"),
-      work: freshWork("claude:s1"),
       naming: { ...unnamed, summary: "Left over." },
     })
-    change({ program: { name: "bash", argv: null } })
     describer.setUsable(false)
     describer.setUsable(true)
     await settle(300)
-    // No prompt in this session yet: the summary is not known to be its own.
-    expect(describer.digests.filter((digest) => digest.kind === "agent")).toHaveLength(0)
+    // Titled from the first prompt, with the persisted summary not among its inputs.
+    expect(describer.digests[0]).toMatchObject({ summary: null, prompts: ["Fix the login bug"] })
+    // Its agent's next summary is its own, and counts.
+    change({ naming: { ...unnamed, summary: "Fixes login again." } })
+    murmur.summarized("a")
+    await settle()
+    expect(describer.digests[1]).toMatchObject({ summary: "Fixes login again." })
+  })
+
+  it("follows a corrected root session, and is noted while murmur is unusable", async () => {
+    const { murmur, describer, change } = create(
+      { work: work({ session: "agy:guess" }), activity: idle("ok") },
+      new FakeDescriber({ usable: false }),
+    )
+    change({ naming: { ...unnamed, summary: "Fixes login." } })
+    // Unusable, it asks nothing but knows which session wrote the summary.
+    murmur.summarized("a")
+    change({ work: work({ session: "agy:real" }) })
+    murmur.reported("a", report({ corrected: [{ from: "agy:guess", to: "agy:real" }] }))
+    describer.setUsable(true)
+    await settle(300)
+    expect(describer.digests[0]).toMatchObject({ summary: "Fixes login." })
   })
 })
 
@@ -770,6 +848,20 @@ describe("a prompt that says what a terminal is for", () => {
       "thanks a lot",
       "hello there",
       "cześć, co tam słychać",
+      "tak, zrób to",
+      "spróbuj jeszcze raz",
+      "can you help me",
+      "hey can you help",
+      "how are you doing today",
+      "I'm back",
+      "możesz mi pomóc",
+      "こんにちは",
+      "ありがとうございます",
+      "สวัสดีครับ",
+      "你好",
+      "谢谢你",
+      "안녕하세요",
+      "안녕하세요 감사합니다 고맙습니다",
       "hej, jak leci?",
       "siema co tam",
       "dzięki, świetna robota",
@@ -791,6 +883,9 @@ describe("a prompt that says what a terminal is for", () => {
       expect(substantial(terse), terse).toBe(false)
     for (const mission of [
       "przejrzyj PR 130",
+      "로그인 버그를 고쳐줘",
+      "こんにちは、テストを直して",
+      "สวัสดีครับ แก้บั๊กการเข้าสู่ระบบ",
       "review PR 130",
       "zrób review PR 130",
       "dodaj tryb ciemny",
@@ -800,7 +895,6 @@ describe("a prompt that says what a terminal is for", () => {
       "hello world app",
       "ok fix the tests",
       "ok, now deploy it",
-      "hey can you help",
       "lgtm, merge it",
       "write release notes",
       "refactor manager.ts",
@@ -1077,7 +1171,7 @@ describe("when murmur becomes usable", () => {
     expect(written).toHaveLength(2)
   })
 
-  it("titles an agent that has no title from its latest summary, else its first substantial prompt", async () => {
+  it("titles an agent that has no title from its first substantial prompt, not a summary left from before", async () => {
     const { describer, subjects, change } = create({ agent: null })
     const agent = (id: string, fields: Partial<MurmurSubject>) =>
       subjects.set(id, {
@@ -1098,11 +1192,10 @@ describe("when murmur becomes usable", () => {
     describer.setUsable(true)
     await settle(300)
     const agents = describer.digests.filter((digest) => digest.kind === "agent")
-    // The terse one waits for a substantial prompt or a summary; the others are titled.
-    expect(agents).toHaveLength(2)
-    expect(agents.map((digest) => (digest as { summary: string | null }).summary)).toEqual(
-      expect.arrayContaining([null, "Fixes the build."]),
-    )
+    // The terse one waits for a substantial prompt; a summary left from before a restart is
+    // no mission (its session is unknown), so only the one with a prompt is titled.
+    expect(agents).toHaveLength(1)
+    expect(agents[0]).toMatchObject({ summary: null, prompts: ["Fix the login bug"] })
   })
 
   it("asks nothing while murmur is unusable, and nothing once stopped", async () => {

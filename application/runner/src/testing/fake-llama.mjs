@@ -4,6 +4,7 @@
 //   "late"          takes half a second to listen, as a model loading
 //   "crash"         exits when it is asked to complete
 //   "slow"          takes half a second to answer
+//   "copy"          answers with the first example title of the prompt, whatever it is asked
 //   "hang"          never answers a completion
 //   "garbage"       answers with something that isn't the JSON asked for
 //   "log"           appends each request it is sent, as a line of JSON, to the model's file name + ".requests"
@@ -84,9 +85,11 @@ const server = createServer(async (request, response) => {
   const content = behaviour.includes("garbage")
     ? "Sure! Here is a title for your terminal."
     : JSON.stringify({
-        title: behaviour.includes("device")
-          ? `Fake title on ${device}`
-          : `Fake title ${completions}`,
+        title: behaviour.includes("copy")
+          ? "Rotating billing webhook keys"
+          : behaviour.includes("device")
+            ? `Fake title on ${device}`
+            : `Fake title ${completions}`,
       })
   response.end(
     JSON.stringify({

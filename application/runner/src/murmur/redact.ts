@@ -9,12 +9,12 @@ import type { Digest } from "./describer.js"
 export const redacted = "[redacted]"
 
 // A run of `characters` at least `min` long, each of which may be followed by a wrapping newline.
-const wrapped = (characters: string, min: number): string => `(?:[${characters}]\\n?){${min},}`
+const wrapped = (characters: string, min: number): string => `[${characters}]{${min},}`
 // A literal that the screen may have wrapped anywhere inside.
 const spaced = (literal: string): string =>
-  [...literal].map((character) => `${character.replace(/[.\\-]/g, "\\$&")}\\n?`).join("")
+  [...literal].map((character) => character.replace(/[.\\-]/g, "\\$&")).join("")
 // What replaces a token, keeping the newline that ended a wrapped run, which is not its own.
-const mask = (run: string): string => (run.endsWith("\n") ? `${redacted}\n` : redacted)
+const mask = (): string => redacted
 const url = "A-Za-z0-9_\\-"
 
 type Rule = readonly [RegExp, string | ((...match: string[]) => string)]
@@ -132,17 +132,15 @@ const rules: readonly Rule[] = [
   [/-----BEGIN [A-Z0-9 ]*-----[\s\S]*?(-----END [A-Z0-9 ]*-----|$)/g, redacted],
   // Tokens with a prefix of their own.
   [new RegExp(`(?<![\\w])${spaced("sk-")}${wrapped(url, 6)}`, "g"), mask],
-  [
-    new RegExp(`(?<![\\w])[sr]\\n?k\\n?_\\n?(?:live|test)\\n?_\\n?${wrapped("A-Za-z0-9", 8)}`, "g"),
-    mask,
-  ],
-  [new RegExp(`(?<![\\w])g\\n?h\\n?[pousr]\\n?_\\n?${wrapped("A-Za-z0-9", 4)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])[sr]k_(?:live|test)_${wrapped("A-Za-z0-9", 8)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])gh[pousr]_${wrapped("A-Za-z0-9", 4)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("github_pat_")}${wrapped("A-Za-z0-9_", 10)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("glpat-")}${wrapped(url, 10)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("hf_")}${wrapped("A-Za-z0-9", 16)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("hvs.")}${wrapped(`${url}.`, 20)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("npm_")}${wrapped("A-Za-z0-9", 20)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("pypi-")}${wrapped("A-Za-z0-9_=-", 20)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])ya29\\.${wrapped(`${url}.`, 20)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("AIza")}${wrapped(url, 30)}`, "g"), mask],
   [new RegExp(`(?<![\\w])SG\\.${wrapped(url, 16)}\\.${wrapped(url, 16)}`, "g"), mask],
   // A Discord bot token: three parts, the first the user id's digits in base64.
@@ -152,9 +150,9 @@ const rules: readonly Rule[] = [
       /^\d{17,20}$/.test(Buffer.from(id, "base64url").toString("utf8")) ? redacted : all,
   ],
   [new RegExp(`${spaced("AGE-SECRET-KEY-1")}${wrapped("A-Z0-9", 20)}`, "g"), mask],
-  [new RegExp(`(?<![\\w])(?:AKIA|ASIA)(?:[0-9A-Z]\\n?){16}`, "g"), mask],
+  [new RegExp(`(?<![\\w])(?:AKIA|ASIA)[0-9A-Z]{16}`, "g"), mask],
   [new RegExp(`(?<![\\w])xox[abeoprs]-${wrapped("A-Za-z0-9-", 10)}`, "g"), mask],
-  [new RegExp(`(?<![\\w])eyJ(?:[\\w-]\\n?){8,}\\.(?:[\\w-]\\n?){8,}\\.(?:[\\w-]\\n?)*`, "g"), mask],
+  [new RegExp(`(?<![\\w])eyJ[\\w-]{8,}\\.[\\w-]{8,}\\.[\\w-]*`, "g"), mask],
   // Webhooks carry their secret in the path.
   [
     /(hooks\.slack\.com\/services\/|discord(?:app)?\.com\/api\/webhooks\/)[^\s"'<>]+/gi,
@@ -162,7 +160,7 @@ const rules: readonly Rule[] = [
   ],
   // user:password@host in any URL, even with no user and with a newline before the @.
   [
-    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*:(?:[^\s/]*\n){0,6}[^\s/]*)@/gi,
+    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*:[^\s/]*)@/gi,
     (all, scheme, info) => {
       // A newline after `host:port` is a line of output, and the next row begins with an @.
       if (info.includes("\n") && /^[\w.-]+:\d{1,5}$/.test(info.split("\n")[0] ?? "")) return all
@@ -187,9 +185,9 @@ const rules: readonly Rule[] = [
   ],
   [/\b((?:Set-)?Cookie\s*:[ \t]*)[^\n]+/gi, (_all, head) => `${head}${redacted}`],
   [
-    /\b(Bearer|Basic)\s+((?:[A-Za-z0-9._~+/=-]\n?){4,})/gi,
+    /\b(Bearer|Basic)\s+([A-Za-z0-9._~+/=-]{4,})/gi,
     (all, scheme, value) =>
-      /\d/.test(value) || value.length >= 16 ? `${scheme} ${mask(value)}` : all,
+      /\d/.test(value) || value.length >= 16 ? `${scheme} ${redacted}` : all,
   ],
   // aws configure asks for the key by name.
   [/(\bSecret Access Key[^:\n]*:[ \t]*)(\S+)/gi, (_all, head) => `${head}${redacted}`],
@@ -218,25 +216,16 @@ const rules: readonly Rule[] = [
     (all, flag, value) =>
       secretValue(value) ? `${all.slice(0, flag.length + 1)}${redacted}` : all,
   ],
-  // NAME=value, where the name sounds secret; a value that fills the row goes on in the next.
+  // NAME=value, where the name sounds secret.
   [
-    new RegExp(
-      `(?<![\\w.-])([A-Za-z_][\\w.-]*)([ \\t]*\\n?[ \\t]*=[ \\t]*)(${quoted}|[^\\s"',;&]+)((?:\\n[^\\s"',;&]+)*)`,
-      "g",
-    ),
-    (all, name, joint, value, rest) => {
-      if (!sounds(name) || !secretValue(value)) return all
-      // A row is a continuation while the one before it ran to the screen's edge.
-      const rows = rest === "" ? [] : rest.slice(1).split("\n")
-      let before = `${name}${joint}${value}`
-      let used = 0
-      while (used < rows.length && used < 8 && before.length >= 20) {
-        before = rows[used] ?? ""
-        used += 1
-      }
-      const left = rows.slice(used)
-      return `${name}${joint}${redacted}${left.length > 0 ? `\n${left.join("\n")}` : ""}`
-    },
+    new RegExp(`(?<![\\w.-])([A-Za-z_][\\w.-]*)([ \\t]*=[ \\t]*)(${quoted}|[^\\s"',;&]+)`, "g"),
+    (all, name, joint, value) =>
+      sounds(name) && secretValue(value) ? `${name}${joint}${redacted}` : all,
+  ],
+  // Polish: hasło: tajne, haslo=tajne
+  [
+    /(?<![\p{L}])(has[lł]o|has[lł]a)([ \t]*[:=][ \t]*)(\S+)/giu,
+    (all, name, joint, value) => (secretValue(value) ? `${name}${joint}${redacted}` : all),
   ],
   // fish: set -x NAME value
   [
@@ -258,38 +247,14 @@ const rules: readonly Rule[] = [
   ],
   // A hash of a secret is as good as the secret; a commit id or a file's checksum is not one.
   [
-    /(?<![0-9a-zA-Z_])(?<!sha(?:1|256|512)[:-])(?<!commit )(?<!diff-)(?:[0-9a-f]\n?){32,}(?![0-9a-zA-Z_])(?!\s{2}\S)/gi,
-    (run) => {
-      const length = run.replaceAll("\n", "").length
-      return length === 40 || length === 44 ? run : mask(run)
-    },
+    /(?<![0-9a-zA-Z_])(?<!sha(?:1|256|512)[:-])(?<!commit )(?<!diff-)[0-9a-f]{32,}(?![0-9a-zA-Z_])(?!\s{2}\S)/gi,
+    (run) => (run.length === 40 || run.length === 44 ? run : redacted),
   ],
   // Base64 long enough to hold a key. Paths, words and identifiers are long and mixed too:
-  // a run needs several digits and no long word in it, and is never part of a path. Rows of
-  // ordinary text beside a wrapped key stick to the run, so the part that qualifies is found.
+  // a run needs digits and no long word in it, and is never part of a path.
   [
-    /(?<![\w/\\.+=-])(?<!;base64,)(?!sha(?:1|256|384|512)-)(?:[A-Za-z0-9+/_-]\n?){40,}={0,2}(?![\w\\.+-])/g,
-    (run) => {
-      const rows = run.split("\n")
-      let best: [number, number] | undefined
-      for (let from = 0; from < rows.length; from += 1)
-        for (let to = rows.length; to > from; to -= 1) {
-          const text = rows.slice(from, to).join("")
-          if (!qualifies(text)) continue
-          if (!best || text.length > rows.slice(best[0], best[1]).join("").length) best = [from, to]
-          break
-        }
-      if (!best) return run
-      const [from, to] = best
-      const tail = to === rows.length ? "" : "\n"
-      return [
-        ...rows.slice(0, from),
-        `${redacted}${tail === "" && run.endsWith("\n") ? "\n" : ""}`,
-        ...rows.slice(to),
-      ]
-        .join("\n")
-        .replace(/\n\n$/, "\n")
-    },
+    /(?<![\w/\\.+=-])(?<!;base64,)(?!sha(?:1|256|384|512)-)[A-Za-z0-9+/_-]{40,}={0,2}(?![\w\\.+-])/g,
+    (run) => (qualifies(run) ? redacted : run),
   ],
 ]
 

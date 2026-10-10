@@ -44,6 +44,12 @@ export type MurmurTimes = {
    * may yet bind, in milliseconds.
    */
   readonly expectMs: number
+  /**
+   * How long a title that could not be asked for (murmur off, backed off or busy: it did
+   * not run) waits before the same mission is asked again, in milliseconds, with no digest
+   * built meanwhile.
+   */
+  readonly retryMs: number
 }
 
 export const defaultTimes: MurmurTimes = {
@@ -51,6 +57,7 @@ export const defaultTimes: MurmurTimes = {
   shellRunMs: 5_000,
   shellSettleMs: 3_000,
   expectMs: 10_000,
+  retryMs: 60_000,
 }
 
 // These are generous safety caps only. The service redacts every string before it cuts
@@ -117,41 +124,56 @@ const shownFolder = (folder: string, projectFolder: string | undefined): string 
   return placeName(folder)
 }
 
-// The words of greetings, thanks, acknowledgements and small talk, in English and Polish.
-// A prompt made of nothing else says nothing of what a terminal is for; one with a single
-// word beyond them ("fix", "login", "deploy") does.
+// The words of greetings, thanks, acknowledgements, chat and small talk, in English, Polish
+// and Korean (which uses spaces). A prompt made of nothing else says nothing of what a
+// terminal is for; one with a single word beyond them ("fix", "login", "deploy") does.
 const filler = new Set(
   `hi hey hello hiya howdy yo greetings thanks thank you thx ty cheers ok okay k kk yes yeah yep
   yup no nope nah sure fine good great nice cool awesome perfect lovely sounds right got it go on
   continue proceed please pls do that this the other one a an and so then now again try retry
   more next sorry bye goodbye lgtm done how are is going what s up whats sup hows doing u ur me
-  there everyone all for with your my well just very really much lot lots
+  there everyone all for with your my well just very really much lot lots can could would will
+  help i m im am back today again morning evening afternoon night
   cześć czesc hej heja siema witam witaj dzień dzien dobry dobra dobrze dzięki dzieki dziękuję
   dziekuje dziękuje super świetna swietna świetnie swietnie świetny swietny robota spoko git jak
   leci co tam słychać slychac u ciebie ty proszę prosze dalej kontynuuj jeszcze raz znowu pa do
   widzenia nara tak nie jasne jasno okej to ten ta inne inny drugi drugie jedno i a w porządku
-  porzadku się sie jest tu`.split(/\s+/),
+  porzadku się sie jest tu zrób zrob spróbuj sprobuj możesz mozesz mi pomóc pomoc pomocy mogę
+  moge wróciłem wrocilem jestem
+  안녕 안녕하세요 안녕히 감사합니다 고맙습니다 고마워요 감사해요 네 예 아니요 좋아요 알겠습니다
+  반갑습니다 잘 부탁드립니다 부탁해요 죄송합니다`.split(/\s+/),
 )
+
+// Greetings and thanks of the scripts written without spaces (Japanese, Chinese, Thai),
+// which a prompt of nothing else is.
+const spacelessFiller =
+  `こんにちは こんばんは おはようございます おはよう ありがとうございました ありがとうございます
+  ありがとう よろしくお願いします よろしく お願いします お疲れ様です お疲れさまです お疲れ様 すみません
+  ごめんなさい はい ええ いいえ
+  你好吗 你好 您好 谢谢您 谢谢你 谢谢 多谢 好的 早上好 晚上好 再见 嗯 好
+  สวัสดีครับ สวัสดีค่ะ สวัสดี ขอบคุณครับ ขอบคุณค่ะ ขอบคุณ ครับ ค่ะ โอเค ได้`
+    .split(/\s+/)
+    .toSorted((a, b) => b.length - a.length)
 
 /**
  * Whether a prompt says what a terminal is for: at least three words (or four characters
- * of a script written without spaces), and not wholly a greeting, thanks, acknowledgement
- * or small talk ("hey, how's it going", "sounds good, thanks!", "yes do it"). A prompt that
- * merely starts with such a word ("test the login flow", "ok fix the tests") is one.
+ * of a script written without spaces), and not wholly a greeting, thanks, acknowledgement,
+ * chat or small talk ("hey, how's it going", "sounds good, thanks!", "can you help me",
+ * "こんにちは"). A prompt that merely starts with such a word ("test the login flow", "ok fix
+ * the tests") is one.
  */
 export const substantial = (prompt: string): boolean => {
-  // Scripts written without spaces between words (Chinese, Japanese, Thai) are one run of
-  // letters: four characters of them say as much as three words.
-  const spaceless = prompt.match(
-    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/gu,
-  )
-  if ((spaceless?.length ?? 0) >= 4) return true
-  const words = (
-    prompt
-      .normalize("NFKC")
-      .toLowerCase()
-      .match(/[\p{L}\p{N}]+/gu) ?? []
-  ).filter(Boolean)
+  const text = prompt.normalize("NFKC").toLowerCase()
+  // Scripts written without spaces between words (Chinese, Japanese, Thai) have no words
+  // to count: four characters of them say as much as three words, unless they are all
+  // greetings. Korean has spaces, and goes by its words.
+  const script = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/gu
+  if ((text.match(script)?.length ?? 0) >= 4) {
+    let rest = text.replace(/[\p{P}\p{S}\s]+/gu, "")
+    for (const greeting of spacelessFiller) rest = rest.replaceAll(greeting, "")
+    if ((rest.match(script)?.length ?? 0) >= 4) return true
+  }
+  const words = text.replace(script, " ").match(/[\p{L}\p{N}]+/gu) ?? []
   if (words.length < 3) return false
   return !words.every((word) => filler.has(word))
 }
@@ -298,13 +320,15 @@ export class Descriptions {
   /**
    * Asks for the terminal's description once `delayMs` pass without another request.
    * `build` makes the digest (undefined for none, as when the terminal is gone) and
-   * `done` takes what the describer wrote.
+   * `done` takes the outcome: the description murmur wrote; null when it ran and refused a
+   * title; undefined when it did not run (off, backed off, busy, dropped), or no digest could
+   * be built. An aborted or superseded job reports nothing.
    */
   request(
     id: string,
     delayMs: number,
     build: () => Promise<Digest | undefined>,
-    done: (description: Description, digest: Digest) => void,
+    done: (outcome: Description | null | undefined, digest: Digest | undefined) => void,
   ): void {
     const job = this.jobs.get(id) ?? {
       id,
@@ -348,7 +372,7 @@ export class Descriptions {
   private async run(
     job: Job,
     build: () => Promise<Digest | undefined>,
-    done: (description: Description, digest: Digest) => void,
+    done: (outcome: Description | null | undefined, digest: Digest | undefined) => void,
   ): Promise<void> {
     job.latest += 1
     const mine = job.latest
@@ -358,10 +382,16 @@ export class Descriptions {
     job.running = true
     try {
       const digest = await build()
-      if (!digest || job.latest !== mine) return
-      const description = await this.describer.describe(digest, controller.signal)
-      if (description && job.latest === mine && !controller.signal.aborted)
-        done(description, digest)
+      if (job.latest !== mine) return
+      if (!digest) {
+        done(undefined, undefined)
+        return
+      }
+      const outcome = await this.describer.describe(digest, {
+        signal: controller.signal,
+        terminal: job.id,
+      })
+      if (job.latest === mine && !controller.signal.aborted) done(outcome, digest)
     } catch (error) {
       console.error("Novadeck could not describe a terminal:", error)
     } finally {
@@ -379,6 +409,8 @@ export class Descriptions {
 export type Reported = {
   /** The root session is a new one. */
   readonly session: boolean
+  /** Root sessions whose id was corrected (Antigravity's guess), as `agent:session`. */
+  readonly corrected?: readonly { readonly from: string; readonly to: string }[]
 }
 
 /** What murmur needs of a running terminal, beyond what peers read of it. */
@@ -431,6 +463,8 @@ type Watch = {
    * this one's mission.
    */
   summarySession: string | null | undefined
+  /** Until when a mission that could not be asked for waits to be asked again. */
+  retryAt: number
   /** The program in a plain shell's foreground, as a key, and since when; null at the prompt. */
   program: { readonly key: string | null; readonly since: number }
   /** A shell's description is owed (its directory changed, or it has none yet) and not built. */
@@ -500,10 +534,13 @@ export class Murmur {
   }
 
   private react(terminalId: string, told: Reported): void {
-    if (!this.usable) return
     const subject = this.host.subject(terminalId)
     if (!subject?.agent) return
     const watch = this.watch(terminalId)
+    // A corrected root session carries its summary over.
+    for (const { from, to } of told.corrected ?? [])
+      if (watch.summarySession === from) watch.summarySession = to
+    if (!this.usable) return
     if (told.session) {
       watch.owed = true
       watch.tried = null
@@ -520,6 +557,7 @@ export class Murmur {
       (watch.owed || subject.naming.murmur === null) &&
       mission !== undefined &&
       mission !== watch.tried &&
+      Date.now() >= watch.retryAt &&
       !this.descriptions.busy(terminalId)
     ) {
       watch.owed = false
@@ -529,15 +567,15 @@ export class Murmur {
   }
 
   // The agent's summary, if it was written in the root session now running; one of an
-  // earlier session (before a /clear) says nothing of this one. Unknown where it was
-  // written (after a runner restart), it counts once the session has had a prompt.
+  // earlier session (before a /clear) says nothing of this one. Where it was written is
+  // unknown after a runner restart, and then it is not taken for the mission: the next
+  // `summarize`, which the new session's nudge asks for, is.
   private currentSummary(subject: MurmurSubject): string | null {
     const { summary } = subject.naming
     if (!summary) return null
     const session = subject.work?.session ?? null
     const written = this.watch(subject.summary.id).summarySession
-    if (written === undefined) return subject.work?.first ? summary : null
-    return written === session ? summary : null
+    return written !== undefined && written === session ? summary : null
   }
 
   // What the terminal can be titled from: its agent's current summary, else the first
@@ -551,11 +589,12 @@ export class Murmur {
    * murmur has to title it by, so it looks again, as after any trigger.
    */
   summarized(terminalId: string): void {
-    if (!this.usable) return
     const subject = this.host.subject(terminalId)
     if (!subject?.agent) return
     const watch = this.watch(terminalId)
+    // Where the summary was written counts whether murmur can use it now or not.
     watch.summarySession = subject.work?.session ?? null
+    if (!this.usable) return
     watch.tried = subject.naming.summary
     this.ask(terminalId, this.times.settleMs)
   }
@@ -600,6 +639,7 @@ export class Murmur {
         owed: false,
         tried: null,
         summarySession: undefined,
+        retryAt: 0,
         program: { key: null, since: Date.now() },
         shellOwed: false,
         since: Date.now(),
@@ -645,7 +685,7 @@ export class Murmur {
         if (program !== undefined && programKey(current.program) !== program) return undefined
         return current.agent ? this.agentDigestOf(current) : this.shellDigestOf(current)
       },
-      (description) => this.stored(terminalId, description),
+      (outcome) => this.settled(terminalId, outcome),
     )
   }
 
@@ -705,6 +745,20 @@ export class Murmur {
         previous: now.naming.murmur,
       }) ?? undefined
     )
+  }
+
+  // A job ended. A refusal (null) closes the mission; murmur not running (undefined) leaves
+  // it owed, to be asked for again after `retryMs`; a title names the terminal.
+  private settled(terminalId: string, outcome: Description | null | undefined): void {
+    if (outcome === undefined) {
+      const watch = this.watches.get(terminalId)
+      if (watch && watch.tried !== null) {
+        watch.tried = null
+        watch.retryAt = Date.now() + this.times.retryMs
+      }
+      return
+    }
+    if (outcome) this.stored(terminalId, outcome)
   }
 
   // A description came back: it names the terminal if its title can be one.

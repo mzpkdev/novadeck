@@ -4,8 +4,10 @@ import type { Describer, Description, Digest } from "../murmur/describer.js"
 export type FakeJob = {
   readonly digest: Digest
   readonly signal: AbortSignal | undefined
+  /** The terminal it was asked for. */
+  readonly terminal: string | undefined
   /** Answers a held call; a call aborted meanwhile answers undefined on its own. */
-  readonly answer: (description: Description | undefined) => void
+  readonly answer: (description: Description | null | undefined) => void
 }
 
 /**
@@ -23,24 +25,28 @@ export class FakeDescriber implements Describer {
   constructor(
     options: {
       readonly usable?: boolean
-      readonly reply?: (digest: Digest, call: number) => Description | undefined
+      readonly reply?: (digest: Digest, call: number) => Description | null | undefined
     } = {},
   ) {
     this.usable = options.usable ?? true
     this.reply = options.reply ?? ((_digest, call) => ({ title: `Title ${call}` }))
   }
 
-  private readonly reply: (digest: Digest, call: number) => Description | undefined
+  private readonly reply: (digest: Digest, call: number) => Description | null | undefined
 
-  describe(digest: Digest, signal?: AbortSignal): Promise<Description | undefined> {
+  describe(
+    digest: Digest,
+    options: { readonly signal?: AbortSignal; readonly terminal?: string } = {},
+  ): Promise<Description | null | undefined> {
+    const { signal, terminal } = options
     const call = this.jobs.length + 1
     if (!this.usable) {
-      this.jobs.push({ digest, signal, answer: () => {} })
+      this.jobs.push({ digest, signal, terminal, answer: () => {} })
       return Promise.resolve(undefined)
     }
     return new Promise((resolve) => {
-      const answer = (description: Description | undefined) => resolve(description)
-      this.jobs.push({ digest, signal, answer })
+      const answer = (description: Description | null | undefined) => resolve(description)
+      this.jobs.push({ digest, signal, terminal, answer })
       signal?.addEventListener("abort", () => resolve(undefined), { once: true })
       if (!this.hold) resolve(this.reply(digest, call))
     })

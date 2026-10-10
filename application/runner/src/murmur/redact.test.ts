@@ -227,9 +227,8 @@ describe("redacting what terminals show", () => {
   })
 })
 
-const wrap = (text: string, width: number): string =>
-  text.match(new RegExp(`.{1,${width}}`, "g"))?.join("\n") ?? text
-describe("redacting what a screen wrapped", () => {
+describe("redacting a screen's rows", () => {
+  // The terminal side joins a soft-wrapped line before redaction, so a secret is on one row.
   const secrets = [
     "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a09",
     "STRIPE_SECRET_KEY=sk_live_51HxYzAbCdEfGhIjKlMnOpQrStUvWxYz",
@@ -237,32 +236,50 @@ describe("redacting what a screen wrapped", () => {
     "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-abcdefgh",
     "dGhpcyBpcyBhIHNlY3JldCBrZXkgZm9yIHRlc3RpbmcgMTIzNDU2Nw1X",
     "postgres://app:Sup3rS3cretPassword@db.internal:5432/app",
+    "ya29.a0AfH6SMBx-abcdefghijklmnopqrstuvwxyz0123456789",
   ]
 
-  it.each(secrets)("removes %s wherever the row breaks", (secret) => {
-    for (const width of [17, 24, 40]) {
-      const result = redact(`before\n${wrap(secret, width)}\n$ ls -la`)
-      expect(result.replaceAll("\n", "")).not.toMatch(
-        /9f86d0|sk_live_51|ghp_abc|AbCdEfGh|dGhpcyBp|Sup3rS3/,
-      )
-      expect(result.startsWith("before\n")).toBe(true)
-      expect(result.endsWith("\n$ ls -la")).toBe(true)
-    }
+  it.each(secrets)("removes %s from its row, leaving the rows around it", (secret) => {
+    const result = redact(`before\n${secret}\n$ ls -la`)
+
+    expect(result).not.toMatch(/9f86d0|sk_live_51|ghp_abc|AbCdEfGh|dGhpcyBp|Sup3rS3|a0AfH6/)
+    expect(result.startsWith("before\n")).toBe(true)
+    expect(result.endsWith("\n$ ls -la")).toBe(true)
   })
 
-  it("removes a scheme://user:pass@ split before the @", () => {
-    expect(redact("https://user:secretpassword12345\n@host/path")).not.toContain("secretpassword")
-  })
+  it("does not carry a run on into the next row", () => {
+    const text = [
+      "commit 69231a3e0f1d2c3b4a5968778695a4b3c2d1e0f9",
+      "Author: Ada <ada@example.com>",
+      "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822c\nuser@host",
+      "Digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "Status: Downloaded newer image",
+    ].join("\n")
 
-  it("removes the rest of a secret's value on the next row", () => {
-    const result = redact("API_TOKEN=abcdefghijklmnopqrst\nuvwxyz0123456789\n$ ls")
-    expect(result).not.toContain("uvwxyz")
-    expect(result).toContain("$ ls")
+    const result = redact(text)
+
+    expect(result).toContain("Author: Ada <ada@example.com>")
+    expect(result).toContain("user@host")
+    expect(result).toContain("Status: Downloaded newer image")
+    expect(result.split("\n")[0]).toBe(text.split("\n")[0])
+    expect(result).toContain(
+      "Digest: sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    )
   })
 
   it("keeps the rows of ordinary text apart", () => {
     const text = "commit 69231a3e0f1d2c3b4a5968778695a4b3c2d1e0f9\non task/murmur\ndone"
     expect(redact(text)).toBe(text)
+  })
+
+  it("removes Polish password names and Google access tokens", () => {
+    expect(redact("hasło: tajne123")).toBe(`hasło: ${redacted}`)
+    expect(redact("haslo=tajne123")).toBe(`haslo=${redacted}`)
+    expect(redact("ya29.a0AfH6SMBx-abcdefghijklmnop")).toBe(redacted)
+  })
+
+  it("leaves a short bare base64 string alone", () => {
+    expect(redact("dGhpcyBpcyBhIHNlY3JldA==")).toBe("dGhpcyBpcyBhIHNlY3JldA==")
   })
 })
 

@@ -16,6 +16,10 @@ export const exampleTitles = [
   "Following the nginx access log",
 ] as const
 
+// Text as `words` sees it before it splits: lower case, accents stripped.
+const fold = (text: string): string =>
+  text.toLowerCase().normalize("NFKD").replaceAll(/\p{M}/gu, "")
+
 const words = (text: string): string[] =>
   text
     .toLowerCase()
@@ -40,35 +44,39 @@ const copies = (title: string, example: string, source: string | undefined): boo
 const present = (given: ReadonlySet<string>, source: string): boolean =>
   [...given].every((word) => source.includes(word))
 
-// What a person says to an agent: the whole title being one of these names no work.
-const chat = new Set(
+// What a person says to an agent, in English and Polish: a title made only of these words
+// names no work. Entries are folded like the title's words, so accents don't matter.
+const chatWords = new Set(
   [
-    "hi",
-    "hey",
-    "hello",
-    "thanks",
-    "thank you",
-    "ok",
-    "okay",
-    "yes",
-    "sure",
-    "try again",
-    "continue",
-    "keep going",
-    "go on",
-    "go ahead",
-    "do it",
-    "hows it going",
-    "hows going",
-    "whats up",
-    "how are you",
-    "okay sounds good",
-    "say hi",
-  ].flatMap((phrase) => [
-    phrase,
-    ...["there", "please", "again", "now"].map((x) => `${phrase} ${x}`),
-  ]),
+    "hi hey hello hallo thanks thank you so much a lot very ok okay yes no sure please try again later",
+    "now continue keep going go on ahead do it how is are it whats what up sounds good great cool nice",
+    "i im me my we us the to for that this there then also bye goodbye morning evening",
+    "czesc hej witaj dzieki dziekuje dziekuje bardzo za pomoc prosze ok tak nie dobrze super jeszcze raz",
+    "sprobuj ponownie co tam slychac jak sie masz idzie ty ci ci mi dzien dobry do widzenia",
+  ].flatMap((line) => words(line)),
 )
+
+// Greetings and thanks in scripts written without spaces.
+const spacelessChat = new Set([
+  "你好",
+  "您好",
+  "谢谢",
+  "謝謝",
+  "谢谢你",
+  "多谢",
+  "再见",
+  "こんにちは",
+  "こんばんは",
+  "おはよう",
+  "ありがとう",
+  "ありがとうございます",
+  "ありがとうございました",
+  "안녕",
+  "안녕하세요",
+  "감사합니다",
+  "สวัสดี",
+  "ขอบคุณ",
+])
 
 // Scripts written without spaces: a title in one counts its characters, not its words.
 const spaceless =
@@ -109,8 +117,10 @@ export const parseDescription = (raw: string, source?: string): Description | un
   }
   // A question, or a greeting or request echoed back, names nothing.
   if (cleanTitle.endsWith("?")) return undefined
-  if (chat.has(words(cleanTitle).join(" "))) return undefined
-  const shown = source?.toLowerCase()
+  const given = words(cleanTitle)
+  if (given.length > 0 && given.every((word) => chatWords.has(word))) return undefined
+  if (spacelessChat.has(cleanTitle.replaceAll(/\s/g, ""))) return undefined
+  const shown = source === undefined ? undefined : fold(source)
   if (exampleTitles.some((example) => copies(cleanTitle, example, shown))) return undefined
   return { title: cleanTitle }
 }

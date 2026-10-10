@@ -3272,7 +3272,19 @@ export class Terminals {
 
   /** What a report tells murmur of the terminal's root session (see `Murmur.reported`). */
   private reported(changes: readonly RootChange[]): Reported {
-    return { session: changes.some((change) => change.type === "new") }
+    return {
+      session: changes.some((change) => change.type === "new"),
+      corrected: changes.flatMap((change) =>
+        change.type === "corrected"
+          ? [
+              {
+                from: `${change.root.agent}:${change.from}`,
+                to: `${change.root.agent}:${change.root.sessionId}`,
+              },
+            ]
+          : [],
+      ),
+    }
   }
 
   /** A Stop Novadeck continued, lapsed as delivery took it, ends the agent's turn too. */

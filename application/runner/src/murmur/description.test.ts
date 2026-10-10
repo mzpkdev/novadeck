@@ -40,12 +40,27 @@ describe("reading the model's title", () => {
     expect(title(text)).toBeDefined()
   })
 
-  it.each(["Hi there", "Okay sounds good", "Continue please", "Try again", "Is the build green?"])(
-    "refuses %s, which is all chat or a question",
-    (text) => {
-      expect(title(text)).toBeUndefined()
-    },
-  )
+  it.each([
+    "Hi there",
+    "Okay sounds good",
+    "Continue please",
+    "Try again",
+    "Is the build green?",
+    "Thanks a lot",
+    "Thank you so much",
+    "Hey how are you",
+    "Okay thanks",
+    "Try again later",
+    "How is it going",
+    "Cześć co tam",
+    "Dzięki za pomoc",
+    "Dziękuję bardzo",
+    "你好",
+    "ありがとうございます",
+    "안녕하세요",
+  ])("refuses %s, which is all chat or a question", (text) => {
+    expect(title(text)).toBeUndefined()
+  })
 
   it.each([
     "Rotating webhook keys",
@@ -74,6 +89,8 @@ describe("reading the model's title", () => {
     expect(title("Rotating billing webhook keys")).toBeUndefined()
     expect(title("Awaria testów")).toBeUndefined()
     expect(title("Rotating billing webhook keys", "fix the billing page")).toBeUndefined()
+    // The source is folded like the title's words: accents don't hide it.
+    expect(title("Awaria testów", "Naprawa: awaria TESTÓW w CI")).toBe("Awaria testów")
     expect(title("Rotating webhook keys", "fix the billing page")).toBeUndefined()
     expect(
       title("Rotating billing webhook keys", "please rotate: rotating billing webhook keys"),

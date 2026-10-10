@@ -3246,10 +3246,13 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const prompt = async (text: string) =>
         context(await step(terminal.id, { hook: "UserPromptSubmit", payload: { prompt: text } }))
       await prompt("Fix the build")
+      // Murmur titles it from the prompt before the agent summarizes, so the two are two jobs.
+      await expect.poll(() => describer.digests.length).toBe(1)
       await step(terminal.id, {
         call: "summarize",
         request: { summary: "Fixes the build." },
       })
+      await expect.poll(() => describer.digests.length).toBe(2)
       await step(terminal.id, { hook: "Stop", payload: {} })
       await expect(prompt("go on")).resolves.toBe("")
       await step(terminal.id, { hook: "Stop", payload: {} })
@@ -3266,6 +3269,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       // the terse prompts after them retitled nothing.
       await new Promise((resolve) => setTimeout(resolve, 300))
       expect(describer.digests).toHaveLength(2)
+      expect(describer.digests[1]).toMatchObject({ summary: "Fixes the build." })
     })
 
     it("never retitles an agent from a terse prompt, a turn's end or its drift", async ({
