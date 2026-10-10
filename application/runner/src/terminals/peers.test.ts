@@ -1,3 +1,5 @@
+import { join } from "node:path"
+
 import type { TerminalSummary } from "@novadeck/protocol"
 
 import type { Request } from "../harnesses/activity.js"
@@ -78,7 +80,8 @@ describe("what a terminal's dictation hint is made of", () => {
     expect(await peers.hint(terminal({ work }), [file("/w/repo/db/schema.sql")])).toEqual({
       cwd: "/w/repo/application/runner",
       branch: null,
-      folders: ["application/runner/src/voice", "application/ui"],
+      // As the platform writes paths, which the hint splits either way.
+      folders: [join("application", "runner", "src", "voice"), join("application", "ui")],
       files: ["schema.sql", "orders.ts"],
     })
     expect(await peers.hint(terminal({}), [])).toMatchObject({ folders: [], files: [] })
