@@ -34,6 +34,7 @@ type Inside = {
 type Runner = {
   queue: <T>(terminalId: string, work: () => Promise<T>, fallback: T) => Promise<T>
   report: (report: Report, deadline?: number) => Promise<unknown>
+  connected: (agent: string | undefined) => Promise<boolean>
 }
 
 /**
@@ -54,9 +55,14 @@ export const startTrace = (name: string, model: FakeModel) => {
   const named = (terminalId: string) => handles.get(terminalId) ?? terminalId.slice(0, 8)
   const add = (line: string) => lines.push(`${at()} ${line}`)
 
-  // The model's calls, as they come, a few milliseconds late at most.
+  // The model's calls, as they come, a few milliseconds late at most; and any stretch the
+  // process was too busy to run this every 10 ms, as everything else waited too.
   let seen = model.calls.length
+  let ticked = Date.now()
   const calls = setInterval(() => {
+    const now = Date.now()
+    if (now - ticked > 250) add(`stalled: nothing ran for ${now - ticked} ms`)
+    ticked = now
     for (; seen < model.calls.length; seen += 1)
       add(
         `model ${
@@ -121,7 +127,16 @@ export const startTrace = (name: string, model: FakeModel) => {
 
   // When a report came, began after the terminal's earlier ones, and was done.
   const runner = Terminals.prototype as unknown as Runner
-  const { queue, report: handle } = runner
+  const { queue, report: handle, connected } = runner
+  runner.connected = async function (agent) {
+    const began = Date.now()
+    try {
+      return await connected.call(this, agent)
+    } finally {
+      const took = Date.now() - began
+      if (took > 100) add(`slow: whether ${agent ?? "no agent"} is connected took ${took} ms`)
+    }
+  }
   runner.queue = function <T>(terminalId: string, work: () => Promise<T>, fallback: T) {
     const came = Date.now()
     return queue.call(
@@ -151,7 +166,7 @@ export const startTrace = (name: string, model: FakeModel) => {
     /** Puts the runner back as it was. */
     stop: () => {
       clearInterval(calls)
-      Object.assign(runner, { queue, report: handle })
+      Object.assign(runner, { queue, report: handle, connected })
       for (const [agent, decode] of decoders)
         (harnesses[agent as keyof typeof harnesses] as { decode: Harness["decode"] }).decode =
           decode
