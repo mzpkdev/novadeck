@@ -179,8 +179,8 @@ const close: Tool<Dismissed> = {
     "Close something you showed beside your terminal in Novadeck, by the same file or url " +
     "you gave show: it leaves the taskbar and the pane. Give either file or url. Use it " +
     "when the user asked you to close it, or when what you showed no longer applies, as a " +
-    "preview whose server you stopped or a screenshot a newer one under another name " +
-    "replaces; showing the same file or page again updates it instead. Don't close what " +
+    "preview whose server you stopped or a screenshot replaced by a newer one under " +
+    "another name; showing the same file or page again updates it instead. Don't close what " +
     "the user may still be looking at unless they asked. Only what you showed yourself " +
     "closes this way: what the user attached, or another terminal placed beside you, " +
     "stays, and you're told. showing lists what is there. For a terminal, use " +
