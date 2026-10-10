@@ -78,6 +78,8 @@ type Scenario = {
   extra?: string[]
   /** What `ldconfig -p` lists; the computer has no ldconfig on its PATH when unset. */
   libraries?: string
+  /** Tools present only in the system folders a user's PATH lacks. */
+  sbin?: string[]
   /** Pretends the ostree marker file exists. */
   ostree?: boolean
   /** Leaves the download folder unset, so the script builds it from its repository. */
@@ -132,7 +134,12 @@ cp "${served}/\${url##*/}" "$out"`,
   }
 
   for (const name of scenario.extra ?? []) shim(bin, name, `echo "${name} $*" >> "${log}"`)
+  // The system folders the script searches are the test's own, so the host's tools never leak in.
+  const sbin = join(root, "sbin")
+  mkdirSync(sbin)
   if (scenario.libraries !== undefined) shim(bin, "ldconfig", `echo "${scenario.libraries}"`)
+  if (scenario.sbin)
+    for (const name of scenario.sbin) shim(sbin, name, `echo "${name} $*" >> "${log}"`)
   if (scenario.dpkg) {
     const { installed, available } = scenario.dpkg
     shim(bin, "dpkg-query", installed ? `echo "installed ${installed}"` : "exit 1")
@@ -155,6 +162,7 @@ cp "${served}/\${url##*/}" "$out"`,
         PATH: bin,
         HOME: home,
         NOVADECK_INSTALL_OSTREE_MARKER: marker,
+        NOVADECK_INSTALL_SBIN_DIRS: sbin,
         ...(scenario.rendered ? {} : { NOVADECK_INSTALL_BASE_URL: `http://mirror.test/dl/` }),
       },
       encoding: "utf8",
@@ -276,6 +284,11 @@ describe.skipIf(!linux)("install.sh", () => {
       expect(existsSync(join(result.home, ".local/bin/novadeck"))).toBe(true)
     })
 
+    it("finds transactional-update in the system folders when the PATH lacks it", () => {
+      const result = run({ managers: ["zypper"], sbin: ["transactional-update"] })
+      expect(result.installs).toEqual([])
+    })
+
     it("installs the AppImage instead of using zypper when transactional-update exists", () => {
       const result = run({ managers: ["zypper"], extra: ["transactional-update"] })
       expect(result.installs).toEqual([])
@@ -286,6 +299,11 @@ describe.skipIf(!linux)("install.sh", () => {
   context("when checking for FUSE", () => {
     it("says nothing without ldconfig", () => {
       expect(run().stdout).not.toContain("FUSE")
+    })
+
+    it("finds ldconfig in the system folders when the PATH lacks it", () => {
+      const result = run({ sbin: ["ldconfig"] })
+      expect(result.stdout).toContain("needs FUSE 2")
     })
 
     it("says nothing when libfuse2 is listed", () => {

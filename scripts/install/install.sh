@@ -8,11 +8,21 @@
 # download is checked against the release's SHA256SUMS first. Running it again upgrades or
 # repairs the install; installed apps update themselves after that.
 #
-# The release workflow replaces @REPOSITORY@ with the repository it publishes from. Two
-# variables are for tests and mirrors: NOVADECK_INSTALL_BASE_URL replaces the download
-# folder, and NOVADECK_INSTALL_PACKAGE_MANAGER names apt, dnf, zypper or appimage to skip
-# detection. On image-based systems, where a package would need a reboot or a layered
-# image, it installs the AppImage whatever package manager is there.
+# The release workflow replaces @REPOSITORY@ with the repository it publishes from. On
+# image-based systems, where a package would need a reboot or a layered image, it installs
+# the AppImage whatever package manager is there. These environment variables change it:
+#
+#   NOVADECK_INSTALL_BASE_URL         The folder to download from, for a mirror or a test.
+#   NOVADECK_INSTALL_PACKAGE_MANAGER  apt, dnf, zypper or appimage, to skip detection.
+#   XDG_DATA_HOME                     Where the AppImage install puts its files, as usual;
+#                                     the default is ~/.local/share.
+#
+# Test hooks, not for use otherwise:
+#
+#   NOVADECK_INSTALL_OSTREE_MARKER    The file whose presence means an ostree system, in
+#                                     place of /run/ostree-booted.
+#   NOVADECK_INSTALL_SBIN_DIRS        The folders searched, after the PATH, for ldconfig and
+#                                     transactional-update, in place of "/sbin /usr/sbin".
 #
 # Every definition comes before the one call on the last line, so a download that is cut
 # short runs nothing.
@@ -48,10 +58,26 @@ check_platform() {
   esac
 }
 
+# The path of a tool on the PATH or in the system folders a user's PATH often lacks, or
+# nothing when it is nowhere.
+find_tool() {
+  if has "$1"; then
+    command -v "$1"
+    return 0
+  fi
+  # shellcheck disable=SC2086
+  for dir in ${NOVADECK_INSTALL_SBIN_DIRS:-/sbin /usr/sbin}; do
+    if [ -x "$dir/$1" ]; then
+      printf '%s\n' "$dir/$1"
+      return 0
+    fi
+  done
+}
+
 # Fedora Silverblue, Kinoite and Bazzite (ostree), and openSUSE Aeon and MicroOS
 # (transactional-update), keep the system read-only; a home folder install suits them.
 is_immutable() {
-  [ -e "${NOVADECK_INSTALL_OSTREE_MARKER:-/run/ostree-booted}" ] || has transactional-update
+  [ -e "${NOVADECK_INSTALL_OSTREE_MARKER:-/run/ostree-booted}" ] || [ -n "$(find_tool transactional-update)" ]
 }
 
 # Which way to install: the first package manager found, or the AppImage.
@@ -139,15 +165,8 @@ install_zypper() {
 
 # An AppImage mounts itself through libfuse 2, which newer distributions no longer include.
 check_fuse() {
-  # ldconfig is in /sbin, which a user's PATH often lacks. Without it there is nothing to
-  # check, and no warning is better than a wrong one.
-  ldconfig=""
-  for candidate in ldconfig /sbin/ldconfig /usr/sbin/ldconfig; do
-    if has "$candidate"; then
-      ldconfig="$candidate"
-      break
-    fi
-  done
+  # Without ldconfig there is nothing to check, and no warning is better than a wrong one.
+  ldconfig="$(find_tool ldconfig)"
   [ -n "$ldconfig" ] || return 0
   if "$ldconfig" -p 2> /dev/null | grep -q 'libfuse\.so\.2'; then
     return 0

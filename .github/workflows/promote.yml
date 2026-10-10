@@ -89,8 +89,15 @@ jobs:
 
           # A promotion never moves people to an older build. Without a stable release yet,
           # any version is newer.
-          current="$(gh release list --exclude-pre-releases --exclude-drafts --limit 1 \
-            --json tagName --jq '.[0].tagName // empty')"
+          # GitHub's own idea of the latest release, which only a missing one (HTTP 404)
+          # leaves empty; any other failure stops the promotion rather than skip this check.
+          current=""
+          if latest="$(gh api "repos/$GH_REPO/releases/latest" 2> "$RUNNER_TEMP/latest.err")"; then
+            current="$(jq -r '.tag_name // empty' <<<"$latest")"
+          elif ! grep -q 'HTTP 404' "$RUNNER_TEMP/latest.err"; then
+            echo "::error::Could not look up the current stable release: $(cat "$RUNNER_TEMP/latest.err")"
+            exit 1
+          fi
           if [[ -n "$current" && ! "$current" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::The current stable release has an unexpected tag: $current"
             exit 1
