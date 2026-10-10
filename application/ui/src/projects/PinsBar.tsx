@@ -12,6 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { pinnedProjectShortcut } from "../interaction/shortcuts"
 import { Tooltip } from "../ui-toolkit/Tooltip"
+import { usePinDrop } from "./pin-drop"
 import { pinsThatFit } from "./pins-fit"
 import { needsPerson, statusText, type ProjectStatus } from "./project-status"
 
@@ -46,6 +47,8 @@ const cursor = Cursor.configure({ cursor: "grabbing" })
 // focused pin one place; `onMove` (to a place among the pins) and `onStep` tell the
 // arrangement, which is the caller's. A pin never leaves the bar this way: it can't be
 // dropped or stepped past the last pin.
+// A project dragged out of the switcher's list (`usePinDrop`) drops between the pins, or
+// as the first into an empty bar, which opens for the drag; the bar marks where it lands.
 export const PinsBar = ({
   pins,
   current,
@@ -68,10 +71,13 @@ export const PinsBar = ({
   onStep: (id: string, by: -1 | 1) => void
   onShown: (ids: readonly string[]) => void
 }): React.JSX.Element => {
-  // The last pins stay while the bar slides out.
+  const { channel, drag } = usePinDrop()
+  // A drag from the switcher's list that the bar can take.
+  const dropping = drag?.accepts === true
+  // The last pins stay while the bar slides out, but not in a bar opened for a drop.
   const [items, setItems] = useState(pins)
-  if (pins.length > 0 && pins !== items) setItems(pins)
-  const open = pins.length > 0 && !hidden
+  if ((pins.length > 0 || dropping) && pins !== items) setItems(pins)
+  const open = (pins.length > 0 || dropping) && !hidden
 
   // A page that loads with pins shows the bar as it is; only later changes slide.
   const [animated, setAnimated] = useState(false)
@@ -107,12 +113,18 @@ export const PinsBar = ({
   // The line under the current pin, where it shows: it slides from pin to pin, but is
   // put in place without sliding when it first shows and after a drag.
   const [line, setLine] = useState<Line | null>(null)
-  const placed = useRef<{ drags: number } | null>(null)
+  const placed = useRef<{ drags: number; current: string } | null>(null)
+  const strip = useRef<HTMLDivElement | null>(null)
 
   // Measures before paint, and again as the bar or a pin changes size.
   useLayoutEffect(() => {
     const element = row.current
-    if (!element || items.length === 0) return
+    if (!element) return
+    // An empty bar, open for a drop, has no line; the next shows without sliding.
+    if (items.length === 0) {
+      placed.current = null
+      return
+    }
     const measure = (): void => {
       const style = getComputedStyle(element)
       const available =
@@ -129,8 +141,10 @@ export const PinsBar = ({
         return
       }
       const next = { left: pin.offsetLeft, width: pin.offsetWidth }
-      const moves = placed.current?.drags === drags
-      placed.current = { drags }
+      // Only a switch slides it: a pin moved by the keyboard or unpinned jumps at once, and
+      // so does the line under it.
+      const moves = placed.current?.drags === drags && placed.current.current !== current
+      placed.current = { drags, current }
       setLine((was) =>
         was && was.left === next.left && was.width === next.width ? was : { ...next, slide: moves },
       )
@@ -143,6 +157,38 @@ export const PinsBar = ({
     // A drag's end remounts the pins, which are then observed again.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [items, drags, current])
+
+  // Where a point lands among the pins shown, the dragged project's own pin aside, for a
+  // drag from the switcher's list: on the bar, before the first pin whose middle is past
+  // it, or after the last.
+  useLayoutEffect(() => {
+    if (!channel) return
+    channel.setBar({
+      bounds: () => {
+        const box = strip.current?.getBoundingClientRect()
+        return box && box.height > 0 ? box : null
+      },
+      locate: (point, id) => {
+        const element = row.current
+        const box = strip.current?.getBoundingClientRect()
+        if (!element || !box || box.height === 0) return null
+        if (point.x < box.left || point.x > box.right) return null
+        if (point.y < box.top || point.y > box.bottom + 8) return null
+        const origin = element.getBoundingClientRect().left
+        const others = [...element.querySelectorAll<HTMLElement>(".pin:not([inert])")]
+          .filter((pin) => pin.dataset.pin !== id)
+          .map((pin) => pin.getBoundingClientRect())
+        const found = others.findIndex((pin) => point.x < pin.left + pin.width / 2)
+        const index = found < 0 ? others.length : found
+        const x =
+          others[index]?.left ??
+          others.at(-1)?.right ??
+          origin + parseFloat(getComputedStyle(element).paddingLeft)
+        return { index, x: x - origin, bottom: box.bottom }
+      },
+    })
+    return () => channel.setBar(null)
+  }, [channel])
 
   // Tells which show, once at first and then only when they change.
   const told = useRef<readonly string[] | null>(null)
@@ -162,7 +208,11 @@ export const PinsBar = ({
       inert={!open}
     >
       <div className="pins-bar-clip">
-        <div className="pins-bar-strip flex items-stretch pl-3.5">
+        <div
+          ref={strip}
+          className="pins-bar-strip flex items-stretch pl-3.5"
+          data-drop={drag?.spot ? "over" : dropping ? "ready" : undefined}
+        >
           {/* The chord before each pin's number, as a reminder; each pin names its own. */}
           <kbd className="hint self-center whitespace-nowrap" aria-hidden="true">
             {pinnedProjectShortcut(0).display.slice(0, -1).join(" ")} +
@@ -186,7 +236,7 @@ export const PinsBar = ({
               onDragStart={() => setDragging(true)}
               onDragEnd={(event) => {
                 setDragging(false)
-                setDrags((drag) => drag + 1)
+                setDrags((made) => made + 1)
                 const { source } = event.operation
                 if (!isSortable(source)) return
                 const id = String(source.id)
@@ -219,7 +269,19 @@ export const PinsBar = ({
                 )
               })}
             </DragDropProvider>
-            {line && (
+            {items.length === 0 && dropping && (
+              <span className="pins-bar-empty mx-auto self-center text-label">
+                Drop here to pin
+              </span>
+            )}
+            {drag?.spot && items.length > 0 && (
+              <span
+                className="pins-bar-drop"
+                style={{ "--_x": `${drag.spot.x}px` } as React.CSSProperties}
+                aria-hidden="true"
+              />
+            )}
+            {line && items.length > 0 && (
               <span
                 className="pins-bar-indicator"
                 data-slide={line.slide ? "true" : undefined}
@@ -293,6 +355,7 @@ const PinButton = ({
           ref(node)
         }}
         type="button"
+        data-pin={project.id}
         inert={!fits}
         style={fits ? undefined : { visibility: "hidden" }}
         className="pin flex min-w-0 max-w-50 shrink-0 items-center text-body"

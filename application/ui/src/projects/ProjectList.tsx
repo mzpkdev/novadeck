@@ -5,12 +5,13 @@ import {
   PointerActivationConstraints,
   PointerSensor,
 } from "@dnd-kit/dom"
-import { RestrictToElement } from "@dnd-kit/dom/modifiers"
+import { RestrictToElement, RestrictToWindow } from "@dnd-kit/dom/modifiers"
 import { DragDropProvider } from "@dnd-kit/react"
 import { isSortable } from "@dnd-kit/react/sortable"
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useContext, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 import type { Project } from "../model/types"
+import { PinDropContext } from "./pin-drop"
 import { arrangeProjects, pinLimit, type ProjectArrangement } from "./project-arrangement"
 import type { ProjectStatus } from "./project-status"
 import { ProjectRow } from "./ProjectRow"
@@ -30,11 +31,15 @@ const feedback = Feedback.configure({
   dropAnimation: { duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
 })
 const cursor = Cursor.configure({ cursor: "grabbing" })
+// How far past the menu a dragged row goes before it counts as out of it.
+const leeway = 24
 
 // The projects as the person arranged them: the pinned ones under a label, a rule, then
 // the rest. Rows drag into any order within the list; the arrangement itself is the
 // caller's, told by `onMove` (to a place in the list, pinned ones first) and `onStep`
-// (one place, as Alt and the arrows move the focused row).
+// (one place, as Alt and the arrows move the focused row). Where a pins bar listens
+// (`PinDropContext`), a row also drags out of the list and onto the bar, which pins it:
+// the list fades as the drag leaves it, and `onDraggedOut` closes it once let go.
 export const ProjectList = ({
   projects,
   current,
@@ -46,6 +51,7 @@ export const ProjectList = ({
   onStep,
   onTogglePin,
   onRemove,
+  onDraggedOut,
 }: {
   projects: Project[]
   // The id of the project the workspace shows.
@@ -59,6 +65,9 @@ export const ProjectList = ({
   onStep: (id: string, by: -1 | 1) => void
   onTogglePin: (id: string) => void
   onRemove: (project: Project) => void
+  // A row was dragged out of the list and let go, on the pins bar or not; the list's own
+  // order stays as it was.
+  onDraggedOut?: () => void
 }): React.JSX.Element => {
   // The projects as listed: the pinned ones, then the rest.
   const { pinned, rest } = arrangeProjects(projects, arrangement)
@@ -66,7 +75,19 @@ export const ProjectList = ({
   const pinAvailable = pinned.length < pinLimit
   // The element that holds the rows, which a drag stays within.
   const [list, setList] = useState<HTMLDivElement | null>(null)
-  const modifiers = useMemo(() => [RestrictToElement.configure({ element: list })], [list])
+  const pinDrop = useContext(PinDropContext)
+  // The drag has left the list, which then fades away, out of the way of the pins bar,
+  // until the drag ends; it stays in the page meanwhile, as the drag needs its row.
+  const out = useRef(false)
+  // Where the rows began on screen as the drag started, before they made room for it.
+  const rowsTop = useRef<number | null>(null)
+  const [draggedOut, setDraggedOut] = useState(false)
+  // A row that can reach the pins bar leaves the list; otherwise it stays in it.
+  const modifiers = useMemo(
+    () =>
+      pinDrop ? [RestrictToWindow.configure({})] : [RestrictToElement.configure({ element: list })],
+    [list, pinDrop],
+  )
   // The row that takes the focus, after a keyboard move or a drag; a new object asks again.
   const [focusRequest, setFocusRequest] = useState<{ id: string } | null>(null)
   // dnd-kit moves the dragged row's element among its neighbours as it goes, never the
@@ -86,6 +107,7 @@ export const ProjectList = ({
     <div
       className="workspace-switcher-projects flex max-h-[min(560px,calc(100vh-150px))] flex-col gap-1 overflow-y-auto p-[5px]"
       aria-label="Workspaces"
+      data-dragged-out={draggedOut ? "true" : undefined}
       ref={setList}
     >
       <DragDropProvider
@@ -97,14 +119,71 @@ export const ProjectList = ({
           feedback,
           cursor,
         ]}
+        onDragStart={(event) => {
+          const { source } = event.operation
+          if (!source) return
+          const id = String(source.id)
+          out.current = false
+          rowsTop.current =
+            list?.querySelector(".workspace-switcher-row")?.getBoundingClientRect().top ?? null
+          pinDrop?.start(id, pinAvailable || pinned.some((project) => project.id === id))
+        }}
+        onDragMove={(event) => {
+          if (!pinDrop) return
+          const point = event.to ?? event.operation.position.current
+          const menu = list?.parentElement?.getBoundingClientRect()
+          const accepts = pinDrop.getSnapshot()?.accepts === true
+          if (menu && accepts) {
+            // Out once clearly past the menu: above its rows, or a little past its sides
+            // or bottom, so a reorder that swings wide stays one. Back in over the list again,
+            // below the bar, which runs behind the menu's top.
+            // Above the rows is the pinned label at most, over the bar.
+            const away =
+              point.y < (rowsTop.current ?? menu.top) ||
+              point.x < menu.left - leeway ||
+              point.x > menu.right + leeway ||
+              point.y > menu.bottom + leeway
+            const bar = pinDrop.barBounds()
+            const back =
+              point.x >= menu.left &&
+              point.x <= menu.right &&
+              point.y <= menu.bottom &&
+              point.y > (bar ? bar.bottom : menu.top) + leeway / 3
+            if (!out.current && away) {
+              out.current = true
+              setDraggedOut(true)
+            } else if (out.current && back) {
+              out.current = false
+              setDraggedOut(false)
+            }
+          }
+          // While the open list covers the bar, the bar can't take the drop.
+          pinDrop.move(out.current ? point : null)
+          // Over the bar the row, its name alone, sits by the pointer and under the bar.
+          const spot = pinDrop.getSnapshot()?.spot
+          const row = event.operation.source?.element
+          if (!spot || !(row instanceof HTMLElement)) return
+          const box = row.getBoundingClientRect()
+          row.style.setProperty("--pin-drop-x", `${point.x + 12 - box.left}px`)
+          row.style.setProperty("--pin-drop-y", `${spot.bottom + 4 - box.top}px`)
+        }}
         onDragEnd={(event) => {
           if (list) scrolledTo.current = { list, top: list.scrollTop }
           setDragged((count) => count + 1)
+          const pinnedThere = pinDrop?.end(event.canceled) ?? false
+          const wentOut = out.current
+          out.current = false
+          setDraggedOut(false)
+          if (wentOut && !event.canceled) {
+            onDraggedOut?.()
+            return
+          }
           const { source } = event.operation
           if (!isSortable(source)) return
           const id = String(source.id)
           setFocusRequest({ id })
-          if (event.canceled || source.initialIndex === source.index) return
+          if (pinnedThere || wentOut || event.canceled || source.initialIndex === source.index)
+            return
           onMove(id, source.index)
         }}
       >

@@ -15,7 +15,9 @@
    only working doesn't mark it. Their glyphs and tones are project-status.css's.
 
    Hooks: on a row, data-pinned="true" for a pinned project and data-dragging="true" while
-   it is dragged. On the trigger, aria-expanded="true" while the popover is open; on a row,
+   it is dragged, and data-over-pins="true" while that drag is over the pins bar; on the
+   list of projects, data-dragged-out="true" once a drag has left it, which fades the
+   menu. On the trigger, aria-expanded="true" while the popover is open; on a row,
    aria-current="true" for the current project. On the trigger and on a row,
    data-project-status="question" | "attention" | "failed" | "done" | "running" (never
    "running" on the trigger), which the status mark inside reads.
@@ -77,6 +79,27 @@
 .workspace-switcher-row[data-dragging="true"] > .workspace-switcher-project {
   background-color: var(--item-highlighted-bg, var(--color-soft));
   box-shadow: var(--workspace-switcher-drag-shadow, var(--shadow-control));
+}
+/* A row dragged out of the menu leaves it faded away, clear of the pins bar, until the
+   drag ends and the menu closes; the dragged row, raised above the page, still shows. */
+.workspace-switcher-menu:has(> [data-dragged-out="true"]) {
+  opacity: 0;
+  transition: opacity var(--motion-state) var(--ease-interface);
+}
+/* The floating menu sets its own pointer-events, so its parts let the pointer through. */
+.workspace-switcher-menu:has(> [data-dragged-out="true"]) > * {
+  pointer-events: none;
+}
+
+/* Over the pins bar, the dragged row is its name alone, as a pin would be, by the
+   pointer and under the bar, so the bar's gap mark stays in view. dnd-kit holds the row
+   at its size in the list; the row has no ground of its own, so only its button shows. */
+.workspace-switcher-row[data-over-pins="true"] > .workspace-switcher-project {
+  translate: var(--pin-drop-x, 0) var(--pin-drop-y, 0);
+}
+.workspace-switcher-row[data-over-pins="true"] :is(.item-detail, svg, .project-status-mark),
+.workspace-switcher-row[data-over-pins="true"] .workspace-switcher-action {
+  display: none;
 }
 
 /* The rule that closes the pinned group. */

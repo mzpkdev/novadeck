@@ -3,6 +3,7 @@ import { memo, useMemo, useState } from "react"
 import { transitionWorkspace } from "../layouts/transition"
 import { viewModes } from "../model/state"
 import type { Project } from "../model/types"
+import { createPinDrop, PinDropContext } from "../projects/pin-drop"
 import { PinsBar } from "../projects/PinsBar"
 import { arrangeProjects } from "../projects/project-arrangement"
 import { projectStatuses } from "../projects/project-status"
@@ -28,6 +29,7 @@ export const HeaderSection = memo((): React.JSX.Element => {
     moveProject,
     stepProject,
     toggleProjectPin,
+    pinProjectAt,
     changeView,
     enterZen,
     setSwitcher,
@@ -63,6 +65,8 @@ export const HeaderSection = memo((): React.JSX.Element => {
     }),
     shallowEqual,
   )
+  // Carries a project dragged out of the switcher's list onto the pins bar.
+  const [pinDrop] = useState(() => createPinDrop(pinProjectAt))
   const pins = useMemo(() => arrangeProjects(projects, arrangement).pinned, [projects, arrangement])
   // The switcher's dot leaves out the pins the bar shows.
   const [shownPins, setShownPins] = useState<readonly string[]>(noIds)
@@ -72,7 +76,7 @@ export const HeaderSection = memo((): React.JSX.Element => {
     if (next) switchProject(next)
   }
   return (
-    <>
+    <PinDropContext value={pinDrop}>
       <WorkspaceHeader
         hidden={zen}
         onZen={enterZen}
@@ -114,6 +118,6 @@ export const HeaderSection = memo((): React.JSX.Element => {
         onStep={stepProject}
         onShown={setShownPins}
       />
-    </>
+    </PinDropContext>
   )
 })

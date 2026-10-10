@@ -210,24 +210,25 @@ while one works). A dot on the switcher's button marks what another project has
 waiting on you, in that mark's colour; projects only working don't light it. The list
 grows to 560px before it scrolls.
 
-Drag projects into any order, or move the focused one with Alt+Up and Alt+Down. Pin up
-to nine with the pin beside a row's trash icon: pinned projects lead the list, and
-dragging one across the rule below them pins or unpins it. While any are pinned, a bar
-under the header shows them in that order, each as its number, its name and its mark
-(except the spinner, so the bar stays still while agents work); the current one is
-underlined, and a click switches to it. Drag a pin along the bar to reorder the pins, or
-focus one and press Alt+Left or Alt+Right; a drag there never unpins. The number is its
-shortcut: `Ctrl+Shift+1` to `Ctrl+Shift+9` (`Cmd+1` to `Cmd+9` on macOS, in the desktop
-app, since a browser keeps those for its tabs) switches to that pin, from terminal input
-too. Shift keeps a bare `Ctrl+3` to `Ctrl+8` for the terminal, where they send `Esc`,
-`Ctrl+\`, `Ctrl+^` and other control codes; `Ctrl+Shift+2`, a terminal's `Ctrl+@`, is
-the pin's while there is a second, so use `Ctrl+Space` for that `NUL`. Without a pin of
-that number the key reaches the terminal as usual, and it's left alone while you rename a
-tab or type in another field. The bar slides in with the first pin and out with the
-last, and Zen hides it. Pins that don't fit drop off its end, and the switcher's dot
-covers them again. The order and the pins are kept in this browser or app
-(`novadeck.project-arrangement` in local storage), not shared with other clients of the
-runner.
+Drag projects into any order, or move the focused one with Alt+Up and Alt+Down. Pin up to
+nine with the pin beside a row's trash icon: pinned projects lead the list, and dragging
+one across the rule below them pins or unpins it. While any are pinned, a bar under the
+header shows them in that order, each as its number, its name and its mark (except the
+spinner, so the bar stays still while agents work); the current one is underlined, and a
+click switches to it. Drag a pin along the bar to reorder the pins, or focus one and
+press Alt+Left or Alt+Right; a drag there never unpins. Drag a project out of the
+switcher onto the bar to pin it where you let go; with nothing pinned yet, the bar opens
+for the drag. The number is its shortcut: `Ctrl+Shift+1` to `Ctrl+Shift+9` (`Cmd+1` to
+`Cmd+9` on macOS, in the desktop app, since a browser keeps those for its tabs) switches
+to that pin, from terminal input too. Shift keeps a bare `Ctrl+3` to `Ctrl+8` for the
+terminal, where they send `Esc`, `Ctrl+\`, `Ctrl+^` and other control codes;
+`Ctrl+Shift+2`, a terminal's `Ctrl+@`, is the pin's while there is a second, so use
+`Ctrl+Space` for that `NUL`. Without a pin of that number the key reaches the terminal as
+usual, and it's left alone while you rename a tab or type in another field. The bar
+slides in with the first pin and out with the last, and Zen hides it. Pins that don't fit
+drop off its end, and the switcher's dot covers them again. The order and the pins are
+kept in this browser or app (`novadeck.project-arrangement` in local storage), not shared
+with other clients of the runner.
 
 The Notifications panel (the bell on the sidebar rail) lists everything across every
 project and session that waits on you: questions, permissions and plans to review, and

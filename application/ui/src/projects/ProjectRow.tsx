@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react"
 
 import type { Project } from "../model/types"
 import { Tooltip } from "../ui-toolkit/Tooltip"
+import { usePinDrop } from "./pin-drop"
 import { statusText, type ProjectStatus } from "./project-status"
 
 // One project's row in the list: its button, and the pin and remove buttons that show
@@ -48,6 +49,9 @@ export const ProjectRow = ({
     transition: { duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
   })
   const button = useRef<HTMLButtonElement>(null)
+  // Dragged over the pins bar, the row shrinks to its name, so the bar shows where it goes.
+  const { drag } = usePinDrop()
+  const overPins = isDragSource && drag?.id === project.id && drag.spot !== null
   useEffect(() => {
     if (focusRequest?.id !== project.id) return
     button.current?.focus()
@@ -61,6 +65,7 @@ export const ProjectRow = ({
       className="workspace-switcher-row group relative"
       data-pinned={pinned ? "true" : undefined}
       data-dragging={isDragSource ? "true" : undefined}
+      data-over-pins={overPins ? "true" : undefined}
     >
       <Tooltip content={project.directory} placement="right-start">
         <button
@@ -69,7 +74,7 @@ export const ProjectRow = ({
             handleRef(node)
           }}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-          className={`item standalone workspace-switcher-project flex w-full min-w-0 items-center gap-3 px-2.5 py-[9px] text-left ${removable ? "pr-[70px]" : "pr-10"} ${selected ? "selected" : ""}`}
+          className={`item standalone workspace-switcher-project flex min-w-0 items-center gap-3 px-2.5 text-left ${overPins ? "w-max py-1.5" : `w-full py-[9px] ${removable ? "pr-[70px]" : "pr-10"}`} ${selected ? "selected" : ""}`}
           type="button"
           aria-current={selected ? "true" : undefined}
           aria-description={status && statusText[status]}

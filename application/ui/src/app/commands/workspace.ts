@@ -14,6 +14,7 @@ import type {
 } from "../../model/types"
 import {
   moveProject as arrangeMove,
+  pinAt,
   stepProject as arrangeStep,
   togglePin,
   type ProjectArrangement,
@@ -61,6 +62,8 @@ export type WorkspaceCommands = ShellCommands &
     readonly stepProject: (id: string, by: -1 | 1) => void
     // Pins a project, or unpins it if pinned; no more than the limit can be pinned.
     readonly toggleProjectPin: (id: string) => void
+    // Pins a project at this place among the pinned ones, or moves it there if pinned.
+    readonly pinProjectAt: (id: string, index: number) => void
     // Selects a terminal and brings it into view, optionally fitting Canvas around it.
     readonly select: (id: string, fit?: boolean) => void
     readonly setSelected: (terminal: string) => void
@@ -284,6 +287,8 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       arrange((projects, current) => arrangeMove(projects, current, id, index)),
     stepProject: (id, by) => arrange((projects, current) => arrangeStep(projects, current, id, by)),
     toggleProjectPin: (id) => arrange((projects, current) => togglePin(projects, current, id)),
+    pinProjectAt: (id, index) =>
+      arrange((projects, current) => pinAt(projects, current, id, index)),
     updatePreferences: (next) => {
       const snapshot = workspace.getSnapshot()
       const { view } = currentState(snapshot)

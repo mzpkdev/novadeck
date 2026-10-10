@@ -440,6 +440,18 @@ const pinsBar = () => page.getByRole("group", { name: "Pinned projects" })
 const pin = (name: string) => pinsBar().getByRole("button", { name: new RegExp(`${name}$`) })
 const arrange = (pinned: string[]): void =>
   localStorage.setItem("novadeck.project-arrangement", JSON.stringify({ order: pinned, pinned }))
+const switcherRow = (name: string) =>
+  page
+    .getByRole("dialog", { name: "Switch workspace" })
+    .getByRole("button", { name: new RegExp(`^${name}`) })
+// The switcher's projects as it lists them, while it is open.
+const switcherOrder = () =>
+  [
+    ...(page
+      .getByRole("dialog", { name: "Switch workspace" })
+      .query()
+      ?.querySelectorAll(".workspace-switcher-project strong") ?? []),
+  ].map((name) => name.textContent)
 const skipWelcome = async (): Promise<void> => {
   const skip = page.getByRole("button", { name: "Skip for now" })
   if (await skip.query()) await skip.click()
@@ -539,6 +551,110 @@ describe("A pinned project", () => {
       await expect.poll(pinNames).toEqual(["1api-service", "2storefront", "3mobile-app"])
       await expect.element(pin("storefront")).toHaveFocus()
     })
+  })
+
+  context("dragged from the switcher menu", () => {
+    // Drags a project's row out of the open menu and lets it go at a point on the screen:
+    // by default on the bar under the header, past its pins and the menu.
+    const dragOut = async (name: string, to?: { x: number; y: number }): Promise<void> => {
+      const from = switcherRow(name).element().getBoundingClientRect()
+      const header = workspaceSwitcher().element().closest("header")!.getBoundingClientRect()
+      await userEvent.dragAndDrop(switcherRow(name), page.elementLocator(document.body), {
+        sourcePosition: { x: 40, y: from.height / 2 },
+        targetPosition: to ?? { x: window.innerWidth - 80, y: header.bottom + 16 },
+        steps: 16,
+        force: true,
+      })
+    }
+
+    it("pins it where it is let go, after the pins it passes", async () => {
+      arrange(["storefront", "api-service"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+
+      await dragOut("mobile-app")
+
+      await expect.element(pin("mobile-app")).toHaveTextContent("3mobile-app")
+      // The menu, faded once the drag left it, closes; it lists the project as pinned.
+      await expect
+        .element(page.getByRole("dialog", { name: "Switch workspace" }))
+        .not.toBeInTheDocument()
+      await workspaceSwitcher().click()
+      await expect.element(switcherRow("mobile-app").getByLabelText("Pinned")).toBeInTheDocument()
+    })
+
+    it("opens an empty bar for the drag, and the project becomes the first pin", async () => {
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await expect.element(pinsBar()).not.toBeInTheDocument()
+      await workspaceSwitcher().click()
+
+      await dragOut("docs-site")
+
+      await expect.element(pin("docs-site")).toHaveTextContent("1docs-site")
+    })
+
+    it("still reorders the list when dragged to its top, with the bar behind it", async () => {
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      const first = switcherOrder()[0]!
+      const top = switcherRow(first).element().getBoundingClientRect()
+      await dragOut("docs-site", { x: top.left + 60, y: top.top + 6 })
+
+      await expect.poll(() => switcherOrder()[0]).toBe("docs-site")
+      await expectStaysAbsent(pin("docs-site"))
+    })
+
+    it("pins nothing when let go off the bar", async () => {
+      arrange(["storefront"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      const before = switcherOrder()
+      expect(before).toContain("mobile-app")
+      await dragOut("mobile-app", { x: 700, y: 400 })
+      await expectStaysAbsent(pin("mobile-app"))
+      expect(pinsBar().getByRole("button").elements()).toHaveLength(1)
+      // Nor does it move in the list.
+      await workspaceSwitcher().click()
+      await expect.poll(switcherOrder).toEqual(before)
+    })
+  })
+
+  it("underlines the current pin with one line, which follows a switch", async () => {
+    arrange(["storefront", "api-service", "docs-site"])
+    await openWorkspace("/?demo=agents")
+    await skipWelcome()
+    const lineUnder = async (name: string): Promise<void> => {
+      const line = document.querySelector(".pins-bar-indicator")
+      await expect.element(pin(name)).toHaveAttribute("aria-current", "true")
+      await expect
+        .poll(() => {
+          const under = pin(name).element().getBoundingClientRect()
+          const box = line?.isConnected
+            ? line.getBoundingClientRect()
+            : document.querySelector(".pins-bar-indicator")?.getBoundingClientRect()
+          return box && box.left > under.left && box.right < under.right
+        })
+        .toBe(true)
+    }
+    await lineUnder("storefront")
+    await pin("docs-site").click()
+    await lineUnder("docs-site")
+    expect(document.querySelectorAll(".pins-bar-indicator")).toHaveLength(1)
+    // A switch slides it; a pin moved by the keyboard takes it along at once.
+    expect(document.querySelector(".pins-bar-indicator")).toHaveAttribute("data-slide", "true")
+    pin("docs-site").element().focus()
+    await userEvent.keyboard("{Alt>}{ArrowLeft}{/Alt}")
+    await lineUnder("docs-site")
+    expect(document.querySelector(".pins-bar-indicator")).not.toHaveAttribute("data-slide")
+
+    // Unpinned, the current project has no pin and no line.
+    await workspaceSwitcher().click()
+    await page.getByRole("button", { name: "Unpin docs-site" }).click()
+    await expect.poll(() => document.querySelector(".pins-bar-indicator")).toBeNull()
   })
 
   it("hides the pins that don't fit, and the dot covers them again", async () => {
