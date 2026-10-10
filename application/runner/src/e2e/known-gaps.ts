@@ -25,15 +25,16 @@ export const has = (gap: Gap, setup: AgentSetup): boolean =>
   (gap.platforms === undefined || gap.platforms.includes(process.platform))
 
 /**
- * Codex on Windows never gets a character outside Unicode's Basic Multilingual Plane, as
+ * Codex on Windows mostly never gets a character outside Unicode's Basic Multilingual Plane, as
  * the emoji 👨, through the ConPTY that node-pty bundles and Novadeck's terminals run on
  * there: it reads the console's keys, and the character's two UTF-16 halves never reach
  * it, though the joiners between such emoji do (probed 2026-10-09: Codex 0.159.3,
  * OpenConsole 1.25.260303002; Windows' own ConPTY delivers it, as both deliver it to
  * cmd). A prompt holding one never shows whole in its box, so Novadeck presses no Enter
- * and the prompt fails (PROMPT_FAILED). Pinned by chat.e2e.ts, "gives its agent emoji
- * sequences and CJK, then the next prompt". Once fixed, the prompt lands and its turn
- * runs as on Linux.
+ * and the prompt fails (PROMPT_FAILED). Not every time: one CI run of many (2026-10-10)
+ * got it through, the prompt landing as on Linux. Pinned by chat.e2e.ts, "gives its agent
+ * emoji sequences and CJK, then the next prompt", which takes either. Once fixed, the
+ * prompt lands every time and its turn runs as on Linux.
  */
 const astralLost: Gap = { agents: ["codex"], platforms: ["win32"] }
 
