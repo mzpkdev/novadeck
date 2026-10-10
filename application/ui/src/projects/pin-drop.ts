@@ -69,8 +69,10 @@ export const createPinDrop = (arrangement: PinDropArrangement): PinDropChannel =
       const { drag } = state
       if (!drag?.accepts || state.handoff) return false
       before = arrangement.current()
-      arrangement.pin(drag.id, locate ? locate(point, drag.id) : Number.MAX_SAFE_INTEGER)
+      const index = locate ? locate(point, drag.id) : Number.MAX_SAFE_INTEGER
+      // Told first, so the bar knows the pin as handed over from the render it shows in.
       set({ drag, handoff: { id: drag.id, point } })
+      arrangement.pin(drag.id, index)
       return true
     },
     end: () => {

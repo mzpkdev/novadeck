@@ -16,7 +16,8 @@
    project, and data-project-status="question" | "attention" | "failed" | "done" (never
    "running"); data-dragging="true" on the pin being dragged along the bar, which lifts
    as a dragged row of the switcher does. The others slide aside. data-leaving="true" on
-   it once dragged well off the bar, where letting go unpins it.
+   it once dragged well off the bar, where letting go unpins it, and data-arriving="true" on a pin handed over from the
+   switcher's drag until it is under the pointer.
 
    Tokens, each optional (its fallback in brackets):
    --pins-bar-bg (--region-header-bg, paper), --pins-bar-image (--region-header-image),
@@ -138,6 +139,11 @@
 /* An empty bar, open for a project dragged from the switcher's list, says so. */
 .pins-bar-empty {
   color: var(--pin-fg, var(--color-muted));
+}
+/* A pin handed over from the switcher's drag stays unseen until it is under the pointer,
+   then fades in. */
+.pin[data-arriving="true"] {
+  filter: opacity(0);
 }
 /* A pin dragged well off the bar, which letting go there unpins: faded, its name struck. */
 .pin[data-leaving="true"] {

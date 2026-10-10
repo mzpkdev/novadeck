@@ -187,6 +187,9 @@ export const PinsBar = ({
     manager.current = next
   }, [])
   const took = useRef<PinHandoff | null>(null)
+  // The handed-over pin is under the pointer; until then it is arriving, and unseen.
+  const [landed, setLanded] = useState<PinHandoff | null>(null)
+  const arriving = handoff && landed !== handoff ? handoff.id : null
   const following = useRef<(() => void) | null>(null)
   useLayoutEffect(() => {
     if (!handoff || took.current === handoff) return
@@ -202,16 +205,22 @@ export const PinsBar = ({
       coordinates: { x: box.left + 20, y: box.top + box.height / 2 },
     })
     // dnd-kit takes moves only once the drag is under way, a frame or so after it starts:
-    // till then the pin waits unseen, then shows where the pointer is by then.
+    // till then the pin waits unseen (arriving), then fades in where the pointer is by then.
     let pointer = handoff.point
-    pin.style.visibility = "hidden"
     let frame = requestAnimationFrame(function arrive(): void {
       if (!manager.current?.dragOperation.status.dragging) {
         frame = requestAnimationFrame(arrive)
         return
       }
       actions.move({ to: pointer })
-      frame = requestAnimationFrame(() => pin.style.removeProperty("visibility"))
+      frame = requestAnimationFrame(() => {
+        // dnd-kit sets the dragged pin's transitions, so the fade is an animation of its own.
+        pin.animate([{ filter: "opacity(0)" }, { filter: "opacity(1)" }], {
+          duration: slide(),
+          easing: ease,
+        })
+        setLanded(handoff)
+      })
     })
     const move = (event: PointerEvent): void => {
       pointer = { x: event.clientX, y: event.clientY }
@@ -235,7 +244,6 @@ export const PinsBar = ({
     window.addEventListener("keydown", escape, true)
     following.current = () => {
       cancelAnimationFrame(frame)
-      pin.style.removeProperty("visibility")
       window.removeEventListener("pointermove", move, true)
       window.removeEventListener("pointerup", drop, true)
       window.removeEventListener("pointercancel", cancel, true)
@@ -337,6 +345,7 @@ export const PinsBar = ({
                     status={status}
                     dragging={dragging}
                     leaving={leaving}
+                    arriving={project.id === arriving}
                     focusRequest={focusRequest}
                     onFocused={() => setFocusRequest(null)}
                     onSelect={() => onSelect(project.id)}
@@ -393,6 +402,7 @@ const PinButton = ({
   status,
   dragging,
   leaving,
+  arriving,
   focusRequest,
   onFocused,
   onSelect,
@@ -411,6 +421,8 @@ const PinButton = ({
   dragging: boolean
   // The pin being dragged is off the bar, and would be unpinned there.
   leaving: boolean
+  // Handed over from the switcher, it isn't under the pointer yet.
+  arriving: boolean
   // Asks the pin with this id to take the focus, as after a keyboard move or a drag.
   focusRequest: { id: string } | null
   // Told once the pin has taken the focus it was asked for.
@@ -461,6 +473,7 @@ const PinButton = ({
         data-project-status={status}
         data-dragging={isDragSource ? "true" : undefined}
         data-leaving={isDragSource && leaving ? "true" : undefined}
+        data-arriving={arriving ? "true" : undefined}
         onClick={() => {
           if (!current) onSelect()
         }}
