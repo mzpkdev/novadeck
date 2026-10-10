@@ -169,10 +169,12 @@ describe("agents Novadeck can connect", () => {
     const statusLine = () =>
       (JSON.parse(readFileSync(settings, "utf8")) as { statusLine?: { command: string } })
         .statusLine
-    if (!windows) expect(statusLine()?.command).toContain('"$NOVADECK_HOOK" agy StatusLine')
+    expect(statusLine()?.command).toContain(
+      windows ? "%NOVADECK_HOOK% agy StatusLine" : '"$NOVADECK_HOOK" agy StatusLine',
+    )
     await agents.set("agy", false)
     expect((await agents.list())[2]).toMatchObject({ connected: false })
-    if (!windows) expect(statusLine()).toBeUndefined()
+    expect(statusLine()).toBeUndefined()
   })
 
   it.skipIf(windows)(

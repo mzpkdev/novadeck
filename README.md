@@ -306,7 +306,10 @@ way do not show in `codex agents`.
 Antigravity runs the hook before each model call, and Codex with your first message,
 so their sessions are known from then on; before that, Codex's title and Antigravity's
 status line tell Novadeck that their prompt is up, so other agents' messages can wake
-them. On Windows, Claude Code and Codex run the hook through PowerShell.
+them. On Windows, Claude Code and Codex run the hook through PowerShell and Antigravity
+through cmd, which can't run your own Antigravity status line after Novadeck's: there
+Novadeck leaves yours as it is, and knows Antigravity's prompt is up only once you have
+sent it something.
 
 Removing Novadeck does not remove plugins you left connected, as packaged builds have
 no uninstaller: switch agents off first, or remove the `novadeck` plugin with the
