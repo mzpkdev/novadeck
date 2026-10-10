@@ -13,7 +13,7 @@ import { installHarness } from "./install.js"
 import { startFakeModel, type FakeModel } from "./model/server.js"
 import { reap } from "./reap.js"
 import { createSandbox, type Sandbox } from "./sandbox.js"
-import { startTrace } from "./trace.js"
+import { startTrace, tracesAll } from "./trace.js"
 import { tripwire } from "./tripwire.js"
 
 export { describe, expect } from "../test.js"
@@ -82,6 +82,7 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
       const trace = startTrace(task.fullName, model)
       resources.defer(() => trace.stop())
       onTestFailed(() => trace.write())
+      if (tracesAll) resources.defer(() => trace.write())
       // Installed before the file's tests: these are the same installs, already done.
       const installs = await Promise.all(setups.map((setup) => installHarness(setup.agent)))
       const sandbox = createSandbox({ proxy: model.proxy, bins: installs.map((one) => one.bin) })
