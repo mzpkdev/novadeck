@@ -7,18 +7,18 @@ import { join } from "node:path"
 import { relayPath } from "@novadeck/relay"
 import { afterAll, beforeAll, onTestFinished } from "vitest"
 
-import { readUnshowRequest, readRequest } from "../companions/request.js"
+import { readDismissRequest, readRequest } from "../companions/request.js"
 import { plugin } from "../harnesses/harness.js"
 import { unboundNote } from "../messaging/peers.js"
 import { describe, expect, it } from "../test.js"
 import { installShellFiles } from "./install.js"
 import { mcpAnswer, mcpVersions } from "./mcp.js"
+import { listenForReports, unheard, type Call, type Reports } from "./reports.js"
+import { shellFiles, shellPaths, staleShellFiles } from "./scripts.js"
 
 /** The runner's own reading of a show or close request, as manager.present and dismiss do. */
 const reading = (type: string, request: object) =>
-  Promise.resolve(type === "dismiss" ? readUnshowRequest(request) : readRequest(request))
-import { listenForReports, unheard, type Call, type Reports } from "./reports.js"
-import { shellFiles, shellPaths, staleShellFiles } from "./scripts.js"
+  Promise.resolve(type === "dismiss" ? readDismissRequest(request) : readRequest(request))
 
 const token = "0123456789abcdef".repeat(3)
 let folder: string

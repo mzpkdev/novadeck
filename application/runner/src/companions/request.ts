@@ -41,7 +41,7 @@ export const sourceNames = Object.keys(sources) as readonly (keyof typeof source
  * since what is beside the terminal is known by its path or address, whatever lines
  * it pointed at.
  */
-const unshowSources = {
+const dismissSources = {
   file: z.strictObject({ file: z.strictObject({ path: fileSource.shape.path }) }),
   url: z.strictObject({ url: pageRequest.shape.url }),
 } as const
@@ -49,7 +49,7 @@ const unshowSources = {
 export type FileRequest = z.infer<typeof fileRequest>
 export type PageRequest = z.infer<typeof pageRequest>
 export type PresentRequest = FileRequest | PageRequest
-export type UnshowRequest = z.infer<(typeof unshowSources)[keyof typeof unshowSources]>
+export type DismissRequest = z.infer<(typeof dismissSources)[keyof typeof dismissSources]>
 
 /** Why it was not shown, in a sentence the agent can act on. */
 export type PresentFailure = { readonly ok: false; readonly reason: string }
@@ -74,7 +74,7 @@ export type PresentAnswer =
   | PresentFailure
 
 /** What `close` answers: what left the terminal's side, or why nothing did. */
-export type UnshowAnswer =
+export type DismissAnswer =
   | { readonly ok: true; readonly name: string; readonly kind: CompanionItem["kind"] }
   | PresentFailure
 
@@ -86,8 +86,8 @@ const shapes = { file: "file: { path }", url: "url" } as const satisfies {
 }
 const oneSource = `one source, ${sourceNames.map((name) => shapes[name]).join(" or ")}`
 
-// A key named back to the agent: quoted, and cut short, as it is the agent's own text.
-const named = (key: string): string =>
+/** Text named back to the agent, as a key or a path: quoted, and cut short, as it is the agent's own. */
+export const named = (key: string): string =>
   JSON.stringify(key.length <= 64 ? key : `${key.slice(0, 63)}…`)
 
 type Read<T> = (value: unknown) => { readonly ok: true; readonly request: T } | PresentFailure
@@ -116,4 +116,4 @@ const reader =
 export const readRequest: Read<PresentRequest> = reader<PresentRequest>(sources)
 
 /** A `close` request, or why it cannot be one. */
-export const readUnshowRequest: Read<UnshowRequest> = reader<UnshowRequest>(unshowSources)
+export const readDismissRequest: Read<DismissRequest> = reader<DismissRequest>(dismissSources)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../test.js"
-import { readUnshowRequest, readRequest } from "./request.js"
+import { readDismissRequest, readRequest } from "./request.js"
 
 describe("a show request", () => {
   it("names a file by its path, and only lines that run forward, under file", () => {
@@ -57,27 +57,27 @@ describe("a show request", () => {
 
 describe("a close request", () => {
   it("names the file or url given to show, and nothing else", () => {
-    expect(readUnshowRequest({ file: { path: "a.ts" } })).toEqual({
+    expect(readDismissRequest({ file: { path: "a.ts" } })).toEqual({
       ok: true,
       request: { file: { path: "a.ts" } },
     })
-    expect(readUnshowRequest({ url: "http://localhost:5173/" })).toEqual({
+    expect(readDismissRequest({ url: "http://localhost:5173/" })).toEqual({
       ok: true,
       request: { url: "http://localhost:5173/" },
     })
-    expect(readUnshowRequest({ file: { path: "a.ts", lines: { from: 1, to: 1 } } })).toEqual({
+    expect(readDismissRequest({ file: { path: "a.ts", lines: { from: 1, to: 1 } } })).toEqual({
       ok: false,
       reason: 'The request\'s "file.lines" is not valid.',
     })
-    expect(readUnshowRequest({ file: { path: "a.ts" }, open: true })).toEqual({
+    expect(readDismissRequest({ file: { path: "a.ts" }, open: true })).toEqual({
       ok: false,
       reason: 'The request\'s "open" is not valid.',
     })
-    expect(readUnshowRequest({ file: { path: "a.ts" }, url: "http://a/" })).toEqual({
+    expect(readDismissRequest({ file: { path: "a.ts" }, url: "http://a/" })).toEqual({
       ok: false,
       reason: "Give one source, file: { path } or url, not several.",
     })
-    expect(readUnshowRequest({})).toEqual({
+    expect(readDismissRequest({})).toEqual({
       ok: false,
       reason: "Give one source, file: { path } or url.",
     })

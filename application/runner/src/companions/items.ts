@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { realpath } from "node:fs/promises"
-import { isAbsolute, basename, relative, resolve, sep } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
 import type {
@@ -30,8 +30,9 @@ import {
 import type { ItemRecord, ItemRecords, WindowRecord } from "./records.js"
 import {
   failure,
-  type UnshowAnswer,
-  type UnshowRequest,
+  named,
+  type DismissAnswer,
+  type DismissRequest,
   type PresentAnswer,
   type PresentFailure,
   type PresentRequest,
@@ -81,6 +82,19 @@ const size = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+/**
+ * A path's real path, as `realpath` gives it while it exists; for one that doesn't, the
+ * real path of its deepest existing ancestor with the rest appended, so a path through
+ * a symlinked folder keys the same whether or not its file remains.
+ */
+const realPath = async (path: string): Promise<string> => {
+  const real = await realpath(path).catch(() => undefined)
+  if (real !== undefined) return real
+  const parent = dirname(path)
+  if (parent === path) return path
+  return join(await realPath(parent), basename(path))
 }
 
 /** Whether `path` lies inside `folder`; both resolved alike. */
@@ -204,7 +218,7 @@ export class CompanionItems {
    * this way: one the person attached, or another terminal placed there, stays, and the
    * answer says so.
    */
-  async unshow(place: TerminalPlace, request: UnshowRequest): Promise<UnshowAnswer> {
+  async dismiss(place: TerminalPlace, request: DismissRequest): Promise<DismissAnswer> {
     if (this.stopping) return failure("Novadeck is closing.")
     const keyed = await this.keyOf(place, request)
     if (!keyed.ok) return keyed
@@ -213,7 +227,7 @@ export class CompanionItems {
       .find((each) => each.pointerKey === keyed.key)
     if (!item)
       return failure(
-        `Nothing is showing beside your terminal at ${keyed.given}; showing lists what is.`,
+        `Nothing is showing beside your terminal at ${named(keyed.given)}; showing lists what is.`,
       )
     if (item.by !== "agent" || item.from.terminalId !== place.terminalId)
       return failure(
@@ -624,18 +638,19 @@ export class CompanionItems {
 
   /**
    * The key a `close` request names, as `show` keyed the item: a page's address as
-   * read, or a file's real path, or the path as resolved once the file is gone.
+   * read, or a file's real path; once the file is gone, its real path still, from the
+   * deepest folder of it that remains, so a symlinked folder on the way still matches. A
+   * plan's key (`plan:…`) is never a path or an address, so no request reaches one.
    */
   private async keyOf(
     place: TerminalPlace,
-    request: UnshowRequest,
+    request: DismissRequest,
   ): Promise<{ readonly ok: true; readonly key: string; readonly given: string } | PresentFailure> {
     if ("url" in request) {
       const page = pageAt(request.url)
       return page.ok ? { ok: true, key: page.url.href, given: page.url.href } : page
     }
-    const resolved = resolve(place.cwd, request.file.path)
-    const key = await realpath(resolved).catch(() => resolved)
+    const key = await realPath(resolve(place.cwd, request.file.path))
     return { ok: true, key, given: request.file.path }
   }
 

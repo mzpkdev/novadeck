@@ -33,9 +33,9 @@ import type { CompanionItems, TerminalPlace } from "../companions/items.js"
 import type { ItemRecord } from "../companions/records.js"
 import {
   readRequest,
-  readUnshowRequest,
+  readDismissRequest,
   type PresentAnswer,
-  type UnshowAnswer,
+  type DismissAnswer,
 } from "../companions/request.js"
 import { DomainError } from "../errors.js"
 import {
@@ -2133,18 +2133,18 @@ export class Terminals {
 
   /**
    * Closes what the caller's agent showed on its own terminal's bar, through Novadeck's
-   * MCP server (see `CompanionItems.unshow`). A call without the shell's own token
+   * MCP server (see `CompanionItems.dismiss`). A call without the shell's own token
    * learns nothing more.
    */
-  async dismiss(call: Call): Promise<UnshowAnswer> {
+  async dismiss(call: Call): Promise<DismissAnswer> {
     const record = this.records.get(call.terminalId)
     if (!record || record.exitQueued || !sameToken(record.token, call.token))
       return unansweredCalls.dismiss
-    const read = readUnshowRequest(call.request)
+    const read = readDismissRequest(call.request)
     if (!read.ok) return read
     const place = this.place(call.terminalId)
     if (!place || !this.options.items) return unansweredCalls.dismiss
-    return this.options.items.unshow(place, read.request)
+    return this.options.items.dismiss(place, read.request)
   }
 
   /** What the caller's own terminal's bar holds, as its agent asked through Novadeck's MCP server. */

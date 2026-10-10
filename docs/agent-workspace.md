@@ -326,7 +326,8 @@ with every safety check again at that time:
   of its own rather than more fields beside these. `close` takes the same `file` (its
   path alone) or `url` and removes what the agent showed under it from its own bar, as
   the person closing it would; what the person attached, or another terminal placed
-  there, is refused with a word on whose it is, and plans are never addressable this way. The server finds its terminal
+  there, is refused with a word on whose it is, and plans are never addressable this
+  way. The server finds its terminal
   from `NOVADECK_TERMINAL_ID`, `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`. Like
   the hooks, it is installed for every session, but outside Novadeck's terminals it
   lists no tools, so the agent never sees `show`, and a call anyway does nothing.
