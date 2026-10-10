@@ -62,7 +62,7 @@ export const defaultTimes: MurmurTimes = {
 export const replyChars = 3000
 /** How many logical lines of a plain shell's screen, how long each; the lowest lines win. */
 export const screenRows = 100
-export const screenColumns = 1000
+export const screenColumns = 8000
 /** The longest command line passed on. */
 export const commandChars = 2000
 
@@ -117,16 +117,43 @@ const shownFolder = (folder: string, projectFolder: string | undefined): string 
   return placeName(folder)
 }
 
-const greeting = /^(hi|hey|hello|yo|thanks|thank|ok|okay|test|testing|ping)$/i
+// The words of greetings, thanks, acknowledgements and small talk, in English and Polish.
+// A prompt made of nothing else says nothing of what a terminal is for; one with a single
+// word beyond them ("fix", "login", "deploy") does.
+const filler = new Set(
+  `hi hey hello hiya howdy yo greetings thanks thank you thx ty cheers ok okay k kk yes yeah yep
+  yup no nope nah sure fine good great nice cool awesome perfect lovely sounds right got it go on
+  continue proceed please pls do that this the other one a an and so then now again try retry
+  more next sorry bye goodbye lgtm done how are is going what s up whats sup hows doing u ur me
+  there everyone all for with your my well just very really much lot lots
+  cześć czesc hej heja siema witam witaj dzień dzien dobry dobra dobrze dzięki dzieki dziękuję
+  dziekuje dziękuje super świetna swietna świetnie swietnie świetny swietny robota spoko git jak
+  leci co tam słychać slychac u ciebie ty proszę prosze dalej kontynuuj jeszcze raz znowu pa do
+  widzenia nara tak nie jasne jasno okej to ten ta inne inny drugi drugie jedno i a w porządku
+  porzadku się sie jest tu`.split(/\s+/),
+)
 
 /**
- * Whether a prompt says what a terminal is for: at least three words, and not a greeting
- * or a pleasantry ("hey!", "thanks a lot", "try again" is two words).
+ * Whether a prompt says what a terminal is for: at least three words (or four characters
+ * of a script written without spaces), and not wholly a greeting, thanks, acknowledgement
+ * or small talk ("hey, how's it going", "sounds good, thanks!", "yes do it"). A prompt that
+ * merely starts with such a word ("test the login flow", "ok fix the tests") is one.
  */
 export const substantial = (prompt: string): boolean => {
-  const words = prompt.match(/[\p{L}\p{N}]+/gu) ?? []
+  // Scripts written without spaces between words (Chinese, Japanese, Thai) are one run of
+  // letters: four characters of them say as much as three words.
+  const spaceless = prompt.match(
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]/gu,
+  )
+  if ((spaceless?.length ?? 0) >= 4) return true
+  const words = (
+    prompt
+      .normalize("NFKC")
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu) ?? []
+  ).filter(Boolean)
   if (words.length < 3) return false
-  return !(words.length <= 4 && greeting.test(words[0]!))
+  return !words.every((word) => filler.has(word))
 }
 
 /** The prompts murmur is shown, oldest first: the first the person gave, if it left the recent ones. */
@@ -140,7 +167,7 @@ export const promptsOf = (work: Work | null): readonly string[] => {
   return [...first, ...recent]
 }
 
-/** What murmur is shown of an agent's terminal; null when nothing is known of what the person asked. */
+/** What murmur is shown of an agent's terminal; null when neither a summary nor a prompt tells what it is for. */
 export const agentDigest = (input: {
   readonly harness: AgentName
   readonly projectFolder: string | undefined
@@ -158,7 +185,8 @@ export const agentDigest = (input: {
   const all = promptsOf(input.work)
   const mission = all.find(substantial)
   const prompts = input.summary ? all : mission === undefined ? [] : [mission]
-  if (prompts.length === 0) return null
+  // A summary of the current session says enough with no prompt yet.
+  if (prompts.length === 0 && !input.summary) return null
   const { projectFolder } = input
   return {
     kind: "agent",
@@ -193,7 +221,8 @@ export const commandOf = (program: ForegroundProcess | null, atPrompt: boolean):
  * The visible rows of a plain shell's screen as murmur is shown them: rows the terminal
  * wrapped (`wrapped[i]` continues the row before) joined into the logical line they
  * are, so a value split across rows is whole for the redaction; control characters out,
- * each line trimmed and cut at the safety cap, the blank ones above and below dropped,
+ * each line trimmed and, only far past any real line, cut at the safety cap (it must not
+ * cut a value ahead of the redaction, which the service does before its caps), the blank ones above and below dropped,
  * and at most the last `screenRows` kept.
  */
 export const screenOf = (
@@ -394,6 +423,14 @@ export type MurmurHost = {
 type Watch = {
   /** A title is owed once a prompt or a summary says what the terminal is for (a new session). */
   owed: boolean
+  /** The mission (summary or prompt) last asked for, so it isn't asked for again unchanged. */
+  tried: string | null
+  /**
+   * The root session the agent's summary was written in (as `work.session`); undefined when
+   * unknown, as after a runner restart. A summary of an earlier session says nothing of
+   * this one's mission.
+   */
+  summarySession: string | null | undefined
   /** The program in a plain shell's foreground, as a key, and since when; null at the prompt. */
   program: { readonly key: string | null; readonly since: number }
   /** A shell's description is owed (its directory changed, or it has none yet) and not built. */
@@ -467,26 +504,46 @@ export class Murmur {
     const subject = this.host.subject(terminalId)
     if (!subject?.agent) return
     const watch = this.watch(terminalId)
-    if (told.session) watch.owed = true
+    if (told.session) {
+      watch.owed = true
+      watch.tried = null
+    }
     // The title waits for a prompt to say what the terminal is for (its mission) or for the
     // agent's first summary; one in the making is not asked for again at each report. Once
     // it is titled, only a summary retitles it: never a bare terse prompt, a compaction or
     // a drift, which nudge the agent to summarize instead.
+    // A mission is asked for once, whatever comes of it: a title murmur rejected, or never
+    // gave as it was busy, isn't asked for again at every report, but when something new
+    // arrives (a summary, a new session, or other words for the mission).
+    const mission = this.missionOf(subject)
     if (
       (watch.owed || subject.naming.murmur === null) &&
-      this.missionOf(subject) !== undefined &&
+      mission !== undefined &&
+      mission !== watch.tried &&
       !this.descriptions.busy(terminalId)
     ) {
       watch.owed = false
+      watch.tried = mission
       this.ask(terminalId, this.times.settleMs)
     }
   }
 
-  // What the terminal can be titled from: its agent's summary, else the first substantial
-  // prompt it was given; undefined while it has neither.
+  // The agent's summary, if it was written in the root session now running; one of an
+  // earlier session (before a /clear) says nothing of this one. Unknown where it was
+  // written (after a runner restart), it counts once the session has had a prompt.
+  private currentSummary(subject: MurmurSubject): string | null {
+    const { summary } = subject.naming
+    if (!summary) return null
+    const session = subject.work?.session ?? null
+    const written = this.watch(subject.summary.id).summarySession
+    if (written === undefined) return subject.work?.first ? summary : null
+    return written === session ? summary : null
+  }
+
+  // What the terminal can be titled from: its agent's current summary, else the first
+  // substantial prompt it was given; undefined while it has neither.
   private missionOf(subject: MurmurSubject): string | undefined {
-    if (subject.naming.summary) return subject.naming.summary
-    return promptsOf(subject.work).find(substantial)
+    return this.currentSummary(subject) ?? promptsOf(subject.work).find(substantial)
   }
 
   /**
@@ -497,7 +554,9 @@ export class Murmur {
     if (!this.usable) return
     const subject = this.host.subject(terminalId)
     if (!subject?.agent) return
-    this.watch(terminalId)
+    const watch = this.watch(terminalId)
+    watch.summarySession = subject.work?.session ?? null
+    watch.tried = subject.naming.summary
     this.ask(terminalId, this.times.settleMs)
   }
 
@@ -539,6 +598,8 @@ export class Murmur {
     if (!watch) {
       watch = {
         owed: false,
+        tried: null,
+        summarySession: undefined,
         program: { key: null, since: Date.now() },
         shellOwed: false,
         since: Date.now(),
@@ -552,11 +613,13 @@ export class Murmur {
   private catchUp(): void {
     for (const subject of this.host.subjects()) {
       if (subject.naming.murmur !== null) continue
-      if (subject.agent && this.missionOf(subject) === undefined) {
+      const mission = subject.agent ? this.missionOf(subject) : undefined
+      if (subject.agent && mission === undefined) {
         this.watch(subject.summary.id).owed = true
         continue
       }
       const watch = this.watch(subject.summary.id)
+      if (mission !== undefined) watch.tried = mission
       if (!subject.agent) watch.shellOwed = true
       this.ask(subject.summary.id, subject.agent ? this.times.settleMs : this.times.shellSettleMs)
     }
@@ -609,7 +672,7 @@ export class Murmur {
       plan: facts.plan,
       work: now.work,
       reply,
-      summary: now.naming.summary,
+      summary: this.currentSummary(now),
       previous: now.naming.murmur,
     })
     if (!digest) return undefined

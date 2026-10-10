@@ -8,7 +8,7 @@ import type { Activity } from "../engines/activity.js"
 import { DownloadError, download } from "../engines/download.js"
 import { aborted, engineStatus, fetchEngine, removeContents } from "../engines/install.js"
 import { readManifest, type Artifact, type Manifest } from "../engines/manifest.js"
-import { Server, token, type Launch, type ServerSpec } from "../engines/server.js"
+import { Server, token, type Launch, type Running, type ServerSpec } from "../engines/server.js"
 import { EngineError, engineFolder, exists, programFile } from "../engines/unpack.js"
 import { Watchers } from "../engines/watchers.js"
 import { DomainError } from "../errors.js"
@@ -16,6 +16,7 @@ import type { MurmurSettingsChange } from "../workspaces/store.js"
 import type { Description, Describer, Digest } from "./describer.js"
 import { parseDescription } from "./description.js"
 import { candidates, parseDevices, type Device } from "./devices.js"
+import { parseVmStat } from "./memory.js"
 import { messages, responseFormat, type Message } from "./prompt.js"
 import { redactDigest } from "./redact.js"
 
@@ -62,6 +63,8 @@ export type MurmurOptions = {
   readonly freeMemory?: () => number
   /** How long one description may take before the engine is taken to be stuck. */
   readonly requestMs?: number
+  /** How long the engine may take to start and load the model. */
+  readonly startMs?: number
   readonly now?: () => number
 }
 
@@ -107,11 +110,25 @@ const dropped = (signal: AbortSignal | undefined): Promise<void> =>
 
 const mebibyte = 1024 * 1024
 
-// The computer's free memory. macOS counts only never-used pages as free and keeps the rest
-// as cache, so it always looks short; there the GPU's own figure (Metal reports its
-// working set in `--list-devices`) is what jobs wait on.
-const computerFreeMemory = (): number =>
-  process.platform === "darwin" ? Number.POSITIVE_INFINITY : freemem()
+// macOS counts only never-used pages as free and keeps the rest as cache, so `os.freemem()`
+// always looks short there, and Metal's figure in `--list-devices` is per process and never
+// short. `vm_stat` tells what can be had; if it can't be read, nothing is held back.
+const readVmStat = (signal: AbortSignal | undefined): Promise<number> =>
+  new Promise((resolve) => {
+    execFile(
+      "vm_stat",
+      [],
+      { timeout: 5000, windowsHide: true, ...(signal && { signal }) },
+      (_error, stdout) => resolve(parseVmStat(stdout) ?? Number.POSITIVE_INFINITY),
+    )
+  })
+
+// What a digest is, as far as telling one terminal's from another's: for keeping count of
+// the titles refused for it.
+const digestKey = (digest: Digest): string =>
+  digest.kind === "agent"
+    ? JSON.stringify(["agent", digest.project, digest.folder, digest.branch, digest.prompts.at(0)])
+    : JSON.stringify(["shell", digest.project, digest.folder, digest.command])
 
 // Shown, with Try again, when murmur is installed but no check passed: a check that was
 // cancelled, or a runner that restarted after one failed.
@@ -163,6 +180,13 @@ export class Murmur implements Describer {
   // While the engine being replaced is removed and the new one unpacked, a refresh must not
   // bring the old folder back.
   private replacing = false
+  // Counts swaps of the engine, so a look at the disk that spans one is not believed.
+  private swaps = 0
+  private removal: Promise<void> | undefined
+  // Free memory on macOS, read a moment ago.
+  private memory: { readonly at: number; readonly bytes: number } | undefined
+  // Titles refused for a terminal in a row, and until when it is not asked again.
+  private readonly refusals = new Map<string, { count: number; until: number }>()
 
   constructor(
     private readonly settings: MurmurSettingsStore,
@@ -185,7 +209,7 @@ export class Murmur implements Describer {
       ...(this.options.launch && { launch: this.options.launch }),
       idleMs: idleMs ?? defaultIdleMs,
       // A model on an iGPU loads in seconds; this is for a slow disk.
-      startMs: 120_000,
+      startMs: this.options.startMs ?? 120_000,
     })
   }
 
@@ -231,16 +255,20 @@ export class Murmur implements Describer {
 
   /** Reads the manifest and what is on disk again, as either may have changed. Writes nothing. */
   async refresh(): Promise<void> {
+    const swaps = this.swaps
     const manifest = await readManifest(this.options.engine)
     const { ready, folder } = await engineStatus(
       this.directory,
       manifest,
       programFile("llama-server"),
     )
-    this.modelReady = manifest !== undefined && (await exists(this.modelPath()))
+    const modelReady = manifest !== undefined && (await exists(this.modelPath()))
+    // A swap of the engine began or ended meanwhile: what was read may be of the old one.
+    if (this.swaps !== swaps || this.replacing) return
+    this.modelReady = modelReady
     this.manifest = manifest
     this.engineReady = ready
-    this.engineDir = this.replacing ? undefined : folder
+    this.engineDir = folder
   }
 
   /** Loads the saved state at start; the first watch waits for it. */
@@ -378,10 +406,17 @@ export class Murmur implements Describer {
   }
 
   /** Removes the engine and the model, and turns murmur off by choice. */
-  async uninstall(): Promise<void> {
+  uninstall(): Promise<void> {
     this.assertOpen()
-    if (this.uninstalling) throw new DomainError("CONFLICT", "Murmur is already being removed.")
+    if (this.uninstalling)
+      return Promise.reject(new DomainError("CONFLICT", "Murmur is already being removed."))
     this.uninstalling = true
+    // Kept, so closing waits for it instead of closing the store under it.
+    this.removal = this.removeAll()
+    return this.removal
+  }
+
+  private async removeAll(): Promise<void> {
     try {
       await this.cancel()
       // The runner may have closed while the install ended.
@@ -429,6 +464,7 @@ export class Murmur implements Describer {
     this.running?.controller.abort()
     this.wake()
     await this.settled()
+    await this.removal?.catch(() => {})
     await this.loading
     await this.server.close()
     this.watchers.finish()
@@ -466,6 +502,7 @@ export class Murmur implements Describer {
             // refresh must not bring one back until the new one is there.
             replacing: async () => {
               this.replacing = true
+              this.swaps += 1
               this.engineDir = undefined
               this.changed()
               await this.server.stop()
@@ -473,6 +510,7 @@ export class Murmur implements Describer {
           })
         } finally {
           this.replacing = false
+          this.swaps += 1
         }
         await this.refresh()
       }
@@ -544,7 +582,9 @@ export class Murmur implements Describer {
     chat: readonly Message[],
     signal: AbortSignal,
   ): Promise<Description | undefined> {
-    const running = await server.acquire(config)
+    const running = await this.started(server, config, signal)
+    // A stuck engine must not hold every job behind it.
+    const limit = AbortSignal.any([signal, AbortSignal.timeout(this.options.requestMs ?? 60_000)])
     const response = await server.request(running, "/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -554,22 +594,57 @@ export class Murmur implements Describer {
       body: JSON.stringify({
         messages: chat,
         temperature: 0,
-        max_tokens: 40,
+        max_tokens: 64,
         stream: false,
         response_format: responseFormat,
       }),
-      // A stuck engine must not hold every job behind it.
-      signal: AbortSignal.any([signal, AbortSignal.timeout(this.options.requestMs ?? 60_000)]),
+      signal: limit,
     })
     if (!response.ok)
       throw new EngineError(server.explain(running, `the engine answered ${response.status}`))
     server.touch(running)
-    const body = (await response.json().catch(() => undefined)) as
-      | { choices?: { message?: { content?: unknown } }[] }
-      | undefined
+    let body: { choices?: { message?: { content?: unknown } }[] } | undefined
+    try {
+      body = (await response.json()) as typeof body
+    } catch (error) {
+      // An answer cut off by the time limit is a stuck engine, as much as no answer.
+      if (limit.aborted) throw error
+    }
     const content = body?.choices?.[0]?.message?.content
-    const description = typeof content === "string" ? parseDescription(content) : undefined
-    return description
+    // The model is held to what it was shown: a title that copies an example is refused.
+    return typeof content === "string"
+      ? parseDescription(content, chat.map((message) => message.content).join("\n"))
+      : undefined
+  }
+
+  // The running server, started if need be: it takes no longer than `startMs` nor than the
+  // job's own signal, so an engine that hangs while loading holds no one.
+  private async started(
+    server: Server<Config, Facts>,
+    config: Config,
+    signal: AbortSignal,
+  ): Promise<Running<Facts>> {
+    const bound = AbortSignal.any([signal, AbortSignal.timeout(this.options.startMs ?? 90_000)])
+    const acquiring = server.acquire(config)
+    acquiring.catch(() => {})
+    const expired = new Promise<never>((_, reject) => {
+      const fail = () =>
+        reject(
+          signal.aborted
+            ? signal.reason
+            : new EngineError("Murmur's engine took too long to start."),
+        )
+      if (bound.aborted) fail()
+      else bound.addEventListener("abort", fail, { once: true })
+    })
+    expired.catch(() => {})
+    try {
+      return await Promise.race([acquiring, expired])
+    } catch (error) {
+      // One that hung is ended; one that only lost its job carries on loading for the next.
+      if (!signal.aborted) void server.stop()
+      throw error
+    }
   }
 
   /**
@@ -595,10 +670,12 @@ export class Murmur implements Describer {
         const config = { folder, model: this.modelPath(), device: device.id }
         // The first run loads the model and warms up the GPU, which later jobs do not pay for.
         // eslint-disable-next-line no-await-in-loop -- One device at a time.
-        if (!(await this.complete(config, server, chat, limit))) throw new EngineError("No title.")
+        if (!(await this.complete(config, server, chat, limit)))
+          throw new EngineError("The model's reply was no usable title.")
         const started = performance.now()
         // eslint-disable-next-line no-await-in-loop -- One device at a time.
-        if (!(await this.complete(config, server, chat, limit))) throw new EngineError("No title.")
+        if (!(await this.complete(config, server, chat, limit)))
+          throw new EngineError("The model's reply was no usable title.")
         return {
           device: device.name.slice(0, 256),
           integrated: device.kind === "igpu",
@@ -656,9 +733,19 @@ export class Murmur implements Describer {
     }
   }
 
-  private lowMemory(): boolean {
-    const free = (this.options.freeMemory ?? computerFreeMemory)() / mebibyte
+  private async lowMemory(signal: AbortSignal | undefined): Promise<boolean> {
+    const free = (await this.freeBytes(signal)) / mebibyte
     return free < (this.options.minFreeMiB ?? 2048)
+  }
+
+  private async freeBytes(signal: AbortSignal | undefined): Promise<number> {
+    if (this.options.freeMemory) return this.options.freeMemory()
+    if (process.platform !== "darwin") return freemem()
+    const now = Date.now()
+    if (this.memory && now - this.memory.at < 5000) return this.memory.bytes
+    const bytes = await readVmStat(signal)
+    this.memory = { at: now, bytes }
+    return bytes
   }
 
   private async job(
@@ -666,12 +753,16 @@ export class Murmur implements Describer {
     signal: AbortSignal | undefined,
   ): Promise<Description | undefined> {
     const chat = messages(redactDigest(digest))
+    const key = digestKey(digest)
     const retryMs = this.options.retryMs ?? 15_000
     for (;;) {
       if (signal?.aborted || !this.usable()) return undefined
       if (this.clock() < this.refusedUntil) return undefined
+      // A terminal whose titles keep being refused is left alone for a while; the others aren't.
+      if (this.clock() < (this.refusals.get(key)?.until ?? 0)) return undefined
       // Waits for voice to finish and for memory to come back, then looks again.
-      if (this.options.voice?.busy() || this.lowMemory()) {
+      // eslint-disable-next-line no-await-in-loop -- One look at a time.
+      if (this.options.voice?.busy() || (await this.lowMemory(signal))) {
         // eslint-disable-next-line no-await-in-loop -- One look at a time.
         await this.pause(retryMs, signal)
         continue
@@ -697,6 +788,7 @@ export class Murmur implements Describer {
         // eslint-disable-next-line no-await-in-loop -- One job at a time.
         const description = await this.complete(config, this.server, chat, controller.signal)
         this.failures = 0
+        this.refused(key, description === undefined)
         return description
       } catch {
         if (signal?.aborted || this.closed) return undefined
@@ -710,6 +802,24 @@ export class Murmur implements Describer {
         signal?.removeEventListener("abort", onAbort)
         if (this.current === controller) this.current = undefined
       }
+    }
+  }
+
+  // Counts the titles refused for a terminal in a row; from the second, like a failure, it is
+  // not asked again for a while, longer each time.
+  private refused(key: string, refused: boolean): void {
+    if (!refused) {
+      this.refusals.delete(key)
+      return
+    }
+    const count = (this.refusals.get(key)?.count ?? 0) + 1
+    const wait = count < 2 ? 0 : (this.options.backoffMs ?? 30_000) * 2 ** Math.min(count - 2, 4)
+    this.refusals.delete(key)
+    this.refusals.set(key, { count, until: this.clock() + wait })
+    // Bounded: the longest-quiet terminals are forgotten first.
+    for (const old of this.refusals.keys()) {
+      if (this.refusals.size <= 64) break
+      this.refusals.delete(old)
     }
   }
 
@@ -737,7 +847,9 @@ export class Murmur implements Describer {
       if (!signal.aborted) this.failed()
       return undefined
     }
-    if (device.freeMiB < (this.options.minFreeMiB ?? 2048)) return "wait"
+    // Metal's figure is this process's own working set, which says nothing of the computer's.
+    if (process.platform !== "darwin" && device.freeMiB < (this.options.minFreeMiB ?? 2048))
+      return "wait"
     this.cached = { device: device.id }
     return { folder, model, device: device.id }
   }

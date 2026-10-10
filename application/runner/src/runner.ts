@@ -45,7 +45,7 @@ export type RunnerOptions = {
     readonly directory?: string
   }
   /**
-   * Murmur's engine, which writes terminals' titles and summaries: `engine` is the path to
+   * Murmur's engine, which writes terminals' titles: `engine` is the path to
    * its manifest (`engine.json`), `source` where its archive is, an https URL ending in `/`
    * or a folder, and `directory` where it and the model install, a `murmur` folder beside
    * the database by default. Without an engine murmur is unavailable and nothing is described.

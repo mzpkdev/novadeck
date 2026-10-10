@@ -75,9 +75,15 @@ describe("the digest of an agent's terminal", () => {
     })
   })
 
-  it("is none before the person has prompted", () => {
-    expect(agentDigest({ ...input, work: freshWork("claude:s1") })).toBeNull()
-    expect(agentDigest({ ...input, work: null })).toBeNull()
+  it("is none before the person has prompted and the agent has summarized", () => {
+    const bare = { ...input, summary: null }
+    expect(agentDigest({ ...bare, work: freshWork("claude:s1") })).toBeNull()
+    expect(agentDigest({ ...bare, work: null })).toBeNull()
+    // A summary alone is enough.
+    expect(agentDigest({ ...input, work: null })).toMatchObject({
+      prompts: [],
+      summary: "Fixes the login cookie.",
+    })
   })
 
   it("shows the first prompt beside the recent ones once it left them, the current one last", () => {
@@ -195,7 +201,7 @@ describe("the digest of a plain shell", () => {
     expect(kept).toHaveLength(screenRows)
     expect(kept.at(-1)).toBe("row 149")
     expect(screenOf(["\u001b[1mbold\u001b[0m"])).toEqual(["bold"])
-    expect(screenOf(["x".repeat(5000)])[0]!.length).toBeLessThanOrEqual(1000)
+    expect(screenOf(["x".repeat(20_000)])[0]!.length).toBeLessThanOrEqual(8000)
   })
 
   it("joins the rows the terminal wrapped into the line they are, so a split value is whole", () => {
@@ -209,7 +215,7 @@ describe("the digest of a plain shell", () => {
   })
 
   it("cuts lines only at a generous safety cap, leaving the redaction its whole value", () => {
-    const long = `KEY=${"a".repeat(600)}`
+    const long = `KEY=${"a".repeat(3000)}`
     expect(screenOf([long])[0]).toBe(long)
   })
 
@@ -616,6 +622,144 @@ describe("when an agent's terminal is titled", () => {
   })
 })
 
+describe("a mission murmur could not title", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("is asked for once, however many reports follow, until something new arrives", async () => {
+    const { murmur, describer, change } = create(
+      { work: work(), activity: working() },
+      new FakeDescriber({ reply: () => undefined }),
+    )
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    expect(describer.jobs).toHaveLength(1)
+    // Hook after hook, status line after status line: no further call.
+    for (let count = 0; count < 20; count += 1) {
+      murmur.reported("a", report())
+      // eslint-disable-next-line no-await-in-loop -- Time passes between reports.
+      await settle(500)
+    }
+    expect(describer.jobs).toHaveLength(1)
+    // The same mission among more prompts is not new; other words for it are.
+    change({ work: work({ recent: ["Fix the login bug", "hows going?"] }) })
+    murmur.reported("a", report())
+    await settle()
+    expect(describer.jobs).toHaveLength(1)
+    change({ work: work({ first: "hey!", recent: ["hey!", "Add paging to the users API"] }) })
+    murmur.reported("a", report())
+    await settle()
+    expect(describer.jobs).toHaveLength(2)
+    // A summary is new, and so is a new session.
+    change({ naming: { ...unnamed, summary: "Fixes the login cookie." } })
+    murmur.summarized("a")
+    await settle()
+    expect(describer.jobs).toHaveLength(3)
+    for (let count = 0; count < 10; count += 1) murmur.reported("a", report())
+    await settle()
+    expect(describer.jobs).toHaveLength(3)
+    change({
+      naming: unnamed,
+      work: work({
+        session: "claude:s2",
+        first: "Write the docs now",
+        recent: ["Write the docs now"],
+      }),
+    })
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    expect(describer.jobs).toHaveLength(4)
+  })
+})
+
+describe("a summary across root sessions", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("is the mission only in the session it was written in: a new session is titled from its own", async () => {
+    const { murmur, describer, change } = create({ work: work(), activity: idle("ok") })
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    change({
+      naming: { ...unnamed, murmur: { title: "Title 1" }, summary: "Fixes the login cookie." },
+    })
+    murmur.summarized("a")
+    await settle()
+    expect(describer.jobs).toHaveLength(2)
+    expect(describer.digests[1]).toMatchObject({ summary: "Fixes the login cookie." })
+    // /clear: a new session, with fresh work. Its old summary is no mission and no input.
+    change({ work: freshWork("claude:s2") })
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    expect(describer.jobs).toHaveLength(2)
+    change({
+      work: work({
+        session: "claude:s2",
+        first: "Write the release docs",
+        latest: "Write the release docs",
+        recent: ["Write the release docs"],
+      }),
+    })
+    murmur.reported("a", report())
+    await settle(5_000)
+    expect(describer.jobs).toHaveLength(3)
+    expect(describer.digests[2]).toMatchObject({
+      prompts: ["Write the release docs"],
+      summary: null,
+    })
+  })
+
+  it("makes a digest of a current summary alone, with no prompt yet", async () => {
+    const { murmur, describer, change } = create({
+      work: freshWork("claude:s1"),
+      activity: working(),
+    })
+    change({ naming: { ...unnamed, summary: "Fixes the login cookie." } })
+    murmur.summarized("a")
+    await settle()
+    expect(describer.digests[0]).toMatchObject({ summary: "Fixes the login cookie.", prompts: [] })
+    expect(
+      agentDigest({
+        harness: "claude",
+        projectFolder: undefined,
+        cwd: "/w",
+        branch: null,
+        plan: null,
+        work: freshWork("claude:s1"),
+        reply: null,
+        summary: null,
+        previous: null,
+      }),
+    ).toBeNull()
+  })
+
+  it("is counted after a runner restart, where it was written is unknown, once the session had a prompt", async () => {
+    const { describer, subjects, change } = create({ agent: null })
+    subjects.set("b", {
+      ...subjects.get("a")!,
+      summary: { id: "b", sessionId: "s", cwd: "/w" } as MurmurSubject["summary"],
+      agent: "claude",
+      activity: idle("ok"),
+      work: freshWork("claude:s1"),
+      naming: { ...unnamed, summary: "Left over." },
+    })
+    change({ program: { name: "bash", argv: null } })
+    describer.setUsable(false)
+    describer.setUsable(true)
+    await settle(300)
+    // No prompt in this session yet: the summary is not known to be its own.
+    expect(describer.digests.filter((digest) => digest.kind === "agent")).toHaveLength(0)
+  })
+})
+
 describe("a prompt that says what a terminal is for", () => {
   it("has at least three words and is no greeting", () => {
     for (const terse of [
@@ -625,10 +769,47 @@ describe("a prompt that says what a terminal is for", () => {
       "ok",
       "thanks a lot",
       "hello there",
+      "cześć, co tam słychać",
+      "hej, jak leci?",
+      "siema co tam",
+      "dzięki, świetna robota",
+      "sounds good, thanks!",
+      "yes do it",
+      "go on please",
+      "no, the other one",
+      "ok thanks, bye",
+      "yes please do that",
+      "please continue",
+      "continue",
+      "/review 130",
+      "/clear",
+      "fix #131",
+      "fix tests",
+      "bump deps",
       "",
     ])
       expect(substantial(terse), terse).toBe(false)
     for (const mission of [
+      "przejrzyj PR 130",
+      "review PR 130",
+      "zrób review PR 130",
+      "dodaj tryb ciemny",
+      "test the login flow",
+      "testing the new parser",
+      "ping the other agent",
+      "hello world app",
+      "ok fix the tests",
+      "ok, now deploy it",
+      "hey can you help",
+      "lgtm, merge it",
+      "write release notes",
+      "refactor manager.ts",
+      "rebase on main",
+      "test e2e suite fails",
+      "修复登录错误",
+      "テストを直して",
+      "로그인 버그 수정",
+      "แก้บั๊กการเข้าสู่ระบบ",
       "Fix the login bug",
       "add pagination to /users",
       "refactor the store, please",

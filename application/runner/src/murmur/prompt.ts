@@ -95,11 +95,16 @@ export const messages = (digest: Digest): Message[] => {
         head(digest.summary.trim(), budget.summary),
       )
     lines.push(...previous(digest))
-    lines.push("", "CURRENT prompt from the person (label this, in its language):")
-    lines.push(current === undefined ? "(none yet)" : head(current.trim(), budget.current))
+    const summarized = digest.summary !== null && digest.summary.trim() !== ""
+    // With no prompt at all, as when an agent's own summary drives the title, there is no
+    // current prompt to point at.
+    if (current !== undefined) {
+      lines.push("", "CURRENT prompt from the person (label this, in its language):")
+      lines.push(head(current.trim(), budget.current))
+    }
     lines.push(
       "",
-      digest.summary !== null && digest.summary.trim() !== ""
+      summarized
         ? "Write the title in the language of the agent's summary above."
         : "Write the title in the language of the CURRENT prompt above.",
     )

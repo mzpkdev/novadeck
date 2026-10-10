@@ -92,6 +92,8 @@ const sounds = (name: string): boolean => {
     .split(/[^a-z0-9]+/)
     .filter(Boolean)
   const last = words.at(-1)
+  // npm's `_auth` is a credential; a plain `auth` or `SSH_AUTH_SOCK` is not.
+  if (/(^|_)_auth$/i.test(name) || /^_auth$/i.test(name)) return true
   if (last !== undefined && notSecret.has(last)) return last === "id" && words.includes("private")
   if (words.some((word) => secretInside.test(word))) return true
   if (words.some((word) => secretWords.has(word))) return true
@@ -104,15 +106,24 @@ const secretValue = (value: string): boolean => {
   if (bare === "" || bare.includes(redacted)) return false
   if (/^[/~]|^\.\.?\//.test(bare)) return false
   if (/^\d{1,7}$/.test(bare)) return false
+  // A reference, a placeholder or code that reads a secret from elsewhere is not one.
+  if (/^(\$|<|\{\{|%[A-Za-z_]+%)/.test(bare)) return false
+  if (/process\.env|os\.environ|import\.meta|getenv|secrets\./.test(bare)) return false
+  if (/^[A-Za-z_][\w.]*\(/.test(bare)) return false
+  if (/^[A-Za-z_]+(?:\.[A-Za-z_]+)+[,;)]?$/.test(bare)) return false
   return !plain.has(bare.toLowerCase())
 }
 
-const qualifies = (text: string): boolean =>
-  text.length >= 40 &&
-  /[a-z]/.test(text) &&
-  /[A-Z]/.test(text) &&
-  text.replaceAll(/\D/g, "").length >= 3 &&
-  !/[a-z]{7}/.test(text)
+const qualifies = (text: string): boolean => {
+  if (text.length < 40 || !/[a-z]/.test(text) || !/[A-Z]/.test(text) || /[a-z]{7}/.test(text))
+    return false
+  const digits = text.replaceAll(/\D/g, "").length
+  // Standard base64 has `+`, `/` and `=`, which words and identifiers don't. A path has words
+  // between its slashes; a key's segments are not words.
+  const marked = /[+/]|=$/.test(text)
+  if (text.includes("/") && text.split("/").some((part) => /^[a-z]{4,}$/.test(part))) return false
+  return marked ? digits >= 1 : digits >= 3
+}
 
 const quoted = `"[^"\\n]*"|'[^'\\n]*'`
 
@@ -133,6 +144,13 @@ const rules: readonly Rule[] = [
   [new RegExp(`(?<![\\w])${spaced("npm_")}${wrapped("A-Za-z0-9", 20)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("pypi-")}${wrapped("A-Za-z0-9_=-", 20)}`, "g"), mask],
   [new RegExp(`(?<![\\w])${spaced("AIza")}${wrapped(url, 30)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])SG\\.${wrapped(url, 16)}\\.${wrapped(url, 16)}`, "g"), mask],
+  // A Discord bot token: three parts, the first the user id's digits in base64.
+  [
+    /(?<![\w.-])([A-Za-z0-9_-]{18,32})\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}/g,
+    (all, id) =>
+      /^\d{17,20}$/.test(Buffer.from(id, "base64url").toString("utf8")) ? redacted : all,
+  ],
   [new RegExp(`${spaced("AGE-SECRET-KEY-1")}${wrapped("A-Z0-9", 20)}`, "g"), mask],
   [new RegExp(`(?<![\\w])(?:AKIA|ASIA)(?:[0-9A-Z]\\n?){16}`, "g"), mask],
   [new RegExp(`(?<![\\w])xox[abeoprs]-${wrapped("A-Za-z0-9-", 10)}`, "g"), mask],
@@ -144,7 +162,16 @@ const rules: readonly Rule[] = [
   ],
   // user:password@host in any URL, even with no user and with a newline before the @.
   [
-    /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:(?:[^\s/]*\n){0,6}[^\s/]*@/gi,
+    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*:(?:[^\s/]*\n){0,6}[^\s/]*)@/gi,
+    (all, scheme, info) => {
+      // A newline after `host:port` is a line of output, and the next row begins with an @.
+      if (info.includes("\n") && /^[\w.-]+:\d{1,5}$/.test(info.split("\n")[0] ?? "")) return all
+      return `${scheme}${redacted}@`
+    },
+  ],
+  // A key as the whole userinfo, as Sentry's DSN has it.
+  [
+    /\b([a-z][a-z0-9+.-]*:\/\/)(?:[A-Za-z0-9]{16,}|[A-Za-z0-9]{12,}(?=@[^\s/]*(?:sentry|ingest)))@/gi,
     (_all, scheme) => `${scheme}${redacted}@`,
   ],
   // A secret in a URL's query.
@@ -164,7 +191,18 @@ const rules: readonly Rule[] = [
     (all, scheme, value) =>
       /\d/.test(value) || value.length >= 16 ? `${scheme} ${mask(value)}` : all,
   ],
+  // aws configure asks for the key by name.
+  [/(\bSecret Access Key[^:\n]*:[ \t]*)(\S+)/gi, (_all, head) => `${head}${redacted}`],
+  // AUTH=Basic dXNlcjpwYXNz, where the scheme says it is a credential.
+  [
+    /([=:][ \t]*)(Basic|Bearer)[ \t]+[A-Za-z0-9+/=._~-]{8,}/g,
+    (_all, mark, scheme) => `${mark}${scheme} ${redacted}`,
+  ],
   // Command lines that take a password in their own way.
+  [/(\bredis-cli\b[^\n]*?\s-a\s+)(?!-)(\S+)/g, (_all, head) => `${head}${redacted}`],
+  [/(\bhtpasswd\b[^\n]*?\s-\w*b\w*\s+\S+\s+\S+\s+)(\S+)/g, (_all, head) => `${head}${redacted}`],
+  [/(\bopenssl\b[^\n]*?\s-k\s+)(?!-)(\S+)/g, (_all, head) => `${head}${redacted}`],
+  [/(\bopenssl\b[^\n]*?\s-pass(?:in|out)?\s+pass:)(\S+)/g, (_all, head) => `${head}${redacted}`],
   [
     /(\b(?:mysql|mysqladmin|mysqldump)\w*\b[^\n]*?\s-p)(?=\S)(\S+)/g,
     (_all, head) => `${head}${redacted}`,
@@ -220,17 +258,17 @@ const rules: readonly Rule[] = [
   ],
   // A hash of a secret is as good as the secret; a commit id or a file's checksum is not one.
   [
-    /(?<![0-9a-zA-Z_])(?<!sha(?:1|256|512)[:-])(?<!commit )(?:[0-9a-f]\n?){32,}(?![0-9a-zA-Z_])(?!\s{2}\S)/gi,
+    /(?<![0-9a-zA-Z_])(?<!sha(?:1|256|512)[:-])(?<!commit )(?<!diff-)(?:[0-9a-f]\n?){32,}(?![0-9a-zA-Z_])(?!\s{2}\S)/gi,
     (run) => {
       const length = run.replaceAll("\n", "").length
-      return length === 40 ? run : mask(run)
+      return length === 40 || length === 44 ? run : mask(run)
     },
   ],
   // Base64 long enough to hold a key. Paths, words and identifiers are long and mixed too:
   // a run needs several digits and no long word in it, and is never part of a path. Rows of
   // ordinary text beside a wrapped key stick to the run, so the part that qualifies is found.
   [
-    /(?<![\w/\\.+=-])(?<!;base64,)(?:[A-Za-z0-9+_-]\n?){40,}={0,2}(?![\w/\\.+-])/g,
+    /(?<![\w/\\.+=-])(?<!;base64,)(?!sha(?:1|256|384|512)-)(?:[A-Za-z0-9+/_-]\n?){40,}={0,2}(?![\w\\.+-])/g,
     (run) => {
       const rows = run.split("\n")
       let best: [number, number] | undefined

@@ -55,4 +55,14 @@ describe("asking for a title", () => {
     }
     expect(user(shell)).toContain("Running: tail -f app.log")
   })
+
+  it("is driven by the agent's summary when there are no prompts", () => {
+    const text = user({ ...agent, prompts: [] })
+
+    expect(text).not.toContain("CURRENT prompt from")
+    expect(text).not.toContain("(none yet)")
+    expect(text).not.toContain("Earlier prompts")
+    expect(text).toContain("Migrating the billing tables")
+    expect(text.trimEnd().split("\n").at(-1)).toMatch(/language of the agent's summary/)
+  })
 })

@@ -138,8 +138,7 @@ export const nudgeText = (current: { readonly summary: string | null }) =>
   current.summary === null
     ? "Novadeck: automatic notice, not from the user: this terminal has no summary yet. " +
       "When it suits, call Novadeck's summarize tool with a line or two on what you work " +
-      "on here, so the user and other agents can tell terminals apart; this notice needs " +
-      "no reply."
+      "on here; other agents read it in their agents listing. This notice needs no reply."
     : `Novadeck: automatic notice, not from the user: this terminal's summary is ` +
       `${JSON.stringify(shorten(current.summary, 200))}; ` +
       "if that no longer fits your work, update it with Novadeck's summarize tool, and " +

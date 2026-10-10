@@ -3,6 +3,9 @@ import { parseDescription } from "./description.js"
 
 const reply = (title: unknown) => JSON.stringify({ title })
 
+const title = (text: string, source?: string) =>
+  parseDescription(JSON.stringify({ title: text }), source)?.title
+
 describe("reading the model's title", () => {
   it("keeps a title that fits", () => {
     expect(parseDescription(reply("Upload client retries"))).toEqual({
@@ -12,6 +15,80 @@ describe("reading the model's title", () => {
 
   it("tidies whitespace, markdown, quotes and a trailing full stop", () => {
     expect(parseDescription(reply('  "**Fix** the  build."  '))).toEqual({ title: "Fix the build" })
+  })
+
+  it.each([
+    "OK button styling",
+    "Okay dialog copy",
+    "Yes/No prompt handling",
+    "Hello world example",
+    "Hi-DPI icon rendering",
+    "Hey Siri integration",
+    "Thanks page redesign",
+    "Thank you email template",
+    "Continue button fix",
+    "Continue onboarding flow",
+    "Go on-call schedule",
+    "Try again button",
+    "Keep going indicator",
+    "How are you form",
+    "Whats up endpoint",
+    "Go ahead deploy",
+    "Yesterday report export",
+    "Okta SSO login",
+  ])("keeps %s, which only begins like a chat phrase", (text) => {
+    expect(title(text)).toBeDefined()
+  })
+
+  it.each(["Hi there", "Okay sounds good", "Continue please", "Try again", "Is the build green?"])(
+    "refuses %s, which is all chat or a question",
+    (text) => {
+      expect(title(text)).toBeUndefined()
+    },
+  )
+
+  it.each([
+    "Rotating webhook keys",
+    "Billing webhook keys",
+    "Rotating billing webhook secrets",
+    "Rotating billing webhook keys rollout",
+    "Following nginx access log",
+    "Following the nginx error log",
+    "Awaria testów runnera",
+    "Walidacja formularza",
+    "Walidacja formularza logowania",
+    "Following the access log",
+    "Upload client retries",
+    "Fixing C++ build",
+    "Node.js upgrade",
+    "Testy jednostkowe runnera",
+    "Übersicht der Tests",
+    "Ошибка тестов",
+  ])("keeps %s, real work that shares words with an example", (text) => {
+    expect(title(text)).toBeDefined()
+    // With a digest that says the same words, there is no doubt it is the work.
+    expect(title(text, `about ${text}`)).toBeDefined()
+  })
+
+  it("refuses an example copied, unless the digest is about the same work", () => {
+    expect(title("Rotating billing webhook keys")).toBeUndefined()
+    expect(title("Awaria testów")).toBeUndefined()
+    expect(title("Rotating billing webhook keys", "fix the billing page")).toBeUndefined()
+    expect(title("Rotating webhook keys", "fix the billing page")).toBeUndefined()
+    expect(
+      title("Rotating billing webhook keys", "please rotate: rotating billing webhook keys"),
+    ).toBe("Rotating billing webhook keys")
+  })
+
+  it.each([
+    ["認証フローの修正", true],
+    ["修复登录页面", true],
+    ["ログイン 画面 修正", true],
+    ["修", false],
+    ["修复登录页面和注册页面的所有问题以及更多", false],
+    ["Naprawa logowania", true],
+  ])("counts %s by its characters when it has no spaces: %s", (text, valid) => {
+    expect(title(text) !== undefined).toBe(valid)
   })
 
   it("keeps titles that merely share a word with an example, or start like a chat phrase", () => {
@@ -34,7 +111,6 @@ describe("reading the model's title", () => {
     ["a greeting", reply("Hello there")],
     ["an example title", reply("Rotating billing webhook keys")],
     ["an example title in other case", reply("rotating Billing webhook KEYS.")],
-    ["an example title but for a word", reply("Rotating billing webhook")],
     ["not JSON", "Sure! A title."],
     ["a non-object", "[1]"],
     ["no title", JSON.stringify({ summary: "Fix the build" })],

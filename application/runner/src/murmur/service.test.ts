@@ -46,6 +46,7 @@ const setup = async (
     voice?: ConstructorParameters<typeof Murmur>[1]["voice"]
     freeMemory?: () => number
     requestMs?: number
+    startMs?: number
     launch?: Launch
     idleMs?: number
     now?: () => number
@@ -66,6 +67,7 @@ const setup = async (
     ...(options.voice && { voice: options.voice }),
     ...(options.freeMemory && { freeMemory: options.freeMemory }),
     ...(options.requestMs !== undefined && { requestMs: options.requestMs }),
+    ...(options.startMs !== undefined && { startMs: options.startMs }),
     ...(options.launch && { launch: options.launch }),
     ...(options.idleMs !== undefined && { idleMs: options.idleMs }),
     ...(options.now && { now: options.now }),
@@ -543,6 +545,41 @@ describe("a reply that is no title", () => {
     await context.murmur.set({ enabled: true })
     // The clock didn't move, so a back-off would still refuse.
     expect(await context.murmur.describe(digest)).toBeDefined()
+  })
+})
+
+describe("titles that keep being refused", () => {
+  it("leaves that terminal alone for a while, and no other", async ({ resources }) => {
+    const context = await installed(resources, { now: () => 1_000 })
+    await writeFile(join(context.directory, "models", "model.gguf"), "garbage")
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+    await writeFile(join(context.directory, "models", "model.gguf"), "plain")
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+
+    // Two refusals in a row: held off though the model is fine now.
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+    // Another terminal is asked as ever.
+    expect(await context.murmur.describe({ ...digest, project: "other" })).toBeDefined()
+  })
+})
+
+describe("an engine that hangs while it loads", () => {
+  it("drops the job after the start's time, and backs off", async ({ resources }) => {
+    const context = await installed(resources, { startMs: 150, now: () => 1_000 })
+    await writeFile(join(context.directory, "models", "model.gguf"), "late")
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+
+    const started = Date.now()
+
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(Date.now() - started).toBeLessThan(2000)
+    expect(await context.murmur.describe(digest)).toBeUndefined()
   })
 })
 

@@ -251,7 +251,7 @@ describe("redacting what a screen wrapped", () => {
   })
 
   it("removes a scheme://user:pass@ split before the @", () => {
-    expect(redact("https://user:secretpass\n@host/path")).not.toContain("secretpass")
+    expect(redact("https://user:secretpassword12345\n@host/path")).not.toContain("secretpassword")
   })
 
   it("removes the rest of a secret's value on the next row", () => {
@@ -262,6 +262,69 @@ describe("redacting what a screen wrapped", () => {
 
   it("keeps the rows of ordinary text apart", () => {
     const text = "commit 69231a3e0f1d2c3b4a5968778695a4b3c2d1e0f9\non task/murmur\ndone"
+    expect(redact(text)).toBe(text)
+  })
+})
+
+describe("redacting what a delta review found", () => {
+  const gone: [string, string][] = [
+    ["$ openssl rand -base64 32\nK7gNU3sdo+OL0wNhqoVWhr3g6s1xYv72ol/pe/Unols=", "K7gNU3sdo"],
+    ["AWS Secret Access Key [None]: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "wJalrXUtnFEMI"],
+    ["$ cat key.txt\nwJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "wJalrXUtnFEMI"],
+    ["redis-cli -a S3cr3tP4ss", "S3cr3tP4ss"],
+    ["redis-cli -a mypassword123 ping", "mypassword123"],
+    ["_auth=dXNlcjpwYXNzd29yZA==", "dXNlcjpwYXNz"],
+    ["export npm_config__auth=dXNlcjpwYXNz", "dXNlcjpwYXNz"],
+    [
+      "SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP",
+      "abcdefghijklmnopqrstuv",
+    ],
+    ["SENTRY_DSN=https://abc123def456@o123.ingest.sentry.io/456", "abc123def456"],
+    ["https://0123456789abcdef0123456789abcdef@o1.ingest.sentry.io/5", "0123456789abcdef"],
+    ["export AUTH=Basic dXNlcjpwYXNz", "dXNlcjpwYXNz"],
+    ["htpasswd -b .htpasswd admin hunter2", "hunter2"],
+    ["openssl enc -k mypassword", "mypassword"],
+    ["openssl enc -aes-256-cbc -pass pass:hunter2 -in a", "hunter2"],
+    [
+      "export DISCORD_BOT=MTE1ODk2NjEwNzA2NjEwNzA2Ng.GhJk12.abcdefghijklmnopqrstuvwxyzABCD",
+      "GhJk12",
+    ],
+  ]
+  it.each(gone)("removes the secret in %s", (text, secret) => {
+    const result = redact(text)
+    expect(result).not.toContain(secret)
+    expect(result).toContain(redacted)
+  })
+
+  const unchanged = [
+    "Server running at http://127.0.0.1:5173\n@novadeck/ui:dev: ready in 300ms",
+    "listening on http://localhost:3000\n@scope/pkg@1.2.3 build",
+    "ssh://git@github.com:mzpk/novadeck.git",
+    "git@github.com:mzpk/novadeck.git",
+    "password: z.string().min(8)",
+    "password = getpass()",
+    "token=os.environ['TOKEN']",
+    "SECRET_KEY = os.environ.get('SECRET_KEY')",
+    "apiKey: process.env.API_KEY,",
+    "const password = req.body.password",
+    "secret: ${{ secrets.GITHUB_TOKEN }}",
+    "  --token <TOKEN>  the token",
+    "export TOKEN=$VAR",
+    "export TOKEN=${VAR}",
+    "integrity sha512-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789==",
+    "warn: integrity sha512-K7gNU3sdo+OL0wNhqoVWhr3g6s1xYv72ol/pe/Unols=",
+    "integrity sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8w",
+    "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
+    "https://github.com/mzpk/novadeck/pull/131/files#diff-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+    "/home/mzpk/Workspace/novadeck/tasks/murmur/novadeck/application/runner/src/terminals/manager.ts",
+    "~/Projects/Novadeck2/application/runner/src/murmur",
+    "services/checkout/ServiceTest123AbcDef456Ghi789Jkl",
+    "SSH_AUTH_SOCK=/run/user/1000/ssh-agent.socket",
+    "auth=required",
+    "Basic auth enabled for user admin",
+    "Bearer token required",
+  ]
+  it.each(unchanged)("keeps %s", (text) => {
     expect(redact(text)).toBe(text)
   })
 })
