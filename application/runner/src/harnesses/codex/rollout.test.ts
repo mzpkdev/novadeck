@@ -2,10 +2,12 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import type { Report } from "../../shell/reports.js"
 import { describe, expect, it } from "../../test.js"
 import { loadProbe } from "../../testing/probes.js"
 import { apply, started } from "../activity.js"
 import type { HarnessEvent } from "../events.js"
+import { decode } from "./decode.js"
 import { followRollout, followSubagent, rolloutEvents, subagentEvents } from "./rollout.js"
 
 type Record_ = {
@@ -275,5 +277,40 @@ describe("a Codex subagent's rollout", () => {
       actor: "a1",
       startedAt: Date.parse("2026-10-03T01:03:12.000Z"),
     })
+  })
+})
+
+type Hook = { kind: string; event?: string; payload?: Record<string, unknown> }
+const named = (hook: Hook, name: string) => hook.kind === "start" && hook.event === name
+
+describe("an MCP tool approval the person cancelled, as captured", () => {
+  const scenario = (
+    loadProbe(import.meta.dirname, "ask.probe.json") as {
+      scenarios: { [name: string]: { hooksAll: Hook[]; rolloutAfter: Record_[] } }
+    }
+  ).scenarios["mcp-tool-approval-esc"]!
+  const hook = scenario.hooksAll.find((each) => named(each, "PermissionRequest"))!
+
+  it("settles the request its hook asked, as no hook says it was cancelled", () => {
+    expect(scenario.hooksAll.some((each) => named(each, "PostToolUse"))).toBe(false)
+    const [asked] = decode({
+      event: "PermissionRequest",
+      seq: 0,
+      instance: "7",
+      env: {},
+      payload: { ...hook.payload, session_id: "s" },
+    } as unknown as Report)
+    const settled = scenario.rolloutAfter
+      .flatMap((record) => rolloutEvents(JSON.stringify(record), session))
+      .filter(({ type }) => type === "attention-resolved")
+    expect(settled).toMatchObject([
+      {
+        requestId: (asked as { requestId: string }).requestId,
+        actor: null,
+        toolName: "mcp__probe__touch",
+        loose: false,
+        outcome: "settled",
+      },
+    ])
   })
 })

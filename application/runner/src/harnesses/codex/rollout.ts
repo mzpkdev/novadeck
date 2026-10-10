@@ -6,6 +6,7 @@ import type { HarnessEvent } from "../events.js"
 import { followLines } from "../follow.js"
 import {
   bounded,
+  callId,
   shortName,
   replied,
   type Harness,
@@ -49,7 +50,8 @@ const limit = (window: unknown): Limit | undefined => {
  * its hook's report never come. Codex may write a turn's records long after the turn
  * (the failed turns before a session's first good one came together), so only its id
  * says which turn ended. Each turn's `turn_context` names its `model` and reasoning
- * `effort`.
+ * `effort`. An MCP tool call's item completes however its approval went: one the person
+ * cancelled fires no hook, and the turn runs on (0.159.3), so its item settles its request.
  */
 export const rolloutEvents = (
   line: string,
@@ -115,6 +117,7 @@ export const rolloutEvents = (
     }
     case "item_completed": {
       const { type: kind, text } = (fields.item ?? {}) as { type?: unknown; text?: unknown }
+      if (kind === "McpToolCall") return mcpSettled(base, fields.item as Record<string, unknown>)
       if (kind !== "Plan" || typeof text !== "string" || !text) return []
       const { text: plan, truncated } = bounded(text)
       return [
@@ -129,6 +132,26 @@ export const rolloutEvents = (
     default:
       return []
   }
+}
+
+// The request an MCP tool call's completed item settles, by the tool its hooks name.
+const mcpSettled = (
+  base: { agent: "codex"; sessionId: string; instance: string | null; startedAt: number },
+  { server, tool, arguments: input }: Record<string, unknown>,
+): HarnessEvent[] => {
+  if (typeof server !== "string" || !server || typeof tool !== "string" || !tool) return []
+  const toolName = `mcp__${server}__${tool}`
+  return [
+    {
+      type: "attention-resolved",
+      ...base,
+      requestId: callId(null, toolName, input),
+      actor: null,
+      toolName,
+      loose: false,
+      outcome: "settled",
+    },
+  ]
 }
 
 /** The plan a rollout line proposes, as `rolloutEvents` reads it. */
