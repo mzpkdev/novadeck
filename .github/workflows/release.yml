@@ -399,15 +399,20 @@ jobs:
           fi
           # The flags the runner starts the server with (application/runner/src/murmur/service.ts):
           # with a model that is not there, the server must get as far as complaining of the
-          # model, not of an argument it does not know or cannot read. --exit-with-stdin ends
-          # the server (with status 0) when stdin closes, before the model loads, so stdin is
-          # held open by a sleep that outlasts the model error. The server may then wait for
-          # that stdin to close before it exits, so its status says nothing; its output does.
+          # model, not of an argument it does not know or cannot read, and exit with a failure
+          # at once even though its stdin stays open, as the runner holds it. The sleep holds
+          # stdin open for longer than the server may take to fail; a server that is still
+          # there when it ends has not exited on its own, and exits 0 as its stdin closes.
           flags=(--host 127.0.0.1 --port 0 --device none -ngl 999 -c 4096 -np 1 --reasoning off --exit-with-stdin)
           model="$engine/absent.gguf"
           if [[ "$RUNNER_OS" == "Windows" ]]; then model="$(cygpath -m "$engine")/absent.gguf"; fi
-          sleep 5 | "$server" "${flags[@]}" -m "$model" > "$RUNNER_TEMP/murmur-flags.txt" 2>&1 || true
+          status=0
+          sleep 5 | "$server" "${flags[@]}" -m "$model" > "$RUNNER_TEMP/murmur-flags.txt" 2>&1 || status=$?
           tr -d '\r' < "$RUNNER_TEMP/murmur-flags.txt" | tail -n 20
+          if [[ "$status" == 0 ]]; then
+            echo "::error::The server did not fail on a missing model while its stdin was open."
+            exit 1
+          fi
           if grep -q -i -E 'invalid argument|unknown argument|unrecognized|unrecognised|error while handling argument|invalid value|usage:' "$RUNNER_TEMP/murmur-flags.txt"; then
             echo "::error::The server does not take the flags the runner starts it with."
             exit 1

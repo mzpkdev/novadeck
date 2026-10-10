@@ -29,28 +29,46 @@ index d2fe10f..0bf81ce 100644
      std::string ssl_file_key  = "";                                                                         // NOLINT
      std::string ssl_file_cert = "";                                                                         // NOLINT
 diff --git a/tools/server/server.cpp b/tools/server/server.cpp
-index 871e827..71608fe 100644
+index 871e827..793a757 100644
 --- a/tools/server/server.cpp
 +++ b/tools/server/server.cpp
-@@ -13,6 +13,8 @@
- #include "log.h"
+@@ -14,12 +14,17 @@
  
  #include <atomic>
-+#include <cstdio>
-+#include <cstdlib>
  #include <clocale>
++#include <cstdlib>
  #include <exception>
  #include <signal.h>
-@@ -113,6 +115,16 @@ int llama_server(int argc, char ** argv) {
+ #include <thread> // for std::thread::hardware_concurrency
+ 
+ #if defined(_WIN32)
++#include <io.h>
+ #include <windows.h>
++#else
++#include <cerrno>
++#include <unistd.h>
+ #endif
+ 
+ static std::function<void(int)> shutdown_handler;
+@@ -113,6 +118,25 @@ int llama_server(int argc, char ** argv) {
          return 1;
      }
  
 +    // Novadeck's runner holds this server's stdin open for as long as it lives, so the
 +    // server ends with the runner even when the runner is killed without a chance to stop it.
++    // It reads the descriptor itself: a blocked fread keeps stdin's lock, which exit() needs.
 +    if (params.exit_with_stdin) {
 +        std::thread([] {
 +            char buffer[256];
-+            while (fread(buffer, 1, sizeof buffer, stdin) > 0) {}
++            for (;;) {
++#if defined(_WIN32)
++                if (_read(0, buffer, sizeof buffer) <= 0) break;
++#else
++                const ssize_t n = read(STDIN_FILENO, buffer, sizeof buffer);
++                if (n < 0 && errno == EINTR) continue;
++                if (n <= 0) break;
++#endif
++            }
 +            std::_Exit(0);
 +        }).detach();
 +    }
