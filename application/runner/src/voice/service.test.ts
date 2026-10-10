@@ -456,9 +456,13 @@ describe("transcribing a recording", () => {
     for (; hint < hints.length; hint += 1) {
       // eslint-disable-next-line no-await-in-loop -- One clip after another.
       await voice.record("owner", "clip", 0, pcm(3200))
+      const started = performance.now()
       // eslint-disable-next-line no-await-in-loop -- As above.
       const { text } = await voice.transcribe("owner", "clip", "t1")
       expect(JSON.parse(text)).toMatchObject({ prompt: null })
+      // Facts that never come are waited for half a second, no longer.
+      if (hint === 2) expect(performance.now() - started).toBeGreaterThanOrEqual(450)
+      if (hint === 2) expect(performance.now() - started).toBeLessThan(1500)
     }
   })
 

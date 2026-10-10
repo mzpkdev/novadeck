@@ -24,6 +24,8 @@ export const hintFiles = 8
  * reads of a prompt, since a long one gets copied into the transcript, or makes it up.
  */
 export const hintChars = 200
+/** The longest project name a hint gives, which leaves room in it for the rest. */
+const projectChars = 64
 
 // Folder and branch names that say nothing of what the work is about, as the folders a
 // monorepo keeps its packages in.
@@ -67,7 +69,8 @@ const lastSegment = (path: string): string =>
 const noise = (name: string): boolean => {
   const characters = [...name]
   if (characters.length < 2 || characters.length > 32) return true
-  if (/^[0-9a-f]{7,}$/i.test(name) || /[0-9a-f]{8}-[0-9a-f]{4}/i.test(name)) return true
+  // A word of the letters a to f alone, as "defaced", is a word, not a commit.
+  if (/^(?=.*\d)[0-9a-f]{7,}$/i.test(name) || /[0-9a-f]{8}-[0-9a-f]{4}/i.test(name)) return true
   const letters = characters.filter((each) => /\p{L}/u.test(each)).length
   if (letters === 0 || characters.filter((each) => /\d/.test(each)).length > letters) return true
   return /[@:]/.test(name) || generic.has(name.toLowerCase())
@@ -87,16 +90,20 @@ const listed = (names: readonly string[]): string =>
  */
 export const dictationHint = (facts: HintFacts, language: string): string => {
   const english = language === "en"
-  // Names already given, and a file's name without its extension, which says it as well.
+  // Names already given, as a file's name without its extension, which says it as well,
+  // whichever of them comes first.
   const seen = new Set<string>()
   const fresh = (name: string | null): string | null => {
-    const key = name?.trim().toLowerCase()
+    const key = name
+      ?.trim()
+      .toLowerCase()
+      .replace(/\.\p{L}{1,5}$/u, "")
     if (!name || !key || seen.has(key)) return null
     seen.add(key)
-    seen.add(key.replace(/\.\p{L}{1,5}$/u, ""))
     return name.trim()
   }
-  const project = fresh(facts.project?.trim() || null)
+  const projectName = facts.project?.trim() ?? ""
+  const project = [...projectName].length > projectChars ? null : fresh(projectName || null)
   const branchName = facts.branch === null ? "" : lastSegment(facts.branch)
   const branch = noise(branchName) ? null : fresh(branchName)
   const folderName = lastSegment(facts.cwd)
@@ -110,8 +117,12 @@ export const dictationHint = (facts: HintFacts, language: string): string => {
     }
     return names
   }
-  // Each folder's parts from the project down, as its package before its module.
-  const parts = facts.folders.flatMap((path) => path.split(/[\\/]/).map((part) => part.trim()))
+  // Each folder's parts from the project down, as its package before its module; none of
+  // one in a hidden folder, which holds tools' files, as `.github` or `.config` does.
+  const parts = facts.folders.flatMap((path) => {
+    const each = path.split(/[\\/]/).map((part) => part.trim())
+    return each.some((part) => part.startsWith(".")) ? [] : each
+  })
   const listing = [...pick(parts, hintModules), ...pick(facts.files, hintFiles)]
   const compose = (names: readonly string[]): string => {
     if (!english) {

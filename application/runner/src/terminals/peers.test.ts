@@ -48,6 +48,8 @@ describe("what peers learn of a request waiting on the person", () => {
   })
 })
 
+const file = (path: string, held = false) => ({ kind: "file" as const, path, held })
+
 describe("what a terminal's dictation hint is made of", () => {
   const summary = { cwd: "/w/repo/application/runner", sessionId: "s" } as TerminalSummary
   const peers = new TerminalPeers({
@@ -71,9 +73,9 @@ describe("what a terminal's dictation hint is made of", () => {
     const work = {
       ...freshWork("claude:s1"),
       folders: { "/w/repo/application/runner/src/voice": 3, "/w/repo/application/ui": 2 },
-      files: ["orders.ts"],
+      files: ["/w/repo/application/ui/orders.ts"],
     }
-    expect(await peers.hint(terminal({ work }), ["schema.sql"])).toEqual({
+    expect(await peers.hint(terminal({ work }), [file("/w/repo/db/schema.sql")])).toEqual({
       cwd: "/w/repo/application/runner",
       branch: null,
       folders: ["application/runner/src/voice", "application/ui"],
@@ -82,19 +84,37 @@ describe("what a terminal's dictation hint is made of", () => {
     expect(await peers.hint(terminal({}), [])).toMatchObject({ folders: [], files: [] })
   })
 
-  it("names a folder outside the project from the terminal's folder, and none outside both", async () => {
-    const elsewhere = new TerminalPeers({
+  it("names nothing outside the project, nor a file that may hold secrets", async () => {
+    const work = {
+      ...freshWork("claude:s1"),
+      folders: { "/w/repo/api": 2, "/home/me/.config/tool": 1 },
+      files: ["/w/repo/.env", "/w/repo/keys/server.pem", "/tmp/scratch/probe.ts", "/w/repo/api.ts"],
+    }
+    const shown = [
+      file("/w/repo/held.ts", true),
+      file("/w/repo/id_rsa"),
+      { kind: "image" as const, path: "/w/repo/shot.png", held: false },
+      { kind: "page" as const, path: null, held: false },
+    ]
+    expect(await peers.hint(terminal({ work }), shown)).toMatchObject({
+      folders: ["api"],
+      files: ["api.ts"],
+    })
+  })
+
+  it("names what is inside the terminal's folder for a session without a project folder", async () => {
+    const loose = new TerminalPeers({
       messaging: {} as Messaging,
       caller: () => undefined,
       terminal: () => undefined,
       running: () => [],
-      projectFolder: () => "/w/other",
+      projectFolder: () => undefined,
       stopping: () => false,
     })
     const work = {
       ...freshWork("claude:s1"),
-      folders: { "/w/repo/application/runner/src": 2, "/home/me/.config/tool": 1 },
+      folders: { "/w/repo/application/runner/src": 2, "/w/repo/docs": 1 },
     }
-    expect(await elsewhere.hint(terminal({ work }), [])).toMatchObject({ folders: ["src"] })
+    expect(await loose.hint(terminal({ work }), [])).toMatchObject({ folders: ["src"] })
   })
 })

@@ -1,8 +1,9 @@
-import { isAbsolute, relative } from "node:path"
+import { basename, isAbsolute, relative } from "node:path"
 
-import type { TerminalMessages, TerminalSummary } from "@novadeck/protocol"
+import type { CompanionItem, TerminalMessages, TerminalSummary } from "@novadeck/protocol"
 
 import { planTitle } from "../companions/content.js"
+import { secret } from "../companions/secrets.js"
 import { DomainError } from "../errors.js"
 import type { Activity } from "../harnesses/activity.js"
 import type { AgentsAnswer, Messaging, PeerAnswer, SendAnswer } from "../messaging/messaging.js"
@@ -218,27 +219,32 @@ export class TerminalPeers {
 
   /**
    * What a terminal's dictation hint is made of, but its project's name: its folder and
-   * git branch, the folders its work wrote in most, inside its project (or else its
-   * folder), never one outside both, and the files `shown` beside it, then those its work
-   * wrote in last.
+   * git branch, the folders its work wrote in most, as paths inside its project (or its
+   * own folder, without one), and the names of the files `shown` in its bar, then of
+   * those its work wrote in last. Only what is inside counts, and never a file that may
+   * hold secrets.
    */
   async hint(
     terminal: PeerTerminal,
-    shown: readonly string[],
+    shown: readonly Pick<CompanionItem, "kind" | "path" | "held">[],
   ): Promise<Omit<HintFacts, "project">> {
     const { cwd, sessionId } = terminal.summary
-    const bases = [this.options.projectFolder(sessionId), cwd]
-    const inside = (folder: string): string | undefined =>
-      bases
-        .map((base) => (base === undefined ? undefined : relative(base, folder)))
-        .find((path) => path !== undefined && !path.startsWith("..") && !isAbsolute(path))
+    const base = this.options.projectFolder(sessionId) ?? cwd
+    const inside = (path: string): string | undefined => {
+      const within = relative(base, path)
+      return within.startsWith("..") || isAbsolute(within) ? undefined : within
+    }
+    const files = [
+      ...shown.flatMap((item) => (item.kind === "file" && !item.held && item.path) || []),
+      ...(terminal.work?.files ?? []),
+    ]
     return {
       cwd,
       branch: await this.branch(cwd),
       folders: busiestFolders(terminal.work?.folders ?? {})
         .map(({ folder }) => inside(folder))
         .filter((path) => path !== undefined),
-      files: [...shown, ...(terminal.work?.files ?? [])],
+      files: files.filter((path) => inside(path) && !secret(path)).map((path) => basename(path)),
     }
   }
 

@@ -1847,16 +1847,13 @@ export class Terminals {
 
   /**
    * What a running terminal's dictation hint is made of (see `dictationHint`), but its
-   * project's name: the files shown in its bar, never one that may hold secrets, and its
-   * work's. Undefined for a terminal not running here.
+   * project's name, with the files shown in its bar. Undefined for a terminal not running
+   * here.
    */
   async hintFacts(terminalId: string): Promise<Omit<HintFacts, "project"> | undefined> {
     const record = this.records.get(terminalId)
     if (!record) return undefined
-    const shown = (this.options.items?.bar(terminalId) ?? [])
-      .filter((item) => item.kind === "file" && !item.held)
-      .map((item) => item.name)
-    return this.peers.hint(record, shown)
+    return this.peers.hint(record, this.options.items?.bar(terminalId) ?? [])
   }
 
   /**

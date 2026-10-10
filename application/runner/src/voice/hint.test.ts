@@ -32,7 +32,8 @@ describe("the dictation hint", () => {
             "packages/billing/src/invoices",
             "apps/web/src/components/checkout",
             "packages\\billing\\lib",
-            ".",
+            ".github/workflows",
+            "",
           ],
         }),
         "en",
@@ -57,7 +58,10 @@ describe("the dictation hint", () => {
         }),
         "en",
       ),
-    ).toBe("Working on Checkout, on the ledger branch, with ledger.ts and refunds.ts.")
+    ).toBe("Working on Checkout, on the ledger branch, with refunds.ts.")
+    expect(
+      dictationHint(facts({ folders: ["voice/hint"], files: ["hint.ts", "Voice.ts"] }), "en"),
+    ).toBe("With voice and hint.")
   })
 
   it("leaves out commits, ids, numbers, addresses, long names and folders every project has", () => {
@@ -80,6 +84,8 @@ describe("the dictation hint", () => {
       ),
     ).toBe("Working on Api, with routes.ts.")
     expect(dictationHint(facts({ project: "Api", branch: "main" }), "en")).toBe("Working on Api.")
+    // Letters a to f alone make a word, not a commit.
+    expect(dictationHint(facts({ branch: "fix/defaced" }), "en")).toBe("On the defaced branch.")
   })
 
   it("keeps to its caps on files and length, the first names kept", () => {
@@ -93,6 +99,10 @@ describe("the dictation hint", () => {
     expect(hint).toMatch(/^Working on Big, with averyverylongmodulename0\.ts, .* and \S+\.$/)
     const both = dictationHint(facts({ folders: ["billing"], files: long }), "en")
     expect(both).toMatch(/^With billing, averyverylongmodulename0\.ts, /)
+    // However long the project's name, the hint is not, if without it.
+    const named = facts({ project: "p".repeat(256), branch: "b".repeat(32), cwd: "c".repeat(32) })
+    expect(dictationHint({ ...named, files: long }, "en").length).toBeLessThanOrEqual(hintChars)
+    expect(dictationHint({ ...named, project: "p".repeat(64) }, "en")).toContain("p".repeat(64))
   })
 
   it("is nothing without anything to say, or only what there is", () => {

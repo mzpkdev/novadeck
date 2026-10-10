@@ -1,4 +1,4 @@
-import { basename, dirname } from "node:path"
+import { dirname } from "node:path"
 
 import type { HarnessEvent } from "../harnesses/events.js"
 import { rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
@@ -29,7 +29,7 @@ export type Work = {
   readonly latest: string | null
   /** Edits by folder, by absolute path, the `keptFolders` written in most. */
   readonly folders: { readonly [folder: string]: number }
-  /** The names of the `keptFiles` files it wrote in last, the latest first; absent until one. */
+  /** The paths of the `keptFiles` files it wrote in last, the latest first; absent until one. */
   readonly files?: readonly string[]
   readonly activeAt: number | null
 }
@@ -38,7 +38,7 @@ export type Work = {
 export const promptChars = 120
 /** How many folders' edits are kept. */
 export const keptFolders = 20
-/** How many files' names are kept. */
+/** How many files' paths are kept. */
 export const keptFiles = 8
 
 /**
@@ -92,7 +92,7 @@ export const tallied = (folders: Work["folders"], folder: string): Work["folders
   return Object.fromEntries([...others, [folder, edits]])
 }
 
-/** The file names with `file` the latest, once, kept to the `keptFiles` latest. */
+/** The file paths with `file` the latest, once, kept to the `keptFiles` latest. */
 export const lastFiles = (files: Work["files"], file: string): readonly string[] =>
   [file, ...(files ?? []).filter((name) => name !== file)].slice(0, keptFiles)
 
@@ -142,7 +142,7 @@ export const workAfter = (
       next = {
         ...next,
         folders: tallied(next.folders, dirname(event.path)),
-        files: lastFiles(next.files, basename(event.path)),
+        files: lastFiles(next.files, event.path),
         activeAt: now,
       }
   }

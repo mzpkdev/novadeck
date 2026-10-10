@@ -449,6 +449,8 @@ export class Voice {
       return { text: "", language: language === "auto" ? "" : language }
     }
     const known = await facts
+    // The runner may have closed while they were read.
+    this.assertOpen()
     const prompt = known && dictationHint(known, language)
     try {
       const result = await this.engine.transcribe(config, wav(pcm), {

@@ -48,10 +48,14 @@ describe("what a root session worked on", () => {
 
   it("tallies the folders it writes in, and when it was last active", () => {
     const work = workAfter(null, root, [touched("/w/src/a.ts"), touched("/w/src/b.ts")], 9)
-    expect(work).toMatchObject({ folders: { "/w/src": 2 }, files: ["b.ts", "a.ts"], activeAt: 9 })
+    expect(work).toMatchObject({
+      folders: { "/w/src": 2 },
+      files: ["/w/src/b.ts", "/w/src/a.ts"],
+      activeAt: 9,
+    })
   })
 
-  it("keeps the names of the files written in last, each once, the latest first", () => {
+  it("keeps the paths of the files written in last, each once, the latest first", () => {
     let files: readonly string[] | undefined
     for (let index = 0; index < 30; index += 1) files = lastFiles(files, `f${index}.ts`)
     expect(files).toHaveLength(keptFiles)
@@ -94,7 +98,7 @@ describe("what a root session worked on", () => {
       first: null,
       latest: null,
       folders: { "/w": 1 },
-      files: ["a.ts"],
+      files: ["/w/a.ts"],
       activeAt: 4,
     })
     // Without the correction, another session starts afresh.
