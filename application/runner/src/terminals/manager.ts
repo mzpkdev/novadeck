@@ -53,7 +53,7 @@ import type {
 } from "../harnesses/events.js"
 import { doorbellLine, quotedLine, silentFor, type Install } from "../harnesses/harness.js"
 import { agents, harnesses } from "../harnesses/registry.js"
-import { unreplied, withReplies } from "../harnesses/replies.js"
+import { lastReply, unreplied, withReplies } from "../harnesses/replies.js"
 import { followRoot, rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 import { observeTelemetry, telemetrySummary, type Telemetry } from "../harnesses/telemetry.js"
 import { typedPromptStart } from "../harnesses/typed-prompts.js"
@@ -3773,12 +3773,12 @@ export class Terminals {
   /**
    * The harness has `escapeVerdictMs` to say how the turn the Escape ended ended, as its
    * reply may have reached it first. Once that passes, a Stop it reported meanwhile is the
-   * turn's end, else the Escape stands.
+   * turn's end, else a reply the transcript of a harness without records holds since the
+   * person's prompt, else the Escape stands.
    */
   private awaitVerdict(record: Record, { agent, sessionId, instance, startedAt }: ActivityEvent) {
     if (record.verdict) clearTimeout(record.verdict)
-    record.verdict = setTimeout(() => {
-      record.verdict = undefined
+    const lapse = (reply: string | undefined) => {
       const { binding } = record
       if (!binding || binding.sessionId !== sessionId || this.stopping) return
       const lapsed: ActivityEvent = {
@@ -3787,10 +3787,34 @@ export class Terminals {
         sessionId,
         instance,
         startedAt,
+        ...(reply !== undefined && { reply }),
       }
       if (this.applyFact(record, lapsed)) this.publishAgent(record, false)
+    }
+    record.verdict = setTimeout(() => {
+      record.verdict = undefined
+      const reading = this.unstoppedReply(record, agent)
+      if (reading) void reading.then(lapse)
+      else lapse(undefined)
     }, escapeVerdictMs)
     record.verdict.unref()
+  }
+
+  /**
+   * The read of the reply the transcript holds since the person's prompt of the turn their
+   * Escape ended, where no Stop came for it and the harness keeps no records that would
+   * say how it ended: undefined where there is nothing to read, and the read's undefined
+   * where it holds none or can't be read.
+   */
+  private unstoppedReply(
+    record: Record,
+    agent: AgentName,
+  ): Promise<string | undefined> | undefined {
+    const escaped = record.activity?.lastTurn?.escaped
+    const items = harnesses[agent].transcripts?.items
+    if (harnesses[agent].records || !escaped || escaped.held || escaped.settled) return undefined
+    if (!record.transcript || !items) return undefined
+    return lastReply(record.transcript, items).catch(() => undefined)
   }
 
   /** Applies what the bound session's hooks or records said; true when it changed. */

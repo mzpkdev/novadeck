@@ -6,7 +6,11 @@ import { screenText, type ScreenText } from "../terminals/screen.js"
 import { describe, expect, it } from "../test.js"
 import { loadProbe } from "../testing/probes.js"
 import { screen as screenWith } from "../testing/screens.js"
-import { box as agy, shellFooter as agyFooter } from "./agy/box.js"
+import {
+  box as agy,
+  shellCommandOf as agyShellCommand,
+  shellFooter as agyFooter,
+} from "./agy/box.js"
 import { compact, isEmpty, sameText, wrappedRows, type BoxProfile } from "./box.js"
 import { box as claude, shellFooter as claudeFooter } from "./claude/box.js"
 import { box as codex, shellFooter as codexFooter } from "./codex/box.js"
@@ -351,6 +355,19 @@ describe.each([
 
   it("says whether a command shown as a placeholder runs as the text it stands for", () => {
     expect(profile.shell.expands).toBe(key !== "agy")
+  })
+})
+
+describe("the command Antigravity's shell mode is given", () => {
+  it("is as written outside Windows", () => {
+    expect(agyShellCommand("echo a\necho b", "linux")).toBe("echo a\necho b")
+  })
+
+  it("has its lines joined with & on Windows, where cmd runs only the first", () => {
+    expect(agyShellCommand("echo a > a.txt\n  echo b\n\necho c", "win32")).toBe(
+      "echo a > a.txt & echo b & echo c",
+    )
+    expect(agyShellCommand("dir", "win32")).toBe("dir")
   })
 })
 

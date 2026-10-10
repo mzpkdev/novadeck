@@ -183,12 +183,12 @@ describe("agent plugins", () => {
       "PostToolUse",
     ])
     expect(read(agy, "plugin.json")).toEqual({ name: "novadeck" })
-    // PreToolUse waits on a Windows probe there (see harnesses/agy/index.ts).
-    expect(Object.keys(read(agy, "hooks.json").novadeck)).toEqual(
-      process.platform === "win32"
-        ? ["PreInvocation", "Stop", "PostToolUse"]
-        : ["PreInvocation", "Stop", "PreToolUse", "PostToolUse"],
-    )
+    expect(Object.keys(read(agy, "hooks.json").novadeck)).toEqual([
+      "PreInvocation",
+      "Stop",
+      "PreToolUse",
+      "PostToolUse",
+    ])
   })
 })
 

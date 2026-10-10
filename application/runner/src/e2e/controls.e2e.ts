@@ -13,6 +13,7 @@ import {
   holds,
   lacking,
   messages,
+  nestedRuns,
   own,
   prompted,
   result,
@@ -40,7 +41,7 @@ const quiet = 3000
 
 // What the nested run a background command starts is asked, which only its own
 // conversation holds as a user's words.
-const leftRunning = "novadeck-e2e-background command: say done"
+const { leftRunning } = nestedRuns
 
 // How long the option trusting the folder must stay selected before Enter answers the
 // question: Claude Code 2.1.287 draws its question again about 130 ms after the first,

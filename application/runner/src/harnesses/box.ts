@@ -65,6 +65,11 @@ export type BoxProfile = {
      * of the marker, for the box reader and for tests that only have a screen's text.
      */
     readonly footer: (rows: readonly string[]) => boolean
+    /**
+     * The command to give the shell mode for `command` as written, where its shell runs
+     * one otherwise than sh (Antigravity's cmd on Windows); as written where omitted.
+     */
+    readonly command?: (command: string, platform?: NodeJS.Platform) => string
   }
   /**
    * Whether the screen shows messages the person queued behind the running turn, which
