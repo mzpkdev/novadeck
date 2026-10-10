@@ -125,6 +125,11 @@
 .pins-bar-row[data-dragging="true"] .pins-bar-indicator {
   opacity: 0;
 }
+/* A pin handed over from the switcher may land elsewhere than its line was: the line goes
+   at once rather than fade where the pin no longer is. */
+.pins-bar-row[data-arriving="true"] .pins-bar-indicator {
+  transition: none;
+}
 .pin:focus-visible {
   --_fg: var(--pin-hover-fg, var(--color-ink));
   /* Inside the edge: the pin fills the bar's height, which clips what is outside. */

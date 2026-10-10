@@ -283,6 +283,7 @@ export const PinsBar = ({
             className="pins-bar-row relative flex min-w-0 flex-1 items-stretch pl-2 pr-1"
             // A pin handed over from the switcher is dragged from the moment it arrives.
             data-dragging={dragging || arriving ? "true" : undefined}
+            data-arriving={arriving ? "true" : undefined}
           >
             <DragDropProvider
               key={drags}
