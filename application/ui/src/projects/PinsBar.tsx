@@ -9,11 +9,13 @@ import {
 import { RestrictToWindow } from "@dnd-kit/dom/modifiers"
 import { DragDropProvider, useDragDropManager } from "@dnd-kit/react"
 import { isSortable, useSortable } from "@dnd-kit/react/sortable"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 import { pinnedProjectShortcut } from "../interaction/shortcuts"
 import { Tooltip } from "../ui-toolkit/Tooltip"
-import { usePinDrop, type PinHandoff, type Point } from "./pin-drop"
+import { usePinDrop, type Point } from "./pin-drop"
+import { usePinHandoff } from "./pin-handoff"
+import { ease, slide } from "./pin-motion"
 import { pinsThatFit } from "./pins-fit"
 import { needsPerson, statusText, type ProjectStatus } from "./project-status"
 
@@ -31,9 +33,6 @@ const sensors = [
         : [new PointerActivationConstraints.Distance({ value: 6 })],
   }),
 ]
-// How long pins take to slide aside or settle, none for a person who asks for less motion.
-const slide = (): number => (matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180)
-const ease = "cubic-bezier(0.16, 1, 0.3, 1)"
 const cursor = Cursor.configure({ cursor: "grabbing" })
 const modifiers = [RestrictToWindow.configure({})]
 // How far above or below the bar a dragged pin goes before letting it go unpins it.
@@ -162,7 +161,6 @@ export const PinsBar = ({
     for (const pin of element.querySelectorAll(".pin")) observer.observe(pin)
     return () => observer.disconnect()
     // A drag's end remounts the pins, which are then observed again.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [items, drags, current])
 
   // Where a point along the bar lands among the pins shown, the dragged project's own pin
@@ -180,78 +178,12 @@ export const PinsBar = ({
     return () => channel.setLocate(null)
   }, [channel])
 
-  // A drag handed over from the switcher's list: once its pin shows, the bar drags it on,
-  // held where the pointer is, as the pointer moves until it lets go (or Escape cancels).
-  const manager = useRef<DragDropManager | null>(null)
-  const takeManager = useCallback((next: DragDropManager | null) => {
-    manager.current = next
-  }, [])
-  const took = useRef<PinHandoff | null>(null)
-  // The handed-over pin is under the pointer; until then it is arriving, and unseen.
-  const [landed, setLanded] = useState<PinHandoff | null>(null)
-  const arriving = handoff && landed !== handoff ? handoff.id : null
-  const following = useRef<(() => void) | null>(null)
-  useLayoutEffect(() => {
-    if (!handoff || took.current === handoff) return
-    const actions = manager.current?.actions
-    const pin = row.current?.querySelector<HTMLElement>(
-      `.pin[data-pin="${CSS.escape(handoff.id)}"]`,
-    )
-    if (!actions || !pin) return
-    took.current = handoff
-    const box = pin.getBoundingClientRect()
-    actions.start({
-      source: handoff.id,
-      coordinates: { x: box.left + 20, y: box.top + box.height / 2 },
-    })
-    // dnd-kit takes moves only once the drag is under way, a frame or so after it starts:
-    // till then the pin waits unseen (arriving), then fades in where the pointer is by then.
-    let pointer = handoff.point
-    let frame = requestAnimationFrame(function arrive(): void {
-      if (!manager.current?.dragOperation.status.dragging) {
-        frame = requestAnimationFrame(arrive)
-        return
-      }
-      actions.move({ to: pointer })
-      // dnd-kit sets the dragged pin's transitions, so the fade is an animation of its own;
-      // it starts part way, so the pin is seen at once where the pointer is.
-      pin.animate([{ filter: "opacity(0.4)" }, { filter: "opacity(1)" }], {
-        duration: slide(),
-        easing: ease,
-      })
-      setLanded(handoff)
-    })
-    const move = (event: PointerEvent): void => {
-      pointer = { x: event.clientX, y: event.clientY }
-      actions.move({ to: pointer, event })
-    }
-    // Where it is let go decides, even if no move came after the drag got under way.
-    const drop = (event: PointerEvent): void => {
-      off.current = offBar(strip.current, { x: event.clientX, y: event.clientY })
-      actions.stop({ event })
-    }
-    const cancel = (): void => actions.stop({ canceled: true })
-    const escape = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape") return
-      event.preventDefault()
-      event.stopPropagation()
-      cancel()
-    }
-    window.addEventListener("pointermove", move, true)
-    window.addEventListener("pointerup", drop, true)
-    window.addEventListener("pointercancel", cancel, true)
-    window.addEventListener("keydown", escape, true)
-    following.current = () => {
-      cancelAnimationFrame(frame)
-      window.removeEventListener("pointermove", move, true)
-      window.removeEventListener("pointerup", drop, true)
-      window.removeEventListener("pointercancel", cancel, true)
-      window.removeEventListener("keydown", escape, true)
-    }
-    // Its pin shows after the arrangement changes, and a drag's end remounts the pins.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
-  }, [handoff, items, drags])
-  useEffect(() => () => following.current?.(), [])
+  // A drag handed over from the switcher's list, which the bar drags on as its pin.
+  const { arriving, takeManager, end } = usePinHandoff(
+    handoff,
+    handoff !== null && items.some(({ id }) => id === handoff.id),
+    row,
+  )
 
   // Tells which show, once at first and then only when they change.
   const told = useRef<readonly string[] | null>(null)
@@ -305,12 +237,8 @@ export const PinsBar = ({
                 setLeaving(away)
               }}
               onDragEnd={(event) => {
-                const handedOver = took.current !== null
-                if (handedOver) {
-                  following.current?.()
-                  following.current = null
-                  took.current = null
-                }
+                const { handedOver, releasedAt } = end()
+                if (releasedAt) off.current = offBar(strip.current, releasedAt)
                 const unpins = off.current && !event.canceled
                 off.current = false
                 setLeaving(false)
