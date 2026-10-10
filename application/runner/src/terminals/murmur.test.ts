@@ -1248,6 +1248,44 @@ describe("when a plain shell's terminal runs more than the prompt", () => {
     expect(describer.digests[0]).toMatchObject({ kind: "shell", command: "bash deploy.sh --prod" })
   })
 
+  it("still describes the prompt after a long run when a short program flashes by first", async () => {
+    // The losing order: the long run ends and the prompt's description is asked for; before
+    // it is built, a brief program holds the foreground (a prompt hook, a status helper), and
+    // the sample after it finds the prompt again with too short a run behind it.
+    const { murmur, describer, change, times } = create({ agent: null })
+    change({ program: { name: "sleep", argv: ["sleep", "30"] }, atPrompt: false })
+    murmur.sampled("a")
+    await settle(times.shellRunMs + 10)
+    expect(describer.digests).toHaveLength(1)
+    change({ program: { name: "bash", argv: null }, atPrompt: true })
+    murmur.sampled("a")
+    await settle(times.shellSettleMs / 4)
+    change({ program: { name: "git", argv: ["git", "status"] }, atPrompt: false })
+    murmur.sampled("a")
+    await settle(10)
+    change({ program: { name: "bash", argv: null }, atPrompt: true })
+    murmur.sampled("a")
+    await settle(times.shellRunMs * 2)
+    expect(describer.digests).toHaveLength(2)
+    expect(describer.digests[1]).toMatchObject({ kind: "shell", command: null })
+  })
+
+  it("describes the prompt after a long run while the run's own description is still in flight", async () => {
+    const { murmur, describer, change, times } = create({ agent: null })
+    describer.hold = true
+    change({ program: { name: "sleep", argv: ["sleep", "30"] }, atPrompt: false })
+    murmur.sampled("a")
+    await settle(times.shellRunMs + 10)
+    expect(describer.jobs).toHaveLength(1)
+    // The prompt returns with the first job still held: the newer one is queued, not lost.
+    change({ program: { name: "bash", argv: null }, atPrompt: true })
+    murmur.sampled("a")
+    await settle(times.shellSettleMs + 10)
+    expect(describer.jobs).toHaveLength(2)
+    expect(describer.jobs[0]!.signal?.aborted).toBe(true)
+    expect(describer.digests[1]).toMatchObject({ command: null })
+  })
+
   it("still describes a directory change that a short command followed", async () => {
     const { murmur, describer, change, times } = create({ agent: null })
     murmur.moved("a")

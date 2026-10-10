@@ -659,8 +659,11 @@ export class Murmur {
     // for again at the prompt.
     this.descriptions.withdraw(terminalId)
     if (key === null) {
-      if ((was !== null && ranMs >= this.times.shellRunMs) || watch.shellOwed)
-        this.ask(terminalId, this.times.shellSettleMs)
+      // The prompt after a long run is owed a description until one is built: a brief
+      // program holding the foreground before it is (which withdraws this request) must
+      // not lose it, nor must a run's own description still in flight.
+      if (was !== null && ranMs >= this.times.shellRunMs) watch.shellOwed = true
+      if (watch.shellOwed) this.ask(terminalId, this.times.shellSettleMs)
       return
     }
     this.ask(terminalId, this.times.shellRunMs, key)
