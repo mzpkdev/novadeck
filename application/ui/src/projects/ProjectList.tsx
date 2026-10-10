@@ -151,7 +151,7 @@ export const ProjectList = ({
           }
           // While the open list covers the bar, the bar can't take the drop.
           pinDrop.move(out.current ? point : null)
-          // Over the bar the row, its name alone, sits by the pointer and under the bar.
+          // Over the bar the row sits by the pointer and under the bar.
           const spot = pinDrop.getSnapshot()?.spot
           const row = event.operation.source?.element
           if (!spot || !(row instanceof HTMLElement)) return

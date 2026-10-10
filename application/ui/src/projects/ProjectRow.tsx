@@ -49,7 +49,7 @@ export const ProjectRow = ({
     transition: { duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
   })
   const button = useRef<HTMLButtonElement>(null)
-  // Dragged over the pins bar, the row shrinks to its name, so the bar shows where it goes.
+  // Dragged over the pins bar, the row moves under it, so the bar shows where it goes.
   const { drag } = usePinDrop()
   const overPins = isDragSource && drag?.id === project.id && drag.spot !== null
   useEffect(() => {
@@ -74,7 +74,7 @@ export const ProjectRow = ({
             handleRef(node)
           }}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-          className={`item standalone workspace-switcher-project flex min-w-0 items-center gap-3 px-2.5 text-left ${overPins ? "w-max py-1.5" : `w-full py-[9px] ${removable ? "pr-[70px]" : "pr-10"}`} ${selected ? "selected" : ""}`}
+          className={`item standalone workspace-switcher-project flex min-w-0 items-center gap-3 px-2.5 text-left w-full py-[9px] ${removable ? "pr-[70px]" : "pr-10"} ${selected ? "selected" : ""}`}
           type="button"
           aria-current={selected ? "true" : undefined}
           aria-description={status && statusText[status]}

@@ -91,15 +91,10 @@
   pointer-events: none;
 }
 
-/* Over the pins bar, the dragged row is its name alone, as a pin would be, by the
-   pointer and under the bar, so the bar's gap mark stays in view. dnd-kit holds the row
-   at its size in the list; the row has no ground of its own, so only its button shows. */
+/* Over the pins bar, the dragged row keeps its look but sits by the pointer and under
+   the bar, so the bar's gap mark stays in view. */
 .workspace-switcher-row[data-over-pins="true"] > .workspace-switcher-project {
   translate: var(--pin-drop-x, 0) var(--pin-drop-y, 0);
-}
-.workspace-switcher-row[data-over-pins="true"] :is(.item-detail, svg, .project-status-mark),
-.workspace-switcher-row[data-over-pins="true"] .workspace-switcher-action {
-  display: none;
 }
 
 /* The rule that closes the pinned group. */
