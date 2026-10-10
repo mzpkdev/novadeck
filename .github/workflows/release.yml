@@ -427,6 +427,25 @@ jobs:
             exit 1
           fi
 
+          # The AppImage updates itself in place, so it must not claim a package type. Builder
+          # writes package-type into the shared linux-unpacked folder, and only the order of
+          # the targets keeps it out of the AppImage. Extraction needs no FUSE; app-update.yml
+          # is extracted too, to show the extraction worked.
+          image="$(realpath "$release/novadeck-linux-x86_64.AppImage")"
+          chmod +x "$image"
+          unpacked="$(mktemp -d)"
+          (cd "$unpacked" && "$image" --appimage-extract resources/package-type > /dev/null || true)
+          (cd "$unpacked" && "$image" --appimage-extract resources/app-update.yml > /dev/null)
+          if [[ ! -f "$unpacked/squashfs-root/resources/app-update.yml" ]]; then
+            echo "::error::Could not unpack the AppImage to check it."
+            exit 1
+          fi
+          if [[ -e "$unpacked/squashfs-root/resources/package-type" ]]; then
+            echo "::error::The AppImage holds resources/package-type, so it would update like a $(cat "$unpacked/squashfs-root/resources/package-type") package."
+            exit 1
+          fi
+          rm -rf "$unpacked"
+
       # The rest of the job runs the packaged app and the engine, which need no key.
       - name: Remove Signing Credentials (macOS)
         if: always() && matrix.target == 'mac' && steps.signing.outputs.signed == 'true'
@@ -521,7 +540,11 @@ jobs:
           python3 -m http.server 8765 --bind 127.0.0.1 --directory "$serve" > /dev/null 2>&1 &
           server=$!
           trap 'kill "$server"' EXIT
-          sleep 2
+          for _ in {1..30}; do
+            if curl -fs -o /dev/null http://127.0.0.1:8765/SHA256SUMS; then break; fi
+            sleep 1
+          done
+          curl -fs -o /dev/null http://127.0.0.1:8765/SHA256SUMS
 
           export NOVADECK_INSTALL_BASE_URL=http://127.0.0.1:8765
           sh "$RUNNER_TEMP/install.sh"
@@ -531,7 +554,7 @@ jobs:
           NOVADECK_INSTALL_PACKAGE_MANAGER=appimage sh "$RUNNER_TEMP/install.sh"
           # The runner has no FUSE 2, so the installed AppImage unpacks itself to start.
           launch "AppImage installed by install.sh" "$HOME/.local/bin/novadeck" --appimage-extract-and-run
-          if [[ ! -f "$HOME/.local/share/applications/novadeck.desktop" || ! -f "$HOME/.local/share/icons/hicolor/512x512/apps/novadeck.png" ]]; then
+          if [[ ! -f "$HOME/.local/share/applications/dev.mzpk.novadeck.desktop" || ! -f "$HOME/.local/share/icons/hicolor/512x512/apps/novadeck.png" ]]; then
             echo "::error::install.sh left no menu entry or icon for the AppImage."
             exit 1
           fi

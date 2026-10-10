@@ -38,6 +38,8 @@ const tools = [
   "mv",
   "rm",
   "sha256sum",
+  "sort",
+  "tail",
 ]
 
 const deb = "novadeck-linux-amd64.deb"
@@ -70,6 +72,14 @@ type Scenario = {
   /** Replaces the content a download is checked against, to fake a corrupt file. */
   tamper?: string
   script?: string
+  /** An installed novadeck deb (if any) and the version of the deb the release carries. */
+  dpkg?: { installed?: string; available: string }
+  /** Tools present beyond the package managers, such as transactional-update. */
+  extra?: string[]
+  /** What `ldconfig -p` lists; the computer has no ldconfig on its PATH when unset. */
+  libraries?: string
+  /** Pretends the ostree marker file exists. */
+  ostree?: boolean
   /** Leaves the download folder unset, so the script builds it from its repository. */
   rendered?: boolean
 }
@@ -121,6 +131,21 @@ cp "${served}/\${url##*/}" "$out"`,
     shim(bin, manager, `echo "\${SUDO:+sudo }${manager} $*" >> "${log}"`)
   }
 
+  for (const name of scenario.extra ?? []) shim(bin, name, `echo "${name} $*" >> "${log}"`)
+  if (scenario.libraries !== undefined) shim(bin, "ldconfig", `echo "${scenario.libraries}"`)
+  if (scenario.dpkg) {
+    const { installed, available } = scenario.dpkg
+    shim(bin, "dpkg-query", installed ? `echo "installed ${installed}"` : "exit 1")
+    shim(bin, "dpkg-deb", `echo "${available}"`)
+    shim(
+      bin,
+      "dpkg",
+      `[ "$2" != "$4" ] && [ "$(printf '%s\\n%s\\n' "$2" "$4" | sort -V | tail -n 1)" = "$2" ]`,
+    )
+  }
+  const marker = join(root, "ostree-booted")
+  if (scenario.ostree) writeFileSync(marker, "")
+
   const text = (scenario.script ?? script).replaceAll("@REPOSITORY@", "acme/novadeck")
   const entry = join(root, "install.sh")
   writeFileSync(entry, text)
@@ -129,6 +154,7 @@ cp "${served}/\${url##*/}" "$out"`,
       env: {
         PATH: bin,
         HOME: home,
+        NOVADECK_INSTALL_OSTREE_MARKER: marker,
         ...(scenario.rendered ? {} : { NOVADECK_INSTALL_BASE_URL: `http://mirror.test/dl/` }),
       },
       encoding: "utf8",
@@ -167,6 +193,28 @@ describe.skipIf(!linux)("install.sh", () => {
       expect(result.installs).toEqual([])
     })
 
+    it("installs when the installed deb is older or the same", () => {
+      for (const installed of ["1.0.0", "1.0.5"]) {
+        const result = run({ managers: ["apt-get"], dpkg: { installed, available: "1.0.5" } })
+        expect(result.installs).toEqual([`sudo apt-get install -y ./${deb}`])
+      }
+    })
+
+    it("installs when no deb is installed", () => {
+      const result = run({ managers: ["apt-get"], dpkg: { available: "1.0.5" } })
+      expect(result.installs).toEqual([`sudo apt-get install -y ./${deb}`])
+    })
+
+    it("leaves a newer installed deb alone instead of downgrading it", () => {
+      const result = run({
+        managers: ["apt-get"],
+        dpkg: { installed: "1.0.9", available: "1.0.5" },
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("already installed")
+      expect(result.installs).toEqual([])
+    })
+
     it("is preferred over dnf", () => {
       const result = run({ managers: ["apt-get", "dnf"] })
       expect(result.installs).toEqual([`sudo apt-get install -y ./${deb}`])
@@ -201,7 +249,7 @@ describe.skipIf(!linux)("install.sh", () => {
       expect(readFileSync(join(data, "icons/hicolor/512x512/apps/novadeck.png"), "utf8")).toBe(
         "png",
       )
-      const entry = readFileSync(join(data, "applications/novadeck.desktop"), "utf8")
+      const entry = readFileSync(join(data, "applications/dev.mzpk.novadeck.desktop"), "utf8")
       expect(entry).toContain(`Exec="${target}" %U`)
       expect(entry).toContain(`Icon=${join(data, "icons/hicolor/512x512/apps/novadeck.png")}`)
     })
@@ -217,6 +265,35 @@ describe.skipIf(!linux)("install.sh", () => {
       writeFileSync(target, "old")
       expect(result.again().status).toBe(0)
       expect(readFileSync(target, "utf8")).toBe(appImage)
+    })
+  })
+
+  context("on an image-based system", () => {
+    it("installs the AppImage instead of using dnf when ostree booted it", () => {
+      const result = run({ managers: ["dnf"], ostree: true })
+      expect(result.status).toBe(0)
+      expect(result.installs).toEqual([])
+      expect(existsSync(join(result.home, ".local/bin/novadeck"))).toBe(true)
+    })
+
+    it("installs the AppImage instead of using zypper when transactional-update exists", () => {
+      const result = run({ managers: ["zypper"], extra: ["transactional-update"] })
+      expect(result.installs).toEqual([])
+      expect(existsSync(join(result.home, ".local/bin/novadeck"))).toBe(true)
+    })
+  })
+
+  context("when checking for FUSE", () => {
+    it("says nothing without ldconfig", () => {
+      expect(run().stdout).not.toContain("FUSE")
+    })
+
+    it("says nothing when libfuse2 is listed", () => {
+      expect(run({ libraries: "libfuse.so.2 (libc6,x86-64)" }).stdout).not.toContain("FUSE")
+    })
+
+    it("explains when libfuse2 is missing", () => {
+      expect(run({ libraries: "libc.so.6" }).stdout).toContain("needs FUSE 2")
     })
   })
 

@@ -11,7 +11,8 @@
 # The release workflow replaces @REPOSITORY@ with the repository it publishes from. Two
 # variables are for tests and mirrors: NOVADECK_INSTALL_BASE_URL replaces the download
 # folder, and NOVADECK_INSTALL_PACKAGE_MANAGER names apt, dnf, zypper or appimage to skip
-# detection.
+# detection. On image-based systems, where a package would need a reboot or a layered
+# image, it installs the AppImage whatever package manager is there.
 #
 # Every definition comes before the one call on the last line, so a download that is cut
 # short runs nothing.
@@ -47,10 +48,18 @@ check_platform() {
   esac
 }
 
+# Fedora Silverblue, Kinoite and Bazzite (ostree), and openSUSE Aeon and MicroOS
+# (transactional-update), keep the system read-only; a home folder install suits them.
+is_immutable() {
+  [ -e "${NOVADECK_INSTALL_OSTREE_MARKER:-/run/ostree-booted}" ] || has transactional-update
+}
+
 # Which way to install: the first package manager found, or the AppImage.
 detect_method() {
   if [ -n "${NOVADECK_INSTALL_PACKAGE_MANAGER:-}" ]; then
     printf '%s\n' "$NOVADECK_INSTALL_PACKAGE_MANAGER"
+  elif is_immutable; then
+    say appimage
   elif has apt-get; then
     say apt
   elif has dnf; then
@@ -63,7 +72,7 @@ detect_method() {
 }
 
 download() {
-  curl -fsSL --retry 3 -o "$2" "$1" || fail "could not download $1"
+  curl -fsSL --retry 3 --retry-connrefused -o "$2" "$1" || fail "could not download $1"
 }
 
 # Succeeds only when the file's SHA-256 is the one SHA256SUMS lists for its name.
@@ -94,8 +103,27 @@ as_root() {
   fi
 }
 
+# The version of the installed novadeck package, or nothing when none is installed.
+installed_deb_version() {
+  has dpkg-query || return 0
+  # shellcheck disable=SC2016
+  status="$(dpkg-query -W -f='${db:Status-Status} ${Version}' novadeck 2> /dev/null || true)"
+  case "$status" in
+    "installed "*) printf '%s\n' "${status#installed }" ;;
+  esac
+}
+
 install_apt() {
   fetch "$1" novadeck-linux-amd64.deb
+  installed="$(installed_deb_version)"
+  if [ -n "$installed" ] && has dpkg; then
+    available="$(dpkg-deb -f novadeck-linux-amd64.deb Version)"
+    # Apt refuses a downgrade, and an early channel build is newer than the stable one.
+    if dpkg --compare-versions "$installed" gt "$available"; then
+      say "Novadeck $installed is already installed, and it is newer than the stable release, $available. Nothing to do."
+      return 0
+    fi
+  fi
   as_root apt-get install -y ./novadeck-linux-amd64.deb
 }
 
@@ -111,7 +139,17 @@ install_zypper() {
 
 # An AppImage mounts itself through libfuse 2, which newer distributions no longer include.
 check_fuse() {
-  if has ldconfig && ldconfig -p 2> /dev/null | grep -q 'libfuse\.so\.2'; then
+  # ldconfig is in /sbin, which a user's PATH often lacks. Without it there is nothing to
+  # check, and no warning is better than a wrong one.
+  ldconfig=""
+  for candidate in ldconfig /sbin/ldconfig /usr/sbin/ldconfig; do
+    if has "$candidate"; then
+      ldconfig="$candidate"
+      break
+    fi
+  done
+  [ -n "$ldconfig" ] || return 0
+  if "$ldconfig" -p 2> /dev/null | grep -q 'libfuse\.so\.2'; then
     return 0
   fi
   say "Novadeck's AppImage needs FUSE 2, which this computer seems to lack."
@@ -147,7 +185,7 @@ install_appimage() {
   mv -f "$image.new" "$image"
   ln -sf "$image" "$bin/novadeck"
 
-  cat > "$data/applications/novadeck.desktop" << EOF
+  cat > "$data/applications/dev.mzpk.novadeck.desktop" << EOF
 [Desktop Entry]
 Type=Application
 Name=novadeck.
