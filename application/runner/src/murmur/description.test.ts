@@ -468,8 +468,8 @@ describe("the guard on titles and the words in them", () => {
     "Fix 1b19df98cc13089e7bd5f741397680787156d32e",
     "Using sk_live_51HxYzAbCdEf now",
     "Using rk_live_51HxYzAbCdEf now",
-    "Using SG.abcdefghijklmnopqrstuv now",
-    "Using AGE-SECRET-KEY-1QYQSZQGPQYQ now",
+    "Using SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP now",
+    "Using AGE-SECRET-KEY-1QYQSZQGPQYQSZQGPQYQSZQGPQYQSZQ now",
   ])("refuses a random-looking piece or a hash in %s", (text) => {
     expect(looksSecret(text)).toBe(true)
   })
@@ -617,5 +617,82 @@ describe("provider keys with an underscore", () => {
   ])("refuses %s in a title", (key) => {
     expect(title(`Using ${key} now`)).toBeUndefined()
     expect(title(`Using **${key}** now`)).toBeUndefined()
+  })
+})
+
+describe("provider keys, wherever they are and whatever is around them", () => {
+  const keys = [
+    "npm_aBcDeFgHiJkLmNoPqRsTuVwXyZ01",
+    "hf_AbCdEfGhIjKlMnOpQrStUvWxYz0123",
+    "sk_live_AbCdEfGhIjKlMnOpQrSt",
+    "shpat_abcdefabcdefabcdefabcdefabcdefab",
+    "ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+    "pypi-AgEIcHlwaS5vcmcCJGE0ZjYxYjE0LTk4NzYtNGQ1Yy1iYjk1",
+    "github_pat_ABCDEFGHabcdefghijklmnop",
+    "dop_v1_abcdefabcdefabcdefabcdefabcdefab",
+  ]
+  const wrappers: ((key: string) => string)[] = [
+    (key) => `**${key}**`,
+    (key) => `\`${key}\``,
+    (key) => `"${key}"`,
+    (key) => `(${key})`,
+    (key) => `[${key}]`,
+    (key) => `<${key}>`,
+    (key) => `TOKEN=${key}`,
+    (key) => `token:${key}`,
+    (key) => `$${key}`,
+    (key) => `key/${key}`,
+    (key) => `_${key}_`,
+    (key) => `${key}.`,
+  ]
+
+  it("refuses every key in every wrapping", () => {
+    const passed: string[] = []
+    for (const key of keys)
+      for (const wrap of wrappers)
+        for (const place of ["Using X now", "X rotated", "Rotating X"]) {
+          const text = place.replace("X", wrap(key))
+          if (title(text) !== undefined) passed.push(text)
+        }
+    expect(passed).toEqual([])
+  })
+
+  it.each([
+    "Fix hf_ hub upload",
+    "Docs for sk- keys",
+    "Reading npm_config_cache",
+    "Setting npm_package_version",
+    "Testing hf_hub_download",
+    "Fixing hf_transfer_flag",
+    "Debugging sk_test_helpers",
+    "Fixing npm_lifecycle_event",
+    "Rotating hf_token_cache",
+    "Fixing sk-learn-contrib import",
+    "Using sk-learn pipeline",
+    "Setting HF_HUB_ENABLE_HF_TRANSFER",
+    "Tuning ghp_ token scopes",
+    "Building pypi-publish workflow",
+    "Running pypi-attestations check",
+    "Fixing glpat-rotation script",
+    "Fixing **npm_config_cache** env",
+    "Fixing `hf_hub_download` retries",
+    "Fixing sk_test_mode handling",
+    "Testing dop_v1_tokens docs",
+    "Fixing eyJhbGci parsing",
+    "Debugging AIzaSyClient wrapper",
+    "Fixing xoxb-scopes docs",
+  ])("keeps the name in %s", (text) => {
+    expect(title(text)).toBeDefined()
+  })
+
+  it.each([
+    "Fixing `ThinkPadX1C11` bug",
+    "Fixing **ThinkPadX1C11** bug",
+    "Fixing `GH200NVL72` bug",
+    "Testing **stm32f407** firmware",
+    "Fixing _iPhone15ProMax_ layout",
+    "Fixing `Float32Array` bug",
+  ])("keeps a code name in markdown: %s", (text) => {
+    expect(title(text)).toBeDefined()
   })
 })

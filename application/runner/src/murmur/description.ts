@@ -105,9 +105,31 @@ const entropy = (word: string): number => {
   return total
 }
 
-// What a provider's keys begin with, followed by enough to be one.
-const providerKey =
-  /^(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-|sk_live_|sk_test_|rk_live_|rk_test_|glpat-|hf_|npm_|xox[abeoprs]-|ya29\.|AIza|eyJ|SG\.|AGE-SECRET-KEY-|pypi-|shpat_|shpca_|shpss_|dop_v1_)[A-Za-z0-9_.-]{8,}|^(?:AKIA|ASIA)[0-9A-Z]{16}/
+// What a provider's keys look like, in the shape they are documented to have: the prefix and
+// then a contiguous run of the characters and length they use. A name that merely begins the
+// same (`npm_config_cache`, `hf_hub_download`, `sk-learn`) has underscores or too little
+// after it, so it is no key. Found anywhere in the title, however it is wrapped.
+const providerKeys = new RegExp(
+  `(?<![A-Za-z0-9])(?:${[
+    "(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}",
+    "github_pat_[A-Za-z0-9_]{20,}",
+    "sk-[A-Za-z0-9_-]{20,}",
+    "(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}",
+    "glpat-[A-Za-z0-9_-]{20,}",
+    "hf_[A-Za-z0-9]{20,}",
+    "npm_[A-Za-z0-9]{20,}",
+    "pypi-[A-Za-z0-9_-]{30,}",
+    "shp(?:at|ca|ss)_[A-Za-z0-9]{32}",
+    "dop_v1_[a-f0-9]{20,}",
+    "xox[abeoprs]-[A-Za-z0-9-]{20,}",
+    "ya29\\.[A-Za-z0-9_-]{20,}",
+    "AIza[A-Za-z0-9_-]{30,}",
+    "eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}",
+    "SG\\.[A-Za-z0-9_-]{16,}\\.[A-Za-z0-9_-]{16,}",
+    "AGE-SECRET-KEY-1[A-Z0-9]{20,}",
+    "(?:AKIA|ASIA)[0-9A-Z]{16}",
+  ].join("|")})`,
+)
 
 // 12 or more characters of letters and digits that read as no word: no run of lowercase
 // letters that long, and as many different characters as a random string has; or 16 or more
@@ -150,21 +172,18 @@ const hexRun = /(?<![0-9a-z])[0-9a-f]{32,}(?![0-9a-z])/i
 
 const tokenLike = (text: string): boolean =>
   hexRun.test(text) ||
-  text
-    .split(/\s+/)
-    .some(
-      (word) =>
-        providerKey.test(word.replace(/^[*`"'“”‘’#]+/, "")) ||
-        word.split(/[-./@:_]+/).some((piece) => randomLike(piece)),
-    )
+  text.split(/\s+/).some((word) => word.split(/[-./@:_]+/).some((piece) => randomLike(piece)))
 
 // A title is refused when it has a token-like piece, or when redaction masks a piece of it that
 // is token-like or 12 or more characters with a digit. A colon phrase ("Fixing token: refresh
 // bug") that redaction masks as a value is no secret: only what looks like one counts.
 export const looksSecret = (title: string): boolean =>
   title.includes(redacted) ||
+  providerKeys.test(title) ||
   tokenLike(title) ||
-  maskedSpans(title).some((span) => tokenLike(span) || (span.length >= 12 && /\d/.test(span)))
+  maskedSpans(title).some(
+    (span) => providerKeys.test(span) || tokenLike(span) || (span.length >= 12 && /\d/.test(span)),
+  )
 
 /**
  * The title in `raw`, the model's reply, or undefined when it can't be used. `source` is
@@ -198,8 +217,9 @@ export const parseDescription = (raw: string, source?: string): Description | un
   if (given.length > 0 && given.every((word) => chatWords.has(word))) return undefined
   if (spacelessChat.has(cleanTitle.replaceAll(/\s/g, ""))) return undefined
   const shown = source === undefined ? undefined : fold(source)
-  // Run on the title as the model wrote it as well: tidying turns `_` into a space.
-  if (looksSecret(cleanTitle) || tokenLike(title)) return undefined
+  // A provider's key is looked for in the title as the model wrote it as well: tidying turns
+  // `_` into a space. Nothing else is, since markdown around a code name is no part of it.
+  if (looksSecret(cleanTitle) || providerKeys.test(title)) return undefined
   if (exampleTitles.some((example) => copies(cleanTitle, example, shown))) return undefined
   return { title: cleanTitle }
 }

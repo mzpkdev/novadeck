@@ -454,11 +454,6 @@ const maskKeyBlocks = (screen: readonly string[], continues: readonly boolean[])
 // those marks is masked, in whichever row it lies: a secret across a boundary is masked on both
 // sides of it, even when the row before it ended in a word character, and a row's own context
 // changes nothing else. Marking keeps lengths, so the readings line up character for character.
-// Redacts the rows of a screen. Rows that go on (each but the last of a group ended at the
-// pane's edge) are marked apart and as one text from each of their starts, and what any of
-// those marks is masked, in whichever row it lies: a secret across a boundary is masked on both
-// sides of it, even when the row before it ended in a word character, and a row's own context
-// changes nothing else. Marking keeps lengths, so the readings line up character for character.
 // The work is bounded by the worker that does it (see prepare.ts), not by cutting the reading.
 const redactRows = (screen: readonly string[], continues: readonly boolean[]): string[] => {
   // A row that holds the sentinel itself could not be told from a mask.
