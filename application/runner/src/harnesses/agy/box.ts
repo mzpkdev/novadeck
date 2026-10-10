@@ -1,4 +1,5 @@
-import { agreeing, ruledBox, type BoxProfile, type Markers } from "../box.js"
+import type { ScreenText } from "../../terminals/screen.js"
+import { agreeing, rule, ruledBox, type BoxProfile, type Markers } from "../box.js"
 
 /** The markers leading its box's first row: `>` as a prompt, `!` in its shell mode. */
 const markers: Markers = { prompt: ">", shell: "!" }
@@ -29,6 +30,24 @@ export const shellCommandOf = (
         .join(" & ")
     : command
 
+// Its word under a turn the person's Escape stopped (probed 2026-10-02, 1.2.14).
+const interruption = /^⎿\s+Interrupted · What should Antigravity CLI do instead\?$/
+
+/**
+ * Whether the row last above its box's top rule, blank rows aside, is its word that the
+ * person's Escape stopped the turn, which it draws under a reply it kept as well: on
+ * Windows a reply let go 2 to 5 ms after the key showed with it, the transcript and the
+ * next model call holding the reply as where it showed alone, and no Stop came for
+ * either (probed 2026-10-10, 1.2.14).
+ */
+export const interruptedShown = (screen: ScreenText): boolean => {
+  const box = ruledBox(screen, markers)
+  if (!box) return false
+  const top = screen.rows.slice(0, box.first).findLastIndex(rule)
+  const above = screen.rows.slice(0, Math.max(top, 0)).findLast((row) => row.trim() !== "")
+  return interruption.test(above?.trim() ?? "")
+}
+
 /**
  * Antigravity's input box: between two `─` rules, `> ` leading its first row and the rest
  * indented (probed 1.2.14 and 1.3.1, fixtures/input-box.probe.json). Its history above
@@ -46,6 +65,7 @@ export const box: BoxProfile = {
   // Ctrl-U clears the line the cursor is on and Backspace joins the line before it; the
   // queued messages an Escape put back are one to a line (probed 2026-10-07).
   clear: ({ first, last }) => `${"\x15\x7f".repeat(last - first)}\x15`,
+  interrupted: interruptedShown,
   queued: (screen) => screen.rows.some((row) => row.includes("Press up to edit queued messages")),
   collapses: (text) => text.split("\n").length > 15 || (!text.includes("\n") && text.length > 1024),
   room: (rows) => rows - 4,

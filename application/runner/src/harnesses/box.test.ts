@@ -371,6 +371,28 @@ describe("the command Antigravity's shell mode is given", () => {
   })
 })
 
+describe("Antigravity's word that an Escape stopped the turn", () => {
+  const rule = "─".repeat(60)
+  // The history above the box, the cursor in it, as the screen the CI run failed on had it.
+  const shown = (history: string[]) => {
+    const rows = ["> Hold on", "", ...history, rule, "> ", rule, "? for shortcuts"]
+    return agy.interrupted!(screen(rows, rows.indexOf("> "), 2))
+  }
+
+  it("is read under a reply it kept as well, and alone", () => {
+    const word = "  ⎿  Interrupted · What should Antigravity CLI do instead?"
+    expect(shown(["  Too late.", "", word])).toBe(true)
+    expect(shown([word, ""])).toBe(true)
+  })
+
+  it("is not read where the reply is last, nor where it stands above a later turn", () => {
+    expect(shown(["  Too late.", ""])).toBe(false)
+    expect(
+      shown(["  ⎿  Interrupted · What should Antigravity CLI do instead?", "> Next", "  Done."]),
+    ).toBe(false)
+  })
+})
+
 describe("the viewport of Claude Code's input box", () => {
   it("is what was probed on the screens it was, and never below one row on a small one", () => {
     expect([24, 40, 60].map((rows) => claude.viewport!(rows))).toEqual([7, 15, 25])

@@ -72,6 +72,12 @@ export type BoxProfile = {
     readonly command?: (command: string, platform?: NodeJS.Platform) => string
   }
   /**
+   * Whether the screen shows, just above the box, the harness's word that the person's
+   * Escape stopped the turn, where it may say so of a turn whose reply it kept and fired
+   * no Stop for (Antigravity); omitted where its hooks or records tell.
+   */
+  readonly interrupted?: (screen: ScreenText) => boolean
+  /**
    * Whether the screen shows messages the person queued behind the running turn, which
    * the harness holds until the turn ends (or, for Codex, steers the turn with).
    */
@@ -228,7 +234,7 @@ export const agreeing = (box: InputBox | undefined, shell: boolean): InputBox | 
   box && !(shell && box.mode === "prompt") ? box : undefined
 
 /** Whether a row is a horizontal rule. */
-const rule = (row: string | undefined): boolean => /^─{8,}$/.test((row ?? "").trim())
+export const rule = (row: string | undefined): boolean => /^─{8,}$/.test((row ?? "").trim())
 
 /**
  * A box drawn between two horizontal rules, its first row led by `marker` (Claude Code's
