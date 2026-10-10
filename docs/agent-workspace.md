@@ -262,11 +262,16 @@ What belongs there is a deliverable: something made to be looked at (an image or
 screenshot, a rendered page or dev server, a report, mockup, diagram or generated
 document, or the one file the user asked for), shown once it is done. A source file
 counts while it is the one the user and the agent work on together; the files a change
-touches on the way do not, and the user reads those in the diff. Every harness hears this the same two ways, as neither plugin ships a skill: the
-`show` tool's own description carries the rule, and the runner's prompt-time hook adds
-Novadeck's artifacts notice, one paragraph, at the first quiet prompt of each root
-session and after a compaction (`artifactsNotice` in `terminals/nudges.ts`, delivered
-with the description nudge; see [Agent messaging](agent-messaging.md), "Nudges").
+touches on the way do not, and the user reads those in the diff. Every harness hears this two ways, as no plugin ships a skill: the `show` tool's
+own description carries the rule, which every harness reads alike from `tools/list`,
+and the runner's prompt-time hook adds Novadeck's artifacts notice, one paragraph, at
+the person's first quiet prompt of each root session and after a compaction
+(`artifactsNotice` in `terminals/nudges.ts`; it rides with the description nudge but a
+`describe` never clears it; see [Agent messaging](agent-messaging.md), "Nudges"). A
+worker another agent runs by briefs alone hears it at the person's first prompt there,
+so until then its tool description is what tells it. In Antigravity an injected message
+lasts one model call, so there the notice is read once at the prompt and the tool
+description is what lasts; a lasting injection is a gap to probe.
 
 What is shown is a companion item: a pointer to a file, a page or a plan, never a copy,
 held by exactly one terminal's bar or one undocked window. The runner keeps items and

@@ -1231,7 +1231,9 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
   paragraph each, only when a trigger fired since the last `describe`; otherwise it adds
   nothing. The description nudge is one of them; at a new session or a compaction the
   artifacts notice comes first, telling the session what to show beside the terminal
-  (see [Agent workspace](agent-workspace.md), "Companion pane"). Never at Stop,
+  (see [Agent workspace](agent-workspace.md), "Companion pane"); it waits like a
+  trigger, but a `describe` doesn't clear it, so it still comes at the next quiet prompt
+  when the agent described itself first. Never at Stop,
   and never in the same answer as messages or another notice: the trigger then waits for
   the next quiet prompt; nor in an answer that might miss the hook's deadline, which
   never spends a trigger. The triggers:

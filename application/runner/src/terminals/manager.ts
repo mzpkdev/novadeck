@@ -2396,7 +2396,7 @@ export class Terminals {
       elsewhere,
     })
     record.naming = naming
-    record.nudges = described(facts)
+    record.nudges = described(record.nudges, facts)
     this.retitle(record)
     this.save(record, false)
     return { ok: true, title: record.summary.title, ...(kept && { kept }) }
@@ -3260,7 +3260,7 @@ export class Terminals {
     record.nudges = taken.nudges
     if (!taken.nudge) return answer
     const current = { title: record.summary.title, summary: record.naming.summary }
-    return { leaseId: null, stdout: messaging.prompt(noticesAt(taken.triggers, current)) }
+    return { leaseId: null, stdout: messaging.prompt(noticesAt(taken, current)) }
   }
 
   /**
