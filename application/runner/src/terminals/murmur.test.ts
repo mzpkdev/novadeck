@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import headless from "@xterm/headless"
 import { afterEach, beforeEach, vi } from "vitest"
 
 import type { Items } from "../harnesses/replies.js"
@@ -27,6 +28,7 @@ import {
 } from "./murmur.js"
 import { unnamed } from "./naming.js"
 import type { Facts } from "./nudges.js"
+import { screenText } from "./screen.js"
 import { freshWork, promptChars, shorten, type Work } from "./work.js"
 
 const work = (fields: Partial<Work> = {}): Work => ({
@@ -36,6 +38,8 @@ const work = (fields: Partial<Work> = {}): Work => ({
   recent: ["Fix the login bug"],
   ...fields,
 })
+
+const { Terminal } = headless
 
 describe("the digest of an agent's terminal", () => {
   const input = {
@@ -212,6 +216,25 @@ describe("the digest of a plain shell", () => {
     expect(screenOf(rows)).toHaveLength(4)
     // The first row is never a continuation.
     expect(screenOf(["a", "b"], [true, true])).toEqual(["ab"])
+  })
+
+  it("joins rows drawn full across the screen, as programs that position the cursor draw them", async () => {
+    const hex = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a09"
+    const rows = ["$ cat key", hex.slice(0, 40), hex.slice(40), "$ "]
+    // By width alone: no row is marked wrapped, as in tmux panes, vim and less.
+    expect(screenOf(rows, [], 40)).toEqual(["$ cat key", hex, "$"])
+    // A short row, or one ending in a space, joins nothing; unknown width joins nothing.
+    expect(screenOf(["a".repeat(39), "b"], [], 40)).toHaveLength(2)
+    expect(screenOf([`${"a".repeat(39)} `, "b"], [], 40)).toHaveLength(2)
+    expect(screenOf(rows)).toHaveLength(4)
+    // Drawn by a real terminal with cursor moves, from its own screen text.
+    const terminal = new Terminal({ cols: 40, rows: 8, allowProposedApi: true })
+    const drawn = [...rows].map((row, index) => `\u001b[${index + 1};1H${row}`).join("")
+    await new Promise<void>((resolve) => terminal.write(`\u001b[2J${drawn}`, resolve))
+    const text = screenText(terminal)
+    expect(text.wrapped?.some(Boolean)).toBe(false)
+    expect(screenOf(text.rows, text.wrapped, text.columns)).toContain(hex)
+    terminal.dispose()
   })
 
   it("cuts lines only at a generous safety cap, leaving the redaction its whole value", () => {
@@ -685,6 +708,92 @@ describe("a mission murmur did not get to title", () => {
   })
 })
 
+describe("a retitle by a summary murmur did not get to run", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const titled = {
+    naming: { ...unnamed, murmur: { title: "Fixing login" }, summary: "Rewrites billing." },
+  }
+
+  it("is asked again by a timer on an idle terminal, with no report to ask at", async () => {
+    let answers = 0
+    const { murmur, describer, reads, written } = create(
+      { work: work(), activity: idle("ok"), ...titled },
+      new FakeDescriber({ reply: () => (answers++ === 0 ? undefined : { title: "Billing" }) }),
+    )
+    murmur.summarized("a")
+    await settle()
+    expect(describer.jobs).toHaveLength(1)
+    const before = reads.facts
+    // Nothing reports for the whole minute: nothing is built or asked.
+    await settle(59_000)
+    expect(describer.jobs).toHaveLength(1)
+    expect(reads.facts).toBe(before)
+    // Then it asks, once.
+    await settle(2_000)
+    expect(describer.jobs).toHaveLength(2)
+    expect(describer.digests[1]).toMatchObject({ summary: "Rewrites billing." })
+    expect(written).toEqual([{ title: "Billing" }])
+    await settle(120_000)
+    expect(describer.jobs).toHaveLength(2)
+  })
+
+  it("is asked again at the next report too, once the minute has passed", async () => {
+    let answers = 0
+    const { murmur, describer } = create(
+      { work: work(), activity: idle("ok"), ...titled },
+      new FakeDescriber({ reply: () => (answers++ === 0 ? undefined : { title: "Billing" }) }),
+    )
+    murmur.summarized("a")
+    await settle()
+    for (let count = 0; count < 10; count += 1) murmur.reported("a", report())
+    await settle(30_000)
+    expect(describer.jobs).toHaveLength(1)
+    await settle(31_000)
+    expect(describer.jobs).toHaveLength(2)
+  })
+
+  it("is dropped with the terminal, and on stopping", async () => {
+    const first = create(
+      { work: work(), activity: idle("ok"), ...titled },
+      new FakeDescriber({ reply: () => undefined }),
+    )
+    first.murmur.summarized("a")
+    await settle()
+    first.murmur.gone("a")
+    await settle(120_000)
+    expect(first.describer.jobs).toHaveLength(1)
+    const second = create(
+      { work: work(), activity: idle("ok"), ...titled },
+      new FakeDescriber({ reply: () => undefined }),
+    )
+    second.murmur.summarized("a")
+    await settle()
+    second.murmur.stop()
+    await settle(120_000)
+    expect(second.describer.jobs).toHaveLength(1)
+  })
+
+  it("is forgotten when a new session starts", async () => {
+    const { murmur, describer, change } = create(
+      { work: work(), activity: idle("ok"), ...titled },
+      new FakeDescriber({ reply: () => undefined }),
+    )
+    murmur.summarized("a")
+    await settle()
+    change({ work: freshWork("claude:s2") })
+    murmur.reported("a", report({ session: true }))
+    await settle(120_000)
+    // Its timer is gone, and the new session has no mission yet.
+    expect(describer.jobs).toHaveLength(1)
+  })
+})
+
 describe("a mission murmur refused to title", () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -859,6 +968,8 @@ describe("a prompt that says what a terminal is for", () => {
       "ありがとうございます",
       "สวัสดีครับ",
       "你好",
+      "好的",
+      "你好，谢谢",
       "谢谢你",
       "안녕하세요",
       "안녕하세요 감사합니다 고맙습니다",
@@ -883,6 +994,9 @@ describe("a prompt that says what a terminal is for", () => {
       expect(substantial(terse), terse).toBe(false)
     for (const mission of [
       "przejrzyj PR 130",
+      "修好测试",
+      "修好的测试",
+      "你好，修好测试",
       "로그인 버그를 고쳐줘",
       "こんにちは、テストを直して",
       "สวัสดีครับ แก้บั๊กการเข้าสู่ระบบ",

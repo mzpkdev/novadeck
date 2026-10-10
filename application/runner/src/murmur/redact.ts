@@ -20,7 +20,7 @@ const url = "A-Za-z0-9_\\-"
 type Rule = readonly [RegExp, string | ((...match: string[]) => string)]
 
 // Words that make a name a secret's wherever it is, and ones that do so only whole.
-const secretInside = /(secret|passw|passphrase|apikey|privatekey|credential)/
+const secretInside = /(secret|passw|passphrase|apikey|privatekey|credential|has[lł][oa])/
 const secretWords = new Set(["token", "pass", "pwd", "cookie", "bearer", "signature", "sig"])
 // Words before `key`, which says what it opens: `api key`, but not `primary key` or `sort key`.
 const keyOf = new Set([
@@ -89,7 +89,7 @@ const sounds = (name: string): boolean => {
   const words = name
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean)
   const last = words.at(-1)
   // npm's `_auth` is a credential; a plain `auth` or `SSH_AUTH_SOCK` is not.
@@ -158,15 +158,8 @@ const rules: readonly Rule[] = [
     /(hooks\.slack\.com\/services\/|discord(?:app)?\.com\/api\/webhooks\/)[^\s"'<>]+/gi,
     (_all, host) => `${host}${redacted}`,
   ],
-  // user:password@host in any URL, even with no user and with a newline before the @.
-  [
-    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*:[^\s/]*)@/gi,
-    (all, scheme, info) => {
-      // A newline after `host:port` is a line of output, and the next row begins with an @.
-      if (info.includes("\n") && /^[\w.-]+:\d{1,5}$/.test(info.split("\n")[0] ?? "")) return all
-      return `${scheme}${redacted}@`
-    },
-  ],
+  // user:password@host in any URL, even with no user.
+  [/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*:[^\s/]*)@/gi, (_all, scheme) => `${scheme}${redacted}@`],
   // A key as the whole userinfo, as Sentry's DSN has it.
   [
     /\b([a-z][a-z0-9+.-]*:\/\/)(?:[A-Za-z0-9]{16,}|[A-Za-z0-9]{12,}(?=@[^\s/]*(?:sentry|ingest)))@/gi,
@@ -212,7 +205,7 @@ const rules: readonly Rule[] = [
   [/(\bcurl\b[^\n]*?\s(?:-u|--user)[ =]\s*)(?!-)(\S+)/g, (_all, head) => `${head}${redacted}`],
   // --password hunter2, by the flag's exact name.
   [
-    /(--(?:password|passwd|pass|pwd|token|auth-token|access-token|api-key|apikey|secret|client-secret|auth|bearer|credentials?|passphrase))(?:=|[ \t]+)(?!-)(\S+)/gi,
+    /(--(?:password|passwd|pass|pwd|token|auth-token|access-token|api-key|apikey|secret|client-secret|auth|bearer|credentials?|passphrase))(?:=|[ \t]+)(?!-)("[^"\n]*"|'[^'\n]*'|\S+)/gi,
     (all, flag, value) =>
       secretValue(value) ? `${all.slice(0, flag.length + 1)}${redacted}` : all,
   ],
@@ -224,7 +217,7 @@ const rules: readonly Rule[] = [
   ],
   // Polish: hasło: tajne, haslo=tajne
   [
-    /(?<![\p{L}])(has[lł]o|has[lł]a)([ \t]*[:=][ \t]*)(\S+)/giu,
+    /(?<![\p{L}])(has[lł]o|has[lł]a)([ \t]*[:=][ \t]*)("[^"\n]*"|'[^'\n]*'|\S+)/giu,
     (all, name, joint, value) => (secretValue(value) ? `${name}${joint}${redacted}` : all),
   ],
   // fish: set -x NAME value

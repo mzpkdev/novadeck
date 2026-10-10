@@ -776,11 +776,15 @@ export class Murmur implements Describer {
       if (this.clock() < (this.refusals.get(key)?.until ?? 0)) return undefined
       // Waits for voice to finish and for memory to come back, then looks again.
       // eslint-disable-next-line no-await-in-loop -- One look at a time.
-      if (this.options.voice?.busy() || (await this.lowMemory(signal))) {
+      const low = await this.lowMemory(signal)
+      // Dropped while memory was read: an aborted read says nothing, and nothing may run.
+      if (signal?.aborted) return undefined
+      if (this.options.voice?.busy() || low) {
         // eslint-disable-next-line no-await-in-loop -- One look at a time.
         await this.pause(retryMs, signal)
         continue
       }
+      if (signal?.aborted) return undefined
       const controller = new AbortController()
       this.current = controller
       const onAbort = () => controller.abort()

@@ -155,6 +155,9 @@ const spacelessFiller =
     .split(/\s+/)
     .toSorted((a, b) => b.length - a.length)
 
+// A stretch of nothing but those greetings.
+const spacelessGreeting = new RegExp(`^(?:${spacelessFiller.join("|")})+$`, "u")
+
 /**
  * Whether a prompt says what a terminal is for: at least three words (or four characters
  * of a script written without spaces), and not wholly a greeting, thanks, acknowledgement,
@@ -166,11 +169,14 @@ export const substantial = (prompt: string): boolean => {
   const text = prompt.normalize("NFKC").toLowerCase()
   // Scripts written without spaces between words (Chinese, Japanese, Thai) have no words
   // to count: four characters of them say as much as three words, unless they are all
-  // greetings. Korean has spaces, and goes by its words.
+  // greetings. Korean has spaces, and goes by its words. A greeting is a whole stretch
+  // between punctuation or spaces; it is never taken out from inside a word ("修好测试").
   const script = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/gu
   if ((text.match(script)?.length ?? 0) >= 4) {
-    let rest = text.replace(/[\p{P}\p{S}\s]+/gu, "")
-    for (const greeting of spacelessFiller) rest = rest.replaceAll(greeting, "")
+    const rest = text
+      .split(/[\p{P}\p{S}\s]+/u)
+      .filter((stretch) => stretch && !spacelessGreeting.test(stretch))
+      .join("")
     if ((rest.match(script)?.length ?? 0) >= 4) return true
   }
   const words = text.replace(script, " ").match(/[\p{L}\p{N}]+/gu) ?? []
@@ -241,8 +247,9 @@ export const commandOf = (program: ForegroundProcess | null, atPrompt: boolean):
 
 /**
  * The visible rows of a plain shell's screen as murmur is shown them: rows the terminal
- * wrapped (`wrapped[i]` continues the row before) joined into the logical line they
- * are, so a value split across rows is whole for the redaction; control characters out,
+ * wrapped (`wrapped[i]` continues the row before), and those that fill the screen's
+ * `columns` and end in a non-space, joined into the logical line they are, so a value
+ * split across rows is whole for the redaction; control characters out,
  * each line trimmed and, only far past any real line, cut at the safety cap (it must not
  * cut a value ahead of the redaction, which the service does before its caps), the blank ones above and below dropped,
  * and at most the last `screenRows` kept.
@@ -250,11 +257,17 @@ export const commandOf = (program: ForegroundProcess | null, atPrompt: boolean):
 export const screenOf = (
   rows: readonly string[],
   wrapped: readonly boolean[] = [],
+  columns?: number,
 ): readonly string[] => {
   const lines: string[] = []
+  // Programs that draw rows with cursor moves (tmux panes, vim, less) never mark one as
+  // wrapped: a row that fills the screen's width and ends in a non-space is joined with
+  // the next, as a long value drawn across rows is whole for the redaction.
+  let full = false
   rows.forEach((row, index) => {
-    if (wrapped[index] && lines.length > 0) lines[lines.length - 1] += row
+    if ((wrapped[index] || full) && lines.length > 0) lines[lines.length - 1] += row
     else lines.push(row)
+    full = columns !== undefined && row.length >= columns && !/\s$/.test(row)
   })
   const kept = lines.map((line) =>
     shorten(line.replace(escapes, "").replace(control, " "), screenColumns),
@@ -275,9 +288,11 @@ export const shellDigest = (input: {
   readonly rows: readonly string[]
   /** Which rows continue the one before, as the terminal wrapped a long line. */
   readonly wrapped?: readonly boolean[]
+  /** The screen's width, to tell a row drawn full across it. */
+  readonly columns?: number
   readonly previous: Previous
 }): ShellDigest | null => {
-  const screen = screenOf(input.rows, input.wrapped)
+  const screen = screenOf(input.rows, input.wrapped, input.columns)
   if (input.command === null && screen.length < 2) return null
   const { projectFolder } = input
   return {
@@ -439,10 +454,13 @@ export type MurmurHost = {
   /** The terminal's plan, busiest folder and branch: what drift is told by and the digest shows. */
   facts(subject: MurmurSubject): Promise<Facts>
   /** The visible rows of the terminal's screen, and which of them the terminal wrapped. */
-  screen(
-    terminalId: string,
-  ): Promise<
-    { readonly rows: readonly string[]; readonly wrapped?: readonly boolean[] } | undefined
+  screen(terminalId: string): Promise<
+    | {
+        readonly rows: readonly string[]
+        readonly wrapped?: readonly boolean[]
+        readonly columns?: number
+      }
+    | undefined
   >
   /** The harness's reader of its transcript's lines. */
   items(agent: AgentName): Items | undefined
@@ -465,6 +483,8 @@ type Watch = {
   summarySession: string | null | undefined
   /** Until when a mission that could not be asked for waits to be asked again. */
   retryAt: number
+  /** The timer that asks again then, for a terminal that sends no reports meanwhile. */
+  retryTimer: NodeJS.Timeout | undefined
   /** The program in a plain shell's foreground, as a key, and since when; null at the prompt. */
   program: { readonly key: string | null; readonly since: number }
   /** A shell's description is owed (its directory changed, or it has none yet) and not built. */
@@ -512,14 +532,23 @@ export class Murmur {
     })
   }
 
+  private resetRetry(watch: Watch): void {
+    clearTimeout(watch.retryTimer)
+    watch.retryTimer = undefined
+    watch.retryAt = 0
+  }
+
   /** A terminal is gone or closed. */
   gone(terminalId: string): void {
+    const watch = this.watches.get(terminalId)
+    if (watch) this.resetRetry(watch)
     this.descriptions.cancel(terminalId)
     this.watches.delete(terminalId)
   }
 
   stop(): void {
     this.unwatch()
+    for (const watch of this.watches.values()) this.resetRetry(watch)
     this.descriptions.stop()
     this.watches.clear()
   }
@@ -544,6 +573,7 @@ export class Murmur {
     if (told.session) {
       watch.owed = true
       watch.tried = null
+      this.resetRetry(watch)
     }
     // The title waits for a prompt to say what the terminal is for (its mission) or for the
     // agent's first summary; one in the making is not asked for again at each report. Once
@@ -640,6 +670,7 @@ export class Murmur {
         tried: null,
         summarySession: undefined,
         retryAt: 0,
+        retryTimer: undefined,
         program: { key: null, since: Date.now() },
         shellOwed: false,
         since: Date.now(),
@@ -742,6 +773,7 @@ export class Murmur {
         command: commandOf(now.program, now.atPrompt),
         rows: screen.rows,
         ...(screen.wrapped && { wrapped: screen.wrapped }),
+        ...(screen.columns !== undefined && { columns: screen.columns }),
         previous: now.naming.murmur,
       }) ?? undefined
     )
@@ -754,7 +786,17 @@ export class Murmur {
       const watch = this.watches.get(terminalId)
       if (watch && watch.tried !== null) {
         watch.tried = null
+        // Owed again, though the terminal has a title already: a summary's retitle that
+        // did not run is not lost.
+        watch.owed = true
         watch.retryAt = Date.now() + this.times.retryMs
+        // An idle terminal sends no reports to ask again at: a timer does, once.
+        clearTimeout(watch.retryTimer)
+        watch.retryTimer = setTimeout(() => {
+          watch.retryTimer = undefined
+          this.react(terminalId, { session: false })
+        }, this.times.retryMs)
+        watch.retryTimer.unref()
       }
       return
     }
@@ -763,6 +805,8 @@ export class Murmur {
 
   // A description came back: it names the terminal if its title can be one.
   private stored(terminalId: string, description: Description): void {
+    const watch = this.watches.get(terminalId)
+    if (watch) this.resetRetry(watch)
     const title = description.title.trim()
     if (!terminalTitle.safeParse(title).success) return
     this.host.described(terminalId, { title })

@@ -1303,7 +1303,13 @@ export class Terminals {
       facts: (terminal) => this.peers.facts(terminal),
       screen: async (terminalId) => {
         const screen = await this.screenOf(terminalId)
-        return screen && { rows: screen.rows, ...(screen.wrapped && { wrapped: screen.wrapped }) }
+        return (
+          screen && {
+            rows: screen.rows,
+            columns: screen.columns,
+            ...(screen.wrapped && { wrapped: screen.wrapped }),
+          }
+        )
       },
       items: (agent) => harnesses[agent].transcripts?.items,
       projectFolder: (sessionId) => this.projectFolder(sessionId),

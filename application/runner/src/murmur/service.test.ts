@@ -655,6 +655,31 @@ describe("a GPU that went missing", () => {
   })
 })
 
+describe("a job dropped while memory is read", () => {
+  it("runs nothing", async ({ resources }) => {
+    const controller = new AbortController()
+    const launched: string[] = []
+    const base = fakeLaunch([arc, nvidia])
+    const context = await installed(resources, {
+      launch: (program, args) => {
+        launched.push(args.join(" "))
+        return base(program, args)
+      },
+      // The read is where the job is dropped, and it reports plenty of memory, as an
+      // aborted read on macOS does.
+      freeMemory: () => {
+        controller.abort()
+        return Number.POSITIVE_INFINITY
+      },
+    })
+    launched.length = 0
+
+    expect(await context.murmur.describe(digest, { signal: controller.signal })).toBeUndefined()
+
+    expect(launched).toEqual([])
+  })
+})
+
 describe("giving way", () => {
   it("waits while voice input is busy and runs once it is not", async ({ resources }) => {
     let busy = true

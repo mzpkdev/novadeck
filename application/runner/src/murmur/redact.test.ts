@@ -345,3 +345,19 @@ describe("redacting what a delta review found", () => {
     expect(redact(text)).toBe(text)
   })
 })
+
+describe("redacting Polish and quoted values", () => {
+  it.each([
+    ['hasło: "moje tajne hasło"', "tajne"],
+    ["haslo='moje tajne haslo'", "tajne"],
+    ["HASLO_DB=tajne123", "tajne123"],
+    ["db_hasło=tajne123", "tajne123"],
+    ['--password "my secret words"', "secret"],
+    ["export DB_PASSWORD='two words here'", "words"],
+    ['token: "two words here"', "words"],
+  ])("removes all of the value in %s", (text, secret) => {
+    const result = redact(text)
+    expect(result).not.toContain(secret)
+    expect(result).toContain(redacted)
+  })
+})
