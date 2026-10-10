@@ -5,6 +5,8 @@ import type { Harness } from "../harnesses/harness.js"
 import { agents, harnesses } from "../harnesses/registry.js"
 import type { DeliveryEvent } from "../messaging/delivery.js"
 import { Messaging } from "../messaging/messaging.js"
+import type { Report } from "../shell/reports.js"
+import { Terminals } from "../terminals/manager.js"
 import type { FakeModel } from "./model/server.js"
 
 /**
@@ -29,13 +31,19 @@ type Inside = {
   keys: Messaging["keys"]
   ask: Messaging["ask"]
 }
+type Runner = {
+  queue: <T>(terminalId: string, work: () => Promise<T>, fallback: T) => Promise<T>
+  report: (report: Report, deadline?: number) => Promise<unknown>
+}
 
 /**
  * What the runner heard and did during one test, for reading a failure afterwards where
  * its screens don't say why (as on a CI runner): each hook's report as it came, with when
  * its hook started, and what it decoded to; the person's keys; each change of a terminal's
- * delivery and what caused it; and each answer to a hook that asks. The runner runs in this
- * process, so its harnesses' decoders and its messaging are wrapped while the test runs.
+ * delivery and what caused it; each answer to a hook that asks; and when each report
+ * reached the runner, began to be handled after the terminal's earlier ones, and was done.
+ * The runner runs in this process, so its harnesses' decoders, its messaging and its
+ * report handling are wrapped while the test runs.
  */
 export const startTrace = (name: string, model: FakeModel) => {
   const started = Date.now()
@@ -111,10 +119,39 @@ export const startTrace = (name: string, model: FakeModel) => {
     return answer
   }
 
+  // When a report came, began after the terminal's earlier ones, and was done.
+  const runner = Terminals.prototype as unknown as Runner
+  const { queue, report: handle } = runner
+  runner.queue = function <T>(terminalId: string, work: () => Promise<T>, fallback: T) {
+    const came = Date.now()
+    return queue.call(
+      this,
+      terminalId,
+      async () => {
+        const began = Date.now()
+        try {
+          return await work()
+        } finally {
+          add(
+            `handled ${named(terminalId)} a report that came at ${at(came)}: began ${at(began)}, took ${Date.now() - began} ms`,
+          )
+        }
+      },
+      fallback,
+    ) as Promise<T>
+  }
+  runner.report = function (report, deadline) {
+    add(
+      `handling ${named(report.terminalId)} ${report.agent} ${report.event} (hook started ${at(report.seq)})`,
+    )
+    return handle.call(this, report, deadline)
+  }
+
   return {
     /** Puts the runner back as it was. */
     stop: () => {
       clearInterval(calls)
+      Object.assign(runner, { queue, report: handle })
       for (const [agent, decode] of decoders)
         (harnesses[agent as keyof typeof harnesses] as { decode: Harness["decode"] }).decode =
           decode
