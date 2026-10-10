@@ -15,7 +15,7 @@ import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
 import { WorkspaceStore } from "../workspaces/store.js"
-import { InputQueue } from "./input-queue.js"
+import { InputQueue, type HoldBudget } from "./input-queue.js"
 import { forceKill, Terminals } from "./manager.js"
 
 const cwd = process.cwd()
@@ -163,15 +163,12 @@ describe("an answer's hold of the person's input", () => {
       "creator",
     )
     await new Promise((resolve) => setTimeout(resolve, 300))
+    // An answer's hold, as the queue gives it: its keys deferred until delivered.
     const hold = (
       manager as unknown as {
-        holdInput: (
-          id: string,
-          cap: number,
-          options: object,
-        ) => { release: () => void; settle: () => void }
+        holdInput: (id: string, budget: HoldBudget) => { release: () => void; settle: () => void }
       }
-    ).holdInput(terminal.id, 5_000, { deferKeys: true })
+    ).holdInput(terminal.id, { inputMs: 5_000, sizeMs: 5_000, deferred: true })
     // What the children traced from here on, however much a busy machine traced before.
     const mark = traced().length
     const since = (): string => traced().slice(mark).join("\n")
@@ -1602,6 +1599,61 @@ describe("a turn the person's Escape ended", () => {
       }
     } finally {
       vi.useRealTimers()
+    }
+  })
+
+  it("reads completed with no Stop where the transcript of a harness without records holds the reply", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as Inside
+    const record = inside.records.get(terminal.id)! as {
+      transcript: string | null
+    } & (typeof inside.records extends Map<string, infer R> ? R : never)
+    const binding = { agent: "agy", sessionId: "s", instance: null } as const
+    record.binding = binding
+    const directory = mkdtempSync(join(tmpdir(), "novadeck-escape-"))
+    const asked = JSON.stringify({
+      source: "USER_EXPLICIT",
+      type: "USER_INPUT",
+      content: "Hold on",
+    })
+    const answered = JSON.stringify({
+      source: "MODEL",
+      type: "PLANNER_RESPONSE",
+      content: "Too late.",
+    })
+    try {
+      for (const [lines, outcome] of [
+        [[asked, answered], { outcome: "completed", reply: "Too late." }],
+        [[answered, asked], { outcome: "interrupted", reply: null }],
+      ] as const) {
+        record.transcript = join(directory, `${outcome.outcome}.jsonl`)
+        writeFileSync(record.transcript, `${lines.join("\n")}\n`)
+        record.activity = fresh(0, true, false)
+        inside.applyFact(record, {
+          ...binding,
+          type: "turn-started",
+          cause: "prompt",
+          startedAt: 10,
+        })
+        inside.messaging.escaped = () => ({ ...binding, type: "turn-escaped", startedAt: 20 })
+        inside.escaped(record)
+        // eslint-disable-next-line no-await-in-loop -- Each case waits for its own verdict.
+        await vi.waitFor(
+          () => expect(record.activity?.lastTurn?.escaped?.settled ?? true).toBe(true),
+          {
+            timeout: escapeVerdictMs + 2000,
+          },
+        )
+        expect(record.activity?.lastTurn).toMatchObject(outcome)
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
     }
   })
 })

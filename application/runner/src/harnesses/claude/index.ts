@@ -122,7 +122,7 @@ export const claude = {
                   {
                     type: "command",
                     command: hook(platform, event),
-                    timeout: hookSeconds,
+                    timeout: hookSeconds(platform),
                     ...(platform === "win32" && { shell: "powershell" }),
                   },
                 ],

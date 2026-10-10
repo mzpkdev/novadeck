@@ -331,6 +331,10 @@ export const startFakeModel = async (options: FakeModelOptions): Promise<FakeMod
         )
         return
       }
+      // A harness that went away before it sent the whole request, as one the deck ended
+      // at a test's close (Claude Code on a Windows runner, mid-request): no misread.
+      if (!incoming.complete && (error as NodeJS.ErrnoException).code === "ECONNRESET")
+        return outgoing.destroy()
       const what = failure(error)
       errors.push(`${incoming.method ?? "GET"} ${(incoming.url ?? "/").split("?")[0]}: ${what}`)
       if (outgoing.headersSent) return outgoing.destroy()

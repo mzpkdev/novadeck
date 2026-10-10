@@ -13,6 +13,7 @@ import {
   holds,
   lacking,
   messages,
+  nestedRuns,
   own,
   prompted,
   result,
@@ -40,7 +41,7 @@ const quiet = 3000
 
 // What the nested run a background command starts is asked, which only its own
 // conversation holds as a user's words.
-const leftRunning = "novadeck-e2e-background command: say done"
+const { leftRunning } = nestedRuns
 
 // How long the option trusting the folder must stay selected before Enter answers the
 // question: Claude Code 2.1.287 draws its question again about 130 ms after the first,
@@ -613,6 +614,10 @@ for (const setup of setups) {
           await choose(t1, question!)
         })
         trusting.catch(() => {})
+        // The second starts once the first asks, so the two never start together: Antigravity
+        // rewrites its settings as it starts, and one starting at the same time read them
+        // mid-write on a Windows runner, its onboarding shown in place of the question.
+        await t1.until(shows, 60_000)
         const t2 = await run.deck.open(setup.agent)
         expect([t1.handle, t2.handle]).toEqual(["t1", "t2"])
         const calls = run.model.mark()

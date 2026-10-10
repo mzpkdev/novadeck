@@ -56,14 +56,14 @@ const it = base.extend<{ plugins: Fixture }>({
 })
 
 // Runs a plugin's hook command the way its agent does: sh -c for Claude Code and
-// Antigravity, the login shell for Codex; PowerShell for Claude Code and cmd for the
-// others on Windows.
+// Antigravity, the login shell for Codex; PowerShell for Claude Code and Codex and cmd for
+// Antigravity on Windows.
 const runHook = (agent: AgentName, event: string, hook: string | undefined, stdin: string) => {
   const { NOVADECK_HOOK: _outer, ...rest } = process.env
   const env = hook ? { ...rest, NOVADECK_HOOK: hook } : rest
   const command = harnesses[agent].hook(process.platform, event)
   const [program, args] = windows
-    ? agent === "claude"
+    ? agent !== "agy"
       ? ["powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command]]
       : [process.env.COMSPEC ?? "cmd.exe", ["/d", "/s", "/c", command]]
     : ["/bin/sh", ["-c", command]]
@@ -97,7 +97,7 @@ describe("agent plugin hook commands", () => {
       "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK claude SessionStart }",
     )
     expect(harnesses.codex.hook("win32", "SessionStart")).toBe(
-      "if defined NOVADECK_HOOK %NOVADECK_HOOK% codex SessionStart",
+      "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK codex SessionStart }",
     )
     expect(harnesses.agy.hook("win32", "PreInvocation")).toBe(
       "if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy PreInvocation) else (echo {})",
@@ -183,12 +183,12 @@ describe("agent plugins", () => {
       "PostToolUse",
     ])
     expect(read(agy, "plugin.json")).toEqual({ name: "novadeck" })
-    // PreToolUse waits on a Windows probe there (see harnesses/agy/index.ts).
-    expect(Object.keys(read(agy, "hooks.json").novadeck)).toEqual(
-      process.platform === "win32"
-        ? ["PreInvocation", "Stop", "PostToolUse"]
-        : ["PreInvocation", "Stop", "PreToolUse", "PostToolUse"],
-    )
+    expect(Object.keys(read(agy, "hooks.json").novadeck)).toEqual([
+      "PreInvocation",
+      "Stop",
+      "PreToolUse",
+      "PostToolUse",
+    ])
   })
 })
 

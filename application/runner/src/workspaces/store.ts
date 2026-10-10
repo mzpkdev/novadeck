@@ -519,6 +519,14 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     }
     // Transcripts may hold secrets: what is deleted is overwritten, not left in free pages.
     this.database.exec("PRAGMA secure_delete = ON")
+    // Every save writes synchronously, holding up the whole runner: with a rollback
+    // journal each one created, flushed and deleted a file, which took up to 3.4 s on a
+    // Windows CI runner (500 saves of one test run over 50 ms, against 7 on Linux), long
+    // enough for hooks to miss their deadlines. A write-ahead log appends to one file and
+    // flushes only as it checkpoints: a crash loses nothing, a power cut at most the last
+    // saves. SQLite gives the log and its index the database file's own permissions.
+    this.database.exec("PRAGMA journal_mode = WAL")
+    this.database.exec("PRAGMA synchronous = NORMAL")
     this.queries = this.database.createTagStore(64)
   }
 
@@ -573,6 +581,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
       ])
         this.database.prepare(sql).run(projectId)
     })
+    this.scrub()
   }
 
   project(projectId: string): Project {
@@ -729,6 +738,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   removeTerminal(terminalId: string): void {
     void this.queries.run`DELETE FROM terminals WHERE id = ${terminalId}`
+    this.scrub()
   }
 
   forgetAgent(agent: AgentName): void {
@@ -746,6 +756,16 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   clearTranscripts(): void {
     void this.queries.run`UPDATE terminals SET transcript = NULL`
+    this.scrub()
+  }
+
+  /**
+   * Leaves what was just forgotten nowhere but in pages `secure_delete` overwrote: the
+   * write-ahead log keeps the old pages until a checkpoint, so one moves the log into the
+   * database and empties it.
+   */
+  private scrub(): void {
+    this.database.exec("PRAGMA wal_checkpoint(TRUNCATE)")
   }
 
   messages(): Message[] {

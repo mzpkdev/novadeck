@@ -38,9 +38,11 @@ const events = [
   "PostToolUse",
 ]
 
+// On Windows Codex runs a hook command in its shell there, PowerShell (7 where installed),
+// not cmd (probed 2026-10-09, 0.159.3: %COMSPEC% stayed as written, $PSVersionTable read).
 const hook = (platform: NodeJS.Platform, event: string): string =>
   platform === "win32"
-    ? `if defined NOVADECK_HOOK %NOVADECK_HOOK% codex ${event}`
+    ? `if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK codex ${event} }`
     : `[ -n "$NOVADECK_HOOK" ] && "$NOVADECK_HOOK" codex ${event} || true`
 
 // A Stop's reason continues the turn as a user-role hook prompt, which the delivery's
@@ -112,7 +114,13 @@ export const codex = {
                 ...(event === "PreToolUse" && {
                   matcher: "request_user_input|request_permissions",
                 }),
-                hooks: [{ type: "command", command: hook(platform, event), timeout: hookSeconds }],
+                hooks: [
+                  {
+                    type: "command",
+                    command: hook(platform, event),
+                    timeout: hookSeconds(platform),
+                  },
+                ],
               },
             ],
           ]),

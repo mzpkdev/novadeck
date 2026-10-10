@@ -263,9 +263,11 @@ export type UserEntry = {
 
 /**
  * How long a harness lets one of Novadeck's hooks run, in seconds; one slower is dropped
- * silently. Well above the hook's own limit, so the hook always ends by itself.
+ * silently. Well above the hook's own limit, so the hook always ends by itself. On Windows
+ * the shell the hook runs in counts too: PowerShell takes most of 15 s to start cold on a
+ * busy CI runner, where a Codex hook dropped so carried none of the messages waiting.
  */
-export const hookSeconds = 10
+export const hookSeconds = (platform: NodeJS.Platform): number => (platform === "win32" ? 30 : 10)
 
 export const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
 

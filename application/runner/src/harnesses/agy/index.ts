@@ -28,8 +28,9 @@ const ask = '{"decision":"ask"}'
 // PreToolUse also falls back where the launcher is set but missing or not runnable, as a
 // variable that outlives its Novadeck (a plugin is global; tmux carries variables on).
 // cmd's commands hold no double quote, as the agents' own spawning escapes one as `\"`,
-// which cmd doesn't read (Node's does, and the plugin tests run them so): like Codex's,
-// they therefore take a launcher path without spaces only; Windows is unprobed.
+// which cmd doesn't read (Node's does, and the plugin tests run them so): they therefore
+// take a launcher path without spaces only. Antigravity runs them in cmd on Windows
+// (probed 2026-10-09, 1.2.14).
 const hook = (platform: NodeJS.Platform, event: string): string => {
   const pre = event === "PreToolUse"
   if (platform === "win32")
@@ -67,7 +68,7 @@ const messaging: MessagingProfile = {
 const handler = (platform: NodeJS.Platform, event: string) => ({
   type: "command",
   command: hook(platform, event),
-  timeout: hookSeconds,
+  timeout: hookSeconds(platform),
 })
 
 export const agy = {
@@ -107,19 +108,11 @@ export const agy = {
           PreInvocation: [handler(platform, "PreInvocation")],
           Stop: [handler(platform, "Stop")],
           // Tool events take matcher groups: after a tool, the one that writes artifacts,
-          // which names a plan. Where PreToolUse is registered (everywhere but Windows),
-          // it runs before every tool, and the one that asks the person gets a
-          // PostToolUse. Windows is unprobed: a hook that printed nothing there would
-          // deny every tool, so until a probe shows that command works, ask_question
-          // isn't detected there.
-          ...(platform !== "win32" && {
-            PreToolUse: [{ matcher: "*", hooks: [handler(platform, "PreToolUse")] }],
-          }),
+          // which names a plan, and the one that asks the person; before every tool.
+          PreToolUse: [{ matcher: "*", hooks: [handler(platform, "PreToolUse")] }],
           PostToolUse: [
             { matcher: "write_to_file", hooks: [handler(platform, "PostToolUse")] },
-            ...(platform !== "win32"
-              ? [{ matcher: "ask_question", hooks: [handler(platform, "PostToolUse")] }]
-              : []),
+            { matcher: "ask_question", hooks: [handler(platform, "PostToolUse")] },
           ],
         },
       }),

@@ -9,10 +9,17 @@ give the same result every time.
 
 ## Running
 
-The suite runs on Linux only. Its keyring cut is a dead D-Bus address, which doesn't
-keep a harness from the macOS Keychain, and its leftover-process check reads `/proc`.
-On anything else the fixture fails each test, saying so; a scenario file can skip
-instead with `describe.skipIf(!supported)`, `supported` coming from `fixture.ts`.
+The suite runs on Linux and Windows. On Linux its keyring cut is a dead D-Bus address,
+which doesn't keep a harness from the macOS Keychain, and its leftover-process check reads
+`/proc`. On Windows the sandbox moves the user's folders too (USERPROFILE, APPDATA,
+LOCALAPPDATA, TEMP), Claude Code and Codex keep their logins in files there, and a test
+of Antigravity refuses to start while the Credential Manager holds its login
+(`credentials.ts`), as no environment moves that store; the leftover-process check reads
+each process's folder and environment through a small lister it compiles once. Windows
+runs need what CI's runners have: PowerShell 7, Git for Windows, and symlinks (an
+administrator, or Developer Mode). On anything else the fixture fails each test, saying
+so; a scenario file can skip instead with `describe.skipIf(!supported)`, `supported`
+coming from `fixture.ts`.
 
 ```sh
 npm run test:e2e                  # from the repository root; builds the protocol and relay first
@@ -34,11 +41,12 @@ against the hook timeout (ten minutes) rather than a test's. A harness left out 
 `application/runner/vitest.e2e.config.ts` includes them. The unit tests for its parts
 (`src/e2e/**/*.test.ts`) run with the rest.
 
-| Variable                      | Effect                                                                                                                       |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `NOVADECK_E2E_CACHE`          | Where harnesses are installed. Defaults to `$XDG_CACHE_HOME/novadeck/e2e`, or `~/.cache/novadeck/e2e` without XDG_CACHE_HOME |
-| `NOVADECK_E2E_HARNESS=latest` | Installs and runs each harness's newest release instead of its pin, as a drift check                                         |
-| `NOVADECK_E2E_AGENTS`         | The harnesses to run, comma-separated (`claude`, `codex`, `agy`); all when unset. `selected(setup)` in `fixture.ts` reads it |
+| Variable                      | Effect                                                                                                                                                                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOVADECK_E2E_CACHE`          | Where harnesses are installed. Defaults to `$XDG_CACHE_HOME/novadeck/e2e`, or `~/.cache/novadeck/e2e` without XDG_CACHE_HOME                                                                                           |
+| `NOVADECK_E2E_HARNESS=latest` | Installs and runs each harness's newest release instead of its pin, as a drift check                                                                                                                                   |
+| `NOVADECK_E2E_AGENTS`         | The harnesses to run, comma-separated (`claude`, `codex`, `agy`); all when unset. `selected(setup)` in `fixture.ts` reads it                                                                                           |
+| `NOVADECK_E2E_TRACES`         | Where a failed test writes its trace (`trace.ts`): each hook's report and when its hook started, the person's keys, each delivery change, each answer to a hook, and the model's calls. CI uploads them as an artifact |
 
 In CI (`.github/workflows/e2e.yml`) each harness runs in a job of its own, which runs
 the whole suite with `NOVADECK_E2E_AGENTS` set to that harness, so the scenarios across
@@ -906,11 +914,19 @@ probe output, and keep their own loader.
 
 ## Known gaps
 
-None stands today. A known gap is a difference between harnesses the suite works around
-until Novadeck closes it, and is raised with the person first (see AGENTS.md, "Harness
-Parity"): never a reason to leave a harness out.
+A known gap is a difference between harnesses the suite works around until Novadeck
+closes it, and is raised with the person first (see AGENTS.md, "Harness Parity"): never a
+reason to leave a harness out. One stands today:
 
-`known-gaps.ts` names each one as a `Gap`, with the harnesses it affects, documented
+- **Codex on Windows loses characters outside the Basic Multilingual Plane**
+  (`losesAstral`). An emoji such as 👨 mostly never reaches it through the ConPTY that
+  node-pty bundles, though Windows' own ConPTY delivers it: a prompt holding one never
+  shows whole in its box, and fails without Enter. One CI run of many got it through.
+  Pinned by chat.e2e.ts, "gives its agent emoji sequences and CJK, then the next prompt",
+  which takes either until it lands every time.
+
+`known-gaps.ts` names each one as a `Gap`, with the harnesses it affects (and the
+platforms, where only some have it), documented
 with its cause, the test that pins it and what to assert once it is fixed. The scenarios
 never ask which harness they run: they ask a function built on `has`, named for the
 behaviour that differs, which picks the detour. Each gap is also pinned by a test that

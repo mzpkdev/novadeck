@@ -6,7 +6,11 @@ import { screenText, type ScreenText } from "../terminals/screen.js"
 import { describe, expect, it } from "../test.js"
 import { loadProbe } from "../testing/probes.js"
 import { screen as screenWith } from "../testing/screens.js"
-import { box as agy, shellFooter as agyFooter } from "./agy/box.js"
+import {
+  box as agy,
+  shellCommandOf as agyShellCommand,
+  shellFooter as agyFooter,
+} from "./agy/box.js"
 import { compact, isEmpty, sameText, wrappedRows, type BoxProfile } from "./box.js"
 import { box as claude, shellFooter as claudeFooter } from "./claude/box.js"
 import { box as codex, shellFooter as codexFooter } from "./codex/box.js"
@@ -351,6 +355,41 @@ describe.each([
 
   it("says whether a command shown as a placeholder runs as the text it stands for", () => {
     expect(profile.shell.expands).toBe(key !== "agy")
+  })
+})
+
+describe("the command Antigravity's shell mode is given", () => {
+  it("is as written outside Windows", () => {
+    expect(agyShellCommand("echo a\necho b", "linux")).toBe("echo a\necho b")
+  })
+
+  it("has its lines joined with & on Windows, where cmd runs only the first", () => {
+    expect(agyShellCommand("echo a > a.txt\n  echo b\n\necho c", "win32")).toBe(
+      "echo a > a.txt & echo b & echo c",
+    )
+    expect(agyShellCommand("dir", "win32")).toBe("dir")
+  })
+})
+
+describe("Antigravity's word that an Escape stopped the turn", () => {
+  const rule = "─".repeat(60)
+  // The history above the box, the cursor in it, as the screen the CI run failed on had it.
+  const shown = (history: string[]) => {
+    const rows = ["> Hold on", "", ...history, rule, "> ", rule, "? for shortcuts"]
+    return agy.interrupted!(screen(rows, rows.indexOf("> "), 2))
+  }
+
+  it("is read under a reply it kept as well, and alone", () => {
+    const word = "  ⎿  Interrupted · What should Antigravity CLI do instead?"
+    expect(shown(["  Too late.", "", word])).toBe(true)
+    expect(shown([word, ""])).toBe(true)
+  })
+
+  it("is not read where the reply is last, nor where it stands above a later turn", () => {
+    expect(shown(["  Too late.", ""])).toBe(false)
+    expect(
+      shown(["  ⎿  Interrupted · What should Antigravity CLI do instead?", "> Next", "  Done."]),
+    ).toBe(false)
   })
 })
 

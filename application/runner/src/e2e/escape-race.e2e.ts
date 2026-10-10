@@ -21,11 +21,12 @@ import { own, start } from "./scenarios.js"
 // before the key; Antigravity's reply wins the key let go together with it, the Stop told after.
 
 const attempts = 12
-const leads: { readonly [agent: string]: readonly number[] } = {
-  claude: [20],
-  codex: [20, 200],
-  agy: [0],
-}
+// On Windows the key won every attempt with Linux's leads, and Codex's with leads up to
+// 500 ms (probed 2026-10-09): longer ones are tried there too, a second and more for Codex.
+const leads: { readonly [agent: string]: readonly number[] } =
+  process.platform === "win32"
+    ? { claude: [20, 200, 500], codex: [20, 200, 500, 1000, 2000], agy: [0, 200, 500] }
+    : { claude: [20], codex: [20, 200], agy: [0] }
 
 for (const setup of setups) {
   describe.skipIf(!supported)(setup.name, () => {
