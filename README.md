@@ -638,14 +638,21 @@ last one chosen.
 
 This is a TypeScript monorepo using pnpm workspaces and Turborepo.
 
-| Package                | Responsibility                                                  |
-| ---------------------- | --------------------------------------------------------------- |
-| `application/ui`       | React frontend built with Vite, Tailwind CSS, and Lucide icons. |
-| `application/runner`   | The runner: shells and metadata, served over WebSocket or port. |
-| `application/protocol` | Shared Zod contracts and the `connectRunner` client for UIs.    |
-| `application/host`     | Electron host that starts the runner and loads the packaged UI. |
-| `application/relay`    | Rust relay for agents' Novadeck MCP server and hooks.           |
-| `scripts`              | Repository checks and automation.                               |
+| Package                  | Responsibility                                                  |
+| ------------------------ | --------------------------------------------------------------- |
+| `application/ui`         | React frontend built with Vite, Tailwind CSS, and Lucide icons. |
+| `application/runner`     | The runner: shells and metadata, served over WebSocket or port. |
+| `application/protocol`   | Shared Zod contracts and the `connectRunner` client for UIs.    |
+| `application/host`       | Electron host that starts the runner and loads the packaged UI. |
+| `application/relay`      | Rust relay for agents' Novadeck MCP server and hooks.           |
+| `application/whisper`    | Voice engine: whisper.cpp built for download (`build:engine`).  |
+| `application/murmur`     | Murmur engine: llama.cpp built for download (`build:engine`).   |
+| `application/ggml-build` | The engine build both of those share.                           |
+| `scripts`                | Repository checks and automation.                               |
+
+Build an engine locally with `pnpm --filter @novadeck/whisper build:engine` or
+`pnpm --filter @novadeck/murmur build:engine`; the archive and `engine.json` land in
+the package's `dist/`.
 
 The UI runs real shells through the runner. Projects, sessions and their terminals
 live in the runner's SQLite metadata, and each session saves its terminals' order and

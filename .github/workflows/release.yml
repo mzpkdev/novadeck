@@ -397,6 +397,28 @@ jobs:
             echo "::error::A device line has no type."
             exit 1
           fi
+          # The flags the runner starts the server with (application/runner/src/murmur/service.ts):
+          # with a model that is not there, the server must get as far as complaining of the
+          # model, not of an argument it does not know or cannot read. Stdin is closed, as
+          # --exit-with-stdin watches it.
+          model="$engine/absent.gguf"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then model="$(cygpath -m "$engine")/absent.gguf"; fi
+          status=0
+          "$server" --host 127.0.0.1 --port 0 -m "$model" --device none -ngl 999 -c 4096 -np 1 \
+            --reasoning off --exit-with-stdin < /dev/null > "$RUNNER_TEMP/murmur-flags.txt" 2>&1 || status=$?
+          tr -d '\r' < "$RUNNER_TEMP/murmur-flags.txt" | tail -n 20
+          if [[ "$status" == 0 ]]; then
+            echo "::error::The server started without its model."
+            exit 1
+          fi
+          if grep -q -i -E 'invalid argument|unknown argument|unrecognized|unrecognised|error while handling argument|invalid value|usage:' "$RUNNER_TEMP/murmur-flags.txt"; then
+            echo "::error::The server does not take the flags the runner starts it with."
+            exit 1
+          fi
+          if ! grep -q -i -E 'absent\.gguf|failed to load model|error loading model|failed to open' "$RUNNER_TEMP/murmur-flags.txt"; then
+            echo "::error::The server did not complain of the missing model."
+            exit 1
+          fi
 
       # The relay is built with the Rust its rust-toolchain.toml names; on macOS as one
       # binary for both architectures. macOS signs with the keychain's identity on its own;

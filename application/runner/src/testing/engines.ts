@@ -59,7 +59,13 @@ export const engineArchive = async (
   const manifest = join(directory, "engine.json")
   await writeFile(
     manifest,
-    JSON.stringify({ file, sha256: sha256(archive), size: archive.length, ...options.fields }),
+    JSON.stringify({
+      file,
+      sha256: sha256(archive),
+      size: archive.length,
+      interface: 1,
+      ...options.fields,
+    }),
   )
   return manifest
 }

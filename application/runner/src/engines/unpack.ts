@@ -39,15 +39,11 @@ export const engineFolder = (directory: string, sha256: string): string =>
 const interfaceMarker = ".interface"
 
 /**
- * The interface of the engine in `folder`: what it was unpacked for, or the first when it
- * was unpacked before there was a marker. A marker that makes no sense matches nothing.
+ * The interface of the engine in `folder`: what it was unpacked for. A marker that is
+ * missing, unreadable or makes no sense matches nothing.
  */
 export const engineInterface = async (folder: string): Promise<number> => {
-  // Only a marker that is not there is the first interface; one that cannot be read matches nothing.
-  const text = await readFile(join(folder, interfaceMarker), "utf8").catch((error: unknown) =>
-    error instanceof Error && "code" in error && error.code === "ENOENT" ? undefined : "",
-  )
-  if (text === undefined) return 1
+  const text = await readFile(join(folder, interfaceMarker), "utf8").catch(() => "")
   return /^\d+$/.test(text.trim()) ? Number(text) : 0
 }
 

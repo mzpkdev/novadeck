@@ -3,7 +3,7 @@ import { join } from "node:path"
 
 import { describe, expect, it } from "../test.js"
 import { folder } from "../testing/engines.js"
-import { Server, type Launch, type ServerSpec } from "./server.js"
+import { engineEnvironment, runEngineOnce, Server, type Launch, type ServerSpec } from "./server.js"
 import { EngineError } from "./unpack.js"
 
 // A program of its own, not whisper's: it listens on --port and tells its environment
@@ -16,6 +16,16 @@ console.error("ready on the device " + process.env.TEST_DEVICE)
 createServer((request, response) => {
   if (request.url === "/prefix/health") return response.end("ok")
   if (request.url === "/prefix/env") return response.end(process.env.TEST_KEY + "/" + process.env.TEST_DEVICE)
+  if (request.url === "/prefix/echo")
+    return response.end(JSON.stringify({
+      llama: process.env.LLAMA_ARG_PORT ?? null,
+      lower: process.env.aip_mode ?? null,
+      hf: process.env.HF_TOKEN ?? null,
+      ggml: process.env.GGML_VK_VISIBLE_DEVICES ?? null,
+      launched: process.env.LLAMA_API_KEY ?? null,
+      header: request.headers["x-spec"] ?? null,
+      other: request.headers["x-call"] ?? null,
+    }))
   response.statusCode = 404
   response.end()
 }).listen(port, "127.0.0.1")
@@ -32,7 +42,8 @@ const spec: ServerSpec<Config, { device: string | undefined }> = {
   prepare: (config, port) => ({
     path: "/prefix",
     args: ["--port", String(port), "--exit-with-stdin"],
-    env: { TEST_KEY: config.key },
+    env: { TEST_KEY: config.key, LLAMA_API_KEY: config.key },
+    headers: { "x-spec": config.key, "x-call": "spec" },
   }),
   onLine(line, facts) {
     const heard = /device (\S+)/.exec(line)
@@ -102,5 +113,124 @@ describe("a server", () => {
 
     await expect(failure).rejects.toThrow(EngineError)
     await expect(failure).rejects.toThrow("Demo failed: the engine stopped")
+  })
+})
+
+// Sets variables of this process for one test, and puts them back.
+const withEnvironment = async (set: Record<string, string>, run: () => Promise<void>) => {
+  const before = Object.fromEntries(Object.keys(set).map((name) => [name, process.env[name]]))
+  Object.assign(process.env, set)
+  try {
+    await run()
+  } finally {
+    for (const [name, value] of Object.entries(before))
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+  }
+}
+
+describe("an engine's environment", () => {
+  it("leaves out the settings llama.cpp and its libraries read, in any case, and keeps the rest", async () => {
+    await withEnvironment(
+      {
+        LLAMA_ARG_PORT: "1",
+        llamacpp_x: "1",
+        AIP_MODE: "1",
+        Hf_Token: "1",
+        LLGUIDANCE_LOG: "1",
+        GGML_VK_VISIBLE_DEVICES: "0",
+        NOVADECK_TEST_KEEP: "yes",
+      },
+      async () => {
+        const environment = engineEnvironment({ LLAMA_API_KEY: "mine" })
+
+        expect(
+          Object.keys(environment).filter((name) => /^(llama|aip|hf|llgui)/i.test(name)),
+        ).toEqual(["LLAMA_API_KEY"])
+        expect(environment).toMatchObject({
+          GGML_VK_VISIBLE_DEVICES: "0",
+          NOVADECK_TEST_KEEP: "yes",
+        })
+        await Promise.resolve()
+      },
+    )
+  })
+
+  it("is what a server runs in, whatever the launch adds, and its headers go with its requests", async ({
+    resources,
+  }) => {
+    const { directory, launch } = await launchWith(resources)
+    const server = new Server(spec, { launch })
+    resources.defer(() => server.close())
+
+    await withEnvironment(
+      { LLAMA_ARG_PORT: "1", aip_mode: "1", HF_TOKEN: "1", GGML_VK_VISIBLE_DEVICES: "0" },
+      async () => {
+        const running = await server.acquire({ folder: directory, key: "secret" })
+        const response = await server.request(running, "/echo", {
+          headers: { "x-call": "caller" },
+          signal: AbortSignal.timeout(5000),
+        })
+
+        expect(await response.json()).toEqual({
+          llama: null,
+          lower: null,
+          hf: null,
+          ggml: "0",
+          launched: "secret",
+          header: "secret",
+          other: "caller",
+        })
+      },
+    )
+  })
+})
+
+const printing: Launch = (_program, args) => ({
+  command: process.execPath,
+  args: [
+    "-e",
+    "console.log(process.env.LLAMA_ARG_HOST ?? 'clean', process.env.EXTRA); console.error(process.argv[1])",
+    "--",
+    ...args,
+  ],
+  env: { EXTRA: "launched" },
+})
+const missing: Launch = () => ({ command: "novadeck-no-such-program", args: [] })
+const hangs: Launch = () => ({
+  command: process.execPath,
+  args: ["-e", "setTimeout(() => {}, 60000)"],
+})
+
+const exits: Launch = () => ({ command: process.execPath, args: ["-e", "process.exit(3)"] })
+
+describe("running an engine once", () => {
+  it("answers with what it printed, from the engine environment", async () => {
+    await withEnvironment({ LLAMA_ARG_HOST: "0.0.0.0" }, async () => {
+      const printed = await runEngineOnce(printing, "llama-server", ["--list-devices"], {
+        signal: AbortSignal.timeout(10_000),
+      })
+
+      expect(printed.stdout.trim()).toBe("clean launched")
+      expect(printed.stderr.trim()).toBe("--list-devices")
+    })
+  })
+
+  it("says why a program could not run or finish, and reports its exit code", async () => {
+    const missed = await runEngineOnce(missing, "x", [])
+    expect(missed).toMatchObject({ stdout: "", stderr: "", code: null })
+    expect(missed.failure).toContain("ENOENT")
+    const late = await runEngineOnce(hangs, "x", [], { timeoutMs: 200 })
+    expect(late).toMatchObject({ code: null, failure: "timed out after 200 ms" })
+    await expect(runEngineOnce(hangs, "x", [], { signal: AbortSignal.abort() })).resolves.toEqual({
+      stdout: "",
+      stderr: "",
+      code: null,
+    })
+    await expect(runEngineOnce(exits, "x", [])).resolves.toEqual({
+      stdout: "",
+      stderr: "",
+      code: 3,
+    })
   })
 })

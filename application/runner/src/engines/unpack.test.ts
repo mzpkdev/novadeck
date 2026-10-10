@@ -57,7 +57,7 @@ describe("unpacking the engine", () => {
     const target = await unpack(archive, directory, "c".repeat(64), 3, program)
 
     await expect(engineInterface(target)).resolves.toBe(3)
-    await expect(engineInterface(bare)).resolves.toBe(1)
+    await expect(engineInterface(bare)).resolves.toBe(0)
     await expect(engineInterface(torn)).resolves.toBe(0)
     await expect(engineInterface(unreadable)).resolves.toBe(0)
   })
@@ -78,7 +78,7 @@ describe("unpacking the engine", () => {
 })
 
 describe("an older engine", () => {
-  it("is the first unpacked one that has the program and speaks the wanted interface", async ({
+  it("is the first unpacked one that has the program and a marker for the wanted interface", async ({
     resources,
   }) => {
     const directory = await folder(resources)
@@ -90,12 +90,13 @@ describe("an older engine", () => {
       )
     }
     await make("0000", { [program]: "" })
+    await make("0001", { [program]: "", ".interface": "1\n" })
     await make("1111", { [program]: "", ".interface": "2\n" })
     await make("2222", { ".interface": "2\n" })
     await make(".unpacking-x", { [program]: "", ".interface": "2\n" })
 
     await expect(olderEngine(directory, program, 2)).resolves.toBe(join(root, "1111"))
-    await expect(olderEngine(directory, program, 1)).resolves.toBe(join(root, "0000"))
+    await expect(olderEngine(directory, program, 1)).resolves.toBe(join(root, "0001"))
     await expect(olderEngine(directory, program, 3)).resolves.toBeUndefined()
     await expect(olderEngine(join(directory, "none"), program, 1)).resolves.toBeUndefined()
   })

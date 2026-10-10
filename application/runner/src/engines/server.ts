@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process"
+import { execFile, spawn, type ChildProcess } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
@@ -20,6 +20,72 @@ export type Launch = (
   readonly env?: Readonly<Record<string, string>>
 }
 
+// What llama.cpp and its libraries read for every option the command line leaves unset:
+// tools, MCP servers, cache types, endpoints and the port among them. Nothing of the
+// person's shell may configure an engine. (GGML_* stays: it picks backends and devices.)
+// Windows names its variables without regard to case.
+const asIs: Launch = (command, args) => ({ command, args })
+
+const engineOwn = /^(LLAMA_|LLAMACPP_|AIP_|HF_|LLGUIDANCE_)/i
+
+/** The environment an engine runs in: this process's without the engines' own settings, plus `extra`. */
+export const engineEnvironment = (
+  extra?: Readonly<Record<string, string>>,
+): Record<string, string> => {
+  const environment: Record<string, string> = {}
+  for (const [name, value] of Object.entries(process.env))
+    if (value !== undefined && !engineOwn.test(name)) environment[name] = value
+  return { ...environment, ...extra }
+}
+
+/**
+ * Runs an engine's program once to completion, started as a server is: through `launch`,
+ * from the temporary folder and in the engine environment. Never rejects: it answers with
+ * what it printed and its exit `code` (`null` when it did not exit by itself). `failure` says
+ * in words why it could not run or finish (the spawn error, or that it timed out), and is
+ * absent when it ran and exited, whatever its code, and when `signal` aborted it.
+ */
+export const runEngineOnce = (
+  launch: Launch | undefined,
+  program: string,
+  args: readonly string[],
+  options: {
+    readonly env?: Readonly<Record<string, string>>
+    readonly signal?: AbortSignal
+    readonly timeoutMs?: number
+  } = {},
+): Promise<{ stdout: string; stderr: string; code: number | null; failure?: string }> => {
+  const timeoutMs = options.timeoutMs ?? 30_000
+  const launched = (launch ?? asIs)(program, args)
+  return new Promise((resolve) => {
+    execFile(
+      launched.command,
+      [...launched.args],
+      {
+        cwd: tmpdir(),
+        timeout: timeoutMs,
+        windowsHide: true,
+        ...(options.signal && { signal: options.signal }),
+        env: engineEnvironment({ ...options.env, ...launched.env }),
+      },
+      (error, stdout, stderr) => {
+        const printed = { stdout: String(stdout), stderr: String(stderr) }
+        if (error === null) return resolve({ ...printed, code: 0 })
+        if (options.signal?.aborted) return resolve({ ...printed, code: null })
+        // A number is the program's own exit status; anything else is why it did not get to one.
+        if (typeof error.code === "number") return resolve({ ...printed, code: error.code })
+        resolve({
+          ...printed,
+          code: null,
+          failure: error.killed
+            ? `timed out after ${timeoutMs >= 1000 ? `${Math.round(timeoutMs / 1000)} s` : `${timeoutMs} ms`}`
+            : error.message,
+        })
+      },
+    )
+  })
+}
+
 /** What an engine's server is, and how it is run: everything its program does not share with the others. */
 export type ServerSpec<Config extends { readonly folder: string }, Facts> = {
   /** The program's file name inside the config's folder. */
@@ -33,7 +99,8 @@ export type ServerSpec<Config extends { readonly folder: string }, Facts> = {
   /**
    * The server's arguments for `port`. A `path` is the unguessable prefix every request goes
    * under, so no web page can reach the server; `env` is added to the process's environment,
-   * as a secret is better there than in arguments anyone can list.
+   * as a secret is better there than in arguments anyone can list; `headers` go with every
+   * request made of it, as the credential that goes with that secret.
    */
   prepare(
     config: Config,
@@ -42,6 +109,7 @@ export type ServerSpec<Config extends { readonly folder: string }, Facts> = {
     readonly args: readonly string[]
     readonly path?: string
     readonly env?: Readonly<Record<string, string>>
+    readonly headers?: Readonly<Record<string, string>>
   }
   /** What it knows of a running server when it starts, to be filled in from its log. */
   facts(): Facts
@@ -54,6 +122,8 @@ export type Running<Facts> = {
   /** The path every request goes under, empty when the server has no prefix. */
   readonly path: string
   readonly port: number
+  /** Headers every request carries, from the spec. */
+  readonly headers: Readonly<Record<string, string>>
   readonly child: ChildProcess
   readonly output: string[]
   readonly exited: Promise<void>
@@ -145,7 +215,8 @@ export class Server<Config extends { readonly folder: string }, Facts> {
   }
 
   /**
-   * Makes a request of the running server: `path` goes after its request prefix. A
+   * Makes a request of the running server: `path` goes after its request prefix, and the
+   * headers its spec asked for go with it unless `init` sets them. A
    * server that did not answer is explained with what it last said, after a moment for
    * a crash to show.
    */
@@ -155,7 +226,12 @@ export class Server<Config extends { readonly folder: string }, Facts> {
     init: RequestInit & { signal: AbortSignal },
   ): Promise<Response> {
     try {
-      return await fetch(`http://127.0.0.1:${running.port}${running.path}${path}`, init)
+      const headers = new Headers(running.headers)
+      for (const [name, value] of new Headers(init.headers)) headers.set(name, value)
+      return await fetch(`http://127.0.0.1:${running.port}${running.path}${path}`, {
+        ...init,
+        headers,
+      })
     } catch (error) {
       // A crashed server has exited by the time its socket closes.
       await Promise.race([running.exited, sleep(200)])
@@ -232,8 +308,7 @@ export class Server<Config extends { readonly folder: string }, Facts> {
     const port = await freePort()
     const program = join(config.folder, this.spec.program)
     const prepared = this.spec.prepare(config, port)
-    const launch: Launch = this.options.launch ?? ((p, a) => ({ command: p, args: a }))
-    const launched = launch(program, prepared.args)
+    const launched = (this.options.launch ?? asIs)(program, prepared.args)
     const child = spawn(launched.command, [...launched.args], {
       // Not the engine's folder: Windows can't remove a folder a process works in, which
       // would keep an update or uninstall from removing it. The engine finds its libraries
@@ -241,15 +316,14 @@ export class Server<Config extends { readonly folder: string }, Facts> {
       cwd: tmpdir(),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
-      ...((prepared.env || launched.env) && {
-        env: { ...process.env, ...prepared.env, ...launched.env },
-      }),
+      env: engineEnvironment({ ...prepared.env, ...launched.env }),
     })
     const exited = new Promise<void>((resolve) => child.once("close", () => resolve()))
     const running: Running<Facts> = {
       key,
       path: prepared.path ?? "",
       port,
+      headers: prepared.headers ?? {},
       child,
       output: [],
       exited,

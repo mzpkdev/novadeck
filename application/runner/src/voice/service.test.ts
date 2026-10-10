@@ -13,6 +13,13 @@ import type { Catalog } from "./catalog.js"
 import type { HintFacts } from "./hint.js"
 import { updateRetryMs, Voice, type VoiceOptions } from "./service.js"
 
+/** The file in the models folder that holds `name`, named by its checksum too. */
+const modelOf = async (directory: string, name: string): Promise<string> => {
+  const found = (await readdir(join(directory, "models"))).find((file) => file.endsWith(`-${name}`))
+  if (found === undefined) throw new Error(`no ${name} in the models folder`)
+  return join(directory, "models", found)
+}
+
 const pcm = (bytes: number) => Buffer.alloc(bytes).toString("base64")
 
 const noFacts: HintFacts = {
@@ -148,6 +155,34 @@ describe("installing voice input", () => {
 
     await expect(voice.install("turbo")).rejects.toMatchObject({ code: "CONFLICT" })
     await voice.settled()
+  })
+
+  it("fetches a model re-uploaded under the same name, and removes the one it replaces", async ({
+    resources,
+  }) => {
+    const first = await installed(resources)
+    const before = await readdir(join(first.directory, "models"))
+    const { voice } = await setup(resources, {
+      store: first.store,
+      directory: first.directory,
+      engine: first.manifest as string,
+      catalog: await modelCatalog(resources, { small: "small again" }),
+    })
+
+    // The file named like the pinned one is not the pinned one.
+    expect(voice.state().installed).toEqual([])
+    await voice.install("small")
+    await voice.settled()
+
+    const after = await readdir(join(first.directory, "models"))
+    expect(voice.state()).toMatchObject({ installed: ["small"], failure: null })
+    expect(after).toHaveLength(2)
+    expect(after.filter((file) => before.includes(file))).toEqual([
+      before.find((file) => file.endsWith("-ggml-vad.bin")),
+    ])
+    expect(await readFile(await modelOf(first.directory, "ggml-small.bin"), "utf8")).toBe(
+      "small again",
+    )
   })
 
   it("fails in words for a damaged model, keeping the engine it fetched", async ({ resources }) => {
@@ -289,7 +324,7 @@ describe("installing voice input", () => {
     await voice.install("turbo")
     await voice.settled()
     expect(voice.state()).toMatchObject({ model: "turbo", enabled: true })
-    await rm(join(directory, "models", "ggml-turbo.bin"))
+    await rm(await modelOf(directory, "ggml-turbo.bin"))
 
     await voice.install("small")
     await voice.settled()
@@ -532,7 +567,7 @@ describe("transcribing a recording", () => {
     resources,
   }) => {
     const { voice, directory } = await installed(resources)
-    const model = `${directory}/models/ggml-small.bin`
+    const model = await modelOf(directory, "ggml-small.bin")
     await writeFile(model, "small crash")
     // Choosing a model ends the engine, which the next clip starts again from the file.
     await voice.set({ model: "small" })
@@ -688,15 +723,16 @@ describe("voice input after the app brings a new engine", () => {
     expect(voice.state()).toMatchObject({ installing: null, failure: null, enabled: true })
   })
 
-  it("keeps dictating with an older engine that has no marker, as the first interface", async ({
-    resources,
-  }) => {
+  it("does not use an older engine that has no marker", async ({ resources }) => {
     const { voice, directory } = await updated(resources)
     const [older] = await readdir(join(directory, "engine"))
     await rm(join(directory, "engine", older ?? "", ".interface"), { force: true })
     await voice.refresh()
 
-    await expect(voice.record("owner", "clip", 0, pcm(3200))).resolves.toBeUndefined()
+    await expect(voice.record("owner", "clip", 0, pcm(2))).rejects.toMatchObject({
+      code: "VOICE_UNAVAILABLE",
+      data: { reason: "updating" },
+    })
     await voice.settled()
   })
 
@@ -898,7 +934,7 @@ describe("a chosen model that went missing", () => {
     await voice.settled()
     expect(voice.state()).toMatchObject({ model: "turbo", enabled: true })
 
-    await rm(join(directory, "models", "ggml-turbo.bin"))
+    await rm(await modelOf(directory, "ggml-turbo.bin"))
     await voice.load()
 
     expect(voice.state()).toMatchObject({ installed: ["small"], model: "small", enabled: true })

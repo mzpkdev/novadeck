@@ -14,15 +14,20 @@ describe("the engine manifest", () => {
     await expect(readManifest(path)).resolves.toMatchObject({ file: "engine.tar.gz" })
   })
 
-  it("takes the first interface for a manifest that names none", async ({ resources }) => {
-    const path = await engineArchive(resources, program)
+  it("reads the interface, which a manifest must name", async ({ resources }) => {
     const named = await engineArchive(resources, program, {
       release: "2",
       fields: { interface: 2 },
     })
+    const directory = await folder(resources)
+    const none = join(directory, "none.json")
+    await writeFile(
+      none,
+      JSON.stringify({ file: "engine.tar.gz", sha256: "0".repeat(64), size: 1 }),
+    )
 
-    await expect(readManifest(path)).resolves.toMatchObject({ interface: 1 })
     await expect(readManifest(named)).resolves.toMatchObject({ interface: 2 })
+    await expect(readManifest(none)).resolves.toBeUndefined()
   })
 
   it("is nothing for an interface that is not a positive whole number", async ({ resources }) => {

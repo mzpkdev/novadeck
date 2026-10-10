@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises"
-import { basename, dirname, join } from "node:path"
+import { dirname, join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
 import {
@@ -17,6 +17,7 @@ import { ActivityTracker, type Activity } from "../engines/activity.js"
 import { DownloadError, download } from "../engines/download.js"
 import { aborted, engineStatus, fetchEngine, removeContents } from "../engines/install.js"
 import { readManifest, type Manifest } from "../engines/manifest.js"
+import { modelFile, pruneModels } from "../engines/models.js"
 import type { Launch } from "../engines/server.js"
 import { EngineError, engineFolder, exists } from "../engines/unpack.js"
 import { Watchers } from "../engines/watchers.js"
@@ -479,11 +480,11 @@ export class Voice {
   }
 
   private modelPath(model: VoiceModel): string {
-    return join(this.directory, "models", basename(this.catalog.models[model].url))
+    return modelFile(this.directory, this.catalog.models[model])
   }
 
   private vadPath(): string {
-    return join(this.directory, "models", basename(this.catalog.vad.url))
+    return modelFile(this.directory, this.catalog.vad)
   }
 
   private changed(): void {
@@ -530,6 +531,12 @@ export class Voice {
       }
       if (engineOnly) return
       await this.fetchModel(model, signal)
+      // The models an earlier pin named are of no use now.
+      await pruneModels(this.directory, [
+        this.modelPath("turbo"),
+        this.modelPath("small"),
+        this.vadPath(),
+      ])
       this.progress({ model, step: "check", received: 0, total: 0 }, true)
       const check = await this.busyWith(() => this.measure(model, manifest, signal))
       // The model checked out, so it is the one used, and voice input is on, as the person
