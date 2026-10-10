@@ -15,9 +15,10 @@
    the page is up, from which it slides; on a pin, aria-current="true" for the current
    project, and data-project-status="question" | "attention" | "failed" | "done" (never
    "running"); data-dragging="true" on the pin being dragged along the bar, which lifts
-   as a dragged row of the switcher does. The others slide aside. data-leaving="true" on
-   it once dragged well off the bar, where letting go unpins it, and data-arriving="true" on a pin handed over from the
-   switcher's drag until it is under the pointer.
+   as a dragged row of the switcher does, fading in. The others slide aside.
+   data-leaving="true" on it once dragged well off the bar, where letting go unpins it,
+   and data-arriving="true" on a pin handed over from the switcher's drag until it is
+   under the pointer.
 
    Tokens, each optional (its fallback in brackets):
    --pins-bar-bg (--region-header-bg, paper), --pins-bar-image (--region-header-image),
@@ -69,6 +70,10 @@
   --_number-fg: var(--pin-number-fg, var(--color-muted));
   position: relative;
   padding-inline: 16px;
+  /* Its lift under a drag fades in, the ground and the edge, not the text. */
+  transition:
+    background-color var(--motion-state) var(--ease-interface),
+    box-shadow var(--motion-state) var(--ease-interface);
   color: var(--_fg);
 }
 .pin-number {
@@ -107,15 +112,18 @@
   background-color: var(--pins-bar-indicator-bg, var(--tabs-indicator-bg, var(--color-strong)));
   box-shadow: var(--pins-bar-indicator-shadow, var(--tabs-indicator-shadow, none));
   pointer-events: none;
+  transition: opacity var(--motion-state) var(--ease-interface);
 }
 .pins-bar-indicator[data-slide="true"] {
   transition:
     translate var(--motion-state) var(--ease-interface),
-    width var(--motion-state) var(--ease-interface);
+    width var(--motion-state) var(--ease-interface),
+    opacity var(--motion-state) var(--ease-interface);
 }
-/* The pins slide aside under a drag; the line comes back under the current pin after. */
+/* The pins slide aside under a drag, and the line fades out, to fade back in under the
+   current pin after. */
 .pins-bar-row[data-dragging="true"] .pins-bar-indicator {
-  visibility: hidden;
+  opacity: 0;
 }
 .pin:focus-visible {
   --_fg: var(--pin-hover-fg, var(--color-ink));
@@ -154,7 +162,9 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .pins-bar[data-animated="true"],
-  .pins-bar-indicator[data-slide="true"] {
+  .pins-bar-indicator,
+  .pins-bar-indicator[data-slide="true"],
+  .pin {
     transition: none;
   }
 }
