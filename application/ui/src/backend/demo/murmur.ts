@@ -109,6 +109,7 @@ export const createDemoMurmur = (timing: DemoMurmurTiming = defaultTiming): Murm
       // Removing it says the person doesn't want it.
       choice = false
       state.update(() => ({ ...demoMurmurState, wanted: false }))
+      return Promise.resolve()
     },
     set: (settings) =>
       state.update((current) => {

@@ -133,7 +133,7 @@ import {
   unnamed,
   type Naming,
 } from "./naming.js"
-import { atPrompt, described, fired, noNudges, noticesAt, type Nudges } from "./nudges.js"
+import { afterSummary, atPrompt, fired, noNudges, noticesAt, type Nudges } from "./nudges.js"
 import {
   allowOpen,
   openLimit,
@@ -1320,6 +1320,16 @@ export class Terminals {
         this.retitle(record)
         this.save(record, false)
       },
+      cleared: () => {
+        // Murmur is off or gone: its titles go, running terminals' and saved ones'.
+        for (const record of this.records.values()) {
+          if (record.naming.murmur === null) continue
+          record.naming = { ...record.naming, murmur: null }
+          if (!this.retitle(record)) this.announce(record)
+          this.save(record, false)
+        }
+        this.persisting(() => this.options.records?.clearMurmurTitles())
+      },
     }
   }
 
@@ -2485,7 +2495,7 @@ export class Terminals {
     if (this.stopping || this.records.get(call.terminalId) !== record)
       return unansweredCalls.summarize
     record.naming = summarized(record.naming, summary)
-    record.nudges = described(record.nudges, facts)
+    record.nudges = afterSummary(record.nudges, facts)
     this.save(record, false)
     this.murmur?.summarized(record.summary.id)
     return { ok: true }
@@ -3245,6 +3255,7 @@ export class Terminals {
     const told = await this.attributed(record, events)
     // What the root worked on, from its prompts as told, as Antigravity's from its
     // transcript; this terminal's later reports wait for this one.
+    const workedIn = record.work?.session
     if (this.tallyWork(record, told, changes) || changed) this.save(record, false)
     // The harness compacted the root session's context: it may have lost the notice of its bar.
     if (
@@ -3254,7 +3265,10 @@ export class Terminals {
       )
     )
       record.nudges = fired(record.nudges, "compaction")
-    this.murmur?.reported(report.terminalId, this.reported(changes))
+    this.murmur?.reported(
+      report.terminalId,
+      this.reported(changes, record.work?.session !== workedIn),
+    )
     if (deadline === undefined) {
       this.messaging.observe(report.terminalId, told)
       this.escaped(record)
@@ -3276,10 +3290,14 @@ export class Terminals {
     return this.nudged(record, report, told, answer, deadline)
   }
 
-  /** What a report tells murmur of the terminal's root session (see `Murmur.reported`). */
-  private reported(changes: readonly RootChange[]): Reported {
+  /**
+   * What a report tells murmur of the terminal's root session (see `Murmur.reported`). A
+   * session is new to murmur only when the work's session changed: a root bound again to
+   * the session it already worked in (a restored terminal, `claude --resume`) is not.
+   */
+  private reported(changes: readonly RootChange[], sessionChanged: boolean): Reported {
     return {
-      session: changes.some((change) => change.type === "new"),
+      session: sessionChanged && changes.some((change) => change.type === "new"),
       corrected: changes.flatMap((change) =>
         change.type === "corrected"
           ? [
@@ -3384,8 +3402,12 @@ export class Terminals {
    */
   private trackRoot(record: Record, events: readonly HarnessEvent[], statusLine: boolean): boolean {
     const changes = this.followRootOf(record, events, statusLine)
+    const workedIn = record.work?.session
     const tallied = this.tallyWork(record, events, changes)
-    this.murmur?.reported(record.summary.id, this.reported(changes))
+    this.murmur?.reported(
+      record.summary.id,
+      this.reported(changes, record.work?.session !== workedIn),
+    )
     return tallied
   }
 

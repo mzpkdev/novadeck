@@ -175,8 +175,8 @@ export type Backend = {
   // Optional. Voice input: the person speaks, and the backend transcribes it on its
   // machine. Absent where the backend cannot transcribe.
   readonly voice?: Voice
-  // Optional. Murmur: a model on the backend's machine names its terminals and writes a
-  // line on what each is doing. Absent where the backend cannot run one.
+  // Optional. Murmur: a model on the backend's machine writes titles for its terminals.
+  // Absent where the backend cannot run one.
   readonly murmur?: Murmur
   // Optional. Types text into a terminal as a paste, bracketed where its program asks,
   // without pressing Enter, as dictation does. Says whether it typed: false when the

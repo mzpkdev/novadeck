@@ -47,6 +47,7 @@ export type Murmur = {
   // Each of these starts the change; `state` shows it as it goes, and its end or failure.
   readonly install: () => void
   readonly cancel: () => void
-  readonly uninstall: () => void
+  // Settles when the removal ended, whether it worked or failed (`state` shows which).
+  readonly uninstall: () => Promise<void>
   readonly set: (settings: Partial<MurmurSettings>) => void
 }

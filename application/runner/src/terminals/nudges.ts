@@ -88,7 +88,7 @@ export const drifted = (nudges: Nudges, facts: Facts): Nudges => {
  * The agent summarized its work: no summarize trigger is pending, and drift is measured
  * from `facts`. What the session has yet to hear of its bar stays.
  */
-export const described = (nudges: Nudges, facts: Facts): Nudges => ({
+export const afterSummary = (nudges: Nudges, facts: Facts): Nudges => ({
   pending: [],
   prompts: 0,
   baseline: facts,
@@ -100,7 +100,7 @@ export const described = (nudges: Nudges, facts: Facts): Nudges => ({
 export type Taken = {
   readonly nudge: boolean
   readonly artifacts: boolean
-  readonly describe: boolean
+  readonly summarize: boolean
   readonly nudges: Nudges
 }
 
@@ -110,11 +110,11 @@ export type Taken = {
  * anything else, as messages, when they wait.
  */
 export const take = (nudges: Nudges, quiet: boolean): Taken => {
-  const describe = nudges.pending.length > 0
+  const summarize = nudges.pending.length > 0
   const { artifacts } = nudges
-  return quiet && (describe || artifacts)
-    ? { nudge: true, artifacts, describe, nudges: { ...nudges, pending: [], artifacts: false } }
-    : { nudge: false, artifacts: false, describe: false, nudges }
+  return quiet && (summarize || artifacts)
+    ? { nudge: true, artifacts, summarize, nudges: { ...nudges, pending: [], artifacts: false } }
+    : { nudge: false, artifacts: false, summarize: false, nudges }
 }
 
 /**
@@ -171,10 +171,10 @@ export const artifactsNotice =
  * its own.
  */
 export const noticesAt = (
-  took: Pick<Taken, "artifacts" | "describe">,
+  took: Pick<Taken, "artifacts" | "summarize">,
   current: { readonly summary: string | null },
 ): string =>
   [
     ...(took.artifacts ? [artifactsNotice] : []),
-    ...(took.describe ? [nudgeText(current)] : []),
+    ...(took.summarize ? [nudgeText(current)] : []),
   ].join("\n\n")

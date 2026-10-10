@@ -96,4 +96,12 @@ describe("the runner's murmur", () => {
     expect(calls.cancel).toHaveBeenCalled()
     expect(calls.uninstall).toHaveBeenCalled()
   })
+
+  it("settles an uninstall once the runner answered, whether it worked or failed", async () => {
+    const { murmur, calls } = runner()
+    await expect(murmur.uninstall()).resolves.toBeUndefined()
+    calls.uninstall.mockRejectedValueOnce(new Error("Disk busy."))
+    await expect(murmur.uninstall()).resolves.toBeUndefined()
+    expect(murmur.state.getSnapshot().failure).toBe("Couldn't uninstall: Disk busy.")
+  })
 })

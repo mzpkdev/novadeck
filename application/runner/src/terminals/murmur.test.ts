@@ -487,6 +487,7 @@ const create = (initial: Partial<MurmurSubject> = {}, describer = new FakeDescri
   const reads = { facts: 0, screens: 0 }
   const replies: { current: string | null } = { current: null }
   const written: Description[] = []
+  const clears = { count: 0 }
   const host: MurmurHost = {
     subject: (id) => subjects.get(id),
     subjects: () => (ready ? [...subjects.values()] : []),
@@ -508,6 +509,11 @@ const create = (initial: Partial<MurmurSubject> = {}, describer = new FakeDescri
       const subject = subjects.get(id)
       if (subject)
         subjects.set(id, { ...subject, naming: { ...subject.naming, murmur: description } })
+    },
+    cleared: () => {
+      clears.count += 1
+      for (const [id, subject] of subjects)
+        subjects.set(id, { ...subject, naming: { ...subject.naming, murmur: null } })
     },
   }
   // A program in the foreground is the prompt when it is bash, the shell of these tests.
@@ -539,6 +545,7 @@ const create = (initial: Partial<MurmurSubject> = {}, describer = new FakeDescri
     reads,
     replies,
     written,
+    clears,
     change,
     times,
   }
@@ -1214,6 +1221,7 @@ describe("when murmur is not usable", () => {
         return Promise.resolve(undefined)
       },
       watchUsable: () => () => {},
+      watchCleared: () => () => {},
     }
     const { murmur } = create({ work: work(), activity: idle("ok") }, silent as never)
     murmur.reported("a", report({ session: true }))
@@ -1448,5 +1456,73 @@ describe("when murmur becomes usable", () => {
     describer.setUsable(true)
     await settle(1_000)
     expect(describer.jobs).toHaveLength(0)
+  })
+})
+
+describe("when a session or a summary comes while murmur is unusable", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const titled = { ...unnamed, murmur: { title: "Old title" } }
+
+  it("keeps a new session owed, and retitles for it once murmur is usable", async () => {
+    const { murmur, describer } = create(
+      { work: work(), activity: idle("ok"), naming: titled },
+      new FakeDescriber({ usable: false }),
+    )
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    expect(describer.jobs).toHaveLength(0)
+    describer.setUsable(true)
+    await settle(300)
+    expect(describer.jobs).toHaveLength(1)
+  })
+
+  it("keeps a summary owed, and retitles for it once murmur is usable", async () => {
+    const { murmur, describer, change } = create(
+      { work: work(), activity: idle("ok"), naming: titled },
+      new FakeDescriber({ usable: false }),
+    )
+    change({ naming: { ...titled, summary: "Fixes login." } })
+    murmur.summarized("a")
+    await settle()
+    expect(describer.jobs).toHaveLength(0)
+    describer.setUsable(true)
+    await settle(300)
+    expect(describer.digests).toHaveLength(1)
+    expect(describer.digests[0]).toMatchObject({ summary: "Fixes login." })
+  })
+})
+
+describe("when the person turns murmur off or removes it", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("clears the titles, drops what waited, and owes nothing when murmur returns", async () => {
+    const { murmur, describer, clears, subjects } = create({ work: work(), activity: idle("ok") })
+    murmur.reported("a", report({ session: true }))
+    // The request waits out its quiet when murmur is cleared.
+    describer.clear()
+    await settle(1_000)
+    expect(clears.count).toBe(1)
+    expect(describer.jobs).toHaveLength(0)
+    expect(subjects.get("a")!.naming.murmur).toBeNull()
+  })
+
+  it("does not clear on close, a failed check or losing the GPU (only usability changes)", async () => {
+    const { murmur, describer, clears } = create({ work: work(), activity: idle("ok") })
+    describer.setUsable(false)
+    expect(clears.count).toBe(0)
+    murmur.stop()
+    describer.clear()
+    expect(clears.count).toBe(0)
   })
 })

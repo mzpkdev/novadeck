@@ -315,8 +315,7 @@ like them, only inside Novadeck's terminals.
   `send`'s listing, and the MCP server prints the text as it is:
   1. its handle;
   2. its title, from the runner's terminal record, with "(set by t2, not the user)" when
-     another terminal's agent gave it, "(set by its own agent, not the user)" when its
-     own did, and "(written by Novadeck's local model, not the user)" for murmur's; then
+     an agent gave it (an agent that opened the terminal), and "(written by Novadeck's local model, not the user)" for murmur's; then
      "described by its agent:" and the summary its own agent gave through `summarize`,
      when it did;
   3. its agent (Claude Code, Codex or Antigravity);
@@ -1191,7 +1190,11 @@ model behind a `Describer` (`murmur/`).
   session. That is the only way a terminal is known as agent-opened (`openedBy`).
 - **Without murmur** nothing titles a terminal but the person and its opener: terminals
   keep their default titles. Agents still summarize, nudges included. A plain shell has no
-  summary, with or without murmur. Prompts never title a terminal.
+  summary, with or without murmur. Prompts never title a terminal. When the person turns
+  murmur off or removes it, its titles go: every running terminal loses its murmur title
+  (it shows the opener's, else the default), kept terminals lose theirs in the store, and
+  what was waiting or owed is dropped. Closing the runner, a failed check or a lost GPU
+  clear nothing.
 - **Whose the first prompt is.** "Started with" in `agents()` and murmur's digest both use
   the person's first root prompt, and one rule tells whose it is (`firstFrom` in
   `terminals/work.ts`): in a terminal the person opened it always is, as it is in every
@@ -1224,7 +1227,7 @@ hook's deadline, which doesn't spend what is due.
   none it asks for one; after, it shows the current summary and asks for an update only if
   it no longer fits. When both are due they share the answer, the bar's first. The
   triggers:
-  1. a new root session (start, `/clear`, restart);
+  1. a new root session (start, `/clear`, restart or resume);
   2. a compaction, where the harness reports one: Claude Code's and Codex's `SessionStart`
      with source `compact` (decoded as `compacted`). Antigravity reports none (its
      compaction is internal, see [Harness coverage](harness-coverage.md)), so it has no
@@ -1239,7 +1242,7 @@ hook's deadline, which doesn't spend what is due.
      last fired.
 
   What is pending lives in the runner's memory: a runner restart is a new root session
-  anyway.
+  anyway. (For murmur it is not a new conversation: see below.)
 
 ### When murmur titles a terminal
 
@@ -1252,8 +1255,9 @@ with neither waits; a shell's once it has more on screen than a prompt.
 
 An **agent's terminal** (one with a bound agent) is titled on two triggers only:
 
-1. **Once**, after the person's first prompt of a root session (start, `/clear`,
-   restart), taken as the terminal's mission. A prompt that says nothing of it is skipped:
+1. **Once**, after the person's first prompt of a root session (a new conversation:
+   start or `/clear`; not a runner restart or a resume of the same session, which keep
+   their title), taken as the terminal's mission. A prompt that says nothing of it is skipped:
    under three words, or a greeting or pleasantry ("hey!", "try again", "thanks a lot").
    The title then waits for the next substantial prompt, or for the first summary,
    whichever comes first. Without a summary the digest shows that mission prompt alone,
@@ -1303,7 +1307,7 @@ sees it, and the terminal side never includes a permission's command.
   command line (the whole argv where the platform tells it, Linux; else its name; none at
   the shell's own prompt), and the visible screen as logical lines: rows the terminal wrapped
   (`isWrapped`) are joined, so a value split across rows is whole for the redaction;
-  trimmed, blank lines above and below dropped, at most the last 100 and 1000 characters
+  trimmed, blank lines above and below dropped, at most the last 100 lines and 8000 characters
   each as safety caps. The service redacts, then cuts to what the model is shown. The
   command line is capped at 2000 characters the same way. A bare prompt with no
   program is not described.

@@ -65,23 +65,22 @@ export const createRunnerMurmur = (
   }
 
   // Runs a call that changes the addon; the next snapshot shows its effect, and a
-  // rejection shows meanwhile as the failure.
-  const change = (what: string, call: () => Promise<void>): void => {
-    track(call()).catch((error: unknown) =>
+  // rejection shows meanwhile as the failure. Settles once the call has, either way.
+  const change = (what: string, call: () => Promise<void>): Promise<void> =>
+    track(call()).catch((error: unknown) => {
       state.update((current) => ({
         ...current,
         failure: `Couldn't ${what}: ${reason(error)}`,
-      })),
-    )
-  }
+      }))
+    })
 
   return {
     murmur: {
       state,
-      install: () => change("install", () => calls.install()),
-      cancel: () => change("cancel the install", () => calls.cancel()),
+      install: () => void change("install", () => calls.install()),
+      cancel: () => void change("cancel the install", () => calls.cancel()),
       uninstall: () => change("uninstall", () => calls.uninstall()),
-      set: (settings) => change("change the setting", () => calls.set(settings)),
+      set: (settings) => void change("change the setting", () => calls.set(settings)),
     },
     follow,
     stop: () => {

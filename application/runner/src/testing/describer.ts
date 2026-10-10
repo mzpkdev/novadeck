@@ -21,6 +21,7 @@ export class FakeDescriber implements Describer {
   hold = false
   private usable: boolean
   private readonly listeners = new Set<(usable: boolean) => void>()
+  private readonly clearedListeners = new Set<() => void>()
 
   constructor(
     options: {
@@ -57,6 +58,17 @@ export class FakeDescriber implements Describer {
     // As the real service does: the state now, then each change.
     listener(this.usable)
     return () => this.listeners.delete(listener)
+  }
+
+  watchCleared(listener: () => void): () => void {
+    this.clearedListeners.add(listener)
+    return () => this.clearedListeners.delete(listener)
+  }
+
+  /** The person turns murmur off or removes it: titles are cleared, and it stops being usable. */
+  clear(): void {
+    this.setUsable(false)
+    for (const listener of this.clearedListeners) listener()
   }
 
   /** Murmur becomes usable, or stops being. */

@@ -170,10 +170,7 @@ export const ago = (at: number, now: number): string => {
 /** Who a peer's title is from, as agents read it after the title; nothing for the person's. */
 const titleNote = (peer: Peer): string => {
   const source = peer.titleSource
-  if (source?.kind === "agent")
-    return source.by === peer.handle
-      ? " (set by its own agent, not the user)"
-      : ` (set by ${source.by}, not the user)`
+  if (source?.kind === "agent") return ` (set by ${source.by}, not the user)`
   return source?.kind === "murmur" ? " (written by Novadeck's local model, not the user)" : ""
 }
 

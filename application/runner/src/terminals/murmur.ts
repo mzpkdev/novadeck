@@ -481,6 +481,8 @@ export type MurmurHost = {
   projectFolder(sessionId: string): string | undefined
   /** Gives the terminal murmur's description; nothing when it is gone. */
   described(terminalId: string, description: Description): void
+  /** Murmur was turned off or removed: every terminal loses its murmur title, saved ones too. */
+  cleared(): void
 }
 
 // What murmur keeps of a terminal between triggers; lost with the runner.
@@ -529,6 +531,7 @@ export class Murmur {
   private readonly watches = new Map<string, Watch>()
   private readonly times: MurmurTimes
   private readonly unwatch: () => void
+  private readonly unwatchCleared: () => void
   // Unusable until the describer says otherwise: nothing is built or asked before.
   private usable = false
 
@@ -544,6 +547,24 @@ export class Murmur {
       if (usable) this.catchUp()
       else this.descriptions.stop()
     })
+    this.unwatchCleared = describer.watchCleared(() => this.clear())
+  }
+
+  // The person turned murmur off or removed it: what was owed or asked is forgotten with
+  // the titles, so turning it on later starts from a clean slate.
+  private clear(): void {
+    this.descriptions.stop()
+    for (const watch of this.watches.values()) {
+      this.resetRetry(watch)
+      watch.owed = false
+      watch.tried = null
+      watch.shellOwed = false
+    }
+    try {
+      this.host.cleared()
+    } catch (error) {
+      console.error("Novadeck could not clear the terminals' murmur titles:", error)
+    }
   }
 
   private resetRetry(watch: Watch): void {
@@ -562,6 +583,7 @@ export class Murmur {
 
   stop(): void {
     this.unwatch()
+    this.unwatchCleared()
     for (const watch of this.watches.values()) this.resetRetry(watch)
     this.descriptions.stop()
     this.watches.clear()
@@ -583,12 +605,13 @@ export class Murmur {
     // A corrected root session carries its summary over.
     for (const { from, to } of told.corrected ?? [])
       if (watch.summarySession === from) watch.summarySession = to
-    if (!this.usable) return
+    // A new session is owed a title whether murmur can write one now or not.
     if (told.session) {
       watch.owed = true
       watch.tried = null
       this.resetRetry(watch)
     }
+    if (!this.usable) return
     // The title waits for a prompt to say what the terminal is for (its mission) or for the
     // agent's first summary; one in the making is not asked for again at each report. Once
     // it is titled, only a summary retitles it: never a bare terse prompt, a compaction or
@@ -638,7 +661,12 @@ export class Murmur {
     const watch = this.watch(terminalId)
     // Where the summary was written counts whether murmur can use it now or not.
     watch.summarySession = subject.work?.session ?? null
-    if (!this.usable) return
+    // A summary murmur could not use is owed a retitle once it can.
+    if (!this.usable) {
+      watch.owed = true
+      watch.tried = null
+      return
+    }
     watch.tried = subject.naming.summary
     this.ask(terminalId, this.times.settleMs)
   }

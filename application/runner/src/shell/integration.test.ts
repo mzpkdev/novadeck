@@ -1593,6 +1593,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       },
       removeTerminal: (terminalId) => shell.store.removeTerminal(terminalId),
       clearTranscripts: () => shell.store.clearTranscripts(),
+      clearMurmurTitles: () => shell.store.clearMurmurTitles(),
       forgetAgent: (agent) => shell.store.forgetAgent(agent),
     }
     const manager = shell.manager({ records })
@@ -1626,6 +1627,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
       saveTerminal: (terminal) => shell.store.saveTerminal(terminal),
       removeTerminal: (terminalId) => shell.store.removeTerminal(terminalId),
       clearTranscripts: () => shell.store.clearTranscripts(),
+      clearMurmurTitles: () => shell.store.clearMurmurTitles(),
       forgetAgent: (agent) => shell.store.forgetAgent(agent),
     }
     const later = shell.manager({ records })
@@ -3416,6 +3418,80 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await expect
         .poll(() => manager.get(terminal.id).titleSource, { timeout: 30_000 })
         .toEqual({ kind: "murmur" })
+    })
+
+    it("does not retitle a restored terminal whose agent binds the session it already worked in", async ({
+      shell,
+    }) => {
+      const bin = standIn(shell.home)
+      const env = { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` }
+      const first = shell.manager({ env, describer: new FakeDescriber(), murmurTimes })
+      const terminal = await create(first, shell)
+      const before = driver(shell, first)
+      await before.start(terminal.id, "claude", "s-claude")
+      await before.step(terminal.id, {
+        hook: "UserPromptSubmit",
+        payload: { prompt: "Fix the login bug" },
+      })
+      await expect
+        .poll(() => first.get(terminal.id).titleSource, { timeout: 30_000 })
+        .toEqual({ kind: "murmur" })
+      await first.shutdown()
+      expect(shell.store.terminalIdentity(terminal.id)?.naming.murmur).not.toBeNull()
+
+      // The runner restarts, and the same session binds again: it is no new conversation.
+      const describer = new FakeDescriber()
+      const second = shell.manager({ env, describer, murmurTimes })
+      await create(second, shell, { id: terminal.id, restore: true })
+      const after = driver(shell, second)
+      await after.start(terminal.id, "claude", "s-claude")
+      await after.step(terminal.id, { hook: "Stop", payload: {} })
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      expect(describer.jobs).toHaveLength(0)
+      expect(second.get(terminal.id).titleSource).toEqual({ kind: "murmur" })
+    })
+
+    it("takes murmur's titles from running and kept terminals when murmur is turned off", async ({
+      shell,
+    }) => {
+      const bin = standIn(shell.home)
+      const env = { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` }
+      const titled = async (manager: Terminals, session: string) => {
+        const terminal = await create(manager, shell)
+        const { start, step } = driver(shell, manager)
+        await start(terminal.id, "claude", session)
+        await step(terminal.id, {
+          hook: "UserPromptSubmit",
+          payload: { prompt: "Fix the login bug" },
+        })
+        await expect
+          .poll(() => manager.get(terminal.id).titleSource, { timeout: 30_000 })
+          .toEqual({ kind: "murmur" })
+        return terminal.id
+      }
+      const earlier = shell.manager({ env, describer: new FakeDescriber(), murmurTimes })
+      const kept = await titled(earlier, "s-kept")
+      await earlier.shutdown()
+      // Closing the runner keeps the title.
+      expect(shell.store.terminalIdentity(kept)?.naming.murmur).not.toBeNull()
+
+      const describer = new FakeDescriber()
+      const manager = shell.manager({ env, describer, murmurTimes })
+      const live = await titled(manager, "s-live")
+      const theirs = await titled(manager, "s-theirs")
+      manager.rename({ terminalId: theirs, title: "My title" })
+      describer.clear()
+      expect(manager.get(live)).toMatchObject({
+        title: expect.stringMatching(/^Terminal \d+$/),
+        titleSource: { kind: "default" },
+      })
+      expect(manager.get(theirs)).toMatchObject({ title: "My title" })
+      expect(shell.store.terminalIdentity(live)?.naming.murmur).toBeNull()
+      expect(shell.store.terminalIdentity(kept)?.naming.murmur).toBeNull()
+      expect(shell.store.terminalIdentity(theirs)?.naming).toMatchObject({
+        person: "My title",
+        murmur: null,
+      })
     })
 
     it("does nothing without a describer: terminals keep their default titles and have no summary", async ({

@@ -236,9 +236,6 @@ describe("a peer as agents read it", () => {
     expect(titled({ kind: "agent", by: "t1" })).toEqual([
       "  title: Users API (set by t1, not the user)",
     ])
-    expect(titled({ kind: "agent", by: "t2" })).toEqual([
-      "  title: Users API (set by its own agent, not the user)",
-    ])
     expect(titled({ kind: "murmur" }, "Builds the users API.\nThen paging.")).toEqual([
       "  title: Users API (written by Novadeck's local model, not the user)",
       "  described by its agent: Builds the users API. / Then paging.",

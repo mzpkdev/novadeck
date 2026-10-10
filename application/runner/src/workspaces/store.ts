@@ -906,6 +906,11 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
       `
   }
 
+  /** Takes murmur's title from every kept terminal. */
+  clearMurmurTitles(): void {
+    void this.queries.run`UPDATE terminals SET murmur_title = NULL WHERE murmur_title IS NOT NULL`
+  }
+
   /** Saves what is given; `enabled: null` forgets the choice. */
   saveVoiceSettings(settings: VoiceSettingsChange): void {
     for (const [key, value] of Object.entries(settings)) {

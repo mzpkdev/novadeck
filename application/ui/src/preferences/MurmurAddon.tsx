@@ -34,8 +34,8 @@ export const MurmurAddon = ({
 }): React.JSX.Element => {
   const [confirming, setConfirming] = useState(false)
   // Set once the person confirms an uninstall, holding the failure then showing: the state
-  // has no field for a removal under way, so the card waits for the engine to be gone or a
-  // new failure to turn up.
+  // has no field for a removal under way, so the card waits for the engine to be gone, a
+  // new failure to turn up, or the removal to settle (a repeat of the same failure).
   const [removing, setRemoving] = useState<{
     readonly failure: string | null
   } | null>(null)
@@ -146,7 +146,7 @@ export const MurmurAddon = ({
         onConfirm={() => {
           setConfirming(false)
           setRemoving({ failure })
-          actions.uninstall()
+          void actions.uninstall().finally(() => setRemoving(null))
         }}
         onCancel={() => setConfirming(false)}
         widthClassName="w-[min(380px,calc(100vw-32px))]"
