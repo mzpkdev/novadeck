@@ -260,9 +260,11 @@ taskbar, marked new.
 
 What belongs there is a deliverable: something made to be looked at (an image or
 screenshot, a rendered page or dev server, a report, mockup, diagram or generated
-document, or the one file the user asked for), shown once it is done. A source file
-counts while it is the one the user and the agent work on together; the files a change
-touches on the way do not, and the user reads those in the diff. Every harness hears this two ways, as no plugin ships a skill: the `show` tool's
+document, the one file the user asked for, or whatever they ask to see), shown once it
+is done, without `open`; with `open` when they asked to see it, which a revision of
+something they iterate on with the agent is. A source file counts while it is the one
+the user and the agent work on together; the files a change touches on the way do not,
+and the user reads those in the diff. Every harness hears this two ways, as no plugin ships a skill: the `show` tool's
 own description carries the rule, which every harness reads alike from `tools/list`,
 and the runner's prompt-time hook adds Novadeck's artifacts notice, one paragraph, at
 the person's first quiet prompt of each root session and after a compaction

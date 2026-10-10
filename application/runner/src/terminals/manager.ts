@@ -3226,9 +3226,10 @@ export class Terminals {
   }
 
   /**
-   * A prompt-time hook's answer, with Novadeck's notices when a trigger fired since the
-   * last `describe` (see `nudges.ts`): the bar beside the terminal, for a session that
-   * begins or lost its context, and a nudge to describe the terminal's work; only at the
+   * A prompt-time hook's answer, with Novadeck's notices when any is due (see
+   * `nudges.ts`): the bar beside the terminal, for a session that begins or lost its
+   * context, which a `describe` never clears, and a nudge to describe the terminal's
+   * work, when a trigger fired since the last `describe`; only at the
    * person's prompt, as a paragraph each, never in an answer that carries messages or
    * another notice, nor at Stop. Each of the person's prompts counts toward the backstop, and
    * where nothing else is said, whether the work drifted is looked at.
