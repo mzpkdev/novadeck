@@ -975,8 +975,14 @@ describe("Google keys without a digit, and ids glued to a secret", () => {
   it.each([
     ["a capital", "AKIAIOSFODNN7EXAMPLEK7MDENGbPxRfiCYEXAMPLEKEYwJalrXUtnFEMI"],
     ["a digit", "AKIAIOSFODNN7EXAMPLE7wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY"],
-    ["a capital after an equals sign", "X=AKIAIOSFODNN7EXAMPLEK7MDENGbPxRfiCYEXAMPLEKEYwJalrXUtnFEMI"],
-    ["a digit after an equals sign", "X=AKIAIOSFODNN7EXAMPLE7wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY"],
+    [
+      "a capital after an equals sign",
+      "X=AKIAIOSFODNN7EXAMPLEK7MDENGbPxRfiCYEXAMPLEKEYwJalrXUtnFEMI",
+    ],
+    [
+      "a digit after an equals sign",
+      "X=AKIAIOSFODNN7EXAMPLE7wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY",
+    ],
   ])("masks an id glued to a secret that starts with %s", (_name, text) => {
     expect(redact(text)).not.toContain("IOSFODNN7EXAMPLE")
   })
