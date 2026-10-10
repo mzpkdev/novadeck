@@ -1,5 +1,5 @@
 import type { DragDropManager } from "@dnd-kit/dom"
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react"
 
 import type { PinHandoff, Point } from "./pin-drop"
 import { ease, slide } from "./pin-motion"
@@ -21,12 +21,15 @@ export type PinHandoffDrag = {
 // Takes a drag the switcher's list handed to the pins bar: once the project is among the
 // pins (`pinned`) and its pin shows in `row`, the bar's own drag of that pin starts, and
 // follows the pointer until it lets go, or Escape or a canceled pointer cancels it. The pin
-// waits unseen until the drag is under way, then fades in where the pointer is.
+// waits unseen until the drag is under way, then fades in where the pointer is. Where the
+// bar can't start that drag, `onAbandon` is told, so the handoff doesn't hang.
 export const usePinHandoff = (
   handoff: PinHandoff | null,
   pinned: boolean,
   row: React.RefObject<HTMLElement | null>,
+  onAbandon: () => void,
 ): PinHandoffDrag => {
+  const abandon = useEffectEvent(onAbandon)
   const manager = useRef<DragDropManager | null>(null)
   const takeManager = useCallback((next: DragDropManager | null) => {
     manager.current = next
@@ -44,14 +47,23 @@ export const usePinHandoff = (
     const pin = row.current?.querySelector<HTMLElement>(
       `.pin[data-pin="${CSS.escape(handoff.id)}"]`,
     )
-    if (!actions || !pin) return
+    if (!actions || !pin) {
+      abandon()
+      return
+    }
     took.current = handoff
     releasedAt.current = null
     const box = pin.getBoundingClientRect()
-    actions.start({
-      source: handoff.id,
-      coordinates: { x: box.left + grip, y: box.top + box.height / 2 },
-    })
+    try {
+      actions.start({
+        source: handoff.id,
+        coordinates: { x: box.left + grip, y: box.top + box.height / 2 },
+      })
+    } catch {
+      took.current = null
+      abandon()
+      return
+    }
     // dnd-kit takes moves only once the drag is under way, a frame or so after it starts.
     let pointer = handoff.point
     let frame = requestAnimationFrame(function arrive(): void {

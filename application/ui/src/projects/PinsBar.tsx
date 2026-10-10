@@ -44,7 +44,7 @@ const offBar = (strip: HTMLElement | null, point: Point): boolean => {
 }
 
 // The pinned projects, as a bar under the header, in the person's order: each pin is its
-// number (its Ctrl or ⌘ shortcut), its name and a mark of what its project's terminals ask
+// number (its shortcut's digit), its name and a mark of what its project's terminals ask
 // of the person, and a click switches to it. The bar slides in with the first pin and out
 // with the last. The current pin stays in its place, marked as current, so switching never
 // moves the others, and a mark's slot is always there, so one appearing never does either.
@@ -183,7 +183,11 @@ export const PinsBar = ({
     handoff,
     handoff !== null && items.some(({ id }) => id === handoff.id),
     row,
+    () => channel?.settle(true),
   )
+  // Off the bar, a dragged pin shows it will go, but a project pinned before it was handed
+  // over stays pinned wherever it is let go.
+  const unpinning = leaving && !handoff?.wasPinned
 
   // Tells which show, once at first and then only when they change.
   const told = useRef<readonly string[] | null>(null)
@@ -273,7 +277,7 @@ export const PinsBar = ({
                     current={project.id === current}
                     status={status}
                     dragging={dragging}
-                    leaving={leaving}
+                    leaving={unpinning}
                     arriving={project.id === arriving}
                     focusRequest={focusRequest}
                     onFocused={() => setFocusRequest(null)}

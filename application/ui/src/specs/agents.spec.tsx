@@ -444,6 +444,20 @@ const switcherRow = (name: string) =>
   page
     .getByRole("dialog", { name: "Switch workspace" })
     .getByRole("button", { name: new RegExp(`^${name}`) })
+// Presses Escape once the bar is dragging the pin a project handed over, before the
+// drag is let go.
+const escapeOnceHandedOver = (name: string): void => {
+  const moved = (): void => {
+    if (!document.querySelector(`.pin[data-pin="${name}"][data-dragging="true"]`)) return
+    window.removeEventListener("pointermove", moved, true)
+    // After the bar has followed this move.
+    setTimeout(() =>
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    )
+  }
+  window.addEventListener("pointermove", moved, true)
+}
+
 // The switcher's projects as it lists them, while it is open.
 const switcherOrder = () =>
   [
@@ -633,6 +647,20 @@ describe("A pinned project", () => {
       await expectStaysAbsent(pin("mobile-app"))
       expect(pinsBar().getByRole("button").elements()).toHaveLength(1)
       // Nor does it move in the list.
+      await workspaceSwitcher().click()
+      await expect.poll(switcherOrder).toEqual(before)
+    })
+
+    it("pins nothing when Escape cancels the drag on the bar", async () => {
+      arrange(["storefront"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      const before = switcherOrder()
+      escapeOnceHandedOver("mobile-app")
+      await dragOut("mobile-app")
+      await expectStaysAbsent(pin("mobile-app"))
+      expect(pinsBar().getByRole("button").elements()).toHaveLength(1)
       await workspaceSwitcher().click()
       await expect.poll(switcherOrder).toEqual(before)
     })

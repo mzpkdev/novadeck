@@ -36,7 +36,18 @@ describe("createPinDrop", () => {
     expect(drop.handOff({ x: 10, y: 20 })).toBe(true)
     expect(pin).toHaveBeenCalledWith("b", 0)
     expect(arrangement().pinned).toEqual(["b", "a"])
-    expect(drop.getSnapshot().handoff).toEqual({ id: "b", point: { x: 10, y: 20 } })
+    expect(drop.getSnapshot().handoff).toEqual({
+      id: "b",
+      point: { x: 10, y: 20 },
+      wasPinned: false,
+    })
+  })
+
+  it("tells whether the handed-over project was pinned before", () => {
+    const { drop } = channel()
+    drop.start("a", true)
+    drop.handOff({ x: 0, y: 0 })
+    expect(drop.getSnapshot().handoff?.wasPinned).toBe(true)
   })
 
   it("pins it last where no bar places points", () => {
@@ -69,7 +80,7 @@ describe("createPinDrop", () => {
     expect(pin).toHaveBeenCalledTimes(1)
   })
 
-  it("puts the arrangement back when the bar's drag is canceled", () => {
+  it("puts the arrangement back when the bar's drag is canceled or let go off the bar", () => {
     const { drop, restore, arrangement } = channel()
     drop.start("b", true)
     drop.handOff({ x: 0, y: 0 })

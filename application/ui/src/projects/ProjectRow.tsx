@@ -73,7 +73,7 @@ export const ProjectRow = ({
             handleRef(node)
           }}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-          className={`item standalone workspace-switcher-project flex min-w-0 items-center gap-3 px-2.5 text-left w-full py-[9px] ${removable ? "pr-[70px]" : "pr-10"} ${selected ? "selected" : ""}`}
+          className={`item standalone workspace-switcher-project flex w-full min-w-0 items-center gap-3 px-2.5 py-[9px] text-left ${removable ? "pr-[70px]" : "pr-10"} ${selected ? "selected" : ""}`}
           type="button"
           aria-current={selected ? "true" : undefined}
           aria-description={status && statusText[status]}

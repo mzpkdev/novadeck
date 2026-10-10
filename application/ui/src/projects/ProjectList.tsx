@@ -66,9 +66,9 @@ export const ProjectList = ({
   onStep: (id: string, by: -1 | 1) => void
   onTogglePin: (id: string) => void
   onRemove: (project: Project) => void
-  // A row was dragged out of the list and its drag went to the pins bar, which closes it;
-  // the list's own order stays as it was.
-  onDraggedOut?: () => void
+  // A row was dragged out of the list and its drag went to the pins bar: the caller closes
+  // (unmounts) the list, whose row stays unseen till then; its own order stays as it was.
+  onDraggedOut: () => void
 }): React.JSX.Element => {
   // The projects as listed: the pinned ones, then the rest.
   const { pinned, rest } = arrangeProjects(projects, arrangement)
@@ -159,7 +159,7 @@ export const ProjectList = ({
           pinDrop?.end()
           if (handedOff.current) {
             handedOff.current = false
-            onDraggedOut?.()
+            onDraggedOut()
             return
           }
           const { source } = event.operation
