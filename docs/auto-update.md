@@ -41,16 +41,16 @@ releases feed. `stable` sets it false and `early` true.
 
 ## Which builds update
 
-| Build                             | Mode                                                                                     |
-| --------------------------------- | ---------------------------------------------------------------------------------------- |
-| macOS, Developer ID signed        | Installs (Squirrel.Mac)                                                                  |
-| macOS, unsigned                   | Tells; every build is unsigned until the certificates are in place                       |
-| Windows installer (`-setup`)      | Installs. There is no portable build                                                     |
-| Linux AppImage                    | Installs by replacing its file if the AppImage's folder is writable; tells if not        |
-| Linux `.deb` and `.rpm`           | Installs through the package manager with `pkexec`, which asks for the person's password |
-| Any build where an install failed | Tells, for that version only                                                             |
-| Local and pull request builds     | No checks: they carry version 0.0.0                                                      |
-| Development runs                  | No checks                                                                                |
+| Build                          | Mode                                                                                     |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| macOS, Developer ID signed     | Installs (Squirrel.Mac)                                                                  |
+| macOS, unsigned                | Tells; every build is unsigned until the certificates are in place                       |
+| Windows installer (`-setup`)   | Installs. There is no portable build                                                     |
+| Linux AppImage                 | Installs by replacing its file if the AppImage's folder is writable; tells if not        |
+| Linux `.deb` and `.rpm`        | Installs through the package manager with `pkexec`, which asks for the person's password |
+| A release whose install failed | Tells of that release only; newer ones install                                           |
+| Local and pull request builds  | No checks: they carry version 0.0.0                                                      |
+| Development runs               | No checks                                                                                |
 
 `NOVADECK_UPDATES=off` turns checks off for a launch. The smoke tests and the release
 workflow's package checks set it, so they never reach the network.
@@ -83,9 +83,12 @@ the host wraps to know, and on macOS one raised while Squirrel stages the downlo
 person dismissed the `pkexec` prompt, no polkit agent was running, or the folder turned
 read-only, say. Any other error, such as a check still in flight failing offline after
 the download, is only logged. The host then switches installing on quit off, so the same
-prompt does not come back at every quit; writes the running version to `update.json`; and
-re-offers the update as `available`. From the next launch that version only tells. A newer
-version ignores the mark. Every write to `update.json` is synchronous and goes through a
+prompt does not come back at every quit; writes the version whose install failed (the
+offered one, not the running one) to `update.json`; and re-offers the update as `available`.
+From the next launch that release is only told of: the updater never downloads on its own,
+the host asks for each download, and leaves out the release the mark names, which is offered
+as `available`. A newer release installs as usual and the mark, being for the older one,
+is ignored. The comparison is in `checkForUpdates` (`failedVersion`), where it is tested. Every write to `update.json` is synchronous and goes through a
 temporary file that is renamed over, re-reading the file first, so the failure mark, which
 is written as the app exits, cannot race another change.
 
@@ -108,22 +111,28 @@ from signals by marking them before they begin:
 - Ctrl+Q and File > Quit. Electron's default menu is present on Linux even with the menu
   bar hidden, and its Quit is a role that cannot be told from a signal, so the host sets
   the same menu (File, Edit, View and Window) with a Quit of its own on the same
-  accelerator (`menu.ts`). Checked under Electron 44 with xvfb: a Ctrl+Q key event reaches
-  that item's handler although the bar is hidden.
+  accelerator (`menu.ts`). Checked under Electron 44 with xvfb: a synthetic Ctrl+Q key
+  event sent to an otherwise empty page reaches that item's handler although the bar is
+  hidden. Not tested with a terminal focused: xterm.js may consume Ctrl+Q (it sends XON to
+  the shell), in which case the accelerator does not fire and File > Quit from the menu bar
+  (Alt) or closing the window is the way.
 
 The app has no tray and no page command that quits. A `before-quit` without the mark, which
 is what a signal gives, switches installing on quit off.
 
 ### Linux package types
 
-A deb installs with one privileged command, `apt-get install -y <file>` (`dpkg -i` where
+A deb installs with one privileged command, `apt-get -o DPkg::Lock::Timeout=60 install -y <file>` (`dpkg -i` where
 there is no apt-get), run through electron-updater's `pkexec`/`sudo` helper by a subclass of
 its `DebUpdater` (`package-updaters.ts`). electron-updater's own install runs `dpkg -i` and,
 when that fails, `apt-get install -f -y`: a dismissed prompt then shows a second one, and
 approving it installs nothing from the file yet succeeds, so the app relaunched into the old
 version and offered the same download again. The subclass fails on a non-zero exit and,
 after the command, compares the version `dpkg-query` reports for `novadeck` with the
-offered one, treating a mismatch as a failure. The rpm uses electron-updater's `RpmUpdater`
+offered one, treating a mismatch as a failure. The lock timeout makes apt wait up to a
+minute for unattended-upgrades or PackageKit (apt before 1.9.11 ignores it). A lock that
+outlasts it still counts as a failed install and marks the release tell-only: apt exits
+100 for that and for other apt errors, and telling them apart would take its message. The rpm uses electron-updater's `RpmUpdater`
 unchanged: it runs one command, and `spawnSync` raises on a non-zero exit, but the
 installed version is not checked.
 
@@ -139,13 +148,16 @@ inherit `APPIMAGE`, so a deb started from one is told apart by its executable, a
 On a packaged macOS launch from outside the Applications folder, before any window or the
 runner starts, the app asks once per launch whether to move there, because it can only
 update itself from Applications; only a Developer ID signed build is asked, as an unsigned
-one only tells of updates. The signature is checked once per launch (`codesign`) and shared
-with the update plan. "Move to Applications" calls
+one only tells of updates. The signature (`codesign`) is checked only once nothing else rules
+the offer out (already in Applications, declined), so most launches do not wait for it, and
+the check is shared with the update plan. "Move to Applications" calls
 `app.moveToApplicationsFolder()` and the app starts again from there; "Not Now" carries on
 and asks again next launch. Ticking "Don't ask again" is kept in `update.json` whichever
 button is pressed. A copy already in Applications is replaced unless it is running or its `Info.plist`
-version is newer than this app's, in which case the move is cancelled and the launch goes on
-where it is. Builds
+version is newer than this app's, in which case the move is cancelled and the person is told a newer
+Novadeck is already in Applications, with the choice of starting that one (the app relaunches into the
+copy's executable and this launch ends; if the executable is missing it carries on here) or
+carrying on here. Builds
 with version 0.0.0, development runs and `NOVADECK_UPDATES=off` never ask. The decision is
 a pure function in `applications-folder.ts`.
 

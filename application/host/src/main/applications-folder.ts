@@ -85,9 +85,15 @@ export const resolveMoveConflict = (
     existingVersion,
     runningVersion,
   }: { existingVersion: string | undefined; runningVersion: string },
-): boolean =>
-  conflict === "exists" &&
-  !(existingVersion !== undefined && isNewerVersion(existingVersion, runningVersion))
+): "replace" | "newer" | "running" => {
+  if (conflict === "existsAndRunning") return "running"
+  if (existingVersion !== undefined && isNewerVersion(existingVersion, runningVersion))
+    return "newer"
+  return "replace"
+}
+
+/** How a move went: started, not done (turned down by Electron, or failed), or cancelled for a newer copy. */
+export type MoveResult = "moved" | "declined" | "newer"
 
 /**
  * The `CFBundleShortVersionString` in the text of an XML `Info.plist`, if it has one.
@@ -102,23 +108,33 @@ export const bundleVersionOf = (plist: string): string | undefined =>
  * app is on its way to restart from Applications, in which case the launch goes no
  * further. A move that fails or is turned down lets the launch go on where it is. "Don't
  * ask again" is kept whatever else happens; the buttons alone ask again at the next launch.
+ * A move cancelled because Applications holds a newer copy says so, and the person may
+ * open that copy instead, which also ends this launch. Whether the build is signed, which
+ * takes a `codesign` run, is asked only once nothing else rules the offer out.
  */
 export const offerMove = async ({
   build,
+  signed,
   ask,
   decline,
   move,
+  tellNewer,
   log,
 }: {
-  readonly build: MoveBuild
+  readonly build: Omit<MoveBuild, "signed">
+  readonly signed: () => Promise<boolean>
   readonly ask: () => Promise<MoveAnswer>
   readonly decline: () => void
-  /** Electron's `moveToApplicationsFolder`, true once the move has started. */
-  readonly move: () => boolean
+  /** Electron's `moveToApplicationsFolder`. */
+  readonly move: () => MoveResult
+  /** Tells the person a newer copy is in Applications; true if they want that one opened. */
+  readonly tellNewer: () => Promise<boolean>
   readonly log: (message: string, error: unknown) => void
 }): Promise<boolean> => {
-  if (!shouldOfferMove(build)) return false
+  // Everything but the signature, which is asked last.
+  if (!shouldOfferMove({ ...build, signed: true })) return false
   try {
+    if (!(await signed())) return false
     const answer = await ask()
     if (answer.dontAskAgain) {
       try {
@@ -127,9 +143,45 @@ export const offerMove = async ({
         log("The choice was not kept.", error)
       }
     }
-    return answer.move && move()
+    if (!answer.move) return false
+    const result = move()
+    return result === "moved" || (result === "newer" && (await tellNewer()))
   } catch (error) {
     log("Moving to Applications failed.", error)
     return false
   }
+}
+
+/**
+ * Starts the copy of the app in Applications in place of this one: relaunches into its
+ * executable and ends this process. Returns whether it did, which is not when the
+ * executable is not there, or the relaunch fails; the launch then goes on in this copy.
+ * Launching the bundle through the system instead would not do: it has this app's
+ * identifier, so the system may only bring this running instance forward.
+ */
+export const relaunchIntoCopy = ({
+  executable,
+  exists,
+  relaunch,
+  exit,
+  log,
+}: {
+  readonly executable: string
+  readonly exists: (path: string) => boolean
+  readonly relaunch: (executable: string) => void
+  readonly exit: () => void
+  readonly log: (message: string, error: unknown) => void
+}): boolean => {
+  try {
+    if (!exists(executable)) {
+      log("The newer copy has no executable to start.", executable)
+      return false
+    }
+    relaunch(executable)
+  } catch (error) {
+    log("The newer copy did not start.", error)
+    return false
+  }
+  exit()
+  return true
 }

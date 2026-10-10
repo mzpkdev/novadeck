@@ -43,8 +43,6 @@ export type UpdateBuild = {
   readonly signed: boolean
   /** Whether the folder holding the AppImage file can be written to. */
   readonly appImageWritable: boolean
-  /** Whether installing an update already failed on this version; see `keepUpdateState`. */
-  readonly installFailed: boolean
 }
 
 /** The kind of build, which decides the electron-updater class that serves it. */
@@ -100,8 +98,8 @@ const updaterKind = ({
  * - A deb or rpm installs through the system's package manager, which asks for the
  *   person's password.
  *
- * A build on which installing already failed, say because that prompt was cancelled,
- * tells from then on.
+ * A release whose install failed, say because that prompt was cancelled, is told of
+ * rather than installed; see `checkForUpdates`.
  */
 export const updatePlan = (build: UpdateBuild): UpdatePlan | undefined => {
   const { packaged, version, env } = build
@@ -110,7 +108,7 @@ export const updatePlan = (build: UpdateBuild): UpdatePlan | undefined => {
   if (kind === undefined) return undefined
   const installable =
     kind === "mac" ? build.signed : kind === "appimage" ? build.appImageWritable : true
-  return { kind, mode: installable && !build.installFailed ? "install" : "tell" }
+  return { kind, mode: installable ? "install" : "tell" }
 }
 
 /** The app bundle a macOS executable, `novadeck.app/Contents/MacOS/novadeck`, runs from. */
@@ -304,6 +302,7 @@ export type Updater = {
   ): unknown
   on(event: "error", listener: (error: Error) => void): unknown
   checkForUpdates(): Promise<unknown>
+  downloadUpdate(): Promise<unknown>
   /** The install that quitting runs, and the one a restart runs; see `checkForUpdates`. */
   install?: (isSilent?: boolean, isForceRunAfter?: boolean) => boolean
   quitAndInstall?: (isSilent?: boolean, isForceRunAfter?: boolean) => void
@@ -321,7 +320,10 @@ export type NativeUpdater = {
  * release that is not a prerelease, `early` every release. Updating never downgrades.
  *
  * In `install` mode it downloads what it finds, installs it when the app next quits, and
- * tells `offer` the update is `ready` once downloaded. The schedule then ends: a newer
+ * tells `offer` the update is `ready` once downloaded. The one exception is the release
+ * `failedVersion` names, the version an earlier install failed on: it is only told of, as
+ * `available`, and not downloaded again, so a dismissed password prompt does not come back
+ * at every launch. A newer release installs as usual. The schedule then ends: a newer
  * release found later empties the folder the downloaded file waits in while the updater
  * still names that file, and quitting then would install nothing, or delete the running
  * AppImage. The next launch checks again. An error raised while installing fails the
@@ -349,6 +351,7 @@ export const checkForUpdates = (
   {
     mode,
     channel,
+    failedVersion,
     native,
     offer,
     installFailed,
@@ -356,13 +359,16 @@ export const checkForUpdates = (
   }: {
     readonly mode: UpdateMode
     readonly channel: UpdateChannel
+    /** The version installing failed on in an earlier launch, if it did. */
+    readonly failedVersion?: string | undefined
     readonly native?: NativeUpdater | undefined
     readonly offer: (kind: UpdateOffer["kind"], version: string, notes: readonly string[]) => void
     readonly installFailed: (version: string) => void
     readonly log: (message: string, error: unknown) => void
   },
 ): { readonly setChannel: (channel: UpdateChannel) => void; readonly stop: () => void } => {
-  updater.autoDownload = mode === "install"
+  // Downloads are asked for, to leave out the release that failed to install.
+  updater.autoDownload = false
   updater.autoInstallOnAppQuit = mode === "install"
   updater.allowPrerelease = channel === "early"
   // Quiet: failures are reported through `log`, and routine progress is not worth a line.
@@ -372,6 +378,7 @@ export const checkForUpdates = (
   // Once an install has begun the app is on its way out, so the mark never goes back.
   let installing = false
   let staging = false
+  let failed = false
   for (const method of ["install", "quitAndInstall"] as const) {
     const original: unknown = updater[method]
     if (typeof original !== "function") continue
@@ -383,21 +390,32 @@ export const checkForUpdates = (
     })
   }
   updater.on("error", (error) => {
+    // MacUpdater reports a native error twice; the first is the failure, and the second
+    // adds nothing to log or mark.
+    if (failed) return
     if (downloaded === undefined || !(installing || staging))
       return log("The update check failed.", error)
     log("Installing the update failed.", error)
+    failed = true
+    staging = false
     updater.autoInstallOnAppQuit = false
     installFailed(downloaded.version)
     offer("available", downloaded.version, downloaded.notes)
   })
-  if (mode === "tell")
-    updater.on("update-available", (info) =>
-      offer("available", info.version, updateNotesLines(info)),
-    )
+  updater.on("update-available", (info) => {
+    if (mode === "tell") return offer("available", info.version, updateNotesLines(info))
+    // An update is downloaded, so the schedule has ended: a late check must not replace
+    // the `ready` offer, or empty the folder the download waits in.
+    if (downloaded !== undefined || ended) return
+    if (info.version === failedVersion)
+      return offer("available", info.version, updateNotesLines(info))
+    // A failed download is reported through the error event, which logs it. While one is
+    // under way electron-updater returns that download's promise, so a second check
+    // finding the same release does not download it twice.
+    updater.downloadUpdate().catch(() => {})
+  })
   updater.on("update-downloaded", (info) => {
     stop()
-    // A check still in flight finds no more to download.
-    updater.autoDownload = false
     const notes = updateNotesLines(info)
     downloaded = { version: info.version, notes }
     const ready = (): void => {
@@ -413,20 +431,12 @@ export const checkForUpdates = (
   })
 
   const check = (): void => {
-    // The updater reports a failed check or download through its error event, which logs
-    // it; the rejections are only there to be caught.
-    updater
-      .checkForUpdates()
-      .then((result) => {
-        const download = (result as { downloadPromise?: Promise<unknown> | null } | null)
-          ?.downloadPromise
-        return download?.catch(() => {})
-      })
-      .catch(() => {})
+    // The updater reports a failed check through its error event, which logs it.
+    updater.checkForUpdates().catch(() => {})
   }
+  let ended = false
   let first = setTimeout(check, firstCheckMs)
   const every = setInterval(check, checkIntervalMs)
-  let ended = false
   const stop = (): void => {
     ended = true
     clearTimeout(first)

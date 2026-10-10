@@ -42,7 +42,6 @@ const build = (overrides: Partial<UpdateBuild> = {}): UpdateBuild => ({
   packageType: undefined,
   signed: false,
   appImageWritable: true,
-  installFailed: false,
   ...overrides,
 })
 
@@ -144,16 +143,6 @@ describe("how a build updates", () => {
     it("only tells of updates when it is not", () => {
       expect(updatePlan(build({ platform: "darwin" }))).toEqual({ kind: "mac", mode: "tell" })
     })
-  })
-
-  it("tells from then on in a build on which installing failed", () => {
-    const failed = { installFailed: true }
-    expect(updatePlan(build({ platform: "win32", ...failed }))?.mode).toBe("tell")
-    expect(updatePlan(build({ packageType: "rpm", ...failed }))?.mode).toBe("tell")
-    expect(updatePlan(build({ ...appImage, ...failed }))?.mode).toBe("tell")
-    expect(updatePlan(build({ platform: "darwin", signed: true, ...failed }))?.mode).toBe("tell")
-    // Failing to install does not make a build look where it did not.
-    expect(updatePlan(build({ ...failed }))).toBeUndefined()
   })
 })
 
@@ -424,7 +413,12 @@ describe("quitting as the system ends the session", () => {
 })
 
 class FakeUpdater extends EventEmitter implements Pick<Updater, "checkForUpdates"> {
-  download: (() => Promise<unknown>) | null = null
+  downloads: (() => Promise<unknown>)[] = []
+  downloadResult: (() => Promise<unknown>) | undefined
+  downloadUpdate(): Promise<unknown> {
+    this.downloads.push(() => Promise.resolve())
+    return this.downloadResult?.() ?? Promise.resolve()
+  }
   installed = 0
   restarted = 0
   install(): boolean {
@@ -442,7 +436,7 @@ class FakeUpdater extends EventEmitter implements Pick<Updater, "checkForUpdates
   failing = false
   checkForUpdates(): Promise<unknown> {
     this.checks += 1
-    if (!this.failing) return Promise.resolve({ downloadPromise: this.download?.() ?? null })
+    if (!this.failing) return Promise.resolve()
     const error = new Error("offline")
     this.emit("error", error)
     return Promise.reject(error)
@@ -454,7 +448,12 @@ describe("checking for updates", () => {
   afterEach(() => void vi.useRealTimers())
 
   const checking = (
-    options: { mode?: UpdateMode; channel?: UpdateChannel; native?: EventEmitter } = {},
+    options: {
+      mode?: UpdateMode
+      channel?: UpdateChannel
+      native?: EventEmitter
+      failedVersion?: string
+    } = {},
   ) => {
     const updater = new FakeUpdater()
     const offered: [string, string, readonly string[]][] = []
@@ -463,6 +462,7 @@ describe("checking for updates", () => {
     const checks = checkForUpdates(updater as unknown as Updater, {
       mode: options.mode ?? "install",
       channel: options.channel ?? "stable",
+      failedVersion: options.failedVersion,
       native: options.native,
       offer: (kind, version, notes) => void offered.push([kind, version, notes]),
       installFailed: (version) => void failed.push(version),
@@ -471,9 +471,9 @@ describe("checking for updates", () => {
     return { updater, offered, failed, logged, ...checks }
   }
 
-  it("downloads on its own and installs on quitting in install mode", () => {
+  it("installs on quitting in install mode, and asks for each download itself", () => {
     const { updater } = checking()
-    expect(updater).toMatchObject({ autoDownload: true, autoInstallOnAppQuit: true })
+    expect(updater).toMatchObject({ autoDownload: false, autoInstallOnAppQuit: true })
   })
 
   it("downloads and installs nothing in tell mode", () => {
@@ -539,10 +539,49 @@ describe("checking for updates", () => {
       expect(updater.checks).toBe(1)
     })
 
-    it("downloads nothing more for a check still in flight when an update has downloaded", () => {
+    it("downloads an update it finds, and nothing more once one has downloaded", () => {
       const { updater } = checking()
+      updater.emit("update-available", { version: "1.2.3" })
+      expect(updater.downloads).toHaveLength(1)
       updater.emit("update-downloaded", { version: "1.2.3" })
-      expect(updater.autoDownload).toBe(false)
+      updater.emit("update-available", { version: "1.3.0" })
+      expect(updater.downloads).toHaveLength(1)
+    })
+
+    context("after an install failed on a version", () => {
+      it("only tells of that version, without downloading it again", () => {
+        const { updater, offered } = checking({ failedVersion: "1.2.3" })
+        updater.emit("update-available", {
+          version: "1.2.3",
+          releaseName: "Novadeck v1.2.3",
+          releaseNotes: "<p>Faster.</p>",
+        })
+        expect(updater.downloads).toHaveLength(0)
+        expect(offered).toEqual([["available", "1.2.3", ["Faster."]]])
+      })
+
+      it("installs a newer release as usual", () => {
+        const { updater, offered } = checking({ failedVersion: "1.2.3" })
+        updater.emit("update-available", { version: "1.3.0" })
+        expect(updater.downloads).toHaveLength(1)
+        updater.emit("update-downloaded", { version: "1.3.0" })
+        expect(offered).toEqual([["ready", "1.3.0", []]])
+        expect(updater.autoInstallOnAppQuit).toBe(true)
+      })
+
+      it("does not let a late check replace a ready update with the failed one", () => {
+        const { updater, offered } = checking({ failedVersion: "1.2.3" })
+        updater.emit("update-downloaded", { version: "1.3.0" })
+        updater.emit("update-available", { version: "1.2.3" })
+        expect(offered).toEqual([["ready", "1.3.0", []]])
+      })
+
+      it("keeps checking, so a newer release is found", async () => {
+        const { updater } = checking({ failedVersion: "1.2.3" })
+        updater.emit("update-available", { version: "1.2.3" })
+        await vi.advanceTimersByTimeAsync(firstCheckMs + checkIntervalMs)
+        expect(updater.checks).toBe(2)
+      })
     })
 
     it("marks an error raised while quitting installs as a failed install, stops installing on quit, and offers the update as available", () => {
@@ -592,6 +631,17 @@ describe("checking for updates", () => {
       expect(failed).toEqual(["1.2.3"])
     })
 
+    it("on macOS counts a failed staging once, although the updater reports the error twice", () => {
+      const native = new EventEmitter()
+      const { updater, failed, offered, logged } = checking({ native })
+      updater.emit("update-downloaded", { version: "1.2.3" })
+      updater.emit("error", new Error("Squirrel could not stage"))
+      updater.emit("error", new Error("Squirrel could not stage"))
+      expect(failed).toEqual(["1.2.3"])
+      expect(logged).toEqual(["Installing the update failed."])
+      expect(offered).toEqual([["available", "1.2.3", []]])
+    })
+
     it("does not mark a failed check as a failed install", () => {
       const { updater, failed } = checking()
       updater.emit("error", new Error("offline"))
@@ -601,9 +651,10 @@ describe("checking for updates", () => {
 
     it("catches a download that fails, which the error event has logged", async () => {
       const { updater } = checking()
-      updater.download = () => Promise.reject(new Error("download failed"))
-      await vi.advanceTimersByTimeAsync(firstCheckMs)
-      expect(updater.checks).toBe(1)
+      updater.downloadResult = () => Promise.reject(new Error("download failed"))
+      updater.emit("update-available", { version: "1.2.3" })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(updater.downloads).toHaveLength(1)
     })
 
     it("gives no notes that belong to another release", () => {

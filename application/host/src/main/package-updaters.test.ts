@@ -7,9 +7,11 @@ import {
 } from "./package-updaters"
 
 describe("the command that installs a deb", () => {
-  it("is one apt-get install, which resolves dependencies, when apt-get exists", () => {
+  it("is one apt-get install, which resolves dependencies and waits a minute for the dpkg lock, when apt-get exists", () => {
     expect(debInstallCommand("/tmp/novadeck.deb", true)).toEqual([
       "apt-get",
+      "-o",
+      "DPkg::Lock::Timeout=60",
       "install",
       "-y",
       "/tmp/novadeck.deb",

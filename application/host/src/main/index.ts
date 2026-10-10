@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { access, constants, readFile, realpath } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -31,7 +31,12 @@ import {
   runnerPortChannel,
 } from "../bridge.js"
 import { keepAppearance, registerAppearanceIpc } from "./appearance.js"
-import { bundleVersionOf, offerMove, resolveMoveConflict } from "./applications-folder.js"
+import {
+  bundleVersionOf,
+  offerMove,
+  relaunchIntoCopy,
+  resolveMoveConflict,
+} from "./applications-folder.js"
 import { dataFolderName } from "./data-folder.js"
 import { linuxMenu } from "./menu.js"
 import { notificationText, registerNoticeIpc, showNotices } from "./notices.js"
@@ -273,13 +278,13 @@ const startUpdates = async (): Promise<void> => {
     // Asked only where it matters: codesign takes a moment.
     signed: checksSignature() && (await bundleSigned()),
     appImageWritable: linux && (await appImageWritable()),
-    installFailed: state.installFailedOn === app.getVersion(),
   })
   if (!plan) return
   updater = await loadUpdater(plan.kind)
   updates = checkForUpdates(updater, {
     mode: plan.mode,
     channel,
+    failedVersion: state.installFailedOn,
     // Squirrel.Mac stages macOS updates; the others install from electron-updater's file.
     native: process.platform === "darwin" ? nativeUpdater : undefined,
     offer: offers.offer,
@@ -367,10 +372,10 @@ const createWindow = (origin: string): BrowserWindow => {
 }
 
 // The version of the copy of this app already in Applications, if its Info.plist can be read.
+const applicationsCopy = (): string => join("/Applications", basename(bundleOf(app.getPath("exe"))))
 const installedVersion = (): string | undefined => {
   try {
-    const bundle = join("/Applications", basename(bundleOf(app.getPath("exe"))))
-    return bundleVersionOf(readFileSync(join(bundle, "Contents", "Info.plist"), "utf8"))
+    return bundleVersionOf(readFileSync(join(applicationsCopy(), "Contents", "Info.plist"), "utf8"))
   } catch {
     return undefined
   }
@@ -388,8 +393,8 @@ const moveToApplications = async (): Promise<boolean> => {
       env: process.env,
       inApplications: process.platform === "darwin" && app.isInApplicationsFolder(),
       declined: state.moveDeclined,
-      signed: checksSignature() && (await bundleSigned()),
     },
+    signed: () => (checksSignature() ? bundleSigned() : Promise.resolve(false)),
     ask: async () => {
       const { response, checkboxChecked } = await dialog.showMessageBox({
         type: "question",
@@ -404,14 +409,39 @@ const moveToApplications = async (): Promise<boolean> => {
       return { move: response === 0, dontAskAgain: checkboxChecked }
     },
     decline: () => updateState.declineMove(),
-    move: () =>
-      app.moveToApplicationsFolder({
-        conflictHandler: (conflict) =>
-          resolveMoveConflict(conflict, {
+    move: () => {
+      const outcome = { conflict: "replace" as ReturnType<typeof resolveMoveConflict> }
+      const moved = app.moveToApplicationsFolder({
+        conflictHandler: (kind) => {
+          outcome.conflict = resolveMoveConflict(kind, {
             existingVersion: installedVersion(),
             runningVersion: app.getVersion(),
-          }),
-      }),
+          })
+          return outcome.conflict === "replace"
+        },
+      })
+      return moved ? "moved" : outcome.conflict === "newer" ? "newer" : "declined"
+    },
+    // The copy in Applications is newer: the person may open it instead of this one.
+    tellNewer: async () => {
+      const { response } = await dialog.showMessageBox({
+        type: "info",
+        message: "A newer Novadeck is already in your Applications folder.",
+        detail: "This copy was not moved. Open the newer one instead?",
+        buttons: ["Open Newer Novadeck", "Keep Using This One"],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      if (response !== 0) return false
+      // Nothing has started yet, so there is nothing to shut down.
+      return relaunchIntoCopy({
+        executable: join(applicationsCopy(), "Contents", "MacOS", basename(app.getPath("exe"))),
+        exists: existsSync,
+        relaunch: (execPath) => app.relaunch({ execPath }),
+        exit: () => app.exit(0),
+        log: (message, error) => console.warn(message, error),
+      })
+    },
     log: (message, error) => console.warn(message, error),
   })
 }

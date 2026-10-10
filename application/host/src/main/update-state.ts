@@ -8,8 +8,8 @@ export type UpdateState = {
   /** Which releases the build follows. */
   readonly channel: UpdateChannel
   /**
-   * The version of the build that failed to install an update, when one did: that
-   * version only tells of updates from then on, and a newer build ignores the mark.
+   * The version of the release whose install failed, when one did. A check that finds
+   * that release only tells of it; a newer release installs as usual.
    */
   readonly installFailedOn: string | undefined
   /** Whether the person asked not to be offered a move to the Applications folder again. */

@@ -9,10 +9,16 @@ export const debPackageName = "novadeck"
  * The one privileged command that installs a downloaded deb, dependencies included, so
  * the person is asked for their password once. electron-updater tries `dpkg -i` first and,
  * if that fails, `apt-get install -f -y`, which is a second prompt after a dismissed
- * first one, and which installs nothing from the file but succeeds all the same.
+ * first one, and which installs nothing from the file but succeeds all the same. apt-get
+ * waits up to a minute for the dpkg lock, which unattended-upgrades and PackageKit hold
+ * for a while after a boot, rather than fail at once; apt releases before 1.9.11 ignore
+ * the setting and fail at once. A lock that outlasts the wait still fails the install,
+ * and cannot be told from other apt failures (they all exit 100) without apt's message.
  */
 export const debInstallCommand = (path: string, hasAptGet: boolean): string[] =>
-  hasAptGet ? ["apt-get", "install", "-y", path] : ["dpkg", "-i", path]
+  hasAptGet
+    ? ["apt-get", "-o", "DPkg::Lock::Timeout=60", "install", "-y", path]
+    : ["dpkg", "-i", path]
 
 /**
  * Whether the version dpkg reports for the installed package is the offered release's.
