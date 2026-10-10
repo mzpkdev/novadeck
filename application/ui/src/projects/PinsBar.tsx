@@ -164,10 +164,6 @@ export const PinsBar = ({
   useLayoutEffect(() => {
     if (!channel) return
     channel.setBar({
-      bounds: () => {
-        const box = strip.current?.getBoundingClientRect()
-        return box && box.height > 0 ? box : null
-      },
       locate: (point, id) => {
         const element = row.current
         const box = strip.current?.getBoundingClientRect()

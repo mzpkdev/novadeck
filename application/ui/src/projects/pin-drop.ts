@@ -16,11 +16,10 @@ export type PinDrop = {
   readonly spot: PinDropSpot | null
 }
 
-// The pins bar, as the channel knows it: where a point lands among its pins (null off the
-// bar), and where the bar is on screen (null while it isn't shown).
+// The pins bar, as the channel knows it: where a point lands among its pins, null off the
+// bar or while it isn't shown.
 export type PinDropBar = {
   readonly locate: (point: Point, id: string) => PinDropSpot | null
-  readonly bounds: () => DOMRect | null
 }
 
 // Carries a drag from the switcher's list to the pins bar, which are apart in the tree:
@@ -32,8 +31,6 @@ export type PinDropChannel = {
   readonly getSnapshot: () => PinDrop | null
   readonly subscribe: (listener: () => void) => () => void
   readonly setBar: (bar: PinDropBar | null) => void
-  // Where the bar is on screen, while it shows.
-  readonly barBounds: () => DOMRect | null
   readonly start: (id: string, accepts: boolean) => void
   // A point the bar can't see, as over the open list, is null.
   readonly move: (point: Point | null) => void
@@ -60,7 +57,6 @@ export const createPinDrop = (drop: (id: string, index: number) => void): PinDro
     setBar: (next) => {
       bar = next
     },
-    barBounds: () => bar?.bounds() ?? null,
     start: (id, accepts) => {
       last = null
       set({ id, accepts, spot: null })

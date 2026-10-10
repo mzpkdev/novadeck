@@ -39,7 +39,8 @@ const leeway = 24
 // caller's, told by `onMove` (to a place in the list, pinned ones first) and `onStep`
 // (one place, as Alt and the arrows move the focused row). Where a pins bar listens
 // (`PinDropContext`), a row also drags out of the list and onto the bar, which pins it:
-// the list fades as the drag leaves it, and `onDraggedOut` closes it once let go.
+// the list fades for good as the drag leaves it, and `onDraggedOut` closes it once let go.
+// A row dragged past its sides never scrolls it sideways.
 export const ProjectList = ({
   projects,
   current,
@@ -105,7 +106,7 @@ export const ProjectList = ({
   })
   return (
     <div
-      className="workspace-switcher-projects flex max-h-[min(560px,calc(100vh-150px))] flex-col gap-1 overflow-y-auto p-[5px]"
+      className="workspace-switcher-projects flex max-h-[min(560px,calc(100vh-150px))] flex-col gap-1 overflow-x-hidden overflow-y-auto p-[5px]"
       aria-label="Workspaces"
       data-dragged-out={draggedOut ? "true" : undefined}
       ref={setList}
@@ -134,27 +135,17 @@ export const ProjectList = ({
           const menu = list?.parentElement?.getBoundingClientRect()
           const accepts = pinDrop.getSnapshot()?.accepts === true
           if (menu && accepts) {
-            // Out once clearly past the menu: above its rows, or a little past its sides
-            // or bottom, so a reorder that swings wide stays one. Back in over the list again,
-            // below the bar, which runs behind the menu's top.
-            // Above the rows is the pinned label at most, over the bar.
+            // Out once clearly past the menu: above its rows (the pinned label at most,
+            // over the bar), or a little past its sides or bottom, so a reorder that swings
+            // wide stays one. Out stays out: the menu doesn't come back for this drag.
             const away =
               point.y < (rowsTop.current ?? menu.top) ||
               point.x < menu.left - leeway ||
               point.x > menu.right + leeway ||
               point.y > menu.bottom + leeway
-            const bar = pinDrop.barBounds()
-            const back =
-              point.x >= menu.left &&
-              point.x <= menu.right &&
-              point.y <= menu.bottom &&
-              point.y > (bar ? bar.bottom : menu.top) + leeway / 3
             if (!out.current && away) {
               out.current = true
               setDraggedOut(true)
-            } else if (out.current && back) {
-              out.current = false
-              setDraggedOut(false)
             }
           }
           // While the open list covers the bar, the bar can't take the drop.
