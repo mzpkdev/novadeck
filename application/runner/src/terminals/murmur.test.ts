@@ -6,7 +6,8 @@ import headless from "@xterm/headless"
 import { afterEach, beforeEach, vi } from "vitest"
 
 import type { Items } from "../harnesses/replies.js"
-import type { Description, Digest } from "../murmur/describer.js"
+import type { Description, Digest, ShellDigest } from "../murmur/describer.js"
+import { redactDigest } from "../murmur/redact.js"
 import { describe, expect, it } from "../test.js"
 import { FakeDescriber } from "../testing/describer.js"
 import {
@@ -18,6 +19,7 @@ import {
   promptsOf,
   replyChars,
   replyTail,
+  screenLines,
   screenOf,
   screenRows,
   shellDigest,
@@ -40,6 +42,9 @@ const work = (fields: Partial<Work> = {}): Work => ({
 })
 
 const { Terminal } = headless
+
+// Draws text at a row of the screen, by a cursor move.
+const draw = (row: number, text: string) => `\u001b[${row};1H${text}`
 
 describe("the digest of an agent's terminal", () => {
   const input = {
@@ -218,22 +223,78 @@ describe("the digest of a plain shell", () => {
     expect(screenOf(["a", "b"], [true, true])).toEqual(["ab"])
   })
 
-  it("joins rows drawn full across the screen, as programs that position the cursor draw them", async () => {
+  it("never glues rows drawn full across the screen, but says the line goes on below", async () => {
     const hex = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a09"
     const rows = ["$ cat key", hex.slice(0, 40), hex.slice(40), "$ "]
-    // By width alone: no row is marked wrapped, as in tmux panes, vim and less.
-    expect(screenOf(rows, [], 40)).toEqual(["$ cat key", hex, "$"])
-    // A short row, or one ending in a space, joins nothing; unknown width joins nothing.
-    expect(screenOf(["a".repeat(39), "b"], [], 40)).toHaveLength(2)
-    expect(screenOf([`${"a".repeat(39)} `, "b"], [], 40)).toHaveLength(2)
-    expect(screenOf(rows)).toHaveLength(4)
-    // Drawn by a real terminal with cursor moves, from its own screen text.
-    const terminal = new Terminal({ cols: 40, rows: 8, allowProposedApi: true })
-    const drawn = [...rows].map((row, index) => `\u001b[${index + 1};1H${row}`).join("")
-    await new Promise<void>((resolve) => terminal.write(`\u001b[2J${drawn}`, resolve))
+    const filled = [false, true, false, false]
+    expect(screenLines(rows, [], filled)).toEqual({
+      screen: ["$ cat key", hex.slice(0, 40), hex.slice(40), "$"],
+      continues: [false, true, false, false],
+    })
+    // A wrapped row joins its line, which goes on when its last row was full.
+    expect(
+      screenLines(["a".repeat(40), "bb", "c"], [false, true, false], [true, false, false]),
+    ).toEqual({
+      screen: [`${"a".repeat(40)}bb`, "c"],
+      continues: [false, false],
+    })
+    expect(screenLines(["a".repeat(40), "bb"], [false, true], [false, true])).toMatchObject({
+      continues: [true],
+    })
+    // Blank lines above and below, and the rows past the cap, drop with theirs.
+    expect(screenLines(["", "x", "", ""], [], [false, true, false, false])).toEqual({
+      screen: ["x"],
+      continues: [true],
+    })
+    // Boxes and progress bars keep their lines.
+    expect(screenOf(["┌──────┐", "│ done │", "└──────┘"])).toHaveLength(3)
+    expect(
+      shellDigest({
+        projectFolder: undefined,
+        cwd: "/w",
+        command: null,
+        rows,
+        rowContinues: filled,
+        previous: null,
+      }),
+    ).toMatchObject({ continues: [false, true, false, false] })
+  })
+
+  it("reads which rows are full from a real terminal's cells, never from string lengths", async () => {
+    const terminal = new Terminal({ cols: 8, rows: 8, allowProposedApi: true })
+    await new Promise<void>((resolve) =>
+      terminal.write(
+        `\u001b[2J${draw(1, "abcdefgh")}${draw(2, "abc")}${draw(3, "abcdefg ")}${draw(4, "あいうえ")}${draw(5, "abcdefge\u0301")}${draw(6, "abcdefg")}`,
+        resolve,
+      ),
+    )
     const text = screenText(terminal)
     expect(text.wrapped?.some(Boolean)).toBe(false)
-    expect(screenOf(text.rows, text.wrapped, text.columns)).toContain(hex)
+    // Full: plain text to the last column, double-width characters to it, and a combining
+    // mark in it. Not: short rows, a trailing blank, an empty row.
+    expect(text.continues).toEqual([true, false, false, true, true, false, false, false])
+    terminal.dispose()
+  })
+
+  it("keeps a secret drawn across rows with cursor moves out of the model's sight, once redaction reads the line's end", async () => {
+    const hex = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a09"
+    const terminal = new Terminal({ cols: 40, rows: 8, allowProposedApi: true })
+    const drawn = ["$ cat key", hex.slice(0, 40), hex.slice(40), "$ "]
+      .map((row, index) => `\u001b[${index + 1};1H${row}`)
+      .join("")
+    await new Promise<void>((resolve) => terminal.write(`\u001b[2J${drawn}`, resolve))
+    const text = screenText(terminal)
+    const digest = shellDigest({
+      projectFolder: undefined,
+      cwd: "/w",
+      command: null,
+      rows: text.rows,
+      ...(text.wrapped && { wrapped: text.wrapped }),
+      ...(text.continues && { rowContinues: text.continues }),
+      previous: null,
+    })!
+    expect(digest.continues).toEqual([false, true, false, false])
+    expect((redactDigest(digest) as ShellDigest).screen.join("\n")).not.toContain(hex.slice(0, 40))
     terminal.dispose()
   })
 

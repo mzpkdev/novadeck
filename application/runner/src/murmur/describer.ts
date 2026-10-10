@@ -37,6 +37,11 @@ export type ShellDigest = {
   readonly command: string | null
   /** The visible rows, trimmed, trailing blanks dropped. */
   readonly screen: readonly string[]
+  /**
+   * Aligned with `screen`: `continues[i]` is true when line `i` ended on a full-width row, so
+   * it may go on in line `i + 1`. Redaction looks across such a boundary, and nowhere else.
+   */
+  readonly continues?: readonly boolean[]
   readonly previous: Previous
 }
 

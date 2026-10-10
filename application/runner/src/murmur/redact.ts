@@ -125,7 +125,8 @@ const qualifies = (text: string): boolean => {
   return marked ? digits >= 1 : digits >= 3
 }
 
-const quoted = `"[^"\\n]*"|'[^'\\n]*'`
+// A quoted value; one opened and never closed runs to the end of the line.
+const quoted = `"[^"\\n]*"|'[^'\\n]*'|"[^\\n]*|'[^\\n]*`
 
 const rules: readonly Rule[] = [
   // A key block, or the start of one whose end scrolled away.
@@ -205,19 +206,22 @@ const rules: readonly Rule[] = [
   [/(\bcurl\b[^\n]*?\s(?:-u|--user)[ =]\s*)(?!-)(\S+)/g, (_all, head) => `${head}${redacted}`],
   // --password hunter2, by the flag's exact name.
   [
-    /(--(?:password|passwd|pass|pwd|token|auth-token|access-token|api-key|apikey|secret|client-secret|auth|bearer|credentials?|passphrase))(?:=|[ \t]+)(?!-)("[^"\n]*"|'[^'\n]*'|\S+)/gi,
+    /(--(?:password|passwd|pass|pwd|token|auth-token|access-token|api-key|apikey|secret|client-secret|auth|bearer|credentials?|passphrase))(?:=|[ \t]+)(?!-)("[^"\n]*"|'[^'\n]*'|"[^\n]*|'[^\n]*|\S+)/gi,
     (all, flag, value) =>
       secretValue(value) ? `${all.slice(0, flag.length + 1)}${redacted}` : all,
   ],
   // NAME=value, where the name sounds secret.
   [
-    new RegExp(`(?<![\\w.-])([A-Za-z_][\\w.-]*)([ \\t]*=[ \\t]*)(${quoted}|[^\\s"',;&]+)`, "g"),
+    new RegExp(
+      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*=[ \\t]*)(${quoted}|[^\\s"',;&]+)`,
+      "gu",
+    ),
     (all, name, joint, value) =>
       sounds(name) && secretValue(value) ? `${name}${joint}${redacted}` : all,
   ],
   // Polish: hasło: tajne, haslo=tajne
   [
-    /(?<![\p{L}])(has[lł]o|has[lł]a)([ \t]*[:=][ \t]*)("[^"\n]*"|'[^'\n]*'|\S+)/giu,
+    /(?<![\p{L}])(has[lł]o|has[lł]a)([ \t]*[:=][ \t]*)("[^"\n]*"|'[^'\n]*'|"[^\n]*|'[^\n]*|\S+)/giu,
     (all, name, joint, value) => (secretValue(value) ? `${name}${joint}${redacted}` : all),
   ],
   // fish: set -x NAME value
@@ -228,13 +232,19 @@ const rules: readonly Rule[] = [
   ],
   // "name": "value", as JSON has it, and 'name': 'value'.
   [
-    new RegExp(`(["'])([A-Za-z_][\\w.-]*)\\1([ \\t]*:[ \\t]*)(${quoted}|[^\\s,}\\]]+)`, "g"),
+    new RegExp(
+      `(["'])([\\p{L}_][\\p{L}\\p{N}_.-]*)\\1([ \\t]*:[ \\t]*)(${quoted}|[^\\s,}\\]]+)`,
+      "gu",
+    ),
     (all, quote, name, joint, value) =>
       sounds(name) && secretValue(value) ? `${quote}${name}${quote}${joint}"${redacted}"` : all,
   ],
   // name: value, as YAML and headers have it.
   [
-    new RegExp(`(?<![\\w.-])([A-Za-z_][\\w.-]*)([ \\t]*:[ \\t]+)(${quoted}|[^\\s"',;]+)`, "g"),
+    new RegExp(
+      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*:[ \\t]+)(${quoted}|[^\\s"',;]+)`,
+      "gu",
+    ),
     (all, name, joint, value) =>
       sounds(name) && secretValue(value) ? `${name}${joint}${redacted}` : all,
   ],
@@ -258,13 +268,54 @@ export const redact = (text: string): string => {
   return result
 }
 
+// The spans of `text` that `redact` masks, found by laying what it left of the text over the
+// original: the pieces between its masks appear in the original in the same order.
+const maskedSpans = (text: string): [number, number][] => {
+  const pieces = redact(text).split(redacted)
+  const spans: [number, number][] = []
+  let position = 0
+  for (let k = 0; k + 1 < pieces.length; k += 1) {
+    const start = text.indexOf(pieces[k] ?? "", position) + (pieces[k] ?? "").length
+    const next = pieces[k + 1] ?? ""
+    const end = k + 2 === pieces.length && next === "" ? text.length : text.indexOf(next, start)
+    spans.push([start, end])
+    position = end
+  }
+  return spans
+}
+
+// Masks, in the rows of `screen` that go on in the next, what only shows as a secret when the
+// two are read as one: the part of it in each row. The rows stay apart.
+const maskAcrossRows = (screen: string[], continues: readonly boolean[]): string[] => {
+  const ranges: [number, number][][] = screen.map(() => [])
+  continues.forEach((goesOn, i) => {
+    if (!goesOn || i + 1 >= screen.length) return
+    const edge = (screen[i] ?? "").length
+    for (const [start, end] of maskedSpans((screen[i] ?? "") + (screen[i + 1] ?? "")))
+      if (start < edge && end > edge) {
+        ranges[i]?.push([start, edge])
+        ranges[i + 1]?.push([0, end - edge])
+      }
+  })
+  return screen.map((row, i) => {
+    let result = row
+    // From the right, so the offsets still hold.
+    for (const [start, end] of (ranges[i] ?? []).toSorted((x, y) => y[0] - x[0]))
+      result = result.slice(0, start) + redacted + result.slice(end)
+    return result
+  })
+}
+
 /** The digest with every string run through `redact`. */
 export const redactDigest = (digest: Digest): Digest => {
   const one = (text: string | null): string | null => (text === null ? null : redact(text))
   const previous = digest.previous && { title: redact(digest.previous.title) }
   if (digest.kind === "shell") {
-    // The screen goes in whole, so a key block spanning rows is seen as one.
-    const screen = redact(digest.screen.join("\n")).split("\n")
+    // A full-width row may go on in the next: what shows as a secret only across the two is
+    // masked first. Then the screen goes in whole, so a key block spanning rows is seen as one,
+    // and every row is seen on its own, whatever the row before it ended in.
+    const rows = maskAcrossRows([...digest.screen], digest.continues ?? [])
+    const screen = redact(rows.join("\n")).split("\n")
     return {
       ...digest,
       project: one(digest.project),

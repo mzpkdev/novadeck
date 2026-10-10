@@ -1306,8 +1306,8 @@ export class Terminals {
         return (
           screen && {
             rows: screen.rows,
-            columns: screen.columns,
             ...(screen.wrapped && { wrapped: screen.wrapped }),
+            ...(screen.continues && { continues: screen.continues }),
           }
         )
       },

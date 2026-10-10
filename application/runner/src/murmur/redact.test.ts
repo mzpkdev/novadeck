@@ -361,3 +361,99 @@ describe("redacting Polish and quoted values", () => {
     expect(result).toContain(redacted)
   })
 })
+
+const shell = (screen: string[], continues: boolean[] = []): ShellDigest => ({
+  kind: "shell",
+  project: null,
+  folder: null,
+  command: null,
+  screen,
+  continues,
+  previous: null,
+})
+const screenOf = (digest: ShellDigest, continues?: boolean[]) =>
+  (redactDigest({ ...digest, ...(continues && { continues }) }) as ShellDigest).screen
+
+describe("redacting a shell's screen, row by row", () => {
+  it.each([
+    ["Compiling serde_json", "ghp_A1b2C3d4E5f6G7h8I9j0", "ghp_A1b2"],
+    ["LOG_LEVEL=DEBUG_INFO", "TOKEN=hunter2xyz99", "hunter2xyz99"],
+    ["[====] 100% 12/12 1s", "sk_live_abcd1234efghijkl", "sk_live_abcd"],
+    ["host 14:47 10", "ghp_A1b2C3d4E5f6G7h8I9j0K1l2", "ghp_A1b2"],
+    ["Compiling serde_json", "AKIAIOSFODNN7EXAMPLE", "AKIAIOSFOD"],
+  ])("finds a secret at the start of the row after %s", (before, row, secret) => {
+    const screen = screenOf(shell(["$ cat out", before, row, "$"]), [false, true, false, false])
+
+    expect(screen.join("\n")).not.toContain(secret)
+    expect(screen).toHaveLength(4)
+    expect(screen[1]).toBe(before)
+  })
+
+  it("masks a secret split across a full row on both rows", () => {
+    const hex = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a09"
+    const screen = screenOf(shell(["$ sha256sum f", hex.slice(0, 40), hex.slice(40), "$"]), [
+      false,
+      true,
+      false,
+      false,
+    ])
+
+    expect(screen.join("")).not.toMatch(/9f86d0|15b0f00a/)
+    expect(screen).toHaveLength(4)
+    expect(screen[1]).toContain(redacted)
+    expect(screen[2]).toContain(redacted)
+    expect(screen[0]).toBe("$ sha256sum f")
+    expect(screen[3]).toBe("$")
+  })
+
+  it("masks a token split mid-way", () => {
+    const screen = screenOf(
+      shell(["env | grep STRIPE", "STRIPE_SECRET_KEY=sk_li", "ve_51HxYzAbCdEfGhIjKlMn"]),
+      [false, true, false],
+    )
+
+    expect(screen.join("")).not.toMatch(/sk_li|51HxYz/)
+    expect(screen).toHaveLength(3)
+  })
+
+  it("does not join rows that don't continue, so a hex run stops at the row", () => {
+    const rows = [
+      "commit 69231a3e0f1d2c3b4a5968778695a4b3c2d1e0f9",
+      "Author: Ada",
+      "69231a3e0f1d2c3b",
+    ]
+
+    expect(screenOf(shell(rows), [false, false, false])).toEqual(rows)
+  })
+
+  it("keeps boxes and progress bars as they are", () => {
+    const rows = [
+      "┌────────────────────┐│ build              │",
+      "│ [=======>      ] 52% │",
+      "└────────────────────┘",
+    ]
+
+    expect(screenOf(shell(rows), [true, true, false])).toEqual(rows)
+  })
+})
+
+describe("redacting names in other scripts, and quotes left open", () => {
+  it.each([
+    ['{"hasło": "tajne"}', "tajne"],
+    ["hasło=tajne123", "tajne123"],
+    ['{"passwörd": "tajne"}', "tajne"],
+    ['--password "abc def', "def"],
+    ['hasło: "niezamknięte tajne', "tajne"],
+    ["export DB_PASSWORD='two words", "words"],
+    ['token: "two words here', "words"],
+  ])("removes the value in %s", (text, secret) => {
+    const result = redact(text)
+
+    expect(result).not.toContain(secret)
+    expect(result).toContain(redacted)
+  })
+
+  it("leaves what follows a closed quote alone", () => {
+    expect(redact('password: "hunter2" and more')).toBe(`password: ${redacted} and more`)
+  })
+})

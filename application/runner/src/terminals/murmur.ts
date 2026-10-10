@@ -247,35 +247,47 @@ export const commandOf = (program: ForegroundProcess | null, atPrompt: boolean):
 
 /**
  * The visible rows of a plain shell's screen as murmur is shown them: rows the terminal
- * wrapped (`wrapped[i]` continues the row before), and those that fill the screen's
- * `columns` and end in a non-space, joined into the logical line they are, so a value
- * split across rows is whole for the redaction; control characters out,
- * each line trimmed and, only far past any real line, cut at the safety cap (it must not
- * cut a value ahead of the redaction, which the service does before its caps), the blank ones above and below dropped,
- * and at most the last `screenRows` kept.
+ * wrapped (`wrapped[i]` continues the row before) joined into the logical line they are,
+ * so a value split across rows is whole for the redaction; control characters out, each
+ * line trimmed and, only far past any real line, cut at the safety cap (it must not cut a
+ * value ahead of the redaction, which the service does before its caps), the blank ones
+ * above and below dropped, and at most the last `screenRows` kept.
+ *
+ * `continues[i]` says the line ended on a row drawn full across the screen (its last cell
+ * held something: `rowContinues` for the screen's rows), so a value may go on in the line
+ * below, as programs that position the cursor (tmux panes, vim, less) draw one. Rows are
+ * never glued on that account: boxes and progress bars keep their lines.
  */
-export const screenOf = (
+export const screenLines = (
   rows: readonly string[],
   wrapped: readonly boolean[] = [],
-  columns?: number,
-): readonly string[] => {
+  rowContinues: readonly boolean[] = [],
+): { readonly screen: readonly string[]; readonly continues: readonly boolean[] } => {
   const lines: string[] = []
-  // Programs that draw rows with cursor moves (tmux panes, vim, less) never mark one as
-  // wrapped: a row that fills the screen's width and ends in a non-space is joined with
-  // the next, as a long value drawn across rows is whole for the redaction.
-  let full = false
+  const ends: boolean[] = []
   rows.forEach((row, index) => {
-    if ((wrapped[index] || full) && lines.length > 0) lines[lines.length - 1] += row
+    if (wrapped[index] && lines.length > 0) lines[lines.length - 1] += row
     else lines.push(row)
-    full = columns !== undefined && row.length >= columns && !/\s$/.test(row)
+    ends[lines.length - 1] = rowContinues[index] ?? false
   })
   const kept = lines.map((line) =>
     shorten(line.replace(escapes, "").replace(control, " "), screenColumns),
   )
-  while (kept.at(-1) === "") kept.pop()
+  while (kept.at(-1) === "") {
+    kept.pop()
+    ends.pop()
+  }
   const start = kept.findIndex((row) => row !== "")
-  return start < 0 ? [] : kept.slice(Math.max(start, kept.length - screenRows))
+  if (start < 0) return { screen: [], continues: [] }
+  const from = Math.max(start, kept.length - screenRows)
+  return { screen: kept.slice(from), continues: ends.slice(from, kept.length) }
 }
+
+/** The lines of `screenLines`, without which of them go on below. */
+export const screenOf = (
+  rows: readonly string[],
+  wrapped: readonly boolean[] = [],
+): readonly string[] => screenLines(rows, wrapped).screen
 
 /**
  * What murmur is shown of a plain shell's terminal; null when there is nothing to say of
@@ -288,11 +300,11 @@ export const shellDigest = (input: {
   readonly rows: readonly string[]
   /** Which rows continue the one before, as the terminal wrapped a long line. */
   readonly wrapped?: readonly boolean[]
-  /** The screen's width, to tell a row drawn full across it. */
-  readonly columns?: number
+  /** Which of the screen's rows are drawn full across it (see `screenLines`). */
+  readonly rowContinues?: readonly boolean[]
   readonly previous: Previous
 }): ShellDigest | null => {
-  const screen = screenOf(input.rows, input.wrapped, input.columns)
+  const { screen, continues } = screenLines(input.rows, input.wrapped, input.rowContinues)
   if (input.command === null && screen.length < 2) return null
   const { projectFolder } = input
   return {
@@ -301,6 +313,7 @@ export const shellDigest = (input: {
     folder: placeName(input.cwd),
     command: input.command,
     screen,
+    ...(input.rowContinues && { continues }),
     previous: input.previous,
   }
 }
@@ -458,7 +471,7 @@ export type MurmurHost = {
     | {
         readonly rows: readonly string[]
         readonly wrapped?: readonly boolean[]
-        readonly columns?: number
+        readonly continues?: readonly boolean[]
       }
     | undefined
   >
@@ -683,7 +696,14 @@ export class Murmur {
   // Murmur became usable: terminals with no description yet get one.
   private catchUp(): void {
     for (const subject of this.host.subjects()) {
-      if (subject.naming.murmur !== null) continue
+      // A titled terminal is described again only if a retitle is owed it (a summary's
+      // that did not run, whose timer found murmur unusable).
+      if (subject.naming.murmur !== null) {
+        const watch = this.watches.get(subject.summary.id)
+        if (subject.agent && watch?.owed && watch.tried === null)
+          this.react(subject.summary.id, { session: false })
+        continue
+      }
       const mission = subject.agent ? this.missionOf(subject) : undefined
       if (subject.agent && mission === undefined) {
         this.watch(subject.summary.id).owed = true
@@ -773,7 +793,7 @@ export class Murmur {
         command: commandOf(now.program, now.atPrompt),
         rows: screen.rows,
         ...(screen.wrapped && { wrapped: screen.wrapped }),
-        ...(screen.columns !== undefined && { columns: screen.columns }),
+        ...(screen.continues && { rowContinues: screen.continues }),
         previous: now.naming.murmur,
       }) ?? undefined
     )
@@ -794,7 +814,7 @@ export class Murmur {
         clearTimeout(watch.retryTimer)
         watch.retryTimer = setTimeout(() => {
           watch.retryTimer = undefined
-          this.react(terminalId, { session: false })
+          this.reported(terminalId, { session: false })
         }, this.times.retryMs)
         watch.retryTimer.unref()
       }
