@@ -239,6 +239,8 @@ describe("a tool call's summary", () => {
       ["show", { url: "http://localhost:5173/" }, "web", "Showed", "http://localhost:5173/"],
       ["show", { file: { path: "/a/b/c/d/mock.png" } }, "read", "Showed", "…/c/d/mock.png"],
       ["show", { file: '{"path":"/a/b/c/d/mock.png"}' }, "read", "Showed", "…/c/d/mock.png"],
+      ["close", { file: { path: "/a/b/c/d/mock.png" } }, "read", "Closed", "…/c/d/mock.png"],
+      ["close", { url: "http://localhost:5173/" }, "web", "Closed", "http://localhost:5173/"],
       ["showing", {}, "read", "Checked what's shown", ""],
       [
         "describe",

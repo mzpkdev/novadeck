@@ -387,11 +387,16 @@ const novadeckTool = (tool: string, fields: Fields | null): ToolSummary | undefi
         title: `Closed${text("to") ? ` ${text("to")}` : " a terminal"}`,
         detail: "",
       }
-    case "show": {
+    case "show":
+    case "close": {
       const url = text("url")
       const file = nested(fields?.file)
       const path = file ? oneLine(textField(file, "path")) : ""
-      return { kind: url ? "web" : "read", title: "Showed", detail: url || shortPath(path) }
+      return {
+        kind: url ? "web" : "read",
+        title: tool === "show" ? "Showed" : "Closed",
+        detail: url || shortPath(path),
+      }
     }
     case "showing":
       return { kind: "read", title: "Checked what's shown", detail: "" }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../test.js"
-import { readRequest } from "./request.js"
+import { readUnshowRequest, readRequest } from "./request.js"
 
 describe("a show request", () => {
   it("names a file by its path, and only lines that run forward, under file", () => {
@@ -32,18 +32,54 @@ describe("a show request", () => {
     })
     expect(readRequest({ url: "http://localhost:5173/", file: { path: "a.ts" } })).toEqual({
       ok: false,
-      reason: "Give one source, file or url, not several.",
+      reason: "Give one source, file: { path } or url, not several.",
     })
     expect(readRequest({ url: "http://a/", lines: { from: 1, to: 1 } })).toMatchObject({
       ok: false,
       reason: 'The request\'s "lines" is not valid.',
     })
     expect(readRequest({ url: "" })).toMatchObject({ ok: false })
-    expect(readRequest({})).toEqual({ ok: false, reason: "Give one source, file or url." })
+    expect(readRequest({})).toEqual({
+      ok: false,
+      reason: "Give one source, file: { path } or url.",
+    })
     expect(readRequest({ path: "a.ts" })).toEqual({
       ok: false,
-      reason: "Give one source, file or url.",
+      reason: "Give one source, file: { path } or url.",
     })
     expect(readRequest("a.ts")).toEqual({ ok: false, reason: "The request is not valid." })
+    expect(readRequest({ url: "http://a/", ['x"y'.repeat(40)]: 1 })).toEqual({
+      ok: false,
+      reason: `The request's ${JSON.stringify('x"y'.repeat(21) + "…")} is not valid.`,
+    })
+  })
+})
+
+describe("a close request", () => {
+  it("names the file or url given to show, and nothing else", () => {
+    expect(readUnshowRequest({ file: { path: "a.ts" } })).toEqual({
+      ok: true,
+      request: { file: { path: "a.ts" } },
+    })
+    expect(readUnshowRequest({ url: "http://localhost:5173/" })).toEqual({
+      ok: true,
+      request: { url: "http://localhost:5173/" },
+    })
+    expect(readUnshowRequest({ file: { path: "a.ts", lines: { from: 1, to: 1 } } })).toEqual({
+      ok: false,
+      reason: 'The request\'s "file.lines" is not valid.',
+    })
+    expect(readUnshowRequest({ file: { path: "a.ts" }, open: true })).toEqual({
+      ok: false,
+      reason: 'The request\'s "open" is not valid.',
+    })
+    expect(readUnshowRequest({ file: { path: "a.ts" }, url: "http://a/" })).toEqual({
+      ok: false,
+      reason: "Give one source, file: { path } or url, not several.",
+    })
+    expect(readUnshowRequest({})).toEqual({
+      ok: false,
+      reason: "Give one source, file: { path } or url.",
+    })
   })
 })

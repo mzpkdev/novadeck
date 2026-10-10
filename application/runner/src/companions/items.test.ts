@@ -98,6 +98,71 @@ const watching = (items: CompanionItems) => {
   }
 }
 
+describe("what an agent closes", () => {
+  it("takes its own item off its bar, by the file or page it showed", async ({ fixture }) => {
+    writeFileSync(join(fixture.directory, "a.ts"), "const a = 1\n")
+    const t1 = fixture.terminal("t1")
+    await fixture.items.show(t1, { file: { path: "a.ts", lines: { from: 1, to: 1 } } })
+    await fixture.items.show(t1, { url: "http://localhost:5173/", title: "Preview" })
+    const { seen, stop } = watching(fixture.items)
+    await expect(fixture.items.unshow(t1, { file: { path: "./a.ts" } })).resolves.toEqual({
+      ok: true,
+      name: "a.ts",
+      kind: "file",
+    })
+    await expect(fixture.items.unshow(t1, { url: "http://localhost:5173" })).resolves.toEqual({
+      ok: true,
+      name: "Preview",
+      kind: "page",
+    })
+    expect(fixture.items.bar(t1.terminalId)).toEqual([])
+    await stop()
+    expect(seen.filter((change) => change.type === "itemRemoved")).toHaveLength(2)
+  })
+
+  it("closes a file that has since gone, by the path it was shown at", async ({ fixture }) => {
+    writeFileSync(join(fixture.directory, "tmp.png"), "")
+    const t1 = fixture.terminal("t1")
+    await fixture.items.show(t1, { file: { path: "tmp.png" } })
+    rmSync(join(fixture.directory, "tmp.png"))
+    await expect(fixture.items.unshow(t1, { file: { path: "tmp.png" } })).resolves.toMatchObject({
+      ok: true,
+      name: "tmp.png",
+    })
+    expect(fixture.items.bar(t1.terminalId)).toEqual([])
+  })
+
+  it("leaves what it didn't show, and says whose it is", async ({ fixture }) => {
+    writeFileSync(join(fixture.directory, "a.ts"), "const a = 1\n")
+    writeFileSync(join(fixture.directory, "b.ts"), "const b = 1\n")
+    const t1 = fixture.terminal("t1")
+    const t2 = fixture.terminal("t2")
+    await fixture.items.attach({ terminalId: t1.terminalId, path: "a.ts" })
+    const shown = await fixture.items.show(t2, { file: { path: "b.ts" } })
+    fixture.items.move(shown.ok ? shown.id : "", t1.terminalId)
+    await expect(fixture.items.unshow(t1, { file: { path: "a.ts" } })).resolves.toEqual({
+      ok: false,
+      reason:
+        '"a.ts" was attached by the user, so it isn\'t yours to close; tell the user if it ' +
+        "should go.",
+    })
+    await expect(fixture.items.unshow(t1, { file: { path: "b.ts" } })).resolves.toEqual({
+      ok: false,
+      reason:
+        '"b.ts" was placed beside you from t2, so it isn\'t yours to close; tell the user if ' +
+        "it should go.",
+    })
+    await expect(fixture.items.unshow(t1, { file: { path: "c.ts" } })).resolves.toEqual({
+      ok: false,
+      reason: "Nothing is showing beside your terminal at c.ts; showing lists what is.",
+    })
+    await expect(fixture.items.unshow(t1, { url: "file:///etc/passwd" })).resolves.toMatchObject({
+      ok: false,
+    })
+    expect(fixture.items.bar(t1.terminalId)).toHaveLength(2)
+  })
+})
+
 describe("what an agent shows", () => {
   it("lands on its own bar, and showing it again updates it there", async ({ fixture }) => {
     writeFileSync(join(fixture.directory, "a.ts"), "const a = 1\n")

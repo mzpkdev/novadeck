@@ -6,7 +6,8 @@
  * relay answers the handshake itself, with no tools. Its tools: `show`, which puts an
  * image, a text file or a web page in front of the user, beside the terminal the agent
  * runs in (one source per call, `file` or `url`, each with its own options inside it),
- * and `showing`, which lists what is there now; `open_terminal`, which opens a
+ * `showing`, which lists what is there now, and `close`, which takes away what the agent
+ * showed, by the same file or url; `open_terminal`, which opens a
  * new terminal beside it, optionally starting a command there; `close_terminal`, which
  * closes another of the project's terminals by its handle; `send` and `agents`, which
  * message the agents in the project's other terminals and list them; and `describe`,
@@ -51,6 +52,7 @@ type Shown = {
   readonly tooLarge?: boolean
 }
 type Listing = { readonly text: string }
+type ClosedItem = { readonly name: string; readonly kind: string }
 type Opened = {
   readonly handle?: string
   readonly command?: string
@@ -169,6 +171,44 @@ const showing: Tool<Listing> = {
   // The runner renders the listing.
   said: (answer) => answer.text,
   failed: "Novadeck couldn't list what is showing beside you.",
+}
+
+const close: Tool<ClosedItem> = {
+  name: "close",
+  description:
+    "Close something you showed beside your terminal in Novadeck, by the same file or url " +
+    "you gave show: it leaves the taskbar and the pane. Give either file or url. Use it " +
+    "when the user asked you to close it, or when what you showed is done with, as a " +
+    "screenshot you have since replaced with another. Only what you showed yourself closes " +
+    "this way: what the user attached, or another terminal placed beside you, stays, and " +
+    "you're told. showing lists what is there. For a terminal, use close_terminal instead.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      file: {
+        type: "object",
+        description: "The file you showed.",
+        properties: {
+          path: {
+            type: "string",
+            description: "Its path, absolute or relative to the terminal's current directory.",
+          },
+        },
+        required: ["path"],
+        additionalProperties: false,
+      },
+      url: {
+        type: "string",
+        description: "Instead of file: the web page's address you showed.",
+      },
+    },
+    additionalProperties: false,
+  },
+  call: "dismiss",
+  // Whole, so the runner's strict reading names a key that belongs to no source.
+  request: (args) => args,
+  said: (answer) => "Closed " + answer.name + " beside you in Novadeck.",
+  failed: "Novadeck couldn't close it.",
 }
 
 const openTerminal: Tool<Opened> = {
@@ -472,6 +512,7 @@ const describe: Tool<Described> = {
 const tools: readonly Tool<unknown>[] = [
   show,
   showing,
+  close,
   openTerminal,
   closeTerminal,
   send,

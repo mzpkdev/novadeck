@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { realpath } from "node:fs/promises"
 import { isAbsolute, basename, relative, resolve, sep } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
@@ -27,7 +28,14 @@ import {
   type Pointed,
 } from "./content.js"
 import type { ItemRecord, ItemRecords, WindowRecord } from "./records.js"
-import { failure, type PresentAnswer, type PresentRequest } from "./request.js"
+import {
+  failure,
+  type UnshowAnswer,
+  type UnshowRequest,
+  type PresentAnswer,
+  type PresentFailure,
+  type PresentRequest,
+} from "./request.js"
 
 /** A terminal items are shown in or placed on: where it is, and how agents address it. */
 export type TerminalPlace = {
@@ -188,6 +196,39 @@ export class CompanionItems {
       ...(pointer.held && { held: true }),
       ...(tooLarge && { tooLarge: true }),
     }
+  }
+
+  /**
+   * Closes what an agent showed on its own terminal's bar, named by the file or page it
+   * gave `show`; the item leaves the bar and the pane. Only the agent's own items close
+   * this way: one the person attached, or another terminal placed there, stays, and the
+   * answer says so.
+   */
+  async unshow(place: TerminalPlace, request: UnshowRequest): Promise<UnshowAnswer> {
+    if (this.stopping) return failure("Novadeck is closing.")
+    const keyed = await this.keyOf(place, request)
+    if (!keyed.ok) return keyed
+    const item = this.records
+      .barItems(place.terminalId)
+      .find((each) => each.pointerKey === keyed.key)
+    if (!item)
+      return failure(
+        `Nothing is showing beside your terminal at ${keyed.given}; showing lists what is.`,
+      )
+    if (item.by !== "agent" || item.from.terminalId !== place.terminalId)
+      return failure(
+        JSON.stringify(item.name) +
+          (item.by === "person"
+            ? " was attached by the user"
+            : ` was placed beside you from ${item.from.handle}`) +
+          ", so it isn't yours to close; tell the user if it should go.",
+      )
+    try {
+      this.close(item.id)
+    } catch {
+      return failure("Novadeck couldn't close it.")
+    }
+    return { ok: true, name: item.name, kind: item.kind }
   }
 
   /**
@@ -579,6 +620,23 @@ export class CompanionItems {
         held: pointed.held,
       },
     }
+  }
+
+  /**
+   * The key a `close` request names, as `show` keyed the item: a page's address as
+   * read, or a file's real path, or the path as resolved once the file is gone.
+   */
+  private async keyOf(
+    place: TerminalPlace,
+    request: UnshowRequest,
+  ): Promise<{ readonly ok: true; readonly key: string; readonly given: string } | PresentFailure> {
+    if ("url" in request) {
+      const page = pageAt(request.url)
+      return page.ok ? { ok: true, key: page.url.href, given: page.url.href } : page
+    }
+    const resolved = resolve(place.cwd, request.file.path)
+    const key = await realpath(resolved).catch(() => resolved)
+    return { ok: true, key, given: request.file.path }
   }
 
   /** How a file is described: an image by its size and format, a text file by its path and lines. */
