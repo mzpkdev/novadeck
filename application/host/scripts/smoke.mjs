@@ -96,9 +96,13 @@ try {
   fail(`The relay didn't answer as an MCP server and hook: ${error}`)
 }
 
-// The voice engine's manifest, when the build ships one, names the archive it downloads.
-const engine = join(resources, "voice", "engine.json")
-if (existsSync(engine)) {
+// An engine's manifest, when the build ships one, names the archive it downloads.
+for (const [name, label] of [
+  ["voice", "voice engine"],
+  ["murmur", "murmur engine"],
+]) {
+  const engine = join(resources, name, "engine.json")
+  if (!existsSync(engine)) continue
   try {
     const manifest = JSON.parse(readFileSync(engine, "utf8"))
     if (
@@ -113,9 +117,9 @@ if (existsSync(engine)) {
       throw new Error(JSON.stringify(manifest))
     }
   } catch (error) {
-    fail(`The voice engine manifest is invalid: ${error}`)
+    fail(`The ${label} manifest is invalid: ${error}`)
   }
-  console.log("The packaged app carries its voice engine manifest.")
+  console.log(`The packaged app carries its ${label} manifest.`)
 }
 
 const bundle = await esbuild.build({

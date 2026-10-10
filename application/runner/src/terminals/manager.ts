@@ -70,6 +70,7 @@ import {
   type SendAnswer,
 } from "../messaging/messaging.js"
 import type { MailboxRecords } from "../messaging/records.js"
+import type { Describer } from "../murmur/describer.js"
 import type { InstalledShell } from "../shell/install.js"
 import { shellLaunch, startsCommands, type ShellLaunch } from "../shell/integration.js"
 import { osc7Directory, osc9Directory } from "../shell/osc.js"
@@ -85,6 +86,7 @@ import {
 } from "../shell/reports.js"
 import type { HintFacts } from "../voice/hint.js"
 import { Answers, type AnswerHost, type AnswerOptions } from "./answers.js"
+import { artifactsNotice } from "./artifacts.js"
 import {
   allowClose,
   closeLimit,
@@ -96,7 +98,6 @@ import {
 } from "./closes.js"
 import { coalesced } from "./coalesce.js"
 import { expectedAgent, promptIn } from "./commands.js"
-import { readDescribeRequest, type DescribeAnswer } from "./describe.js"
 import { Dialogs, type DialogsHost, type DialogsOptions } from "./dialogs.js"
 import { Doorbell, type DoorbellHost, type DoorbellOptions } from "./doorbell.js"
 import {
@@ -116,16 +117,20 @@ import { keysOf, splitReports } from "./keys.js"
 import { Latest } from "./latest.js"
 import { type MouseEncoding, mouseReporting, watchMouseEncoding } from "./mouse.js"
 import {
-  cleanSummary,
-  describedAs,
-  descriptionRefusal,
+  Murmur,
+  type MurmurHost,
+  type MurmurSubject,
+  type MurmurTimes,
+  type Reported,
+} from "./murmur.js"
+import {
+  murmured,
   openedWith,
   renamed as renamedTo,
   titleOf,
   unnamed,
   type Naming,
 } from "./naming.js"
-import { atPrompt, described, fired, noNudges, noticesAt, type Nudges } from "./nudges.js"
 import {
   allowOpen,
   openLimit,
@@ -221,6 +226,12 @@ export type TerminalOptions = {
    * session counts as its own when omitted, or when that cannot be told.
    */
   projectOf?: (sessionId: string) => string | undefined
+  /**
+   * Writes terminals' titles and summaries (see `Murmur`); nothing is described without it.
+   * `murmurTimes` shortens its waits, as in some tests.
+   */
+  describer?: Describer
+  murmurTimes?: Partial<MurmurTimes>
   /** How the doorbell rings idle agents; it never rings with `false`, as in some tests. */
   doorbell?: DoorbellOptions | false
   /** How prompts the chat gives agents are typed, with its waits, as in some tests. */
@@ -332,10 +343,8 @@ type Record = {
   readyReturn?: NodeJS.Timeout | undefined
   /** Whether its title said a turn runs since the person's Enter at its ready prompt. */
   readyTurned?: boolean
-  /** What names it: the person's title, an agent's, and its agent's summary of its work. */
+  /** What names it: the person's title, murmur's, and the opening agent's. */
   naming: Naming
-  /** When its agent is next nudged to describe its work; kept for this runner's lifetime. */
-  nudges: Nudges
   /**
    * The root session of the bound agent, which messages, its prompts and its activity are
    * for, followed as its harness's profile says (see `followRoot`); null without one.
@@ -386,6 +395,10 @@ type Record = {
    * its hooks name no prompt; undefined before one was read.
    */
   seenEntry: { readonly transcript: string; readonly id: number } | undefined
+  /** The shell's own name, as its foreground sample shows it at its prompt; undefined where none is told. */
+  shellName: string | undefined
+  /** Whether its session has yet to hear of the bar beside its terminal (see `artifacts.ts`). */
+  artifacts: boolean
   /** Unsaved changes: output, directory, or prompts. */
   changed: boolean
   /**
@@ -502,12 +515,21 @@ const unopened = {
   late: "Novadeck didn't confirm the new terminal in time; it may still open, so check before asking again.",
 }
 
+/** What murmur reads of a running terminal's record. */
+const murmurSubject = (record: Record): MurmurSubject => ({
+  summary: record.summary,
+  naming: record.naming,
+  work: record.work,
+  activity: record.activity,
+  openedBy: record.openedBy,
+  agent: record.binding?.agent ?? null,
+  transcript: record.transcript,
+  program: record.summary.process,
+  shell: record.shellName,
+})
+
 const sameToken = (a: string, b: string): boolean =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
-
-// How much time a prompt's hook must have left for drift to be read, in milliseconds:
-// a git branch and a plan's file, each with its own short timeout.
-const driftReadMs = 1_500
 
 // How many changed terminals one periodic save handles.
 const savesPerTick = 4
@@ -633,6 +655,8 @@ export class Terminals {
       | "install"
       | "hooksTrusted"
       | "items"
+      | "describer"
+      | "murmurTimes"
     >
   > & {
     env: NodeJS.ProcessEnv
@@ -658,6 +682,8 @@ export class Terminals {
   private readonly peers: TerminalPeers
   /** Wakes idle agents for their messages; none when switched off. */
   private readonly doorbell: Doorbell | undefined
+  /** Describes terminals with murmur; undefined without a describer. */
+  private readonly murmur: Murmur | undefined
   private readonly prompts: Prompts
   /** Each terminal's input queue: every piece of work that puts keys in its agent's box. */
   private readonly inputs: InputQueue
@@ -763,6 +789,9 @@ export class Terminals {
       projectFolder: (sessionId) => this.projectFolder(sessionId),
       stopping: () => this.stopping,
     })
+    this.murmur = options.describer
+      ? new Murmur(options.describer, this.murmurHost(), options.murmurTimes)
+      : undefined
     this.integration = this.integrate(options.shellFiles)
   }
 
@@ -840,7 +869,7 @@ export class Terminals {
       const openedBy = kept?.openedBy ?? opener?.by ?? null
       const ledBy = kept ? kept.ledBy : opener?.withBrief ? opener.by : null
       const work = saved?.work ?? null
-      const titled = this.titled(naming, { work, handle, openedBy })
+      const titled = this.titled(naming, { handle })
       const resume =
         input.command === undefined &&
         input.resume &&
@@ -910,7 +939,6 @@ export class Terminals {
         startupRuns: started.resumes,
         readyEntered: false,
         naming,
-        nudges: noNudges,
         root: null,
         work,
         held: null,
@@ -921,6 +949,8 @@ export class Terminals {
         awaitsOpened:
           opener !== undefined && !kept && expectedAgent(opener.command, undefined) !== null,
         seenEntry: undefined,
+        shellName: shellProcess(shell)?.name,
+        artifacts: false,
       }
       this.records.set(record.summary.id, record)
       // Restored as a shell that resumes nothing, there is no agent left to lead.
@@ -1233,6 +1263,31 @@ export class Terminals {
   private live(terminalId: string): Record | undefined {
     const record = this.records.get(terminalId)
     return record && !record.exitQueued && record.summary.exit === null ? record : undefined
+  }
+
+  /** What murmur reads of the terminals and writes to them. */
+  private murmurHost(): MurmurHost {
+    return {
+      subject: (terminalId) => {
+        const record = this.live(terminalId)
+        return record && murmurSubject(record)
+      },
+      subjects: () =>
+        [...this.records.values()].flatMap((record) =>
+          this.live(record.summary.id) ? [murmurSubject(record)] : [],
+        ),
+      facts: (terminal) => this.peers.facts(terminal),
+      screen: async (terminalId) => (await this.screenOf(terminalId))?.rows,
+      items: (agent) => harnesses[agent].transcripts?.items,
+      projectFolder: (sessionId) => this.projectFolder(sessionId),
+      described: (terminalId, description) => {
+        const record = this.live(terminalId)
+        if (!record) return
+        record.naming = murmured(record.naming, description)
+        this.retitle(record)
+        this.save(record, false)
+      },
+    }
   }
 
   /** The screen of a running terminal once it has drawn what its shell already sent. */
@@ -1721,6 +1776,7 @@ export class Terminals {
           root: null,
           held: null,
           seenEntry: undefined,
+          shellName: shellProcess(shell)?.name,
           activity: null,
           telemetry: null,
           watching: null,
@@ -1828,6 +1884,7 @@ export class Terminals {
     this.messaging.unregister(terminalId)
     this.doorbell?.forget(terminalId)
     this.dialogs.forget(terminalId)
+    this.murmur?.gone(terminalId)
     for (const [key, claimant] of this.claims) if (claimant === terminalId) this.claims.delete(key)
     this.openers.delete(terminalId)
     this.persisting(() => this.options.records?.removeTerminal(terminalId))
@@ -2367,51 +2424,7 @@ export class Terminals {
         return this.send(call)
       case "agents":
         return this.agents(call)
-      case "describe":
-        return this.describe(call)
     }
-  }
-
-  /**
-   * Describes the caller's own terminal, as its agent asked through Novadeck's MCP server:
-   * its agent's title, shown unless the person gave one, and the summary of its work
-   * `agents()` lists. A title the person gave stays, unless the agent says the person
-   * `asked` for this one, which then becomes theirs; that is taken only in a root turn
-   * the person's own prompt started and whose prompt gives it (see `describedAs`), so
-   * another agent's message can't rename it. A call without the shell's own token learns
-   * nothing more.
-   */
-  async describe(call: Call): Promise<DescribeAnswer> {
-    const record = this.records.get(call.terminalId)
-    if (!record || record.exitQueued || !sameToken(record.token, call.token))
-      return unansweredCalls.describe
-    const read = readDescribeRequest(call.request)
-    if (!read.ok) return read
-    const title = read.request.title.trim()
-    const summary = cleanSummary(read.request.summary)
-    const refusal = descriptionRefusal(title, summary)
-    if (refusal) return refused(refusal)
-    // The person's prompt of the turn this call came in, and what other agents' words
-    // reached its agent, before anything waits.
-    const prompt = this.messaging.personPrompt(call.terminalId)
-    const elsewhere = this.peers.seenBy(record)
-    // Drift is measured from where its work is now.
-    const facts = await this.peers.facts(record)
-    if (this.stopping || this.records.get(call.terminalId) !== record)
-      return unansweredCalls.describe
-    const { naming, kept } = describedAs(record.naming, {
-      title,
-      summary,
-      by: record.summary.handle,
-      asked: read.request.asked === true,
-      prompt,
-      elsewhere,
-    })
-    record.naming = naming
-    record.nudges = described(record.nudges, facts)
-    this.retitle(record)
-    this.save(record, false)
-    return { ok: true, title: record.summary.title, ...(kept && { kept }) }
   }
 
   /** Sends another terminal's agent a message, as an agent asked through Novadeck's MCP server. */
@@ -2618,6 +2631,7 @@ export class Terminals {
   }
 
   private async stop(): Promise<void> {
+    this.murmur?.stop()
     await Promise.all([...this.records.values()].map((record) => this.terminate(record)))
     for (const record of [...this.records.values(), ...this.draining.values()]) {
       for (const subscription of record.subscribers.values()) subscription.cancel()
@@ -2698,6 +2712,7 @@ export class Terminals {
       record.summary = { ...record.summary, process: current, lastProgram }
       record.changed = true
       this.announce(record)
+      this.murmur?.sampled(record.summary.id)
     }
     if (running) return
     clearInterval(this.sampler)
@@ -2993,6 +3008,7 @@ export class Terminals {
       record.summary = { ...record.summary, cwd }
       this.announce(record)
       this.save(record, false)
+      this.murmur?.moved(record.summary.id)
     }
   }
 
@@ -3160,18 +3176,19 @@ export class Terminals {
     const moved = record.summary.cwd !== cwd
     if (!stopAsk) this.publishAgent(record, moved)
     const changes = this.followRootOf(record, events, report.event === "StatusLine")
-    // The harness compacted the root session's context: it may have lost its description.
+    const told = await this.attributed(record, events)
+    // What the root worked on, from its prompts as told, as Antigravity's from its
+    // transcript; this terminal's later reports wait for this one.
+    if (this.tallyWork(record, told, changes) || changed) this.save(record, false)
+    // The harness compacted the root session's context: it may have lost the notice of its bar.
     if (
       events.some(
         (event) =>
           event.type === "session-observed" && event.compacted && rootedIn(record.root, event),
       )
     )
-      record.nudges = fired(record.nudges, "compaction")
-    const told = await this.attributed(record, events)
-    // What the root worked on, from its prompts as told, as Antigravity's from its
-    // transcript; this terminal's later reports wait for this one.
-    if (this.tallyWork(record, told, changes) || changed) this.save(record, false)
+      record.artifacts = true
+    this.murmur?.reported(report.terminalId, this.reported(record, told, changes))
     if (deadline === undefined) {
       this.messaging.observe(report.terminalId, told)
       this.escaped(record)
@@ -3190,7 +3207,26 @@ export class Terminals {
     }
     this.escaped(record)
     this.judgeFirst(record)
-    return this.nudged(record, report, told, answer, deadline)
+    return this.noticed(record, report, told, answer, deadline)
+  }
+
+  /** What a report tells murmur of the terminal's root session (see `Murmur.reported`). */
+  private reported(
+    record: Record,
+    events: readonly HarnessEvent[],
+    changes: readonly RootChange[],
+  ): Reported {
+    const rooted = (event: HarnessEvent) => rootedIn(record.root, event)
+    return {
+      session: changes.some((change) => change.type === "new"),
+      compacted: events.some(
+        (event) => event.type === "session-observed" && event.compacted && rooted(event),
+      ),
+      prompts: events.filter(
+        (event) => event.type === "turn-started" && event.cause === "prompt" && rooted(event),
+      ).length,
+      ended: events.some((event) => event.type === "turn-ended" && rooted(event)),
+    }
   }
 
   /** A Stop Novadeck continued, lapsed as delivery took it, ends the agent's turn too. */
@@ -3233,47 +3269,34 @@ export class Terminals {
       record.openerCommand !== null &&
       promptIn(record.openerCommand, prompt)
     record.work = judgedFirst(work, prompt !== undefined && !command)
-    this.retitle(record)
     this.save(record, false)
   }
 
   /**
-   * A prompt-time hook's answer, with Novadeck's notices when any is due (see
-   * `nudges.ts`): the bar beside the terminal, for a session that begins or lost its
-   * context, which a `describe` never clears, and a nudge to describe the terminal's
-   * work, when a trigger fired since the last `describe`; only at the
-   * person's prompt, as a paragraph each, never in an answer that carries messages or
-   * another notice, nor at Stop. Each of the person's prompts counts toward the backstop, and
-   * where nothing else is said, whether the work drifted is looked at.
+   * A prompt-time hook's answer, with Novadeck's notice of the bar beside the terminal when
+   * it is due (see `artifacts.ts`): for a session that begins or lost its context, only
+   * at the person's prompt, as a paragraph of its own, never in an answer that carries
+   * messages or another notice, nor at Stop, nor one that might miss the hook's deadline,
+   * which never spends it.
    */
-  private async nudged(
+  private noticed(
     record: Record,
     report: Report,
     events: readonly HarnessEvent[],
     answer: HookAnswer,
     deadline: number,
-  ): Promise<HookAnswer> {
+  ): HookAnswer {
     const { messaging } = harnesses[report.agent]
-    if (messaging.asks[report.event] !== "prompt") return answer
+    if (!record.artifacts || messaging.asks[report.event] !== "prompt") return answer
     const prompt = events.some(
       (event) =>
         event.type === "turn-started" && event.cause === "prompt" && rootedIn(record.root, event),
     )
     if (!prompt) return answer
     const silent = answer.leaseId === null && answer.stdout === silentFor(messaging, report.event)
-    const inTime = (ms: number) => deadline - Date.now() >= ms
-    // Read only for an answer that has nothing else to say, so a delivery never waits on
-    // it, and only with time to spare.
-    const facts =
-      silent && record.nudges.baseline && inTime(driftReadMs)
-        ? await this.peers.facts(record)
-        : undefined
-    // A nudge that may miss the hook's deadline is never spent: its trigger waits.
-    const taken = atPrompt(record.nudges, { quiet: silent && inTime(leaseMargin), facts })
-    record.nudges = taken.nudges
-    if (!taken.nudge) return answer
-    const current = { title: record.summary.title, summary: record.naming.summary }
-    return { leaseId: null, stdout: messaging.prompt(noticesAt(taken, current)) }
+    if (!silent || deadline - Date.now() < leaseMargin) return answer
+    record.artifacts = false
+    return { leaseId: null, stdout: messaging.prompt(artifactsNotice) }
   }
 
   /**
@@ -3282,7 +3305,10 @@ export class Terminals {
    * root worked on; true when that work changed, to be saved.
    */
   private trackRoot(record: Record, events: readonly HarnessEvent[], statusLine: boolean): boolean {
-    return this.tallyWork(record, events, this.followRootOf(record, events, statusLine))
+    const changes = this.followRootOf(record, events, statusLine)
+    const tallied = this.tallyWork(record, events, changes)
+    this.murmur?.reported(record.summary.id, this.reported(record, events, changes))
+    return tallied
   }
 
   /**
@@ -3303,9 +3329,8 @@ export class Terminals {
     })
     record.root = root
     if (changes.length > 0) this.messaging.rooted(id, changes)
-    // A new root session may not know what the terminal is described as.
-    if (changes.some((change) => change.type === "new"))
-      record.nudges = fired(record.nudges, "session")
+    // A new root session has yet to hear of the bar beside its terminal.
+    if (changes.some((change) => change.type === "new")) record.artifacts = true
     return changes
   }
 
@@ -3325,20 +3350,16 @@ export class Terminals {
     const work = started && record.awaitsOpened ? { ...after, opened: true as const } : after
     if (started) record.awaitsOpened = false
     record.work = work
-    // A title from the person's first prompt follows the root session's.
-    this.retitle(record)
     return true
   }
 
   /**
-   * The terminal's title after what names it, or its work, changed (see `titleOf`),
-   * announced when it differs, as the answer says; the caller saves it.
+   * The terminal's title after what names it changed (see `titleOf`), announced when it
+   * differs, as the answer says; the caller saves it.
    */
   private retitle(record: Record): boolean {
     const titled = this.titled(record.naming, {
-      work: record.work,
       handle: record.summary.handle,
-      openedBy: record.openedBy,
     })
     const { title, titleSource } = record.summary
     if (
@@ -3354,7 +3375,7 @@ export class Terminals {
   /** A terminal's title, and who it is from, as its summary shows them (see `titleOf`). */
   private titled(
     naming: Naming,
-    terminal: Pick<ListedTerminal, "work" | "handle" | "openedBy">,
+    terminal: Pick<ListedTerminal, "handle">,
   ): Pick<TerminalSummary, "title" | "titleSource"> {
     const { title, source } = titleOf(naming, terminal)
     return { title, titleSource: source }

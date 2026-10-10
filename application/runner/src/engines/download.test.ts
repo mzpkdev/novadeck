@@ -6,7 +6,7 @@ import { setupServer } from "msw/node"
 import { afterAll, afterEach, beforeAll } from "vitest"
 
 import { describe, expect, it } from "../test.js"
-import { folder, sha256 } from "../testing/voice.js"
+import { folder, sha256 } from "../testing/engines.js"
 import { download, DownloadError, locate } from "./download.js"
 
 const data = Buffer.from("a model, more or less".repeat(1000))

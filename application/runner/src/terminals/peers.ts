@@ -11,8 +11,8 @@ import type { Waiting, Whereabouts } from "../messaging/peers.js"
 import { unansweredCalls, type Ack, type Call } from "../shell/reports.js"
 import type { HintFacts } from "../voice/hint.js"
 import { gitBranch } from "./branch.js"
-import type { Naming } from "./naming.js"
-import type { Facts } from "./nudges.js"
+import type { Facts } from "./murmur.js"
+import { summaryOf, type Naming } from "./naming.js"
 import { busiestFolders, shorten, type Work } from "./work.js"
 
 /** What the terminal manager tells of a terminal, for its agent to message others. */
@@ -168,7 +168,7 @@ export class TerminalPeers {
         const where: Whereabouts = {
           title: terminal.summary.title,
           titleSource: terminal.summary.titleSource,
-          summary: terminal.naming.summary,
+          summary: summaryOf(terminal.naming),
           folder: place(cwd),
           branch,
           plan,
@@ -188,24 +188,7 @@ export class TerminalPeers {
   }
 
   /**
-   * What other agents' words reached a terminal's agent, as a title it says the person
-   * asked for must not come from: the messages that reached its root session, and the
-   * titles and summaries of the session's other terminals.
-   */
-  seenBy(terminal: PeerTerminal): readonly string[] {
-    const { id, sessionId } = terminal.summary
-    return [
-      ...this.options.messaging.receivedTexts(id),
-      ...this.options
-        .running(sessionId)
-        .flatMap((other) =>
-          other.summary.id === id ? [] : [other.summary.title, other.naming.summary ?? ""],
-        ),
-    ]
-  }
-
-  /**
-   * What tells whether a terminal's work drifted from its description: its root's own
+   * What tells whether a terminal's work drifted from where murmur described it: its root's own
    * plan's title (never a subagent's), the folder it writes in most, and its git branch.
    */
   async facts(terminal: PeerTerminal): Promise<Facts> {

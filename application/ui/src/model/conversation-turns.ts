@@ -400,8 +400,6 @@ const novadeckTool = (tool: string, fields: Fields | null): ToolSummary | undefi
     }
     case "showing":
       return { kind: "read", title: "Checked what's shown", detail: "" }
-    case "describe":
-      return { kind: "agent", title: "Described this terminal", detail: text("title") }
     default:
       return undefined
   }

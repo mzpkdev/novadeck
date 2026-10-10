@@ -31,10 +31,28 @@ type Clip = {
 export class Clips {
   private readonly clips = new Map<string, Clip>()
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly now: () => number = Date.now,
+    // Told after every change to which clips are kept.
+    private readonly changed: () => void = () => {},
+  ) {}
+
+  /** Whether a clip is being recorded, one not forgotten for want of attention. */
+  open(): boolean {
+    this.sweep()
+    return this.clips.size > 0
+  }
 
   /** Whether the clip is new, so the first part can start the engine warming up. */
   write(owner: string, id: string, offset: number, bytes: Uint8Array): boolean {
+    try {
+      return this.put(owner, id, offset, bytes)
+    } finally {
+      this.changed()
+    }
+  }
+
+  private put(owner: string, id: string, offset: number, bytes: Uint8Array): boolean {
     this.sweep()
     if (offset + bytes.length > maxClipBytes) throw new DomainError("UPLOAD_TOO_LARGE")
     const key = this.key(owner, id)
@@ -83,11 +101,13 @@ export class Clips {
 
   discard(owner: string, id: string): void {
     this.clips.delete(this.key(owner, id))
+    this.changed()
   }
 
   /** Forgets everything an owner recorded, as its connection goes. */
   release(owner: string): void {
     for (const [key, clip] of this.clips) if (clip.owner === owner) this.clips.delete(key)
+    this.changed()
   }
 
   private admit(owner: string): void {

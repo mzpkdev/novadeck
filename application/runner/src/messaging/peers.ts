@@ -5,7 +5,7 @@ import { agentLabel, clock, holdOf, type Message } from "./mailbox.js"
 
 /**
  * What the terminal manager knows of a terminal beyond messaging: its title and who it
- * is from; the summary its own agent described its work with; its folder, relative to
+ * is from; the summary murmur wrote of its work; its folder, relative to
  * the project when inside it; its git branch; its current plan's title; what its root
  * session worked on; and how others read a folder it wrote in.
  */
@@ -43,8 +43,8 @@ export type About = (terminalId: string) => Whereabouts | undefined
 /**
  * A terminal another can message, and what tells an agent which it is, all of it
  * Novadeck's own knowledge, and only what is marked so an agent's say: its handle; the
- * agent bound there; its title, and who it is from; the summary its agent described its
- * work with; its folder and git branch; the person's first and latest prompts there; its
+ * agent bound there; its title, and who it is from; the summary murmur wrote of its work;
+ * its folder and git branch; the person's first and latest prompts there; its
  * plan's title; the folders it writes in most; the latest message between it and the
  * caller; whether its agent is busy or waits on the person, and when it was last active.
  */
@@ -61,7 +61,7 @@ export type Peer = {
   readonly untrusted: AgentName | null
   readonly title: string | null
   readonly titleSource: TitleSource | null
-  /** What its own agent said it works on, through `describe`. */
+  /** What murmur, a small local model, wrote of what it works on; a guess. */
   readonly summary: string | null
   readonly folder: string | null
   readonly branch: string | null
@@ -174,7 +174,7 @@ const titleNote = (peer: Peer): string => {
     return source.by === peer.handle
       ? " (set by its own agent, not the user)"
       : ` (set by ${source.by}, not the user)`
-  return source?.kind === "fallback" ? " (from the user's first prompt there)" : ""
+  return source?.kind === "murmur" ? " (written by Novadeck's local model, not the user)" : ""
 }
 
 /** Who is reading a listing: its handle, and the handle of the terminal that leads it. */
@@ -216,7 +216,7 @@ export const renderPeer = (peer: Peer, now: number, viewer: Viewer): readonly st
             : "no agent Novadeck can deliver to"
     }`,
     peer.title && `  title: ${peer.title}${titleNote(peer)}`,
-    peer.summary && `  described by its agent: ${peer.summary.split("\n").join(" / ")}`,
+    peer.summary && `  summary: ${peer.summary.split("\n").join(" / ")}`,
     peer.folder && `  folder: ${peer.folder}${peer.branch ? `, branch ${peer.branch}` : ""}`,
     relationLine(peer, viewer) && `  ${relationLine(peer, viewer)}`,
     peer.startedWith &&

@@ -242,13 +242,6 @@ describe("a tool call's summary", () => {
       ["close", { file: { path: "/a/b/c/d/mock.png" } }, "read", "Closed", "…/c/d/mock.png"],
       ["close", { url: "http://localhost:5173/" }, "web", "Closed", "http://localhost:5173/"],
       ["showing", {}, "read", "Checked what's shown", ""],
-      [
-        "describe",
-        { title: "Cart fix", summary: "x" },
-        "agent",
-        "Described this terminal",
-        "Cart fix",
-      ],
     ])("labels %s", (tool, input, kind, title, detail) => {
       const expected = { kind, title, detail }
       expect(toolSummary(`mcp__plugin_novadeck_novadeck__${tool}`, JSON.stringify(input))).toEqual(

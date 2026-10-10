@@ -4,12 +4,12 @@ import { join } from "node:path"
 import type { VoiceState } from "@novadeck/protocol"
 import { maxVoiceSeconds, voiceSampleRate } from "@novadeck/protocol"
 
+import { engineInterface } from "../engines/unpack.js"
 import { describe, expect, it } from "../test.js"
 import type { Resources } from "../testing/resources.js"
 import { engineArchive, fakeLaunch, folder, modelCatalog } from "../testing/voice.js"
 import { WorkspaceStore } from "../workspaces/store.js"
 import type { Catalog } from "./catalog.js"
-import { engineInterface } from "./engine.js"
 import type { HintFacts } from "./hint.js"
 import { updateRetryMs, Voice, type VoiceOptions } from "./service.js"
 
@@ -818,9 +818,7 @@ describe("voice input after the runner restarts", () => {
   it("only reads on a refresh, and chooses a model that is there on a load", async ({
     resources,
   }) => {
-    const { voice, store } = await setup(resources, {
-      catalog: await modelCatalog(resources),
-    })
+    const { voice, store } = await setup(resources, { catalog: await modelCatalog(resources) })
     await voice.install("small")
     await voice.settled()
     store.saveVoiceSettings({ model: "turbo" })
@@ -919,6 +917,102 @@ describe("the install check", () => {
 
     await expect(transcript).resolves.toMatchObject({ language: "pl" })
     expect(voice.state().failure).toBeNull()
+  })
+})
+
+/** What a voice's activity tells, as a list; `stop` unsubscribes. */
+const heard = (voice: Voice) => {
+  const changes: boolean[] = []
+  const stop = voice.activity.watch((busy) => changes.push(busy))
+  return { changes, stop }
+}
+
+describe("voice activity", () => {
+  it("is busy while a clip is open, until it is transcribed or discarded", async ({
+    resources,
+  }) => {
+    const { voice } = await installed(resources)
+    const { changes } = heard(voice)
+    expect(voice.activity.busy()).toBe(false)
+
+    await voice.record("owner", "one", 0, pcm(3200))
+    await voice.record("owner", "one", 3200, pcm(3200))
+    expect(voice.activity.busy()).toBe(true)
+    await voice.transcribe("owner", "one")
+    expect(voice.activity.busy()).toBe(false)
+
+    await voice.record("owner", "two", 0, pcm(3200))
+    voice.discard("owner", "two")
+    expect(voice.activity.busy()).toBe(false)
+
+    await voice.record("owner", "three", 0, pcm(3200))
+    voice.release("owner")
+    expect(voice.activity.busy()).toBe(false)
+    expect(changes).toEqual([true, false, true, false, true, false])
+  })
+
+  it("is busy while a transcription runs, even for a clip that was kept", async ({ resources }) => {
+    const { voice } = await setup(resources, {
+      catalog: await modelCatalog(resources, { small: "small slow" }),
+    })
+    await voice.install("small")
+    await voice.settled()
+    await voice.record("owner", "clip", 0, pcm(3200))
+    const { changes } = heard(voice)
+
+    const transcript = voice.transcribe("owner", "clip")
+    expect(voice.activity.busy()).toBe(true)
+    await transcript
+
+    expect(voice.activity.busy()).toBe(false)
+    expect(changes).toEqual([false])
+  })
+
+  it("is busy for a transcription that fails, and not afterwards", async ({ resources }) => {
+    const { voice } = await installed(resources)
+
+    await expect(voice.transcribe("owner", "missing")).rejects.toMatchObject({ code: "NOT_FOUND" })
+
+    expect(voice.activity.busy()).toBe(false)
+  })
+
+  it("is busy while an install's check runs", async ({ resources }) => {
+    const { voice } = await setup(resources, {
+      catalog: await modelCatalog(resources, { small: "small slow" }),
+    })
+    const { changes } = heard(voice)
+
+    await voice.install("small")
+    // Downloading is not voice work; the check is.
+    expect(voice.activity.busy()).toBe(false)
+    await voice.settled()
+
+    expect(changes).toEqual([true, false])
+    expect(voice.activity.busy()).toBe(false)
+  })
+
+  it("tells nobody who stopped listening", async ({ resources }) => {
+    const { voice } = await installed(resources)
+    const { changes, stop } = heard(voice)
+    stop()
+
+    await voice.record("owner", "clip", 0, pcm(3200))
+
+    expect(changes).toEqual([])
+    voice.discard("owner", "clip")
+  })
+
+  it("is not busy for a clip nobody finished, once it is forgotten", async ({ resources }) => {
+    let now = 0
+    const { voice } = await setup(resources, { now: () => now })
+    await voice.install("small")
+    await voice.settled()
+    await voice.record("owner", "clip", 0, pcm(3200))
+    expect(voice.activity.busy()).toBe(true)
+
+    now += 5 * 60 * 1000 + 1
+
+    expect(voice.activity.busy()).toBe(false)
   })
 })
 
