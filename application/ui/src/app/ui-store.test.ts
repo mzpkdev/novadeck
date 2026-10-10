@@ -2,6 +2,7 @@ import { afterEach, beforeEach, vi } from "vitest"
 
 import { createWorkspaceStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
+import type { UpdateOffer } from "../model/update"
 import { context, describe, expect, it } from "../test"
 import { appearance, workspaceFixture } from "../test/fixtures"
 import {
@@ -17,8 +18,9 @@ import {
   type UiState,
 } from "./ui-store"
 
-const initial = (): UiState =>
+const initial = (updateSeen: string | null = null): UiState =>
   initialUi({
+    updateSeen,
     location: {
       route: {
         projectId: "project",
@@ -55,10 +57,16 @@ describe("UI store persistence", () => {
       expect(written).toEqual([13])
       ui.update((state) => ({ ...state }))
       expect(written).toEqual([13])
-      ui.update((state) => ({ ...state, preferences: { ...state.preferences, fontSize: 15 } }))
+      ui.update((state) => ({
+        ...state,
+        preferences: { ...state.preferences, fontSize: 15 },
+      }))
       expect(written).toEqual([13, 15])
       stop()
-      ui.update((state) => ({ ...state, preferences: { ...state.preferences, fontSize: 12 } }))
+      ui.update((state) => ({
+        ...state,
+        preferences: { ...state.preferences, fontSize: 12 },
+      }))
       expect(written).toEqual([13, 15])
     })
   })
@@ -80,7 +88,11 @@ describe("presentation watch", () => {
         ...state,
         shell: { ...state.shell, freshSession: "fresh", revealCanvas: true },
       }))
-      workspace.dispatch({ type: "session/add", projectId: "project", session: session("fresh") })
+      workspace.dispatch({
+        type: "session/add",
+        projectId: "project",
+        session: session("fresh"),
+      })
       expect(ui.getSnapshot().shell).toMatchObject({
         navigation: { count: 2, fit: false },
         revealCanvas: false,
@@ -93,7 +105,10 @@ describe("presentation watch", () => {
         workspaceSessionId: "other",
         now: 1,
       })
-      expect(ui.getSnapshot().shell).toMatchObject({ navigation: { count: 3 }, sidebar: false })
+      expect(ui.getSnapshot().shell).toMatchObject({
+        navigation: { count: 3 },
+        sidebar: false,
+      })
       stop()
     })
   })
@@ -163,12 +178,18 @@ describe("switcher watch", () => {
     expect(ui.getSnapshot().recent.switcher).not.toBeNull()
     ui.update((state) => ({
       ...state,
-      location: { ...state.location, route: { ...state.location.route, dialog: "search" } },
+      location: {
+        ...state.location,
+        route: { ...state.location.route, dialog: "search" },
+      },
     }))
     expect(ui.getSnapshot().recent.switcher).toBeNull()
     ui.update((state) => ({
       ...state,
-      location: { ...state.location, route: { ...state.location.route, dialog: null } },
+      location: {
+        ...state.location,
+        route: { ...state.location.route, dialog: null },
+      },
     }))
     open()
     workspace.dispatch({
@@ -213,7 +234,10 @@ describe("finish watch", () => {
     const stop = watchFinishes(workspace, ui, (notice) => notices.push(notice), graceMs)
     const unread = () => ui.getSnapshot().unread
     const finish = (at = 10, outcome: "completed" | "failed" | "interrupted" = "completed") =>
-      status("02", { working: false, lastTurn: { outcome, reply: "All green.", at } })
+      status("02", {
+        working: false,
+        lastTurn: { outcome, reply: "All green.", at },
+      })
     return { workspace, ui, notices, status, select, unread, finish, stop }
   }
 
@@ -323,7 +347,11 @@ describe("finish watch", () => {
       finish(10, "failed")
       expect(unread()).toEqual({ "project/initial": { "02": "failed" } })
       expect(notices).toEqual([
-        { id: "02", title: "t2 stopped with an error: Checkout", body: "All green." },
+        {
+          id: "02",
+          title: "t2 stopped with an error: Checkout",
+          body: "All green.",
+        },
       ])
       stop()
     })
@@ -382,36 +410,65 @@ describe("finish watch", () => {
 })
 
 const updateHost = () => {
-  let report: ((version: string) => void) | undefined
+  let report: ((offer: UpdateOffer) => void) | undefined
   const updates = {
-    onReady: (listener: (version: string) => void) => {
+    onOffer: (listener: (offer: UpdateOffer) => void) => {
       report = listener
       return () => {
         report = undefined
       }
     },
     install: () => {},
+    openPage: () => {},
   }
-  return { updates, report: (version: string) => report?.(version), listening: () => !!report }
+  return {
+    updates,
+    report: (offer: UpdateOffer) => report?.(offer),
+    listening: () => !!report,
+  }
 }
 
+const offered = (version: string, kind: UpdateOffer["kind"] = "ready"): UpdateOffer => ({
+  kind,
+  version,
+  notes: [],
+})
+
 describe("a waiting update", () => {
-  it("is kept as the version the backend reports, a newer one replacing it", () => {
+  it("is kept as the offer the backend reports, a newer one replacing it", () => {
     const { updates, report, listening } = updateHost()
     const ui = createUiStore(initial())
     const stop = watchUpdates(updates, ui)
-    expect(ui.getSnapshot().updateReady).toBeNull()
-    report("0.0.80")
-    expect(ui.getSnapshot().updateReady).toBe("0.0.80")
-    report("0.0.81")
-    expect(ui.getSnapshot().updateReady).toBe("0.0.81")
+    expect(ui.getSnapshot().update).toBeNull()
+    report(offered("0.0.80"))
+    expect(ui.getSnapshot().update).toEqual(offered("0.0.80"))
+    report(offered("0.0.81", "available"))
+    expect(ui.getSnapshot().update).toEqual(offered("0.0.81", "available"))
     stop()
     expect(listening()).toBe(false)
+  })
+
+  it("opens its popover for a version not shown yet, and again for a newer one", () => {
+    const { updates, report } = updateHost()
+    const ui = createUiStore(initial("ready:0.0.80"))
+    watchUpdates(updates, ui)
+    report(offered("0.0.80"))
+    expect(ui.getSnapshot().updateOpen).toBe(false)
+    report(offered("0.0.81"))
+    expect(ui.getSnapshot().updateOpen).toBe(true)
+  })
+
+  it("opens its popover again when the version already shown turns from ready to available", () => {
+    const { updates, report } = updateHost()
+    const ui = createUiStore(initial("ready:0.0.80"))
+    watchUpdates(updates, ui)
+    report(offered("0.0.80", "available"))
+    expect(ui.getSnapshot().updateOpen).toBe(true)
   })
 
   it("is never there where the backend has no updates", () => {
     const ui = createUiStore(initial())
     watchUpdates(undefined, ui)()
-    expect(ui.getSnapshot().updateReady).toBeNull()
+    expect(ui.getSnapshot().update).toBeNull()
   })
 })

@@ -27,9 +27,16 @@ const schemeItems = [
   { label: "Light", value: "light" },
   { label: "Dark", value: "dark" },
 ] as const
-const fontSizes = [12, 13, 15].map((size) => ({ label: `${size}px`, value: String(size) }))
+const fontSizes = [12, 13, 15].map((size) => ({
+  label: `${size}px`,
+  value: String(size),
+}))
 const viewLabels = { focus: "Focus", grid: "Grid", canvas: "Canvas" } as const
-const viewIcons = { focus: PanelLeft, grid: LayoutGrid, canvas: SquareDashedMousePointer } as const
+const viewIcons = {
+  focus: PanelLeft,
+  grid: LayoutGrid,
+  canvas: SquareDashedMousePointer,
+} as const
 
 // Section titles match the sidebar's panel titles.
 const sectionTitleClasses = "section-label m-0 text-label font-medium"
@@ -97,6 +104,7 @@ export const Preferences = ({
   transcripts,
   agents,
   voice,
+  updates,
   notices = false,
   chat = false,
 }: {
@@ -109,7 +117,10 @@ export const Preferences = ({
   onExitComplete?: () => void
   // Whether terminals' screens are kept to show again when they restore; absent where
   // the backend keeps none.
-  transcripts?: { readonly enabled: boolean; readonly onChange: (enabled: boolean) => void }
+  transcripts?: {
+    readonly enabled: boolean
+    readonly onChange: (enabled: boolean) => void
+  }
   // Whether the page can show desktop notifications, as the desktop app can.
   notices?: boolean
   // Whether the backend reads agents' conversations, which the chat view shows.
@@ -121,6 +132,12 @@ export const Preferences = ({
   }
   // Voice input, as the backend has it; absent where it has none.
   voice?: VoiceAddon
+  // Which releases the desktop app follows; absent where it doesn't offer the choice.
+  // `early` is undefined until the app has said.
+  updates?: {
+    readonly early: boolean | undefined
+    readonly onChange: (early: boolean) => void
+  }
 }): React.JSX.Element => {
   const dialog = useRef<HTMLDivElement>(null)
   const panels = useRef<HTMLDivElement>(null)
@@ -198,7 +215,10 @@ export const Preferences = ({
                   onValueChange={(id) => {
                     const chosen = themes.find((entry) => entry.id === id)
                     if (chosen)
-                      onChange({ ...value, appearance: { ...appearance, theme: chosen.id } })
+                      onChange({
+                        ...value,
+                        appearance: { ...appearance, theme: chosen.id },
+                      })
                   }}
                   open={open && tab === "general" && openSelect === "theme"}
                   onOpenChange={(expanded) => setOpenSelect(expanded ? "theme" : null)}
@@ -230,7 +250,11 @@ export const Preferences = ({
                     value={onlyScheme ?? appearance.scheme}
                     onValueChange={(next) => {
                       const scheme = schemeItems.find((item) => item.value === next)?.value
-                      if (scheme) onChange({ ...value, appearance: { ...appearance, scheme } })
+                      if (scheme)
+                        onChange({
+                          ...value,
+                          appearance: { ...appearance, scheme },
+                        })
                     }}
                     className="flex shrink-0 gap-1"
                     itemClassName="flex h-7 min-w-14 items-center justify-center px-2.5 text-control data-disabled:cursor-not-allowed"
@@ -351,6 +375,27 @@ export const Preferences = ({
             {agents && (
               <Section title="Agents" description={agentsExplanation}>
                 <AgentSwitches agents={agents.list} onChange={agents.onChange} />
+              </Section>
+            )}
+            {updates && (
+              <Section title="Updates">
+                <div className={settingsCardClasses}>
+                  <div className={`preference-row ${settingRowClasses}`}>
+                    <SettingText
+                      id="early-builds-label"
+                      label="Early builds"
+                      description="Get new releases as soon as they're published, before they're promoted to stable. Turning this off doesn't go back to an older version."
+                      descriptionId="early-builds-description"
+                    />
+                    <Switch
+                      checked={updates.early === true}
+                      onChange={updates.onChange}
+                      labelledBy="early-builds-label"
+                      describedBy="early-builds-description"
+                      disabled={updates.early === undefined}
+                    />
+                  </div>
+                </div>
               </Section>
             )}
           </TabPanel>

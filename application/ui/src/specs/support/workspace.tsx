@@ -27,7 +27,7 @@ export const openWorkspace = async (route?: string): Promise<void> => {
     </StrictMode>,
   )
   // A link may open with a modal dialog, which hides the rest of the app.
-  await expect.element(viewSwitcher().or(page.getByRole("dialog"))).toBeVisible()
+  await expect.element(viewSwitcher().or(page.getByRole("dialog")).first()).toBeVisible()
   await layoutSettled()
 }
 

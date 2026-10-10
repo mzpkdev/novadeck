@@ -27,9 +27,11 @@ const allTerminals = (workspace: Workspace) =>
 // backend's link.
 export const WorkspaceFooter = memo((): React.JSX.Element => {
   const { backend, commands } = useWorkspaceServices()
+  const { updates } = backend
   const connection = useConnection(backend.connection)
   const crashes = useUiState((state) => state.crashLoop)
-  const update = useUiState((state) => state.updateReady)
+  const offer = useUiState((state) => state.update)
+  const updateOpen = useUiState((state) => state.updateOpen)
   const zen = useUiState((state) => Boolean(state.shell.zen))
   const navigate = useUiState((state) => state.shell.navigate)
   const { count, running } = useWorkspaceState((workspace) => {
@@ -78,8 +80,18 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
       status={status}
       navigate={navigate}
       onRetry={backend.crashLoop ? commands.retryAfterCrashLoop : undefined}
-      update={update && backend.updates ? update : undefined}
-      onInstall={backend.updates?.install}
+      update={
+        offer && updates
+          ? {
+              offer,
+              open: updateOpen,
+              onOpenChange: commands.setUpdateOpen,
+              onShown: commands.updateShown,
+              onInstall: updates.install,
+              onOpenPage: updates.openPage,
+            }
+          : undefined
+      }
       usage={<SubscriptionUsage accounts={accounts} onMove={move} />}
     />
   )

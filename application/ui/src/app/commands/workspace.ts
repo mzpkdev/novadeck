@@ -90,6 +90,10 @@ export type WorkspaceCommands = ShellCommands &
     // next crash loop.
     readonly retryAfterCrashLoop: () => void
     readonly dismissCrashLoop: () => void
+    // Opens or closes the update's popover, which the footer's chip reopens after Later.
+    readonly setUpdateOpen: (open: boolean) => void
+    // Notes that the popover came up for this offer (`updateKey`), so a relaunch doesn't raise it again.
+    readonly updateShown: (key: string) => void
   }
 
 // The terminal created last stays highlighted this long.
@@ -287,7 +291,9 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       ui.update((state) => ({
         ...state,
         preferences: next,
-        ...(next.chatView !== state.preferences.chatView && { answering: noTerminalAnswers }),
+        ...(next.chatView !== state.preferences.chatView && {
+          answering: noTerminalAnswers,
+        }),
       }))
       workspace.dispatch({
         type: "preferences/reconcile",
@@ -340,7 +346,10 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       const mode = recent.visibleSwitcher()?.mode
       recent.setSwitcher(null)
       if (mode === "click")
-        shell.setKeyboardFocus({ id, view: currentState(workspace.getSnapshot()).view })
+        shell.setKeyboardFocus({
+          id,
+          view: currentState(workspace.getSnapshot()).view,
+        })
       select(id)
     },
     add: ({ fromKeyboard = false } = {}) => {
@@ -373,7 +382,9 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       const snapshot = workspace.getSnapshot()
       const found = holding(snapshot, request.from)
       if (!found)
-        return request.answer({ reason: "The terminal that asked isn't open in Novadeck." })
+        return request.answer({
+          reason: "The terminal that asked isn't open in Novadeck.",
+        })
       const { project, session } = found
       const target = { projectId: project.id, workspaceSessionId: session.id }
       const { roster, layout } = session.state
@@ -409,14 +420,24 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
               },
               ...(project.id === snapshot.activeProjectId
                 ? []
-                : [{ type: "project/select" as const, projectId: project.id, now, enabledViews }]),
+                : [
+                    {
+                      type: "project/select" as const,
+                      projectId: project.id,
+                      now,
+                      enabledViews,
+                    },
+                  ]),
             ]
         navigateWorkspace([add, ...switching], { panel: "terminals" })
         pulse()
         set("sidebar", false)
       }
       if (here || request.focus)
-        markCreated({ context: `${project.id}/${session.id}`, id: terminal.id })
+        markCreated({
+          context: `${project.id}/${session.id}`,
+          id: terminal.id,
+        })
       request.answer({ terminalId: terminal.id })
     },
     reveal: (terminalId) => {
@@ -446,7 +467,14 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
           },
           ...(project.id === snapshot.activeProjectId
             ? []
-            : [{ type: "project/select" as const, projectId: project.id, now, enabledViews }]),
+            : [
+                {
+                  type: "project/select" as const,
+                  projectId: project.id,
+                  now,
+                  enabledViews,
+                },
+              ]),
         ],
         { terminal: terminalId, dialog: null },
       )
@@ -482,5 +510,9 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       crashLoop?.retry()
     },
     dismissCrashLoop: () => ui.update((state) => ({ ...state, crashLoopDismissed: true })),
+    setUpdateOpen: (updateOpen) =>
+      ui.update((state) => (state.updateOpen === updateOpen ? state : { ...state, updateOpen })),
+    updateShown: (updateSeen) =>
+      ui.update((state) => (state.updateSeen === updateSeen ? state : { ...state, updateSeen })),
   }
 }

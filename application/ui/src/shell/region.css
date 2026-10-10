@@ -1,8 +1,8 @@
 /* The region recipe: the app's chrome. The header (`.app-header`, with the `.brand`
    link home), the footer (`.app-footer`, its `.footer-running` count, the
    `.footer-navigate` note while the person navigates the workspace, `.footer-status`
-   and `.footer-action`, and the account's subscriptions, `.footer-usage`, a pill each with
-   its `.usage-popover`), the rail of sidebar toggles (`.sidebar-tools`) and the sidebar
+   and `.footer-action`, the update chip `.footer-update` with its `.update-popover`, and
+   the account's subscriptions, `.footer-usage`, a pill each with its `.usage-popover`), the rail of sidebar toggles (`.sidebar-tools`) and the sidebar
    (`.sidebar`), which on narrow screens opens as a `.sidebar-drawer`. Each region is a
    ground with an edge toward the workspace.
 
@@ -199,6 +199,55 @@
 }
 .usage-row-reset {
   grid-column: 2 / 4;
+}
+
+/* The update's popover (FooterUpdate.tsx), above the footer's chip: its title, up to a
+   few release notes, a link to the rest, then Later and the action. A notice: it never
+   takes focus. */
+.update-popover {
+  width: 20rem;
+  max-width: calc(100vw - 24px);
+}
+.update-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  font-size: var(--text-control);
+}
+.update-title {
+  margin: 0;
+  color: var(--color-ink);
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+.update-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-inline-start: 16px;
+  color: var(--color-muted);
+  line-height: 1.45;
+  list-style: disc;
+  overflow-wrap: anywhere;
+}
+.update-more {
+  list-style: none;
+  margin-inline-start: -16px;
+}
+.update-link {
+  height: auto;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.update-actions {
+  display: flex;
+  gap: 8px;
+  align-self: flex-end;
+  margin-top: 4px;
 }
 
 .sidebar-tools {

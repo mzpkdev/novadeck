@@ -1,8 +1,9 @@
 import { createBootRehearsals } from "../backend/boot-rehearsal"
 import { createDemoBackend } from "../backend/demo"
 import { createContentDemo } from "../backend/demo/content"
-import { createDemoUpdates } from "../backend/demo/debug/updates"
+import { createDemoUpdates, sampleNotes } from "../backend/demo/debug/updates"
 import type { BackendSelection, ConnectBackend } from "../backend/port"
+import type { UpdateOffer } from "../model/update"
 
 // The only place that chooses a backend adapter. Tests and specs run on the demo;
 // every build, development or production, connects to a runner, whose client and
@@ -40,26 +41,31 @@ const demoSelection = (): BackendSelection => {
 const showcaseRequested = (): boolean =>
   new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("demo") === "showcase"
 
-// Specs open the demo on a host that has an update waiting with `?demo=update`.
-const updateRequested = (): boolean =>
-  new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("demo") === "update"
+// Specs open the demo on a host that has an update waiting with `?demo=update`, one the
+// host can't install itself with `?demo=update-available`.
+const requestedUpdate = (): UpdateOffer | undefined => {
+  const demo = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("demo")
+  if (demo === "update") return { kind: "ready", version: "0.0.80", notes: sampleNotes }
+  if (demo === "update-available")
+    return { kind: "available", version: "0.0.80", notes: sampleNotes }
+  return undefined
+}
 
-const demoWithUpdate = (): ReturnType<typeof createDemoBackend> => {
+const demoWithUpdate = (update: UpdateOffer): ReturnType<typeof createDemoBackend> => {
   const { updates, offer } = createDemoUpdates()
-  offer("0.0.80")
+  offer(update)
   return { ...createDemoBackend(), updates }
+}
+
+const testBackend = (): ReturnType<typeof createDemoBackend> => {
+  if (showcaseRequested()) return createContentDemo()
+  const update = requestedUpdate()
+  return update ? demoWithUpdate(update) : createDemoBackend()
 }
 
 export const selectBackend: BackendSelection =
   import.meta.env.MODE === "content-preview"
     ? demoSelection()
     : import.meta.env.MODE === "test"
-      ? {
-          createBackend: () =>
-            showcaseRequested()
-              ? createContentDemo()
-              : updateRequested()
-                ? demoWithUpdate()
-                : createDemoBackend(),
-        }
+      ? { createBackend: testBackend }
       : runnerSelection()

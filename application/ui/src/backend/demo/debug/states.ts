@@ -47,7 +47,7 @@ import type {
   DemoScreen,
   DemoStates,
 } from "./types"
-import { createDemoUpdates } from "./updates"
+import { createDemoUpdates, longestNotes, sampleNotes } from "./updates"
 
 // How long an agent works before its turn ends, so the person can look elsewhere.
 const turnMs = 3000
@@ -70,7 +70,9 @@ const onSelected = (
   hint: string,
   run: (
     key: TerminalKey,
-    context: DemoActionContext & { readonly dispatch: NonNullable<DemoActionContext["dispatch"]> },
+    context: DemoActionContext & {
+      readonly dispatch: NonNullable<DemoActionContext["dispatch"]>
+    },
   ) => void,
 ): DemoAction => ({
   label,
@@ -133,7 +135,11 @@ const elsewhere = (workspace: Workspace | undefined): TerminalKey | undefined =>
       (each) => each.state !== "exited" && each.state !== "failed",
     )
     if (session && terminal)
-      return { projectId: project.id, workspaceSessionId: session.id, terminalId: terminal.id }
+      return {
+        projectId: project.id,
+        workspaceSessionId: session.id,
+        terminalId: terminal.id,
+      }
   }
   return undefined
 }
@@ -144,7 +150,9 @@ const inAnotherProject = (
   hint: string,
   run: (
     key: TerminalKey,
-    context: DemoActionContext & { readonly dispatch: NonNullable<DemoActionContext["dispatch"]> },
+    context: DemoActionContext & {
+      readonly dispatch: NonNullable<DemoActionContext["dispatch"]>
+    },
   ) => void,
 ): DemoAction => ({
   label,
@@ -200,18 +208,36 @@ const gallery: readonly {
   },
   { name: "Working", actions: (key) => agentIn(key, undefined, working) },
   { name: "Planning", actions: (key) => agentIn(key, undefined, planning) },
-  { name: "Subagents", actions: (key) => agentIn(key, undefined, withSubagents) },
-  { name: "Asks a question", actions: (key) => agentIn(key, undefined, asking("question", 1)) },
-  { name: "Plan ready", actions: (key) => agentIn(key, undefined, asking("plan", 1)) },
-  { name: "3 permissions", actions: (key) => agentIn(key, undefined, asking("permission", 3)) },
+  {
+    name: "Subagents",
+    actions: (key) => agentIn(key, undefined, withSubagents),
+  },
+  {
+    name: "Asks a question",
+    actions: (key) => agentIn(key, undefined, asking("question", 1)),
+  },
+  {
+    name: "Plan ready",
+    actions: (key) => agentIn(key, undefined, asking("plan", 1)),
+  },
+  {
+    name: "3 permissions",
+    actions: (key) => agentIn(key, undefined, asking("permission", 3)),
+  },
   { name: "Unheard agent", actions: (key) => unheardAgent(key, "claude") },
   { name: "Running a program", actions: (key) => runProgram(key, "sleep") },
   { name: "Starting", actions: (key) => starting(key) },
   { name: "Idle", actions: () => [] },
   { name: "Exited · code 3", actions: (key) => exitedWithCode(key, 3) },
   { name: "Killed", actions: (key) => killedBy(key, "SIGKILL") },
-  { name: "Failed to start", actions: (key) => failedToStart(key, "Folder not found") },
-  { name: "Needs permission", actions: (key) => agentIn(key, undefined, asking("permission", 1)) },
+  {
+    name: "Failed to start",
+    actions: (key) => failedToStart(key, "Folder not found"),
+  },
+  {
+    name: "Needs permission",
+    actions: (key) => agentIn(key, undefined, asking("permission", 1)),
+  },
 ]
 
 const everyState: DemoAction = {
@@ -329,6 +355,9 @@ export const createDemoStates = (): DemoStates => {
   const { agents, openWelcome, failNext: failAgents } = createDemoAgents()
   const { notices, Notices } = createDemoNotices()
   const { updates, offer, finish } = createDemoUpdates()
+  // Each press offers a newer version than the last, so its popover comes up again.
+  let patch = 79
+  const nextVersion = (): string => `0.0.${(patch += 1)}`
   const { pickDirectory, failNext: failPick } = createDemoFolders()
   const chat = createDebugChat()
   const notificationActions = createNotificationActions()
@@ -520,13 +549,58 @@ export const createDemoStates = (): DemoStates => {
       actions: [
         {
           label: "Update ready",
-          hint: "Footer: Update ready · Restart, quiet beside the status; Restart shows Restarting…, which stays until Finish restart",
-          run: () => offer("0.0.80"),
+          hint: "A popover over the footer's Update ready chip: Novadeck is ready, four notes, Release notes, Restart now and Later; each press is a newer version, so it comes up again",
+          run: () =>
+            offer({
+              kind: "ready",
+              version: nextVersion(),
+              notes: sampleNotes,
+            }),
         },
         {
-          label: "Newer update ready",
-          hint: "Footer: the Restart button names the newer version, and a Restarting… footer offers it again",
-          run: () => offer("0.0.81"),
+          label: "Update ready, no notes",
+          hint: "The same popover without notes: the title, Release notes, Restart now and Later",
+          run: () => offer({ kind: "ready", version: nextVersion(), notes: [] }),
+        },
+        {
+          label: "Update available",
+          hint: "A popover over the footer's Update available chip: Novadeck is available, four notes, Download and Later; Download opens no page in the demo",
+          run: () =>
+            offer({
+              kind: "available",
+              version: nextVersion(),
+              notes: sampleNotes,
+            }),
+        },
+        {
+          label: "Update with long notes",
+          hint: "A popover with the first five of twelve 200-character notes, then “and 7 more”",
+          run: () =>
+            offer({
+              kind: "ready",
+              version: nextVersion(),
+              notes: longestNotes,
+            }),
+        },
+        {
+          label: "Newer update replaces it",
+          hint: "A newer ready update replaces an open or dismissed one: the popover names the new version and comes up again after Later; the chip stays",
+          run: () =>
+            offer({
+              kind: "ready",
+              version: nextVersion(),
+              notes: sampleNotes.slice(0, 2),
+            }),
+        },
+        {
+          label: "Early builds on",
+          hint: "Preferences > General > Updates: Early builds is on, after reopening Preferences",
+          run: () => updates.channel?.set("early"),
+        },
+        {
+          label: "Early builds off",
+          hint: "Preferences > General > Updates: Early builds is off, after reopening Preferences",
+          run: () => updates.channel?.set("stable"),
         },
         {
           label: "Finish restart",
@@ -548,7 +622,11 @@ export const createDemoStates = (): DemoStates => {
           hint: "Looks at the agents again; errors clear",
           run: () => agents.refresh(),
         },
-        { label: "Welcome", hint: "Opens the first-run dialog", run: openWelcome },
+        {
+          label: "Welcome",
+          hint: "Opens the first-run dialog",
+          run: openWelcome,
+        },
       ],
     },
     { title: "Chat", actions: chat.actions },
