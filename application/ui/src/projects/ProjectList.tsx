@@ -82,6 +82,9 @@ export const ProjectList = ({
   const out = useRef(false)
   // Where the rows began on screen as the drag started, before they made room for it.
   const rowsTop = useRef<number | null>(null)
+  // Where the dragged row and the pointer were as the drag started: the row follows the
+  // pointer from there, so where it is now needs no measuring a step behind.
+  const grabbed = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
   const [draggedOut, setDraggedOut] = useState(false)
   // A row that can reach the pins bar leaves the list; otherwise it stays in it.
   const modifiers = useMemo(
@@ -127,6 +130,9 @@ export const ProjectList = ({
           out.current = false
           rowsTop.current =
             list?.querySelector(".workspace-switcher-row")?.getBoundingClientRect().top ?? null
+          const from = source.element?.getBoundingClientRect()
+          const at = event.operation.position.initial
+          grabbed.current = from ? { x: at.x, y: at.y, left: from.left, top: from.top } : null
           pinDrop?.start(id, pinAvailable || pinned.some((project) => project.id === id))
         }}
         onDragMove={(event) => {
@@ -154,10 +160,12 @@ export const ProjectList = ({
           // Over the bar the row sits by the pointer and under the bar.
           const spot = pinDrop.getSnapshot()?.spot
           const row = event.operation.source?.element
-          if (!spot || !(row instanceof HTMLElement)) return
-          const box = row.getBoundingClientRect()
-          row.style.setProperty("--pin-drop-x", `${point.x + 12 - box.left}px`)
-          row.style.setProperty("--pin-drop-y", `${spot.bottom + 4 - box.top}px`)
+          const start = grabbed.current
+          if (!spot || !start || !(row instanceof HTMLElement)) return
+          // The row's top left, moved with the pointer since the drag started.
+          const top = start.top + point.y - start.y
+          row.style.setProperty("--pin-drop-x", `${start.x + 12 - start.left}px`)
+          row.style.setProperty("--pin-drop-y", `${spot.bottom + 4 - top}px`)
         }}
         onDragEnd={(event) => {
           if (list) scrolledTo.current = { list, top: list.scrollTop }

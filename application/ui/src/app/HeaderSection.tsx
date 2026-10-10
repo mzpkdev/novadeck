@@ -116,6 +116,7 @@ export const HeaderSection = memo((): React.JSX.Element => {
         onSelect={select}
         onMove={moveProject}
         onStep={stepProject}
+        onUnpin={toggleProjectPin}
         onShown={setShownPins}
       />
     </PinDropContext>

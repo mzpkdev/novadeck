@@ -525,6 +525,21 @@ describe("A pinned project", () => {
       expect(listed.slice(0, 3)).toEqual(["api-service", "mobile-app", "storefront"])
     })
 
+    it("unpins a pin dragged off the bar and let go there", async () => {
+      arrange(["storefront", "api-service", "mobile-app"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      const from = pin("api-service").element().getBoundingClientRect()
+      await userEvent.dragAndDrop(pin("api-service"), page.elementLocator(document.body), {
+        sourcePosition: { x: from.width / 2, y: from.height / 2 },
+        targetPosition: { x: from.left + from.width / 2, y: from.bottom + 160 },
+        steps: 12,
+        force: true,
+      })
+
+      await expect.poll(pinNames).toEqual(["1storefront", "2mobile-app"])
+    })
+
     it("only by a drag: a click still switches", async () => {
       arrange(["storefront", "api-service", "mobile-app"])
       await openWorkspace("/?demo=agents")

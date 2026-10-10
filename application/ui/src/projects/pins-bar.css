@@ -15,7 +15,8 @@
    the page is up, from which it slides; on a pin, aria-current="true" for the current
    project, and data-project-status="question" | "attention" | "failed" | "done" (never
    "running"); data-dragging="true" on the pin being dragged along the bar, which lifts
-   as a dragged row of the switcher does. The others slide aside. On the strip,
+   as a dragged row of the switcher does. The others slide aside. data-leaving="true" on
+   it once dragged well off the bar, where letting go unpins it. On the strip,
    data-drop="ready" while a project dragged from the switcher's list could drop on it,
    and "over" while the pointer is over it, with `.pins-bar-drop` at the gap.
 
@@ -155,6 +156,13 @@
 }
 .pins-bar-empty {
   color: var(--pin-fg, var(--color-muted));
+}
+/* A pin dragged well off the bar, which letting go there unpins: faded, its name struck. */
+.pin[data-leaving="true"] {
+  opacity: 0.55;
+}
+.pin[data-leaving="true"] .pin-name {
+  text-decoration: line-through;
 }
 @media (prefers-reduced-motion: reduce) {
   .pins-bar[data-animated="true"],

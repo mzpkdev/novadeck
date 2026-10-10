@@ -5,10 +5,10 @@ import {
   PointerActivationConstraints,
   PointerSensor,
 } from "@dnd-kit/dom"
-import { RestrictToElement } from "@dnd-kit/dom/modifiers"
+import { RestrictToWindow } from "@dnd-kit/dom/modifiers"
 import { DragDropProvider } from "@dnd-kit/react"
 import { isSortable, useSortable } from "@dnd-kit/react/sortable"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 import { pinnedProjectShortcut } from "../interaction/shortcuts"
 import { Tooltip } from "../ui-toolkit/Tooltip"
@@ -34,6 +34,9 @@ const sensors = [
 const slide = (): number => (matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 180)
 const ease = "cubic-bezier(0.16, 1, 0.3, 1)"
 const cursor = Cursor.configure({ cursor: "grabbing" })
+const modifiers = [RestrictToWindow.configure({})]
+// How far above or below the bar a dragged pin goes before letting it go unpins it.
+const leeway = 24
 
 // The pinned projects, as a bar under the header, in the person's order: each pin is its
 // number (its Ctrl or ⌘ shortcut), its name and a mark of what its project's terminals ask
@@ -45,8 +48,9 @@ const cursor = Cursor.configure({ cursor: "grabbing" })
 // the ones that don't fit are hidden and inert.
 // Pins drag along the bar into any order, and Alt with the left and right arrows moves the
 // focused pin one place; `onMove` (to a place among the pins) and `onStep` tell the
-// arrangement, which is the caller's. A pin never leaves the bar this way: it can't be
-// dropped or stepped past the last pin.
+// arrangement, which is the caller's. A pin dragged well off the bar shows it will go, and
+// let go there it is unpinned (`onUnpin`); stepped, it never leaves the bar, as it can't
+// pass the last pin shown.
 // A project dragged out of the switcher's list (`usePinDrop`) drops between the pins, or
 // as the first into an empty bar, which opens for the drag; the bar marks where it lands.
 export const PinsBar = ({
@@ -57,6 +61,7 @@ export const PinsBar = ({
   onSelect,
   onMove,
   onStep,
+  onUnpin,
   onShown,
 }: {
   pins: readonly Pin[]
@@ -69,6 +74,7 @@ export const PinsBar = ({
   onSelect: (id: string) => void
   onMove: (id: string, index: number) => void
   onStep: (id: string, by: -1 | 1) => void
+  onUnpin: (id: string) => void
   onShown: (ids: readonly string[]) => void
 }): React.JSX.Element => {
   const { channel, drag } = usePinDrop()
@@ -87,18 +93,9 @@ export const PinsBar = ({
   }, [])
 
   const row = useRef<HTMLDivElement | null>(null)
-  const [rowElement, setRowElement] = useState<HTMLDivElement | null>(null)
-  const rowRef = useCallback((node: HTMLDivElement | null) => {
-    row.current = node
-    setRowElement(node)
-  }, [])
   const feedback = useMemo(
     () => Feedback.configure({ dropAnimation: { duration: slide(), easing: ease } }),
     [],
-  )
-  const modifiers = useMemo(
-    () => [RestrictToElement.configure({ element: rowElement })],
-    [rowElement],
   )
   // The pin that takes the focus, after a keyboard move or a drag; a new object asks again.
   const [focusRequest, setFocusRequest] = useState<{ id: string } | null>(null)
@@ -107,6 +104,9 @@ export const PinsBar = ({
   // focus is asked for again.
   const [drags, setDrags] = useState(0)
   const [dragging, setDragging] = useState(false)
+  // The dragged pin is off the bar, where letting it go unpins it.
+  const [leaving, setLeaving] = useState(false)
+  const off = useRef(false)
   const [count, setCount] = useState(items.length)
   // As the bar slides out the pins stay as they were shown, so they slide away in view.
   const shown = Math.min(count, items.length)
@@ -214,7 +214,7 @@ export const PinsBar = ({
             {pinnedProjectShortcut(0).display.slice(0, -1).join(" ")} +
           </kbd>
           <div
-            ref={rowRef}
+            ref={row}
             role="group"
             aria-label="Pinned projects"
             className="pins-bar-row relative flex min-w-0 flex-1 items-stretch pl-2 pr-1"
@@ -229,13 +229,32 @@ export const PinsBar = ({
                 feedback,
                 cursor,
               ]}
-              onDragStart={() => setDragging(true)}
+              onDragStart={() => {
+                off.current = false
+                setDragging(true)
+              }}
+              onDragMove={(event) => {
+                const point = event.to ?? event.operation.position.current
+                const box = strip.current?.getBoundingClientRect()
+                if (!box) return
+                const away = point.y < box.top - leeway || point.y > box.bottom + leeway
+                if (away === off.current) return
+                off.current = away
+                setLeaving(away)
+              }}
               onDragEnd={(event) => {
+                const unpins = off.current && !event.canceled
+                off.current = false
+                setLeaving(false)
                 setDragging(false)
                 setDrags((made) => made + 1)
                 const { source } = event.operation
                 if (!isSortable(source)) return
                 const id = String(source.id)
+                if (unpins) {
+                  onUnpin(id)
+                  return
+                }
                 setFocusRequest({ id })
                 if (event.canceled || source.initialIndex === source.index) return
                 onMove(id, Math.min(source.index, pins.length - 1))
@@ -254,6 +273,7 @@ export const PinsBar = ({
                     current={project.id === current}
                     status={status}
                     dragging={dragging}
+                    leaving={leaving}
                     focusRequest={focusRequest}
                     onFocused={() => setFocusRequest(null)}
                     onSelect={() => onSelect(project.id)}
@@ -305,6 +325,7 @@ const PinButton = ({
   current,
   status,
   dragging,
+  leaving,
   focusRequest,
   onFocused,
   onSelect,
@@ -321,6 +342,8 @@ const PinButton = ({
   status: ProjectStatus | undefined
   // Some pin is being dragged, which leaves no tooltip open.
   dragging: boolean
+  // The pin being dragged is off the bar, and would be unpinned there.
+  leaving: boolean
   // Asks the pin with this id to take the focus, as after a keyboard move or a drag.
   focusRequest: { id: string } | null
   // Told once the pin has taken the focus it was asked for.
@@ -368,6 +391,7 @@ const PinButton = ({
         aria-description={status && statusText[status]}
         data-project-status={status}
         data-dragging={isDragSource ? "true" : undefined}
+        data-leaving={isDragSource && leaving ? "true" : undefined}
         onClick={() => {
           if (!current) onSelect()
         }}
