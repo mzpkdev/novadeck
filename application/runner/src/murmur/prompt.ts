@@ -113,7 +113,10 @@ export const messages = (digest: Digest): Message[] => {
     lines.push(...fact("Project", digest.project), ...fact("Folder", digest.folder))
     lines.push(...fact("Running", digest.command))
     const screen = digest.screen.slice(-budget.rows).map((row) => head(row, budget.row))
-    lines.push("", "What the screen shows now (oldest row first):", ...screen)
+    // A full-screen program's screen is not shown, only what it runs.
+    if (screen.length > 0)
+      lines.push("", "What the screen shows now (oldest row first):", ...screen)
+    else lines.push("", "The screen is not shown; title this terminal by what it runs.")
     lines.push(...previous(digest))
     lines.push("", "Title this terminal as it is now.")
   }

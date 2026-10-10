@@ -15,6 +15,8 @@ export type ScreenText = {
    */
   readonly continues?: readonly boolean[]
   readonly bracketedPaste: boolean
+  /** Whether the alternate screen is showing, as a full-screen program (vim, less, htop) draws. */
+  readonly alternate: boolean
   /** How many columns the screen has. */
   readonly columns: number
   /**
@@ -71,5 +73,6 @@ export const screenText = (screen: Screen): ScreenText => {
     columns: screen.cols,
     cursor: { row: buffer.cursorY, column: buffer.cursorX },
     bracketedPaste: screen.modes.bracketedPasteMode,
+    alternate: buffer.type === "alternate",
   }
 }

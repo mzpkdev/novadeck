@@ -54,6 +54,9 @@ describe("asking for a title", () => {
       previous: null,
     }
     expect(user(shell)).toContain("Running: tail -f app.log")
+    expect(user(shell)).toContain("What the screen shows now")
+    expect(user({ ...shell, screen: [] })).not.toContain("What the screen shows now")
+    expect(user({ ...shell, screen: [] })).toContain("The screen is not shown")
   })
 
   it("is driven by the agent's summary when there are no prompts", () => {

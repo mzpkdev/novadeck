@@ -3396,6 +3396,35 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(shell.store.terminalIdentity(terminal.id)?.naming.murmur).toBeNull()
     })
 
+    it("shows murmur no screen of a full-screen program, and its screen again once the program quits", async ({
+      shell,
+    }) => {
+      const describer = new FakeDescriber()
+      const manager = shell.manager({ describer, murmurTimes })
+      const terminal = await create(manager, shell)
+      await shell.until(manager, terminal.id, "$ ")
+      // The alternate screen, a secret drawn on it, and a program holding the foreground.
+      manager.write(
+        {
+          terminalId: terminal.id,
+          data: "printf '\\033[?1049h'; echo ALT$((1))SECRET; sleep 3; printf '\\033[?1049l'; echo BACK$((1))ON\r",
+        },
+        "owner",
+      )
+      await expect.poll(() => describer.jobs.length, { timeout: 30_000 }).toBeGreaterThan(0)
+      expect(describer.digests[0]).toMatchObject({
+        kind: "shell",
+        command: expect.stringContaining("sleep"),
+        screen: [],
+      })
+      expect(JSON.stringify(describer.digests)).not.toContain("ALT1SECRET")
+      // Once it quits, the normal screen is read as before.
+      await expect
+        .poll(() => describer.digests.at(-1), { timeout: 30_000 })
+        .toMatchObject({ screen: expect.arrayContaining([expect.stringContaining("BACK1ON")]) })
+      expect(JSON.stringify(describer.digests)).not.toContain("ALT1SECRET")
+    })
+
     it("describes a running terminal that has none once murmur becomes usable", async ({
       shell,
     }) => {

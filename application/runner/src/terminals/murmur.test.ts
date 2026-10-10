@@ -482,6 +482,7 @@ const create = (initial: Partial<MurmurSubject> = {}, describer = new FakeDescri
   const facts: { current: Facts } = { current: { plan: null, folder: null, branch: "main" } }
   const rows: { current: readonly string[] } = { current: ["$ ls", "a b", "$ "] }
   const wrapped: { current: readonly boolean[] | undefined } = { current: undefined }
+  const alternate = { current: false }
   // The terminals are there only once murmur is built, as when the runner starts.
   let ready = false
   const reads = { facts: 0, screens: 0 }
@@ -499,6 +500,7 @@ const create = (initial: Partial<MurmurSubject> = {}, describer = new FakeDescri
       reads.screens += 1
       return Promise.resolve({
         rows: rows.current,
+        alternate: alternate.current,
         ...(wrapped.current && { wrapped: wrapped.current }),
       })
     },
@@ -542,6 +544,7 @@ const create = (initial: Partial<MurmurSubject> = {}, describer = new FakeDescri
     facts,
     rows,
     wrapped,
+    alternate,
     reads,
     replies,
     written,
@@ -1175,6 +1178,65 @@ describe("when a plain shell's terminal is described", () => {
     murmur.sampled("a")
     await settle(2_000)
     expect(describer.jobs).toHaveLength(0)
+  })
+
+  it("shows no screen of a full-screen program, only its command, and the screen again when it quits", async () => {
+    const { murmur, describer, change, alternate, rows, times } = create({ agent: null })
+    alternate.current = true
+    rows.current = ["secret text in vim", "more of it"]
+    change({ program: { name: "vim", argv: ["vim", "src/auth.ts"] } })
+    murmur.sampled("a")
+    await settle(times.shellRunMs + 10)
+    expect(describer.digests).toHaveLength(1)
+    expect(describer.digests[0]).toMatchObject({
+      kind: "shell",
+      command: "vim src/auth.ts",
+      folder: expect.any(String),
+      screen: [],
+    })
+    // The program quits: the prompt is described from the normal screen again.
+    alternate.current = false
+    rows.current = ["$ vim src/auth.ts", "$ "]
+    change({ program: { name: "bash", argv: null } })
+    murmur.sampled("a")
+    await settle(times.shellSettleMs + 10)
+    expect(describer.digests).toHaveLength(2)
+    expect(describer.digests[1]).toMatchObject({ screen: ["$ vim src/auth.ts", "$"] })
+  })
+
+  it("asks nothing for a full-screen program whose command is not known", async () => {
+    const { murmur, describer, alternate, rows, change } = create({ agent: null })
+    alternate.current = true
+    rows.current = ["drawn by a program", "on two lines"]
+    murmur.moved("a")
+    change({ program: null })
+    murmur.sampled("a")
+    await settle(2_000)
+    expect(describer.jobs).toHaveLength(0)
+  })
+
+  it("is not asked again by a full-screen program's redraws", async () => {
+    const { murmur, describer, change, alternate, rows, times } = create({ agent: null })
+    alternate.current = true
+    change({ program: { name: "htop", argv: ["htop"] } })
+    murmur.sampled("a")
+    await settle(times.shellRunMs + 10)
+    expect(describer.jobs).toHaveLength(1)
+    for (let tick = 0; tick < 20; tick += 1) {
+      rows.current = [`tick ${tick}`, "cpu"]
+      // eslint-disable-next-line no-await-in-loop -- Redraws come one after another.
+      await settle(500)
+    }
+    expect(describer.jobs).toHaveLength(1)
+  })
+
+  it("leaves an agent's digest as it is on the alternate screen", async () => {
+    const { murmur, describer, alternate } = create({ work: work(), activity: idle("ok") })
+    alternate.current = true
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    expect(describer.digests[0]).toMatchObject({ kind: "agent", prompts: ["Fix the login bug"] })
+    expect(describer.digests[0]).not.toHaveProperty("screen")
   })
 
   it("says nothing of a bare prompt", async () => {

@@ -304,8 +304,16 @@ export const shellDigest = (input: {
   /** Which of the screen's rows are drawn full across it (see `screenLines`). */
   readonly rowContinues?: readonly boolean[]
   readonly previous: Previous
+  /**
+   * A full-screen program (vim, less, htop, tmux) has the screen: what it draws is not
+   * shown, so the digest has the program's command, folder and project alone, and none at
+   * all when the command is not known (the title stays as it is).
+   */
+  readonly alternate?: boolean
 }): ShellDigest | null => {
-  const { screen, continues } = screenLines(input.rows, input.wrapped, input.rowContinues)
+  const { screen, continues } = input.alternate
+    ? { screen: [], continues: [] }
+    : screenLines(input.rows, input.wrapped, input.rowContinues)
   if (input.command === null && screen.length < 2) return null
   const { projectFolder } = input
   return {
@@ -473,6 +481,8 @@ export type MurmurHost = {
         readonly rows: readonly string[]
         readonly wrapped?: readonly boolean[]
         readonly continues?: readonly boolean[]
+        /** Whether a full-screen program has the screen (the alternate buffer). */
+        readonly alternate?: boolean
       }
     | undefined
   >
@@ -839,6 +849,7 @@ export class Murmur {
         cwd: now.summary.cwd,
         command: commandOf(now.program, now.atPrompt),
         rows: screen.rows,
+        alternate: screen.alternate === true,
         ...(screen.wrapped && { wrapped: screen.wrapped }),
         ...(screen.continues && { rowContinues: screen.continues }),
         previous: now.naming.murmur,

@@ -1310,7 +1310,14 @@ sees it, and the terminal side never includes a permission's command.
   trimmed, blank lines above and below dropped, at most the last 100 lines and 8000 characters
   each as safety caps. The service redacts, then cuts to what the model is shown. The
   command line is capped at 2000 characters the same way. A bare prompt with no
-  program is not described.
+  program is not described. While the terminal's alternate buffer is showing (a full-screen
+  program: vim, less, htop, tmux), the screen is left out whole (`alternate` on the screen
+  read; `shellDigest` takes none of its rows): the digest has the project, folder and
+  command line, which is redacted like every string, and with no command known (no
+  foreground sampling, as on Windows) there is no digest, so nothing is asked and the title
+  stays. The triggers read no screen, so a program's redraws ask for nothing; the program's
+  start titles it, and its quitting is the prompt trigger above, which reads the normal
+  screen.
 - Both carry murmur's last title of the terminal (`Naming.murmur`) as `previous`,
   so titles stay stable.
 

@@ -1313,6 +1313,7 @@ export class Terminals {
         return (
           screen && {
             rows: screen.rows,
+            alternate: screen.alternate,
             ...(screen.wrapped && { wrapped: screen.wrapped }),
             ...(screen.continues && { continues: screen.continues }),
           }
