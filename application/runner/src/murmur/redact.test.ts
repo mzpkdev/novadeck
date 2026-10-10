@@ -937,3 +937,37 @@ describe("a secret behind a label that ends a row", () => {
     expect(result).not.toMatch(/B4aTp|Q9xK|WzLv|7LvN|sYcH/)
   })
 })
+
+describe("Google keys without a digit, and ids glued to a secret", () => {
+  const key = "AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfG"
+
+  it.each([
+    [key, key],
+    [`https://maps.example/api?q=1&key=${key}&z=2`, key],
+    [`| maps | ${key} | prod |`, key],
+    [`GOOGLE_KEY: ${key}`, key],
+    // A run of lower case in a random key is no sign of a word.
+    ["AIzaSyAbCdEfghijklmnopqrstuvWxYzAbCdEfG", "AIzaSyAbCdEfghijklmnopqrstuvWxYzAbCdEfG"],
+  ])("masks the key in %s", (text, secret) => {
+    const result = redact(text)
+
+    expect(result).not.toContain(secret.slice(8))
+    expect(result).toContain(redacted)
+  })
+
+  it("keeps a name that begins like a key", () => {
+    expect(redact("Documenting AIzaSyDocsExampleKeyPlaceholder")).toBe(
+      "Documenting AIzaSyDocsExampleKeyPlaceholder",
+    )
+  })
+
+  it("masks an id glued to the secret after it, and leaves a word of capitals alone", () => {
+    expect(redact("AKIAIOSFODNN7EXAMPLEwJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")).not.toContain(
+      "AKIAIOSFODNN7EXAMPLE",
+    )
+    expect(redact("AKIAIOSFODNN7EXAMPLE")).toBe(redacted)
+    expect(redact("Debugging ASIATEMPORARYCREDENTIALS logic")).toBe(
+      "Debugging ASIATEMPORARYCREDENTIALS logic",
+    )
+  })
+})
