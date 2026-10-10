@@ -3841,7 +3841,8 @@ export class Terminals {
    * The read of the reply the transcript holds since the person's prompt of the turn their
    * Escape ended, where no Stop came for it and the harness keeps no records that would
    * say how it ended: undefined where there is nothing to read, and the read's undefined
-   * where it holds none or can't be read.
+   * where it holds none, can't be read, or the screen says the Escape stopped the turn all
+   * the same, as Antigravity may under a reply it kept.
    */
   private unstoppedReply(
     record: Record,
@@ -3851,7 +3852,14 @@ export class Terminals {
     const items = harnesses[agent].transcripts?.items
     if (harnesses[agent].records || !escaped || escaped.held || escaped.settled) return undefined
     if (!record.transcript || !items) return undefined
-    return lastReply(record.transcript, items).catch(() => undefined)
+    const { interrupted } = harnesses[agent].box
+    return lastReply(record.transcript, items)
+      .then(async (reply) => {
+        if (reply === undefined || !interrupted) return reply
+        const screen = await this.screenOf(record.summary.id)
+        return !screen || interrupted(screen) ? undefined : reply
+      })
+      .catch(() => undefined)
   }
 
   /** Applies what the bound session's hooks or records said; true when it changed. */
