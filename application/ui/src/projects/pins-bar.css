@@ -16,8 +16,7 @@
    project, and data-project-status="question" | "attention" | "failed" | "done" (never
    "running"); data-dragging="true" on the pin being dragged along the bar, which lifts
    as a dragged row of the switcher does. The others slide aside. data-leaving="true" on
-   it once dragged well off the bar, where letting go unpins it. On the strip,
-   data-drop="ready" while a project dragged in the switcher's list could come to it.
+   it once dragged well off the bar, where letting go unpins it.
 
    Tokens, each optional (its fallback in brackets):
    --pins-bar-bg (--region-header-bg, paper), --pins-bar-image (--region-header-image),

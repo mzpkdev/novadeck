@@ -142,6 +142,9 @@ export const ProjectList = ({
             point.y > menu.bottom + leeway
           if (!away || !pinDrop.handOff(point)) return
           handedOff.current = true
+          // The bar's pin takes over as what's dragged; the row's ghost goes at once.
+          const row = event.operation.source?.element
+          if (row instanceof HTMLElement) row.style.visibility = "hidden"
           queueMicrotask(() => manager.actions.stop({ canceled: true }))
         }}
         onDragEnd={(event) => {

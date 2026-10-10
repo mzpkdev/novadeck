@@ -13,7 +13,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { pinnedProjectShortcut } from "../interaction/shortcuts"
 import { Tooltip } from "../ui-toolkit/Tooltip"
-import { usePinDrop, type PinHandoff } from "./pin-drop"
+import { usePinDrop, type PinHandoff, type Point } from "./pin-drop"
 import { pinsThatFit } from "./pins-fit"
 import { needsPerson, statusText, type ProjectStatus } from "./project-status"
 
@@ -38,6 +38,11 @@ const cursor = Cursor.configure({ cursor: "grabbing" })
 const modifiers = [RestrictToWindow.configure({})]
 // How far above or below the bar a dragged pin goes before letting it go unpins it.
 const leeway = 24
+// Well above or below the bar's strip, where letting a dragged pin go unpins it.
+const offBar = (strip: HTMLElement | null, point: Point): boolean => {
+  const box = strip?.getBoundingClientRect()
+  return box !== undefined && (point.y < box.top - leeway || point.y > box.bottom + leeway)
+}
 
 // The pinned projects, as a bar under the header, in the person's order: each pin is its
 // number (its Ctrl or ⌘ shortcut), its name and a mark of what its project's terminals ask
@@ -196,10 +201,22 @@ export const PinsBar = ({
       source: handoff.id,
       coordinates: { x: box.left + 20, y: box.top + box.height / 2 },
     })
-    actions.move({ to: handoff.point })
-    const move = (event: PointerEvent): void =>
-      actions.move({ to: { x: event.clientX, y: event.clientY }, event })
-    const drop = (event: PointerEvent): void => actions.stop({ event })
+    // dnd-kit takes moves only once the drag is under way, a frame or so after it starts:
+    // till then the pin waits, then goes to where the pointer is by then.
+    let pointer = handoff.point
+    let frame = requestAnimationFrame(function arrive(): void {
+      if (manager.current?.dragOperation.status.dragging) actions.move({ to: pointer })
+      else frame = requestAnimationFrame(arrive)
+    })
+    const move = (event: PointerEvent): void => {
+      pointer = { x: event.clientX, y: event.clientY }
+      actions.move({ to: pointer, event })
+    }
+    // Where it is let go decides, even if no move came after the drag got under way.
+    const drop = (event: PointerEvent): void => {
+      off.current = offBar(strip.current, { x: event.clientX, y: event.clientY })
+      actions.stop({ event })
+    }
     const cancel = (): void => actions.stop({ canceled: true })
     const escape = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return
@@ -212,6 +229,7 @@ export const PinsBar = ({
     window.addEventListener("pointercancel", cancel, true)
     window.addEventListener("keydown", escape, true)
     following.current = () => {
+      cancelAnimationFrame(frame)
       window.removeEventListener("pointermove", move, true)
       window.removeEventListener("pointerup", drop, true)
       window.removeEventListener("pointercancel", cancel, true)
@@ -240,11 +258,7 @@ export const PinsBar = ({
       inert={!open}
     >
       <div className="pins-bar-clip">
-        <div
-          ref={strip}
-          className="pins-bar-strip flex items-stretch pl-3.5"
-          data-drop={dropping ? "ready" : undefined}
-        >
+        <div ref={strip} className="pins-bar-strip flex items-stretch pl-3.5">
           {/* The chord before each pin's number, as a reminder; each pin names its own. */}
           <kbd className="hint self-center whitespace-nowrap" aria-hidden="true">
             {pinnedProjectShortcut(0).display.slice(0, -1).join(" ")} +
@@ -270,10 +284,7 @@ export const PinsBar = ({
                 setDragging(true)
               }}
               onDragMove={(event) => {
-                const point = event.to ?? event.operation.position.current
-                const box = strip.current?.getBoundingClientRect()
-                if (!box) return
-                const away = point.y < box.top - leeway || point.y > box.bottom + leeway
+                const away = offBar(strip.current, event.to ?? event.operation.position.current)
                 if (away === off.current) return
                 off.current = away
                 setLeaving(away)
