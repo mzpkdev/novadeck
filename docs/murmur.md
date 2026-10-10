@@ -22,7 +22,7 @@ Terminals ask for a description when something worth a new one happened (see
   (Windows has no foreground sampling) it is not asked and the title stays. When the
   program quits, the normal screen is read again. A program that draws on the normal
   screen is read as any screen is: procps `top`, `less -X`, and git's pager, which git runs
-  as `less -FRX`.
+  with `LESS=FRX` unless `LESS` is set.
 
 Nothing else is read, and nothing leaves the machine: the server listens on `127.0.0.1`
 behind a random API key made for each launch and passed in the environment

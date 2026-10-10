@@ -3403,11 +3403,12 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const manager = shell.manager({ describer, murmurTimes, processPollMs: 50 })
       const terminal = await create(manager, shell)
       await shell.until(manager, terminal.id, "$ ")
-      // The alternate screen, a secret drawn on it, and a program holding the foreground.
+      // A program that, as full-screen ones do, draws a secret on the alternate screen and leaves
+      // it before it exits.
       manager.write(
         {
           terminalId: terminal.id,
-          data: "printf '\\033[?1049h'; echo ALT$((1))SECRET; sleep 3; printf '\\033[?1049l'; echo BACK$((1))ON\r",
+          data: 'sh -c \'printf "\\033[?1049h"; echo ALT$((1))SECRET; sleep 3; printf "\\033[?1049l"; echo BACK$((1))ON\'\r',
         },
         "owner",
       )

@@ -1340,6 +1340,25 @@ describe("when a plain shell's terminal runs more than the prompt", () => {
     expect(describer.digests[1]).toMatchObject({ kind: "shell", command: null })
   })
 
+  it("still describes the prompt after a long run when a brief program holds the foreground the moment it ends", async () => {
+    // The sample right after the run finds the shell caught between processes, not at its
+    // prompt; the next finds the prompt, with too short a stay behind it.
+    const { murmur, describer, change, times } = create({ agent: null })
+    change({ program: { name: "sh", argv: ["sh", "-c", "sleep 3"] }, atPrompt: false })
+    murmur.sampled("a")
+    await settle(times.shellRunMs + 10)
+    expect(describer.digests).toHaveLength(1)
+    await settle(times.shellRunMs)
+    change({ program: { name: "bash", argv: [] }, atPrompt: false })
+    murmur.sampled("a")
+    await settle(10)
+    change({ program: { name: "bash", argv: null }, atPrompt: true })
+    murmur.sampled("a")
+    await settle(times.shellRunMs * 2)
+    expect(describer.digests).toHaveLength(2)
+    expect(describer.digests[1]).toMatchObject({ kind: "shell", command: null })
+  })
+
   it("describes the prompt after a long run while the run's own description is still in flight", async () => {
     const { murmur, describer, change, times } = create({ agent: null })
     describer.hold = true

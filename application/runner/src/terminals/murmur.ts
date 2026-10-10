@@ -697,11 +697,12 @@ export class Murmur {
     // enough describes nothing, but a directory change or a catch-up still owed is asked
     // for again at the prompt.
     this.descriptions.withdraw(terminalId)
+    // The prompt after a long run is owed a description until one is built, whatever holds
+    // the foreground when the run ends: a brief program before the prompt (a prompt hook,
+    // a status helper, or the shell caught between two processes) must not lose it, nor
+    // must a run's own description still in flight.
+    if (was !== null && ranMs >= this.times.shellRunMs) watch.shellOwed = true
     if (key === null) {
-      // The prompt after a long run is owed a description until one is built: a brief
-      // program holding the foreground before it is (which withdraws this request) must
-      // not lose it, nor must a run's own description still in flight.
-      if (was !== null && ranMs >= this.times.shellRunMs) watch.shellOwed = true
       if (watch.shellOwed) this.ask(terminalId, this.times.shellSettleMs)
       return
     }
