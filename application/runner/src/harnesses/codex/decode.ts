@@ -138,14 +138,16 @@ export const callOf = (input: unknown): unknown =>
 
 /**
  * An MCP tool's name as Codex's hooks give it: each character of its server and tool
- * outside letters, digits and `_` as `_` (`probe-srv` and `probe.srv` both `probe_srv`,
- * probed 0.159.3). A name Codex shortens further matches nothing, so settles nothing.
+ * outside ASCII letters, digits and `_` as one `_` (`probe-srv` and `probe.srv` both
+ * `probe_srv`, `tüch` and `t😀ch` both `t_ch`; probed 0.159.3). Two servers that come out
+ * the same each gain a hash of Codex's own (`a_b_e0598e406614`): their names match nothing,
+ * so their requests settle only as before, and their dialogs read as none.
  */
 export const mcpTool = (server: string, tool: string): string =>
   `mcp__${mcpName(server)}__${mcpName(tool)}`
 
 /** One part of an MCP tool's name as Codex's hooks give it (see `mcpTool`). */
-export const mcpName = (name: string): string => name.replace(/\W/g, "_")
+export const mcpName = (name: string): string => name.replace(/\W/gu, "_")
 
 const asked = (
   base: {

@@ -320,6 +320,9 @@ describe("an MCP tool approval the person cancelled, as captured", () => {
     const [asked, settled] = ids("mcp__probe_srv__touch", "probe-srv", "touch", { name: "a" })
     expect(settled).toBe(asked)
     expect(ids("mcp__probe_srv__touch", "probe.srv", "touch", { name: "a" })[1]).toBe(asked)
+    // A character past the BMP is one, as Codex reads it.
+    const [request, result] = ids("mcp__s__t_ch", "s", "t😀ch", { name: "a" })
+    expect(result).toBe(request)
   })
 
   it("knows a call that names a command by its command, as its request does", () => {
