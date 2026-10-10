@@ -962,9 +962,7 @@ describe("Google keys without a digit, and ids glued to a secret", () => {
   })
 
   it("masks an id glued to the secret after it, and leaves a word of capitals alone", () => {
-    expect(redact("AKIAIOSFODNN7EXAMPLEwJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")).not.toContain(
-      "AKIAIOSFODNN7EXAMPLE",
-    )
+    expect(redact("AKIAIOSFODNN7EXAMPLEwJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")).toBe(redacted)
     expect(redact("AKIAIOSFODNN7EXAMPLE")).toBe(redacted)
     expect(redact("Debugging ASIATEMPORARYCREDENTIALS logic")).toBe(
       "Debugging ASIATEMPORARYCREDENTIALS logic",
@@ -983,7 +981,10 @@ describe("Google keys without a digit, and ids glued to a secret", () => {
       "a digit after an equals sign",
       "X=AKIAIOSFODNN7EXAMPLE7wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY",
     ],
-  ])("masks an id glued to a secret that starts with %s", (_name, text) => {
-    expect(redact(text)).not.toContain("IOSFODNN7EXAMPLE")
+  ])("masks an id glued to a secret that starts with %s, and the secret with it", (_name, text) => {
+    const result = redact(text)
+    expect(result).not.toContain("IOSFODNN7EXAMPLE")
+    expect(result).not.toContain("MDENGbPxRfiCY")
+    expect(result).not.toContain("wJalrXUtnFEMI")
   })
 })
