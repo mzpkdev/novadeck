@@ -614,6 +614,10 @@ for (const setup of setups) {
           await choose(t1, question!)
         })
         trusting.catch(() => {})
+        // The second starts once the first asks, so the two never start together: Antigravity
+        // rewrites its settings as it starts, and one starting at the same time read them
+        // mid-write on a Windows runner, its onboarding shown in place of the question.
+        await t1.until(shows, 60_000)
         const t2 = await run.deck.open(setup.agent)
         expect([t1.handle, t2.handle]).toEqual(["t1", "t2"])
         const calls = run.model.mark()
