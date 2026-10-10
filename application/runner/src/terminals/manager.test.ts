@@ -176,15 +176,14 @@ describe("an answer's hold of the person's input", () => {
       manager as unknown as {
         holdInput: (
           id: string,
-          cap: number,
-          options: object,
+          budget: { inputMs: number; sizeMs: number; deferred: boolean },
         ) => { release: () => void; settle: () => void }
       }
-    ).holdInput(terminal.id, 5_000, { deferKeys: true })
+    ).holdInput(terminal.id, { inputMs: 5_000, sizeMs: 5_000, deferred: true })
     // What the children traced from here on, however much a busy machine traced before.
     const mark = traced().length
     const since = (): string => traced().slice(mark).join("\n")
-    // 16 characters, which no other write of this test has: the child traces lengths.
+    // 14 characters, which the child traces as it receives them.
     manager.write({ terminalId: terminal.id, data: "\x1b[<64;123;456M" }, "creator")
     manager.write({ terminalId: terminal.id, data: "k" }, "creator")
     hold.release()
@@ -192,7 +191,8 @@ describe("an answer's hold of the person's input", () => {
     // The key went once released; the wheel report never did.
     await vi.waitFor(() => expect(since()).toContain("received 1 chars"), { timeout: 5_000 })
     await new Promise((resolve) => setTimeout(resolve, 400))
-    expect(since()).not.toContain("received 16 chars")
+    // Neither alone (14) nor with the key (15).
+    expect(since()).not.toMatch(/received 1[45] chars/)
   })
 })
 
