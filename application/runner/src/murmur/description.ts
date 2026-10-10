@@ -107,19 +107,24 @@ const entropy = (word: string): number => {
 
 // What a provider's keys begin with, followed by enough to be one.
 const providerKey =
-  /^(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-|sk_|rk_|glpat-|hf_|npm_|xox[abeoprs]-|ya29\.|AIza|eyJ)[A-Za-z0-9_.-]{8,}|^(?:AKIA|ASIA)[0-9A-Z]{16}/
+  /^(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-|sk_live_|sk_test_|rk_live_|rk_test_|glpat-|hf_|npm_|xox[abeoprs]-|ya29\.|AIza|eyJ|SG\.|AGE-SECRET-KEY-)[A-Za-z0-9_.-]{8,}|^(?:AKIA|ASIA)[0-9A-Z]{16}/
 
-// 16 or more characters of letters and digits that read as no word: no run of lowercase
-// letters that long, and as many different characters as a random string has.
+// 12 or more characters of letters and digits that read as no word: no run of lowercase
+// letters that long, and as many different characters as a random string has; or 16 or more
+// with three or more digits, whatever else, since words do not have them.
 const randomLike = (piece: string): boolean =>
-  piece.length >= 16 &&
+  piece.length >= 12 &&
   !spaceless.test(piece) &&
   /\d/.test(piece) &&
   /\p{L}/u.test(piece) &&
-  !/[a-z]{5}/.test(piece) &&
-  entropy(piece) >= 4
+  ((!/[a-z]{5}/.test(piece) && entropy(piece) >= 3) ||
+    (piece.length >= 16 && (piece.match(/\d/g) ?? []).length >= 3 && entropy(piece) >= 3))
+
+// A hex string of a hash's length is a commit id in a log and a secret in a title.
+const hexRun = /(?<![0-9a-z])[0-9a-f]{32,}(?![0-9a-z])/i
 
 const tokenLike = (text: string): boolean =>
+  hexRun.test(text) ||
   text
     .split(/\s+/)
     .some(
@@ -130,7 +135,7 @@ const tokenLike = (text: string): boolean =>
 // A title is refused when it has a token-like piece, or when redaction masks a piece of it that
 // is token-like or 12 or more characters with a digit. A colon phrase ("Fixing token: refresh
 // bug") that redaction masks as a value is no secret: only what looks like one counts.
-const looksSecret = (title: string): boolean =>
+export const looksSecret = (title: string): boolean =>
   title.includes(redacted) ||
   tokenLike(title) ||
   maskedSpans(title).some((span) => tokenLike(span) || (span.length >= 12 && /\d/.test(span)))

@@ -782,3 +782,99 @@ describe("redacting strings inside strings, and only the secret's characters", (
     expect(rows[0]).toBe("x".repeat(20))
   })
 })
+
+describe("redacting text with characters outside the basic plane", () => {
+  it.each([
+    ["𝐀=b", "𝐀=b"],
+    ["𝐱: hello", "𝐱: hello"],
+    ["𠀀=1", "𠀀=1"],
+    ["julia> 𝐱 = rand(3)", "julia> 𝐱 = rand(3)"],
+    ["😀 token: 😀😀 abc", "😀 token: [redacted] abc"],
+    ["𠀀: password: 𠀀𠀀 x", "𠀀: password: [redacted] x"],
+    ["𝐱: 𝐲=𝐳 token=abcdefgh", "𝐱: 𝐲=𝐳 token=[redacted]"],
+    ["𠀀password: hunter2xyz", "𠀀password: [redacted]"],
+  ])("redacts %s without hanging", { timeout: 5000 }, (text, expected) => {
+    expect(redact(text)).toBe(expected)
+  })
+
+  it("redacts a screen of them", { timeout: 5000 }, () => {
+    const rows = ["julia> 𝐱 = rand(3)", "𠀀: password: 𠀀𠀀", "😀😀😀😀=😀😀😀😀"]
+    const result = redactDigest({
+      ...shell(rows),
+      continues: [true, true, false],
+    }) as ShellDigest
+
+    expect(result.screen[0]).toBe(rows[0])
+    expect(result.screen[1]).toBe("𠀀: password: [redacted]")
+  })
+})
+
+const rows = (row: string): string[] => Array.from({ length: 100 }, () => row)
+const random = (): string =>
+  Array.from(
+    { length: 400 },
+    () =>
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[
+        Math.floor(Math.random() * 64)
+      ],
+  ).join("")
+
+describe("the time redaction takes", () => {
+  const time = (screen: string[]): number => {
+    const started = performance.now()
+    redactDigest({ ...shell(screen), continues: screen.map((_row, i) => i < screen.length - 1) })
+    return performance.now() - started
+  }
+  it.each([
+    ["Ab1+ repeated", () => rows("Ab1+".repeat(100))],
+    ["a=b repeated", () => rows("a=b ".repeat(100).trimEnd().slice(0, 400))],
+    ["a=b without spaces", () => rows(`${"a=b".repeat(133)}a`)],
+    ["quotes", () => rows('"a: '.repeat(100))],
+    ["random base64", () => Array.from({ length: 100 }, random)],
+  ])("is quick for a 100 by 400 continued screen of %s", { timeout: 5000 }, (_name, screen) => {
+    // A budget to catch a blow-up (it was 13 s once), not to benchmark: a loaded runner is slow.
+    expect(time(screen())).toBeLessThan(2000)
+  })
+})
+
+describe("code words as values", () => {
+  it.each([
+    "token = await fetchToken()",
+    "password = new Uint8Array(32)",
+    "API_TOKEN=await",
+    "SECRET_KEY=import",
+    "password: this",
+    "secret = require('./secret.json')",
+    "token: this.token",
+  ])("keeps %s", (text) => {
+    expect(redact(text)).toBe(text)
+  })
+
+  it.each([
+    ["password: 'this'", "password: '[redacted]'"],
+    ['password: "new"', 'password: "[redacted]"'],
+    ["--password new", "--password [redacted]"],
+    ["--token this", "--token [redacted]"],
+    ["?token=this&x=1", "?token=[redacted]&x=1"],
+    ["password=Await", "password=[redacted]"],
+    ["PASSWORD=NEW", "PASSWORD=[redacted]"],
+    ["token = newSecretValue123", "token = [redacted]"],
+    ["set -x API_TOKEN new", "set -x API_TOKEN [redacted]"],
+  ])("still masks %s", (text, expected) => {
+    expect(redact(text)).toBe(expected)
+  })
+})
+
+describe("the sentinel character in the input", () => {
+  it("becomes a question mark, in a row and in a group", () => {
+    const one = redactDigest({ ...shell(["\uE000 ~/proj main", "$ ls"]) }) as ShellDigest
+    const group = redactDigest({
+      ...shell(["TOKEN=abcdefgh", "ij\uE000 ok"]),
+      continues: [true, false],
+    }) as ShellDigest
+
+    expect(one.screen).toEqual(["? ~/proj main", "$ ls"])
+    expect(group.screen).toEqual(["TOKEN=[redacted]", "[redacted] ok"])
+    expect(redact("a\uE000b TOKEN=abcdefgh")).toBe("a?b TOKEN=[redacted]")
+  })
+})

@@ -110,7 +110,9 @@ const plain = new Set([
   "string",
   "number",
   "bpe",
-  // Code that goes on to get the value from somewhere.
+])
+// Code that goes on to get the value from somewhere: bare values, in code's own case.
+const codeWords = new Set([
   "await",
   "async",
   "new",
@@ -138,7 +140,8 @@ const sounds = (name: string): boolean => {
 }
 
 // Whether `value` is worth hiding: not a path, a short number or a word like `true`.
-const secretValue = (value: string): boolean => {
+const secretValue = (value: string, code = false): boolean => {
+  if (code && codeWords.has(value)) return false
   const bare = value.replace(/^\\?["']|\\?["']$/g, "").trim()
   if (bare === "" || bare.includes(sentinel) || bare.includes(redacted)) return false
   if (/^[/~]|^\.\.?\//.test(bare)) return false
@@ -188,7 +191,7 @@ const closesLiteral = (value: string, offset: unknown, text: unknown): boolean =
 
 // A quoted value; one opened and never closed runs to the end of the line. A string inside
 // JSON that is itself in a string has its quotes escaped.
-const quoted = `\\\\"(?:[^\\\\\\n]|\\\\(?!"))*\\\\"|"[^"\\n]*"|'[^'\\n]*'|"[^\\n]*|'[^\\n]*`
+const quoted = `\\\\"(?:[^\\\\\\n]|\\\\(?!"))*\\\\"|"(?:[^"\\\\\\n]|\\\\.)*"|'(?:[^'\\\\\\n]|\\\\.)*'|"[^\\n]*|'[^\\n]*`
 
 const rules: readonly Rule[] = [
   // A key block, or the start of one whose end scrolled away.
@@ -223,12 +226,12 @@ const rules: readonly Rule[] = [
   ],
   // user:password@host in any URL, even with no user.
   [
-    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*:[^\s/]*)@/gi,
+    /\b([a-z][a-z0-9+.-]{0,31}:\/\/)([^\s/@:]*:[^\s/]*)@/gi,
     (_all, scheme, info) => `${scheme}${hide(info)}@`,
   ],
   // A key as the whole userinfo, as Sentry's DSN has it.
   [
-    /\b([a-z][a-z0-9+.-]*:\/\/)([A-Za-z0-9]{16,}|[A-Za-z0-9]{12,}(?=@[^\s/]*(?:sentry|ingest)))@/gi,
+    /\b([a-z][a-z0-9+.-]{0,31}:\/\/)([A-Za-z0-9]{16,}|[A-Za-z0-9]{12,}(?=@[^\s/]*(?:sentry|ingest)))@/gi,
     (_all, scheme, key) => `${scheme}${hide(key)}@`,
   ],
   // A secret in a URL's query.
@@ -293,11 +296,11 @@ const rules: readonly Rule[] = [
   // NAME=value, where the name sounds secret.
   [
     new RegExp(
-      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*=[ \\t]*)(${quoted}|[^\\s"',;&]+)`,
+      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*=[ \\t]*)(${quoted}|[^\\s"',;&]{1,1024})`,
       "gu",
     ),
     (all, name, joint, value, offset, text) =>
-      sounds(name) && secretValue(value) && !closesLiteral(value, offset, text)
+      sounds(name) && secretValue(value, true) && !closesLiteral(value, offset, text)
         ? `${name}${joint}${hideValue(value)}`
         : all,
     true,
@@ -334,11 +337,11 @@ const rules: readonly Rule[] = [
   // name: value, as YAML and headers have it.
   [
     new RegExp(
-      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*:[ \\t]+)(${quoted}|[^\\s"',;]+)`,
+      `(?<![\\p{L}\\p{N}_.-])([\\p{L}_][\\p{L}\\p{N}_.-]*)([ \\t]*:[ \\t]+)(${quoted}|[^\\s"',;]{1,1024})`,
       "gu",
     ),
     (all, name, joint, value, offset, text) =>
-      sounds(name) && secretValue(value) && !closesLiteral(value, offset, text)
+      sounds(name) && secretValue(value, true) && !closesLiteral(value, offset, text)
         ? `${name}${joint}${hideValue(value)}`
         : all,
     true,
@@ -363,9 +366,17 @@ const scan = (text: string, pattern: RegExp, replace: Replacer): string => {
   for (let found = pattern.exec(text); found; found = pattern.exec(text)) {
     const replaced = (replace as (...args: unknown[]) => string)(...found, found.index, text)
     if (replaced === found[0]) {
-      pattern.lastIndex = found.index + 1
+      // Look again from the match's value, the last thing in it: past the name, so that a
+      // name which is no secret cannot hide one in its value, and never into the middle of a
+      // character that takes two code units, where the same match would come back for ever.
+      const value = [...found].toReversed().find((group) => group !== undefined) ?? ""
+      let next = Math.max(found.index + 1, found.index + found[0].length - value.length)
+      const unit = text.charCodeAt(next)
+      if (unit >= 0xdc00 && unit <= 0xdfff) next += 1
+      pattern.lastIndex = next
       continue
     }
+    if (found[0] === "") pattern.lastIndex += 1
     result += text.slice(last, found.index) + replaced
     last = found.index + found[0].length
   }
@@ -374,7 +385,7 @@ const scan = (text: string, pattern: RegExp, replace: Replacer): string => {
 
 /** `text` with each secret's characters replaced by sentinels, so it keeps its length. */
 const mark = (text: string): string => {
-  let result = text.replaceAll(sentinel, " ")
+  let result = text.replaceAll(sentinel, "?")
   for (const [pattern, replacement, again] of rules)
     result = again ? scan(result, pattern, replacement) : result.replace(pattern, replacement)
   return result
@@ -425,7 +436,12 @@ const maskKeyBlocks = (screen: readonly string[], continues: readonly boolean[])
 // those marks is masked, in whichever row it lies: a secret across a boundary is masked on both
 // sides of it, even when the row before it ended in a word character, and a row's own context
 // changes nothing else. Marking keeps lengths, so the readings line up character for character.
-const redactRows = (rows: readonly string[], continues: readonly boolean[]): string[] => {
+// How many rows a window has, to begin with.
+const windowRows = 3
+
+const redactRows = (screen: readonly string[], continues: readonly boolean[]): string[] => {
+  // A row that holds the sentinel itself could not be told from a mask.
+  const rows = screen.map((row) => row.replaceAll(sentinel, "?"))
   const result: string[] = []
   for (let first = 0; first < rows.length;) {
     let last = first
@@ -435,15 +451,37 @@ const redactRows = (rows: readonly string[], continues: readonly boolean[]): str
     else {
       const text = group.join("")
       const masked: boolean[] = Array.from({ length: text.length }, () => false)
-      const note = (marked: string, from: number): void => {
+      // What a reading of more than one row marked, apart from the rows read alone.
+      const spanned: boolean[] = Array.from({ length: text.length }, () => false)
+      const note = (marked: string, from: number, wide = false): void => {
         for (let i = 0; i < marked.length; i += 1)
-          if (marked[i] === sentinel) masked[from + i] = true
+          if (marked[i] === sentinel) {
+            masked[from + i] = true
+            if (wide) spanned[from + i] = true
+          }
       }
+      // The group as one text, and each row alone.
+      note(mark(text), 0, true)
+      const starts: number[] = []
       let from = 0
+      for (const row of group) {
+        starts.push(from)
+        note(mark(row), from)
+        from += row.length
+      }
+      // From each row's start, a window of a few rows, wider while a mask runs to its end:
+      // this is what sees a token that begins a row after a row that ended in a word
+      // character, which the whole text does not. A row that begins inside a mask is covered.
       for (let start = 0; start < group.length; start += 1) {
-        note(mark(group[start] ?? ""), from)
-        note(mark(group.slice(start).join("")), from)
-        from += (group[start] ?? "").length
+        const at = starts[start] ?? 0
+        if (spanned[at]) continue
+        let end = Math.min(start + windowRows, group.length)
+        for (;;) {
+          const marked = mark(group.slice(start, end).join(""))
+          note(marked, at, true)
+          if (end >= group.length || marked.at(-1) !== sentinel) break
+          end = Math.min(end + windowRows, group.length)
+        }
       }
       let offset = 0
       for (const row of group) {
