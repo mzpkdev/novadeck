@@ -57,7 +57,7 @@ jobs:
     env:
       NOVADECK_E2E_CACHE: ${{ github.workspace }}/.e2e-cache
       # Where a failed test writes what the runner heard and did (src/e2e/trace.ts).
-      NOVADECK_E2E_TRACES: ${{ github.workspace }}/.e2e-traces
+      NOVADECK_E2E_TRACES: ${{ github.workspace }}/e2e-traces
       NOVADECK_E2E_AGENTS: ${{ matrix.setup.agents }}
       NOVADECK_E2E_HARNESS: ${{ (github.event_name == 'schedule' || inputs.harness == 'latest') && 'latest' || 'pinned' }}
     steps:
