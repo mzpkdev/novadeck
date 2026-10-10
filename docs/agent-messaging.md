@@ -1227,8 +1227,11 @@ call in `Terminals.describe` (`terminals/manager.ts`), the tool in `shell/mcp.ts
   so Antigravity's first typed prompt, read from its transcript, counts too.
 - **Nudges.** The prompt-time hook (`UserPromptSubmit`, Antigravity's `PreInvocation`)
   of a root prompt its decoder calls the person's (cause `prompt`; this is looser than
-  `asked`'s `byPerson`, as a nudge needs no proof) adds one line, worded as Novadeck's automatic notice, only when
-  a trigger fired since the last `describe`; otherwise it adds nothing. Never at Stop,
+  `asked`'s `byPerson`, as a nudge needs no proof) adds Novadeck's automatic notices, a
+  paragraph each, only when a trigger fired since the last `describe`; otherwise it adds
+  nothing. The description nudge is one of them; at a new session or a compaction the
+  artifacts notice comes first, telling the session what to show beside the terminal
+  (see [Agent workspace](agent-workspace.md), "Companion pane"). Never at Stop,
   and never in the same answer as messages or another notice: the trigger then waits for
   the next quiet prompt; nor in an answer that might miss the hook's deadline, which
   never spends a trigger. The triggers:

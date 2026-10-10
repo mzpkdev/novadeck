@@ -75,16 +75,17 @@ export const described = (facts: Facts): Nudges => ({
 })
 
 /**
- * Whether a prompt's answer nudges, and the nudges after it: only when a trigger fired,
- * and never in an answer that carries anything else, as messages, when the triggers wait.
+ * Whether a prompt's answer nudges, with the triggers it answers for, and the nudges
+ * after it: only when a trigger fired, and never in an answer that carries anything
+ * else, as messages, when the triggers wait.
  */
 export const take = (
   nudges: Nudges,
   quiet: boolean,
-): { readonly nudge: boolean; readonly nudges: Nudges } =>
+): { readonly nudge: boolean; readonly triggers: readonly Trigger[]; readonly nudges: Nudges } =>
   quiet && nudges.pending.length > 0
-    ? { nudge: true, nudges: { ...nudges, pending: [] } }
-    : { nudge: false, nudges }
+    ? { nudge: true, triggers: nudges.pending, nudges: { ...nudges, pending: [] } }
+    : { nudge: false, triggers: [], nudges }
 
 /**
  * The person prompted: one more toward the backstop, drift looked at where `facts` were
@@ -94,7 +95,7 @@ export const take = (
 export const atPrompt = (
   nudges: Nudges,
   input: { readonly quiet: boolean; readonly facts?: Facts | undefined },
-): { readonly nudge: boolean; readonly nudges: Nudges } => {
+): ReturnType<typeof take> => {
   const counted = personPrompted(nudges)
   return take(input.facts ? drifted(counted, input.facts) : counted, input.quiet)
 }
@@ -114,3 +115,37 @@ export const nudgeText = (current: { readonly title: string; readonly summary: s
       `${JSON.stringify(shorten(current.summary, 200))}; ` +
       "if that no longer fits your work, update it with Novadeck's describe tool, and " +
       "otherwise this notice can be ignored."
+
+/**
+ * What a session is told once of the bar beside its terminal (see docs/agent-workspace.md,
+ * "Companion pane"): what to show there and what not to, since an agent left to itself
+ * shows nothing until asked, or every file it touches once asked. Worded as Novadeck's
+ * automatic notice, one paragraph; independent of `describe`.
+ */
+export const artifactsNotice =
+  "Novadeck: automatic notice, not from the user: beside this terminal is a bar where you " +
+  "show the user what you make, with Novadeck's show tool. Show a deliverable when it is " +
+  "done, not each file you touch: an image or screenshot, a rendered page or a dev " +
+  "server's address, a report, mockup, diagram or generated document, or the one file the " +
+  "user asked you for. Source, tests and config you edit as part of a change aren't " +
+  "deliverables; the user reads those in the diff. Show it without open when you finish " +
+  "it, and with open only when they asked to see it. Showing the same file or page again " +
+  "updates it, so one item per deliverable, and close takes away what no longer applies; " +
+  "showing lists what is there. This notice needs no reply."
+
+/** The triggers at which a session hears of its bar: when it begins, and when it lost its context. */
+const artifactsTriggers: ReadonlySet<Trigger> = new Set(["session", "compaction"])
+
+/**
+ * What a quiet prompt's answer says for the `triggers` it takes: the bar beside the
+ * terminal, for a session that begins or forgot, and the terminal's description, each
+ * a paragraph of its own.
+ */
+export const noticesAt = (
+  triggers: readonly Trigger[],
+  current: { readonly title: string; readonly summary: string | null },
+): string =>
+  [
+    ...(triggers.some((trigger) => artifactsTriggers.has(trigger)) ? [artifactsNotice] : []),
+    nudgeText(current),
+  ].join("\n\n")

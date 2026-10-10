@@ -3154,12 +3154,16 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const delivered = await prompt(codex.id, "Fix the login bug")
       expect(delivered).toContain(">Review a.ts</message>")
       expect(delivered).not.toContain("automatic notice")
-      // The next prompt with nothing else to carry asks for a description, in one line.
+      // The next prompt with nothing else to carry tells it of the bar beside it, then
+      // asks for a description, a paragraph each.
       const nudge = await prompt(codex.id, "and its tests")
-      expect(nudge).toMatch(
+      const [bar, description, ...more] = nudge.split("\n\n")
+      expect(bar).toMatch(/^Novadeck: automatic notice, not from the user: beside this terminal/)
+      expect(description).toMatch(
         /^Novadeck: automatic notice, not from the user: this terminal has no description yet\./,
       )
-      expect(nudge).not.toContain("\n")
+      expect(more).toEqual([])
+      expect(description).not.toContain("\n")
       // Until anything better names it, the person's first prompt there is its title.
       expect(manager.get(codex.id).title).toBe("Fix the login bug")
       // No trigger since: nothing is added.

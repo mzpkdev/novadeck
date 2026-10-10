@@ -4,8 +4,10 @@ import {
   backstopPrompts,
   described,
   drifted,
+  artifactsNotice,
   fired,
   noNudges,
+  noticesAt,
   nudgeText,
   personPrompted,
   take,
@@ -21,7 +23,7 @@ const quietly = (nudges: Nudges) => take(nudges, true)
 
 describe("nudges to describe a terminal", () => {
   it("add nothing while no trigger fired", () => {
-    expect(quietly(noNudges)).toEqual({ nudge: false, nudges: noNudges })
+    expect(quietly(noNudges)).toEqual({ nudge: false, triggers: [], nudges: noNudges })
     expect(quietly(personPrompted(described(facts)))).toMatchObject({ nudge: false })
   })
 
@@ -42,7 +44,7 @@ describe("nudges to describe a terminal", () => {
   it("never ride along with messages: the trigger waits for an answer that has nothing else", () => {
     const pending = fired(noNudges, "session")
     const busy = take(pending, false)
-    expect(busy).toEqual({ nudge: false, nudges: pending })
+    expect(busy).toEqual({ nudge: false, triggers: [], nudges: pending })
     expect(quietly(busy.nudges).nudge).toBe(true)
   })
 
@@ -132,6 +134,28 @@ describe("a nudge", () => {
     expect(text).toContain("describe tool")
     expect(text).not.toContain("\n")
     expect(text).not.toContain("asked")
+  })
+
+  it("tells a session of the bar beside it when it begins or forgot, then only of the description", () => {
+    const current = { title: "Terminal 01", summary: null }
+    for (const trigger of ["session", "compaction"] as const) {
+      const text = noticesAt([trigger], current)
+      expect(text.split("\n\n")).toEqual([artifactsNotice, nudgeText(current)])
+    }
+    for (const trigger of ["drift", "prompts"] as const)
+      expect(noticesAt([trigger], current)).toBe(nudgeText(current))
+    expect(noticesAt(["drift", "session"], current)).toContain(artifactsNotice)
+    expect(artifactsNotice).toMatch(/^Novadeck: automatic notice, not from the user: /)
+    expect(artifactsNotice).not.toContain("\n")
+    for (const word of [
+      "show tool",
+      "deliverable",
+      "not each file you touch",
+      "diff",
+      "open",
+      "close",
+    ])
+      expect(artifactsNotice).toContain(word)
   })
 
   it("shows the current description later, to update only if it no longer fits", () => {

@@ -258,6 +258,16 @@ the terminal (inside its window in Focus and Grid, attached to its node in Canva
 Nothing opens on its own unless the user asked for it; everything else waits in the
 taskbar, marked new.
 
+What belongs there is a deliverable: something made to be looked at (an image or
+screenshot, a rendered page or dev server, a report, mockup, diagram or generated
+document, or the one file the user asked for), shown once it is done. Source, tests and
+config edited as part of a change are not deliverables; the user reads those in the
+diff. Every harness hears this the same two ways, as neither plugin ships a skill: the
+`show` tool's own description carries the rule, and the runner's prompt-time hook adds
+Novadeck's artifacts notice, one paragraph, at the first quiet prompt of each root
+session and after a compaction (`artifactsNotice` in `terminals/nudges.ts`, delivered
+with the description nudge; see [Agent messaging](agent-messaging.md), "Nudges").
+
 What is shown is a companion item: a pointer to a file, a page or a plan, never a copy,
 held by exactly one terminal's bar or one undocked window. The runner keeps items and
 windows (`companions.*`, see [Backend API](backend-api.md)), so they survive restarts.
