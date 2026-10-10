@@ -138,7 +138,8 @@ const show: Tool<Shown> = {
     additionalProperties: false,
   },
   call: "present",
-  request: (args) => picked(args, ["file", "url", "title", "open"]),
+  // Whole, so the runner's strict reading names a key that belongs to no source.
+  request: (args) => args,
   said: (answer) =>
     (answer.opened
       ? "Showing " +

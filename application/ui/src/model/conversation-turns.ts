@@ -214,7 +214,6 @@ const parseFields = (input: string): Fields | null => {
   }
 }
 
-// The first of `keys` the input holds as text.
 // An object argument, as given or as the JSON text Antigravity may wrap it in.
 const nested = (value: unknown): Fields | null => {
   if (typeof value === "string") {
@@ -229,6 +228,7 @@ const nested = (value: unknown): Fields | null => {
     : null
 }
 
+// The first of `keys` the input holds as text.
 const textField = (fields: Fields | null, ...keys: string[]): string => {
   if (!fields) return ""
   for (const key of keys) {
@@ -390,7 +390,7 @@ const novadeckTool = (tool: string, fields: Fields | null): ToolSummary | undefi
     case "show": {
       const url = text("url")
       const file = nested(fields?.file)
-      const path = file ? textField(file, "path") : ""
+      const path = file ? oneLine(textField(file, "path")) : ""
       return { kind: url ? "web" : "read", title: "Showed", detail: url || shortPath(path) }
     }
     case "showing":

@@ -383,7 +383,7 @@ describe("Novadeck's MCP server", () => {
           method: "tools/call",
           params: {
             name: "show",
-            arguments: { file: { path: "hero.png" }, open: true, extra: "dropped" },
+            arguments: { file: { path: "hero.png" }, open: true, extra: "kept for the runner" },
           },
         },
       ])
@@ -392,7 +392,7 @@ describe("Novadeck's MCP server", () => {
           type: "present",
           terminalId: "3f1c2b1e-0000-4000-8000-000000000001",
           token,
-          request: { file: { path: "hero.png" }, open: true },
+          request: { file: { path: "hero.png" }, open: true, extra: "kept for the runner" },
         },
       ])
       expect(shown?.result).toEqual({

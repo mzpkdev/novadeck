@@ -73,13 +73,13 @@ export const readRequest = (
 ): { readonly ok: true; readonly request: PresentRequest } | PresentFailure => {
   if (typeof value !== "object" || value === null) return failure("The request is not valid.")
   // Exactly one source, read strictly by its own schema, so it names what's wrong.
-  const given = sourceNames.filter((name) => name in value)
+  const given = sourceNames.filter((name) => Object.hasOwn(value, name))
   if (given.length === 0) return failure(`Give ${oneSource}.`)
   if (given.length > 1) return failure(`Give ${oneSource}, not several.`)
   const parsed = sources[given[0]!].safeParse(value)
   if (parsed.success) return { ok: true, request: parsed.data }
   const [issue] = parsed.error.issues
-  // A key no source knows is named too, as "file.open" or "lines".
+  // A key no source knows is named too, as "file.open" or "lines" beside a url.
   const path = issue?.code === "unrecognized_keys" ? [...issue.path, issue.keys[0]] : issue?.path
   const field = path?.join(".")
   return failure(field ? `The request's "${field}" is not valid.` : "The request is not valid.")
