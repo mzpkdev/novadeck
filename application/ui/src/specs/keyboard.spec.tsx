@@ -673,7 +673,8 @@ const digitKeydown = (
   target: Element = document.body,
 ): KeyboardEvent => {
   const event = new KeyboardEvent("keydown", {
-    key: String(digit),
+    // Shift turns a digit into its symbol, as US keys do.
+    key: isMac() ? String(digit) : (")!@#$%^&*("[digit] ?? ""),
     code: `Digit${digit}`,
     ctrlKey: !isMac(),
     shiftKey: !isMac(),

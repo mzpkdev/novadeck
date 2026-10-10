@@ -7,6 +7,7 @@ import {
   chooseView,
   commandInput,
   expectStaysAbsent,
+  isMac,
   openWorkspace,
   tabDescription,
   terminal,
@@ -498,7 +499,10 @@ describe("A pinned project", () => {
       await expect.poll(pinNames).toEqual(["1api-service", "2mobile-app", "3storefront"])
       await expect
         .element(pin("storefront"))
-        .toHaveAttribute("aria-keyshortcuts", expect.stringMatching(/\+3 /))
+        .toHaveAttribute(
+          "aria-keyshortcuts",
+          isMac() ? "Meta+3 Alt+ArrowLeft" : "Control+Shift+3 Alt+ArrowLeft",
+        )
       // Still pinned, and the switcher lists them in that order.
       await workspaceSwitcher().click()
       const listed = page

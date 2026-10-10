@@ -220,12 +220,14 @@ focus one and press Alt+Left or Alt+Right; a drag there never unpins. The number
 shortcut: `Ctrl+Shift+1` to `Ctrl+Shift+9` (`Cmd+1` to `Cmd+9` on macOS, in the desktop
 app, since a browser keeps those for its tabs) switches to that pin, from terminal input
 too. Shift keeps a bare `Ctrl+3` to `Ctrl+8` for the terminal, where they send `Esc`,
-`Ctrl+\`, `Ctrl+^` and other control codes. Without a pin of that number the key reaches
-the terminal as usual, and it's left alone while you rename a tab or type in another field. The bar slides in with the
-first pin and out with the last, and Zen hides it. Pins that don't fit drop off its end,
-and the switcher's dot covers them again. The order and the pins are kept in this
-browser or app (`novadeck.project-arrangement` in local storage), not shared with other
-clients of the runner.
+`Ctrl+\`, `Ctrl+^` and other control codes; `Ctrl+Shift+2`, a terminal's `Ctrl+@`, is
+the pin's while there is a second, so use `Ctrl+Space` for that `NUL`. Without a pin of
+that number the key reaches the terminal as usual, and it's left alone while you rename a
+tab or type in another field. The bar slides in with the first pin and out with the
+last, and Zen hides it. Pins that don't fit drop off its end, and the switcher's dot
+covers them again. The order and the pins are kept in this browser or app
+(`novadeck.project-arrangement` in local storage), not shared with other clients of the
+runner.
 
 The Notifications panel (the bell on the sidebar rail) lists everything across every
 project and session that waits on you: questions, permissions and plans to review, and

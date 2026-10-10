@@ -16,6 +16,7 @@ import { pinsThatFit } from "./pins-fit"
 import { needsPerson, statusText, type ProjectStatus } from "./project-status"
 
 type Pin = { readonly id: string; readonly name: string; readonly directory: string }
+type Line = { readonly left: number; readonly width: number; readonly slide: boolean }
 
 // As in the switcher's list: a pin follows the pointer once it has moved a few pixels, so a
 // click still switches to it, and the keyboard moves pins with Alt and the arrows, so
@@ -103,6 +104,10 @@ export const PinsBar = ({
   const [count, setCount] = useState(items.length)
   // As the bar slides out the pins stay as they were shown, so they slide away in view.
   const shown = Math.min(count, items.length)
+  // The line under the current pin, where it shows: it slides from pin to pin, but is
+  // put in place without sliding when it first shows and after a drag.
+  const [line, setLine] = useState<Line | null>(null)
+  const placed = useRef<{ drags: number } | null>(null)
 
   // Measures before paint, and again as the bar or a pin changes size.
   useLayoutEffect(() => {
@@ -112,10 +117,23 @@ export const PinsBar = ({
       const style = getComputedStyle(element)
       const available =
         element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
-      const widths = [...element.querySelectorAll<HTMLElement>(".pin")].map(
-        (pin) => pin.offsetWidth,
+      const buttons = [...element.querySelectorAll<HTMLElement>(".pin")]
+      const widths = buttons.map((button) => button.offsetWidth)
+      const fit = pinsThatFit(available, widths, parseFloat(style.columnGap) || 0)
+      setCount(fit)
+      const index = items.findIndex(({ id }) => id === current)
+      const pin = index >= 0 && index < fit ? buttons[index] : undefined
+      if (!pin) {
+        placed.current = null
+        setLine(null)
+        return
+      }
+      const next = { left: pin.offsetLeft, width: pin.offsetWidth }
+      const moves = placed.current?.drags === drags
+      placed.current = { drags }
+      setLine((was) =>
+        was && was.left === next.left && was.width === next.width ? was : { ...next, slide: moves },
       )
-      setCount(pinsThatFit(available, widths, parseFloat(style.columnGap) || 0))
     }
     measure()
     const observer = new ResizeObserver(measure)
@@ -124,7 +142,7 @@ export const PinsBar = ({
     return () => observer.disconnect()
     // A drag's end remounts the pins, which are then observed again.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies
-  }, [items, drags])
+  }, [items, drags, current])
 
   // Tells which show, once at first and then only when they change.
   const told = useRef<readonly string[] | null>(null)
@@ -144,57 +162,77 @@ export const PinsBar = ({
       inert={!open}
     >
       <div className="pins-bar-clip">
-        <div
-          ref={rowRef}
-          role="group"
-          aria-label="Pinned projects"
-          className="pins-bar-row flex items-stretch gap-0.5 px-2.5"
-        >
-          <DragDropProvider
-            key={drags}
-            sensors={sensors}
-            modifiers={modifiers}
-            plugins={(defaults) => [
-              ...defaults.filter((plugin) => plugin !== Accessibility),
-              feedback,
-              cursor,
-            ]}
-            onDragStart={() => setDragging(true)}
-            onDragEnd={(event) => {
-              setDragging(false)
-              setDrags((drag) => drag + 1)
-              const { source } = event.operation
-              if (!isSortable(source)) return
-              const id = String(source.id)
-              setFocusRequest({ id })
-              if (event.canceled || source.initialIndex === source.index) return
-              onMove(id, Math.min(source.index, pins.length - 1))
-            }}
+        <div className="pins-bar-strip flex items-stretch pl-3.5">
+          {/* The chord before each pin's number, as a reminder; each pin names its own. */}
+          <kbd className="hint self-center whitespace-nowrap" aria-hidden="true">
+            {pinnedProjectShortcut(0).display.slice(0, -1).join(" ")} +
+          </kbd>
+          <div
+            ref={rowRef}
+            role="group"
+            aria-label="Pinned projects"
+            className="pins-bar-row relative flex min-w-0 flex-1 items-stretch pl-2 pr-1"
+            data-dragging={dragging ? "true" : undefined}
           >
-            {items.map((project, index) => {
-              // A project only working shows nothing: the bar stays still while agents work.
-              const status = needsPerson(statuses[project.id]) ? statuses[project.id] : undefined
-              return (
-                <PinButton
-                  key={project.id}
-                  project={project}
-                  index={index}
-                  fits={index < shown}
-                  last={index === shown - 1}
-                  current={project.id === current}
-                  status={status}
-                  dragging={dragging}
-                  focusRequest={focusRequest}
-                  onFocused={() => setFocusRequest(null)}
-                  onSelect={() => onSelect(project.id)}
-                  onStep={(by) => {
-                    setFocusRequest({ id: project.id })
-                    onStep(project.id, by)
-                  }}
-                />
-              )
-            })}
-          </DragDropProvider>
+            <DragDropProvider
+              key={drags}
+              sensors={sensors}
+              modifiers={modifiers}
+              plugins={(defaults) => [
+                ...defaults.filter((plugin) => plugin !== Accessibility),
+                feedback,
+                cursor,
+              ]}
+              onDragStart={() => setDragging(true)}
+              onDragEnd={(event) => {
+                setDragging(false)
+                setDrags((drag) => drag + 1)
+                const { source } = event.operation
+                if (!isSortable(source)) return
+                const id = String(source.id)
+                setFocusRequest({ id })
+                if (event.canceled || source.initialIndex === source.index) return
+                onMove(id, Math.min(source.index, pins.length - 1))
+              }}
+            >
+              {items.map((project, index) => {
+                // A project only working shows nothing: the bar stays still while agents work.
+                const status = needsPerson(statuses[project.id]) ? statuses[project.id] : undefined
+                return (
+                  <PinButton
+                    key={project.id}
+                    project={project}
+                    index={index}
+                    fits={index < shown}
+                    last={index === shown - 1}
+                    current={project.id === current}
+                    status={status}
+                    dragging={dragging}
+                    focusRequest={focusRequest}
+                    onFocused={() => setFocusRequest(null)}
+                    onSelect={() => onSelect(project.id)}
+                    onStep={(by) => {
+                      setFocusRequest({ id: project.id })
+                      onStep(project.id, by)
+                    }}
+                  />
+                )
+              })}
+            </DragDropProvider>
+            {line && (
+              <span
+                className="pins-bar-indicator"
+                data-slide={line.slide ? "true" : undefined}
+                style={
+                  {
+                    "--_left": `${line.left}px`,
+                    "--_width": `${line.width}px`,
+                  } as React.CSSProperties
+                }
+                aria-hidden="true"
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -260,7 +298,11 @@ const PinButton = ({
         className="pin flex min-w-0 max-w-50 shrink-0 items-center text-body"
         aria-current={current ? "true" : undefined}
         aria-keyshortcuts={[
-          `${shortcut.meta ? "Meta" : "Control"}+${shortcut.key}`,
+          [
+            shortcut.meta ? "Meta" : "Control",
+            ...(shortcut.shift ? ["Shift"] : []),
+            shortcut.key,
+          ].join("+"),
           ...(index > 0 ? ["Alt+ArrowLeft"] : []),
           ...(last ? [] : ["Alt+ArrowRight"]),
         ].join(" ")}
