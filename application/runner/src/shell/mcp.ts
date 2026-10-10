@@ -5,7 +5,8 @@
  * the agent's hooks report to, and the answers back; outside Novadeck's terminals the
  * relay answers the handshake itself, with no tools. Its tools: `show`, which puts an
  * image, a text file or a web page in front of the user, beside the terminal the agent
- * runs in, and `showing`, which lists what is there now; `open_terminal`, which opens a
+ * runs in (one source per call, `file` or `url`, each with its own options inside it),
+ * and `showing`, which lists what is there now; `open_terminal`, which opens a
  * new terminal beside it, optionally starting a command there; `close_terminal`, which
  * closes another of the project's terminals by its handle; `send` and `agents`, which
  * message the agents in the project's other terminals and list them; and `describe`,
@@ -87,7 +88,7 @@ const show: Tool<Shown> = {
   name: "show",
   description:
     "Show the user an image or a text file, or a web page, in Novadeck, " +
-    "beside the terminal they're talking to you in. Give either path or url. Use it when they " +
+    "beside the terminal they're talking to you in. Give either file or url. Use it when they " +
     "ask to see something, or when a screenshot, mockup, diagram, the lines you mean or the " +
     "running app (as a local dev server's address) would help them follow. Set open to true " +
     "only when they asked to see it; otherwise it waits for them in Novadeck, marked new. " +
@@ -95,29 +96,40 @@ const show: Tool<Shown> = {
   inputSchema: {
     type: "object",
     properties: {
-      path: {
-        type: "string",
+      file: {
+        type: "object",
         description:
-          "The file: an image (PNG, JPEG, GIF, WebP, SVG) or a text file, absolute or relative " +
-          "to the terminal's current directory.",
+          "A file: an image (PNG, JPEG, GIF, WebP, SVG) or a text file, and for a text file " +
+          "the lines to point at.",
+        properties: {
+          path: {
+            type: "string",
+            description: "Its path, absolute or relative to the terminal's current directory.",
+          },
+          lines: {
+            type: "object",
+            description: "For a text file, the lines to point at.",
+            properties: {
+              from: { type: "integer", minimum: 1 },
+              to: { type: "integer", minimum: 1 },
+            },
+            required: ["from", "to"],
+            additionalProperties: false,
+          },
+        },
+        required: ["path"],
+        additionalProperties: false,
       },
       url: {
         type: "string",
         description:
-          "Instead of path: a web page's http or https address, such as http://localhost:5173/, " +
+          "Instead of file: a web page's http or https address, such as http://localhost:5173/, " +
           "which Novadeck opens live in its browser view.",
       },
-      lines: {
-        type: "object",
-        description: "For a text file, the lines to point at.",
-        properties: {
-          from: { type: "integer", minimum: 1 },
-          to: { type: "integer", minimum: 1 },
-        },
-        required: ["from", "to"],
-        additionalProperties: false,
+      title: {
+        type: "string",
+        description: "A short name to show instead of the file's or page's.",
       },
-      title: { type: "string", description: "A short name to show instead of the file's." },
       open: {
         type: "boolean",
         description: "True only when the user asked to see it: it opens at once.",
@@ -126,7 +138,7 @@ const show: Tool<Shown> = {
     additionalProperties: false,
   },
   call: "present",
-  request: (args) => picked(args, ["path", "url", "lines", "title", "open"]),
+  request: (args) => picked(args, ["file", "url", "title", "open"]),
   said: (answer) =>
     (answer.opened
       ? "Showing " +

@@ -204,8 +204,7 @@ export class CompanionItems {
     if (this.stopping) throw new DomainError("RUNTIME_CLOSING")
     const place = this.place(input.terminalId)
     const pointed = await this.pointer(place, {
-      path: input.path,
-      ...(input.lines && { lines: input.lines }),
+      file: { path: input.path, ...(input.lines && { lines: input.lines }) },
       ...(input.title !== undefined && { title: input.title }),
     })
     if (!pointed.ok) throw new DomainError("INVALID_FILE", pointed.reason)
@@ -558,12 +557,13 @@ export class CompanionItems {
         },
       }
     }
-    const pointed = await pointAt(request.path, place.cwd)
+    const { path, lines } = request.file
+    const pointed = await pointAt(path, place.cwd)
     if (!pointed.ok) return pointed
     // A held file goes by its own name, so the person sees what they would open.
     const name = pointed.held
       ? basename(pointed.path)
-      : (request.title ?? basename(resolve(place.cwd, request.path)))
+      : (request.title ?? basename(resolve(place.cwd, path)))
     return {
       ok: true,
       tooLarge: pointed.kind === "image" && pointed.size > maxImageBytes,
@@ -572,10 +572,10 @@ export class CompanionItems {
         kind: pointed.kind,
         path: pointed.path,
         url: null,
-        lines: request.lines ?? null,
+        lines: lines ?? null,
         plan: null,
         name: clip(name, 256),
-        detail: this.detail(pointed, place, request.path, request.lines),
+        detail: this.detail(pointed, place, path, lines),
         held: pointed.held,
       },
     }

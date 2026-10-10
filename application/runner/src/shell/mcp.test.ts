@@ -381,7 +381,10 @@ describe("Novadeck's MCP server", () => {
         {
           id: 3,
           method: "tools/call",
-          params: { name: "show", arguments: { path: "hero.png", open: true, extra: "dropped" } },
+          params: {
+            name: "show",
+            arguments: { file: { path: "hero.png" }, open: true, extra: "dropped" },
+          },
         },
       ])
       expect(calls).toEqual([
@@ -389,7 +392,7 @@ describe("Novadeck's MCP server", () => {
           type: "present",
           terminalId: "3f1c2b1e-0000-4000-8000-000000000001",
           token,
-          request: { path: "hero.png", open: true },
+          request: { file: { path: "hero.png" }, open: true },
         },
       ])
       expect(shown?.result).toEqual({
@@ -423,7 +426,7 @@ describe("Novadeck's MCP server", () => {
           {
             id: 4,
             method: "tools/call",
-            params: { name: "show", arguments: { path: ".env", open: true } },
+            params: { name: "show", arguments: { file: { path: ".env" }, open: true } },
           },
         ])
         return shown?.result
@@ -503,7 +506,7 @@ describe("Novadeck's MCP server", () => {
         {
           id: 4,
           method: "tools/call",
-          params: { name: "show", arguments: { path: "gone.txt" } },
+          params: { name: "show", arguments: { file: { path: "gone.txt" } } },
         },
       ])
       expect(refused?.result).toEqual({
@@ -518,7 +521,11 @@ describe("Novadeck's MCP server", () => {
       const [, tools, call, open, sent, listed, closed] = await session(partial, [
         initialize,
         list,
-        { id: 3, method: "tools/call", params: { name: "show", arguments: { path: "a" } } },
+        {
+          id: 3,
+          method: "tools/call",
+          params: { name: "show", arguments: { file: { path: "a" } } },
+        },
         { id: 4, method: "tools/call", params: { name: "open_terminal", arguments: {} } },
         {
           id: 5,
@@ -680,7 +687,7 @@ describe("Novadeck's MCP server", () => {
             {
               id: 3,
               method: "tools/call",
-              params: { name: "show", arguments: { path: "hero.png" } },
+              params: { name: "show", arguments: { file: { path: "hero.png" } } },
             },
           ],
           { close: true },
@@ -729,7 +736,7 @@ describe("Novadeck's MCP server", () => {
             {
               id: 3,
               method: "tools/call",
-              params: { name: "show", arguments: { path: "hero.png" } },
+              params: { name: "show", arguments: { file: { path: "hero.png" } } },
             },
           ],
           { start },
@@ -769,7 +776,11 @@ describe("Novadeck's MCP server", () => {
         [
           initialize,
           list,
-          { id: 5, method: "tools/call", params: { name: "show", arguments: { path: "a" } } },
+          {
+            id: 5,
+            method: "tools/call",
+            params: { name: "show", arguments: { file: { path: "a" } } },
+          },
         ],
       )
       expect(hello?.result).toMatchObject({ protocolVersion: "2025-06-18" })

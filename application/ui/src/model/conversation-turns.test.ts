@@ -237,7 +237,8 @@ describe("a tool call's summary", () => {
       ["open_terminal", { command: "pnpm dev" }, "agent", "Opened a terminal", "pnpm dev"],
       ["close_terminal", { to: "t3" }, "agent", "Closed t3", ""],
       ["show", { url: "http://localhost:5173/" }, "web", "Showed", "http://localhost:5173/"],
-      ["show", { path: "/a/b/c/d/mock.png" }, "read", "Showed", "…/c/d/mock.png"],
+      ["show", { file: { path: "/a/b/c/d/mock.png" } }, "read", "Showed", "…/c/d/mock.png"],
+      ["show", { file: '{"path":"/a/b/c/d/mock.png"}' }, "read", "Showed", "…/c/d/mock.png"],
       ["showing", {}, "read", "Checked what's shown", ""],
       [
         "describe",
