@@ -162,20 +162,28 @@ describe("an answer's hold of the person's input", () => {
       { terminalId: terminal.id, data: command({ type: "write", data: "\x1b[?1003h\x1b[?1006h" }) },
       "creator",
     )
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // Until the screen shows the mouse asked for, which a slow machine's child takes a while
+    // to start and answer; a fixed wait let the report through before that.
+    const reporting = (
+      manager as unknown as {
+        records: Map<string, { screen: { modes: { mouseTrackingMode: string } } }>
+      }
+    ).records.get(terminal.id)!
+    await vi.waitFor(() => expect(reporting.screen.modes.mouseTrackingMode).toBe("any"), {
+      timeout: 10_000,
+    })
     const hold = (
       manager as unknown as {
         holdInput: (
           id: string,
-          cap: number,
-          options: object,
+          budget: { inputMs: number; sizeMs: number; deferred: boolean },
         ) => { release: () => void; settle: () => void }
       }
-    ).holdInput(terminal.id, 5_000, { deferKeys: true })
+    ).holdInput(terminal.id, { inputMs: 5_000, sizeMs: 5_000, deferred: true })
     // What the children traced from here on, however much a busy machine traced before.
     const mark = traced().length
     const since = (): string => traced().slice(mark).join("\n")
-    // 16 characters, which no other write of this test has: the child traces lengths.
+    // 14 characters, which the child traces as it receives them.
     manager.write({ terminalId: terminal.id, data: "\x1b[<64;123;456M" }, "creator")
     manager.write({ terminalId: terminal.id, data: "k" }, "creator")
     hold.release()
@@ -183,7 +191,8 @@ describe("an answer's hold of the person's input", () => {
     // The key went once released; the wheel report never did.
     await vi.waitFor(() => expect(since()).toContain("received 1 chars"), { timeout: 5_000 })
     await new Promise((resolve) => setTimeout(resolve, 400))
-    expect(since()).not.toContain("received 16 chars")
+    // Neither alone (14) nor with the key (15).
+    expect(since()).not.toMatch(/received 1[45] chars/)
   })
 })
 
