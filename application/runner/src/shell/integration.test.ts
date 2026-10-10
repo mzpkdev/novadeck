@@ -3451,6 +3451,33 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(second.get(terminal.id).titleSource).toEqual({ kind: "murmur" })
     })
 
+    it("titles a terminal again when its agent starts another session, though the first was titled", async ({
+      shell,
+    }) => {
+      const bin = standIn(shell.home)
+      const env = { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` }
+      const describer = new FakeDescriber()
+      const manager = shell.manager({ env, describer, murmurTimes })
+      const terminal = await create(manager, shell)
+      const { start, step } = driver(shell, manager)
+      await start(terminal.id, "claude", "s-one")
+      await step(terminal.id, {
+        hook: "UserPromptSubmit",
+        payload: { prompt: "Fix the login bug" },
+      })
+      await expect.poll(() => describer.jobs.length, { timeout: 30_000 }).toBe(1)
+      await step(terminal.id, { hook: "Stop", payload: {} })
+      await step(terminal.id, {
+        hook: "SessionStart",
+        payload: { source: "clear", session_id: "s-two", cwd: process.cwd() },
+      })
+      await step(terminal.id, {
+        hook: "UserPromptSubmit",
+        payload: { prompt: "Write the signup tests", session_id: "s-two" },
+      })
+      await expect.poll(() => describer.jobs.length, { timeout: 30_000 }).toBe(2)
+    })
+
     it("takes murmur's titles from running and kept terminals when murmur is turned off", async ({
       shell,
     }) => {
@@ -3480,7 +3507,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const live = await titled(manager, "s-live")
       const theirs = await titled(manager, "s-theirs")
       manager.rename({ terminalId: theirs, title: "My title" })
+      // A client shows the kept terminal as a saved summary, and hears it lose its title.
+      const seen = shell.watch(manager)
       describer.clear()
+      await seen((terminal) => terminal.id === kept && terminal.titleSource.kind === "default")
       expect(manager.get(live)).toMatchObject({
         title: expect.stringMatching(/^Terminal \d+$/),
         titleSource: { kind: "default" },

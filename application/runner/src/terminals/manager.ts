@@ -357,6 +357,12 @@ type Record = {
   /** What the root session worked on, kept with the terminal; null before any did. */
   work: Work | null
   /**
+   * The root session murmur was last told of, as `agent:session`; null before any. A
+   * session is new to murmur only when `work` moves off it, so a restored terminal that
+   * binds its saved session again is not.
+   */
+  murmurSession: string | null
+  /**
    * What waits while the input queue's work is at the agent's box (see `InputQueue`): the
    * person's input, while a ring's test paste, a prompt's paste or an answer's keys are on
    * screen (null once that's let go, after its Enter), and the latest size the app asked
@@ -963,6 +969,7 @@ export class Terminals {
         naming,
         root: null,
         work,
+        murmurSession: work?.session ?? null,
         held: null,
         resizedAt: 0,
         openedBy,
@@ -1325,10 +1332,19 @@ export class Terminals {
         for (const record of this.records.values()) {
           if (record.naming.murmur === null) continue
           record.naming = { ...record.naming, murmur: null }
-          if (!this.retitle(record)) this.announce(record)
+          this.retitle(record)
           this.save(record, false)
         }
-        this.persisting(() => this.options.records?.clearMurmurTitles())
+        // Kept terminals no longer running still show to clients as saved summaries.
+        let changed: readonly string[] = []
+        this.persisting(() => {
+          changed = this.options.records?.clearMurmurTitles() ?? []
+        })
+        for (const id of changed) {
+          const saved = this.records.has(id) ? undefined : this.saved(id)
+          if (saved)
+            for (const watcher of this.watchers.keys()) watcher.changed(this.savedSummary(saved))
+        }
       },
     }
   }
@@ -3255,7 +3271,6 @@ export class Terminals {
     const told = await this.attributed(record, events)
     // What the root worked on, from its prompts as told, as Antigravity's from its
     // transcript; this terminal's later reports wait for this one.
-    const workedIn = record.work?.session
     if (this.tallyWork(record, told, changes) || changed) this.save(record, false)
     // The harness compacted the root session's context: it may have lost the notice of its bar.
     if (
@@ -3265,10 +3280,7 @@ export class Terminals {
       )
     )
       record.nudges = fired(record.nudges, "compaction")
-    this.murmur?.reported(
-      report.terminalId,
-      this.reported(changes, record.work?.session !== workedIn),
-    )
+    this.murmur?.reported(report.terminalId, this.reported(record, changes))
     if (deadline === undefined) {
       this.messaging.observe(report.terminalId, told)
       this.escaped(record)
@@ -3292,23 +3304,27 @@ export class Terminals {
 
   /**
    * What a report tells murmur of the terminal's root session (see `Murmur.reported`). A
-   * session is new to murmur only when the work's session changed: a root bound again to
-   * the session it already worked in (a restored terminal, `claude --resume`) is not.
+   * session is new to murmur when the work's session is not the one murmur was last told
+   * of, however it came to move (this report's, or another's tallied meanwhile): a root
+   * bound again to the session it already worked in (a restored terminal, `claude
+   * --resume`) is not, and neither is a guess corrected to its real id.
    */
-  private reported(changes: readonly RootChange[], sessionChanged: boolean): Reported {
-    return {
-      session: sessionChanged && changes.some((change) => change.type === "new"),
-      corrected: changes.flatMap((change) =>
-        change.type === "corrected"
-          ? [
-              {
-                from: `${change.root.agent}:${change.from}`,
-                to: `${change.root.agent}:${change.root.sessionId}`,
-              },
-            ]
-          : [],
-      ),
-    }
+  private reported(record: Record, changes: readonly RootChange[]): Reported {
+    const corrected = changes.flatMap((change) =>
+      change.type === "corrected"
+        ? [
+            {
+              from: `${change.root.agent}:${change.from}`,
+              to: `${change.root.agent}:${change.root.sessionId}`,
+            },
+          ]
+        : [],
+    )
+    for (const { from, to } of corrected)
+      if (record.murmurSession === from) record.murmurSession = to
+    const session = record.work !== null && record.work.session !== record.murmurSession
+    record.murmurSession = record.work?.session ?? record.murmurSession
+    return { session, corrected }
   }
 
   /** A Stop Novadeck continued, lapsed as delivery took it, ends the agent's turn too. */
@@ -3402,12 +3418,8 @@ export class Terminals {
    */
   private trackRoot(record: Record, events: readonly HarnessEvent[], statusLine: boolean): boolean {
     const changes = this.followRootOf(record, events, statusLine)
-    const workedIn = record.work?.session
     const tallied = this.tallyWork(record, events, changes)
-    this.murmur?.reported(
-      record.summary.id,
-      this.reported(changes, record.work?.session !== workedIn),
-    )
+    this.murmur?.reported(record.summary.id, this.reported(record, changes))
     return tallied
   }
 
