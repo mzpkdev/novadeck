@@ -75,14 +75,17 @@ export const typedPromptStart = async (
   events: readonly HarnessEvent[],
   { root, typedEntry, transcript, seen, enteredAt, ringing, startedWith }: TypedPrompts,
   read: typeof lastUserInput = lastUserInput,
+  { waitMs = 2000, gapMs = 150 }: { readonly waitMs?: number; readonly gapMs?: number } = {},
 ): Promise<{ readonly events: readonly HarnessEvent[]; readonly seen: number | undefined }> => {
   const index = events.findIndex(
     (event) => event.type === "turn-started" && event.cause === "harness" && rootedIn(root, event),
   )
   if (index < 0) return { events, seen }
-  // Its transcript may record the input just after the hook runs: a few looks, briefly,
-  // while a ring or the person's Enter waits on it; one otherwise, to know what is new.
-  const looks = ringing !== undefined || enteredAt !== undefined ? 2 : 0
+  // Its transcript may record the input just after the hook runs: looks for up to
+  // `waitMs` while a ring or the person's Enter waits on it, as a slow machine may write it
+  // late (a ring unconfirmed for that fails, and its turn's messages wait for its Stop);
+  // one otherwise, to know what is new.
+  const looks = ringing !== undefined || enteredAt !== undefined ? Math.ceil(waitMs / gapMs) : 0
   for (let look = 0; ; look += 1) {
     // eslint-disable-next-line no-await-in-loop -- Each look waits for the last.
     const entry = await read(transcript, typedEntry)
@@ -100,6 +103,6 @@ export const typedPromptStart = async (
       }
     }
     // eslint-disable-next-line no-await-in-loop -- As above.
-    await sleep(150)
+    await sleep(gapMs)
   }
 }
