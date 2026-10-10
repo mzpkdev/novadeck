@@ -142,7 +142,10 @@ export const callOf = (input: unknown): unknown =>
  * probed 0.159.3). A name Codex shortens further matches nothing, so settles nothing.
  */
 export const mcpTool = (server: string, tool: string): string =>
-  `mcp__${server.replace(/\W/g, "_")}__${tool.replace(/\W/g, "_")}`
+  `mcp__${mcpName(server)}__${mcpName(tool)}`
+
+/** One part of an MCP tool's name as Codex's hooks give it (see `mcpTool`). */
+export const mcpName = (name: string): string => name.replace(/\W/g, "_")
 
 const asked = (
   base: {
