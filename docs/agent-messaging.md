@@ -499,8 +499,8 @@ the opener's, and `describe` names the caller's own terminal (see
      answer the dialog, but also insert a newline (after a `\` in Claude Code), take an
      @file or slash-command suggestion, or approve a second request while a draft typed
      during the first tool waits in the box. Only a confirmed submission clears it: a
-     bare Enter followed by a root prompt turn whose hook started within about 2 s,
-     nothing typed before that.
+     bare Enter followed by a root prompt turn whose hook started within about 2 s
+     (20 s on Windows, see below), nothing typed before that.
      Content keys are all but bare Enter, Escape, Left, Right, Home, End and Tab: a
      paste, Up and Down, a key that types (a hotkey too) or Backspace. Left, Right,
      Home, End and Tab leave such a draft too: a request answered with no report stays
@@ -524,7 +524,11 @@ the opener's, and `describe` names the caller's own terminal (see
   Codex's Tab, its profile's queue key.
 - **The person submits** when their bare Enter is followed by a root turn whose hook
   started within about 2 s of it, with no other input from them after that Enter and
-  before that hook started, and the turn's decoder says a prompt started it. Left, Home
+  before that hook started, and the turn's decoder says a prompt started it. On Windows
+  the window is 20 s: the hook's shell (PowerShell, or cmd for Antigravity) starts before
+  the hook does, which takes seconds on a busy machine, and a prompt whose hook came later
+  than the window carries none of the messages waiting for it. A turn the agent starts by
+  itself soon after a bare Enter may pass for the person's there. Left, Home
   and End there break no submission: the prompt stays theirs, and the box after its
   turn a draft (see below). A hook
   reports when it started, as the relay's first act: on a loaded machine the runner may
@@ -1045,9 +1049,9 @@ Two known gaps in telling the box empty at a binding:
   a late unbind (a nested shell's agent whose end is noticed only then), still leaves it
   Ready: that binding follows Unbound, where only the last Enter counts, not the
   replacement rule. A ring would then append the line to that text and submit both.
-- A `/clear` whose binding is applied more than the submission window (about 2 s) after
-  its Enter, as when another plugin's slow `SessionEnd` or `SessionStart` hook delays it,
-  goes Drafting: a missed ring, never a wrong one.
+- A `/clear` whose binding is applied more than the submission window (about 2 s, 20 s
+  on Windows) after its Enter, as when another plugin's slow `SessionEnd` or
+  `SessionStart` hook delays it, goes Drafting: a missed ring, never a wrong one.
 
 ### Message states
 
