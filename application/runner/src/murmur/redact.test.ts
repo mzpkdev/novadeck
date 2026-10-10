@@ -22,8 +22,8 @@ describe("redacting secrets", () => {
 
   it("removes the value of a secret-looking assignment and keeps the name", () => {
     expect(redact("API_KEY=hunter2 pnpm dev")).toBe(`API_KEY=${redacted} pnpm dev`)
-    expect(redact('export DB_PASSWORD="my pass word"')).toBe(`export DB_PASSWORD=${redacted}`)
-    expect(redact("GITHUB_TOKEN='abc'")).toBe(`GITHUB_TOKEN=${redacted}`)
+    expect(redact('export DB_PASSWORD="my pass word"')).toBe(`export DB_PASSWORD="${redacted}"`)
+    expect(redact("GITHUB_TOKEN='abc'")).toBe(`GITHUB_TOKEN='${redacted}'`)
     expect(redact("client_secret=abc&x=1")).toBe(`client_secret=${redacted}&x=1`)
   })
 
@@ -456,7 +456,7 @@ describe("redacting names in other scripts, and quotes left open", () => {
   })
 
   it("leaves what follows a closed quote alone", () => {
-    expect(redact('password: "hunter2" and more')).toBe(`password: ${redacted} and more`)
+    expect(redact('password: "hunter2" and more')).toBe(`password: "${redacted}" and more`)
   })
 })
 
@@ -625,5 +625,160 @@ describe("redacting what a last review found", () => {
 
     expect(result).toContain(redacted)
     expect(result).not.toMatch(/horse|def|words/)
+  })
+})
+
+const chopped = (line: string, width: number) => {
+  const screen = line.match(new RegExp(`.{1,${width}}`, "gu")) ?? []
+  return {
+    screen,
+    continues: screen.map((_row, i) => i + 1 < screen.length),
+  }
+}
+describe("redacting strings inside strings, and only the secret's characters", () => {
+  it.each([
+    [String.raw`{"body":"{\"password\":\"Hunter2xyz!\"}"}`, "Hunter2xyz"],
+    [String.raw`{\"apiKey\":\"Hunter2xyz!abc\"}`, "Hunter2xyz"],
+    [String.raw`echo "password=\"Hunter2xyz!\""`, "Hunter2xyz"],
+    [String.raw`{"msg": "request body {\"password\": \"hunter2xyz\"}"}`, "hunter2xyz"],
+    [String.raw`{"msg":"login {\"password\":\"hunter2xyz\", \"user\": 1}"}`, "hunter2xyz"],
+  ])("removes the value in %s", (text, secret) => {
+    const result = redact(text)
+
+    expect(result).not.toContain(secret)
+    expect(result).toContain(redacted)
+    // The quotes and the rest of the line stay.
+    expect(result.replace(redacted, "").length).toBeGreaterThan(text.length - 40)
+  })
+
+  it("keeps quotes around a masked value", () => {
+    expect(redact('PASSWORD="hunter2 abc" next')).toBe(`PASSWORD="${redacted}" next`)
+    expect(redact('{"token": "abcdefgh"}')).toBe(`{"token": "${redacted}"}`)
+  })
+
+  const rowsOf = (lines: string[], width: number) => {
+    const screen: string[] = []
+    const continues: boolean[] = []
+    for (const line of lines) {
+      const pieces = chop(line, width)
+      pieces.forEach((piece, i) => {
+        screen.push(piece)
+        continues.push(i + 1 < pieces.length)
+      })
+    }
+    return redactDigest({
+      kind: "shell",
+      project: null,
+      folder: null,
+      command: null,
+      screen,
+      continues,
+      previous: null,
+    }) as ShellDigest
+  }
+  const key = [
+    "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7aaaa",
+    "bbbbQyNTUxOQAAACDx4kq9YtmpHq1q2kQZp0bq2M9r9kq8Xq1wQnR3sQe9Rg",
+  ]
+
+  it("masks a key that begins on the row where a certificate ends", () => {
+    const { screen } = rowsOf(
+      [
+        "$ cat cert.pem key.pem",
+        "-----END CERTIFICATE----------BEGIN PRIVATE KEY-----",
+        ...key,
+        "-----END PRIVATE KEY-----",
+        "$",
+      ],
+      80,
+    )
+
+    expect(screen.join("\n")).not.toMatch(/MIIEvQ|bbbbQy/)
+    expect(screen.at(-1)).toBe("$")
+  })
+
+  it.each([["-----BEGIN PRIVATE KEY"], ["-----BEGIN RSA PRIVATE KEY--"]])(
+    "starts a block at %s, a marker cut short",
+    (begin) => {
+      const { screen } = rowsOf(["$ cat key", begin, ...key], 80)
+
+      expect(screen.join("\n")).not.toMatch(/MIIEvQ|bbbbQy/)
+      expect(screen[0]).toBe("$ cat key")
+    },
+  )
+
+  it("masks from the top of the screen to an END whose BEGIN scrolled away", () => {
+    const { screen } = rowsOf([...key, "-----END PRIVATE KEY-----", "$ ls"], 80)
+
+    expect(screen.join("\n")).not.toMatch(/MIIEvQ|bbbbQy/)
+    expect(screen.at(-1)).toBe("$ ls")
+  })
+
+  it.each([
+    "DATABASE_PASSWORD=Zq8rT2mWx9LpKd3VnB7sYcHt5GfAb4Cd6EfGh8Ij",
+    "curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'",
+  ])("masks every row of a secret across three rows or more: %s", (line) => {
+    for (const width of [20, 33, 40]) {
+      const { screen } = rowsOf(["$ run", line, "$"], width)
+
+      expect(screen.join("\n")).not.toMatch(/Zq8r|LpKd|Ij$|dozjg|R8U|eyJhb/m)
+      expect(screen[0]).toBe("$ run")
+    }
+  })
+
+  it.each([
+    "it's a password: \"correct horse battery",
+    "the user's token: 'abc def ghi",
+    "can't say, secret: 'two words",
+  ])("still masks an unclosed quote after an apostrophe: %s", (line) => {
+    const result = redact(line)
+
+    expect(result).toContain(redacted)
+    expect(result).not.toMatch(/horse|def|words/)
+  })
+})
+
+describe("redacting strings inside strings, and only the secret's characters", () => {
+  it.each([
+    [String.raw`{"body":"{\"password\":\"Hunter2xyz!\"}"}`, "Hunter2xyz"],
+    [String.raw`{\"apiKey\":\"Hunter2xyz!abc\"}`, "Hunter2xyz"],
+    [String.raw`echo "password=\"Hunter2xyz!\""`, "Hunter2xyz"],
+    [String.raw`{"msg": "request body {\"password\": \"hunter2xyz\"}"}`, "hunter2xyz"],
+    [String.raw`{"msg":"login {\"password\":\"hunter2xyz\", \"user\": 1}"}`, "hunter2xyz"],
+  ])("removes the value in %s", (text, secret) => {
+    const result = redact(text)
+
+    expect(result).not.toContain(secret)
+    expect(result).toContain(redacted)
+    // The quotes and the rest of the line stay.
+    expect(result.replace(redacted, "").length).toBeGreaterThan(text.length - 40)
+  })
+
+  it("keeps quotes around a masked value", () => {
+    expect(redact('PASSWORD="hunter2 abc" next')).toBe(`PASSWORD="${redacted}" next`)
+    expect(redact('{"token": "abcdefgh"}')).toBe(`{"token": "${redacted}"}`)
+  })
+
+  const rowsOf = (line: string, width: number): string[] => {
+    const { screen, continues } = chopped(line, width)
+    return [...(redactDigest({ ...shell(screen), continues }) as ShellDigest).screen]
+  }
+
+  it("masks only the characters of an integrity hash that fills rows, not the line around it", () => {
+    const line =
+      "npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. integrity sha512-9xq2Vb8Kc3Lm5Np7Rs1Tv4Wy6Zb0Cd2Ef5Gh8Ij1Kl3Mn6Op9Qr2St5Uv8Wx1Yz4Ab7Cd0Ef3Gh6Ij9Kl2Mn5Op8Qr1St4Uv7Wx0Yz3A=="
+
+    const rows = rowsOf(line, 40)
+
+    expect(rows.slice(0, 2).join("")).toBe(line.slice(0, 80))
+    expect(rows[0]).toBe(line.slice(0, 40))
+  })
+
+  it("masks a token that starts a row after a row ending in a word character, and the rest of it", () => {
+    const token = "ghp_OHM6rIz5PEGNr6Df0PCSJaqSIz3B0eBMR2mP"
+    const rows = rowsOf(`${"x".repeat(20)}${token}" ok`, 20)
+
+    expect(rows.join("\n")).not.toMatch(/OHM6|0PCS/)
+    expect(rows[0]).toBe("x".repeat(20))
   })
 })

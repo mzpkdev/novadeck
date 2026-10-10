@@ -2,22 +2,49 @@
 // looks like one before the text reaches the model, by shape alone: nothing is learned or
 // configured, so what leaves the machine's terminal is the same on every machine.
 //
-// Terminals wrap long lines, so a token may be split by a newline wherever the screen was
-// wide enough to break it: the token rules allow one anywhere inside.
+// A secret is first marked in place: each of its characters becomes a sentinel, so the text
+// keeps its length and everything around the secret. Marking a screen's continued rows as one
+// text and as separate rows then lines up character for character, and the union of the two
+// is what is masked. Marks are rendered as `[redacted]` only at the end.
 import type { Digest } from "./describer.js"
 
 export const redacted = "[redacted]"
 
-// A run of `characters` at least `min` long, each of which may be followed by a wrapping newline.
+// A run of `characters` at least `min` long.
 const wrapped = (characters: string, min: number): string => `[${characters}]{${min},}`
-// A literal that the screen may have wrapped anywhere inside.
+// A literal, ready for a pattern.
 const spaced = (literal: string): string =>
   [...literal].map((character) => character.replace(/[.\\-]/g, "\\$&")).join("")
-// What replaces a token, keeping the newline that ended a wrapped run, which is not its own.
-const mask = (): string => redacted
 const url = "A-Za-z0-9_\\-"
 
-type Rule = readonly [RegExp, string | ((...match: string[]) => string)]
+// Stands for a secret's character. A private-use character is no letter, digit or space, so
+// patterns treat it as the boundary it is.
+const sentinel = "\uE000"
+// The same length, with a sentinel for each character but the newlines.
+const hide = (text: string): string => text.replaceAll(/[^\n]/g, sentinel)
+// A quoted value with its quotes (and a JSON string's escaped quotes) kept, and what is inside hidden.
+const hideValue = (value: string): string => {
+  let open = 0
+  let close = 0
+  if (value.startsWith('\\"')) {
+    open = 2
+    if (value.length >= 4 && value.endsWith('\\"')) close = 2
+  } else if (value[0] === '"' || value[0] === "'") {
+    open = 1
+    if (value.length >= 2 && value.endsWith(value[0] ?? "")) close = 1
+  }
+  return (
+    value.slice(0, open) +
+    hide(value.slice(open, value.length - close)) +
+    value.slice(value.length - close)
+  )
+}
+const mask = hide
+
+type Replacer = (...match: string[]) => string
+// A rule with `true` after it looks again from the next character whenever it leaves a match
+// as it was, since a name that is no secret must not hide one inside its value.
+type Rule = readonly [RegExp, Replacer] | readonly [RegExp, Replacer, true]
 
 // Words that make a name a secret's wherever it is, and ones that do so only whole.
 const secretInside = /(secret|passw|passphrase|apikey|privatekey|credential|has[lł][oa])/
@@ -83,6 +110,16 @@ const plain = new Set([
   "string",
   "number",
   "bpe",
+  // Code that goes on to get the value from somewhere.
+  "await",
+  "async",
+  "new",
+  "function",
+  "require",
+  "import",
+  "return",
+  "this",
+  "self",
 ])
 
 const sounds = (name: string): boolean => {
@@ -102,8 +139,8 @@ const sounds = (name: string): boolean => {
 
 // Whether `value` is worth hiding: not a path, a short number or a word like `true`.
 const secretValue = (value: string): boolean => {
-  const bare = value.replace(/^["']|["']$/g, "").trim()
-  if (bare === "" || bare.includes(redacted)) return false
+  const bare = value.replace(/^\\?["']|\\?["']$/g, "").trim()
+  if (bare === "" || bare.includes(sentinel) || bare.includes(redacted)) return false
   if (/^[/~]|^\.\.?\//.test(bare)) return false
   if (/^\d{1,7}$/.test(bare)) return false
   // A reference, a placeholder or code that reads a secret from elsewhere is not one.
@@ -149,12 +186,13 @@ const closesLiteral = (value: string, offset: unknown, text: unknown): boolean =
   return count % 2 === 1
 }
 
-// A quoted value; one opened and never closed runs to the end of the line.
-const quoted = `"[^"\\n]*"|'[^'\\n]*'|"[^\\n]*|'[^\\n]*`
+// A quoted value; one opened and never closed runs to the end of the line. A string inside
+// JSON that is itself in a string has its quotes escaped.
+const quoted = `\\\\"(?:[^\\\\\\n]|\\\\(?!"))*\\\\"|"[^"\\n]*"|'[^'\\n]*'|"[^\\n]*|'[^\\n]*`
 
 const rules: readonly Rule[] = [
   // A key block, or the start of one whose end scrolled away.
-  [/-----BEGIN [A-Z0-9 ]*-----[\s\S]*?(-----END [A-Z0-9 ]*-----|$)/g, redacted],
+  [/-----BEGIN [A-Z0-9 ]*-----[\s\S]*?(-----END [A-Z0-9 ]*-----|$)/g, hide],
   // Tokens with a prefix of their own.
   [new RegExp(`(?<![\\w])${spaced("sk-")}${wrapped(url, 6)}`, "g"), mask],
   [new RegExp(`(?<![\\w])[sr]k_(?:live|test)_${wrapped("A-Za-z0-9", 8)}`, "g"), mask],
@@ -172,7 +210,7 @@ const rules: readonly Rule[] = [
   [
     /(?<![\w.-])([A-Za-z0-9_-]{18,32})\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}/g,
     (all, id) =>
-      /^\d{17,20}$/.test(Buffer.from(id, "base64url").toString("utf8")) ? redacted : all,
+      /^\d{17,20}$/.test(Buffer.from(id, "base64url").toString("utf8")) ? hide(all) : all,
   ],
   [new RegExp(`${spaced("AGE-SECRET-KEY-1")}${wrapped("A-Z0-9", 20)}`, "g"), mask],
   [new RegExp(`(?<![\\w])(?:AKIA|ASIA)[0-9A-Z]{16}`, "g"), mask],
@@ -180,61 +218,77 @@ const rules: readonly Rule[] = [
   [new RegExp(`(?<![\\w])eyJ[\\w-]{8,}\\.[\\w-]{8,}\\.[\\w-]*`, "g"), mask],
   // Webhooks carry their secret in the path.
   [
-    /(hooks\.slack\.com\/services\/|discord(?:app)?\.com\/api\/webhooks\/)[^\s"'<>]+/gi,
-    (_all, host) => `${host}${redacted}`,
+    /(hooks\.slack\.com\/services\/|discord(?:app)?\.com\/api\/webhooks\/)([^\s"'<>]+)/gi,
+    (_all, host, rest) => `${host}${hide(rest)}`,
   ],
   // user:password@host in any URL, even with no user.
-  [/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*:[^\s/]*)@/gi, (_all, scheme) => `${scheme}${redacted}@`],
+  [
+    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]*:[^\s/]*)@/gi,
+    (_all, scheme, info) => `${scheme}${hide(info)}@`,
+  ],
   // A key as the whole userinfo, as Sentry's DSN has it.
   [
-    /\b([a-z][a-z0-9+.-]*:\/\/)(?:[A-Za-z0-9]{16,}|[A-Za-z0-9]{12,}(?=@[^\s/]*(?:sentry|ingest)))@/gi,
-    (_all, scheme) => `${scheme}${redacted}@`,
+    /\b([a-z][a-z0-9+.-]*:\/\/)([A-Za-z0-9]{16,}|[A-Za-z0-9]{12,}(?=@[^\s/]*(?:sentry|ingest)))@/gi,
+    (_all, scheme, key) => `${scheme}${hide(key)}@`,
   ],
   // A secret in a URL's query.
   [
     /([?&])([\w.-]+)=([^&\s#]+)/g,
-    (all, mark, name, value) =>
-      sounds(name) && secretValue(value) ? `${mark}${name}=${redacted}` : all,
+    (all, joint, name, value) =>
+      sounds(name) && secretValue(value) ? `${joint}${name}=${hide(value)}` : all,
   ],
   // Whole headers: the credential is everything after the name.
   [
-    /\b(Authorization\s*[:=]\s*)(?:(?:Bearer|Basic|Token|Digest)\s+)?(?!\[redacted\])\S+/gi,
-    (_all, head) => `${head}${redacted}`,
+    /\b(Authorization\s*[:=]\s*(?:(?:Bearer|Basic|Token|Digest)\s+)?)(?!\uE000)(\S+)/gi,
+    (_all, head, value) => `${head}${hide(value)}`,
   ],
-  [/\b((?:Set-)?Cookie\s*:[ \t]*)[^\n]+/gi, (_all, head) => `${head}${redacted}`],
+  [/\b((?:Set-)?Cookie\s*:[ \t]*)([^\n]+)/gi, (_all, head, value) => `${head}${hide(value)}`],
   [
-    /\b(Bearer|Basic)\s+([A-Za-z0-9._~+/=-]{4,})/gi,
-    (all, scheme, value) =>
-      /\d/.test(value) || value.length >= 16 ? `${scheme} ${redacted}` : all,
+    /\b(Bearer|Basic)(\s+)([A-Za-z0-9._~+/=-]{4,})/gi,
+    (all, scheme, gap, value) =>
+      /\d/.test(value) || value.length >= 16 ? `${scheme}${gap}${hide(value)}` : all,
   ],
   // aws configure asks for the key by name.
-  [/(\bSecret Access Key[^:\n]*:[ \t]*)(\S+)/gi, (_all, head) => `${head}${redacted}`],
+  [/(\bSecret Access Key[^:\n]*:[ \t]*)(\S+)/gi, (_all, head, value) => `${head}${hide(value)}`],
   // AUTH=Basic dXNlcjpwYXNz, where the scheme says it is a credential.
   [
-    /([=:][ \t]*)(Basic|Bearer)[ \t]+[A-Za-z0-9+/=._~-]{8,}/g,
-    (_all, mark, scheme) => `${mark}${scheme} ${redacted}`,
+    /([=:][ \t]*(?:Basic|Bearer)[ \t]+)([A-Za-z0-9+/=._~-]{8,})/g,
+    (_all, head, value) => `${head}${hide(value)}`,
   ],
   // Command lines that take a password in their own way.
-  [/(\bredis-cli\b[^\n]*?\s-a\s+)(?!-)(\S+)/g, (_all, head) => `${head}${redacted}`],
-  [/(\bhtpasswd\b[^\n]*?\s-\w*b\w*\s+\S+\s+\S+\s+)(\S+)/g, (_all, head) => `${head}${redacted}`],
-  [/(\bopenssl\b[^\n]*?\s-k\s+)(?!-)(\S+)/g, (_all, head) => `${head}${redacted}`],
-  [/(\bopenssl\b[^\n]*?\s-pass(?:in|out)?\s+pass:)(\S+)/g, (_all, head) => `${head}${redacted}`],
+  [/(\bredis-cli\b[^\n]*?\s-a\s+)(?!-)(\S+)/g, (_all, head, value) => `${head}${hide(value)}`],
+  [
+    /(\bhtpasswd\b[^\n]*?\s-\w*b\w*\s+\S+\s+\S+\s+)(\S+)/g,
+    (_all, head, value) => `${head}${hide(value)}`,
+  ],
+  [/(\bopenssl\b[^\n]*?\s-k\s+)(?!-)(\S+)/g, (_all, head, value) => `${head}${hide(value)}`],
+  [
+    /(\bopenssl\b[^\n]*?\s-pass(?:in|out)?\s+pass:)(\S+)/g,
+    (_all, head, value) => `${head}${hide(value)}`,
+  ],
   [
     /(\b(?:mysql|mysqladmin|mysqldump)\w*\b[^\n]*?\s-p)(?=\S)(\S+)/g,
-    (_all, head) => `${head}${redacted}`,
+    (_all, head, value) => `${head}${hide(value)}`,
   ],
   [
     /(\b(?:docker\s+login|sshpass)\b[^\n]*?\s-p\s+)(?!-)(\S+)/g,
-    (_all, head) => `${head}${redacted}`,
+    (_all, head, value) => `${head}${hide(value)}`,
   ],
-  [/(\bcurl\b[^\n]*?\s(?:-u|--user)[ =]\s*)(?!-)(\S+)/g, (_all, head) => `${head}${redacted}`],
+  [
+    /(\bcurl\b[^\n]*?\s(?:-u|--user)[ =]\s*)(?!-)(\S+)/g,
+    (_all, head, value) => `${head}${hide(value)}`,
+  ],
   // --password hunter2, by the flag's exact name.
   [
-    /(--(?:password|passwd|pass|pwd|token|auth-token|access-token|api-key|apikey|secret|client-secret|auth|bearer|credentials?|passphrase))(?:=|[ \t]+)(?!-)("[^"\n]*"|'[^'\n]*'|"[^\n]*|'[^\n]*|\S+)/gi,
-    (all, flag, value, offset, text) =>
+    new RegExp(
+      `(--(?:password|passwd|pass|pwd|token|auth-token|access-token|api-key|apikey|secret|client-secret|auth|bearer|credentials?|passphrase)(?:=|[ \\t]+))(?!-)(${quoted}|\\S+)`,
+      "gi",
+    ),
+    (all, head, value, offset, text) =>
       secretValue(value) && !closesLiteral(value, offset, text)
-        ? `${all.slice(0, flag.length + 1)}${redacted}`
+        ? `${head}${hideValue(value)}`
         : all,
+    true,
   ],
   // NAME=value, where the name sounds secret.
   [
@@ -244,33 +298,38 @@ const rules: readonly Rule[] = [
     ),
     (all, name, joint, value, offset, text) =>
       sounds(name) && secretValue(value) && !closesLiteral(value, offset, text)
-        ? `${name}${joint}${redacted}`
+        ? `${name}${joint}${hideValue(value)}`
         : all,
+    true,
   ],
   // Polish: hasło: tajne, haslo=tajne
   [
-    /(?<![\p{L}])(has[lł]o|has[lł]a)([ \t]*[:=][ \t]*)("[^"\n]*"|'[^'\n]*'|"[^\n]*|'[^\n]*|\S+)/giu,
+    new RegExp(`(?<![\\p{L}])(has[lł]o|has[lł]a)([ \\t]*[:=][ \\t]*)(${quoted}|\\S+)`, "giu"),
     (all, name, joint, value, offset, text) =>
       secretValue(value) && !closesLiteral(value, offset, text)
-        ? `${name}${joint}${redacted}`
+        ? `${name}${joint}${hideValue(value)}`
         : all,
+    true,
   ],
   // fish: set -x NAME value
   [
     /(\bset[ \t]+(?:-\w+[ \t]+)*)([A-Za-z_]\w*)([ \t]+)(?!-)(\S+)/g,
     (all, head, name, gap, value) =>
-      sounds(name) && secretValue(value) ? `${head}${name}${gap}${redacted}` : all,
+      sounds(name) && secretValue(value) ? `${head}${name}${gap}${hide(value)}` : all,
+    true,
   ],
-  // "name": "value", as JSON has it, and 'name': 'value'.
+  // "name": "value", as JSON has it, and 'name': 'value'; in a string of a log line the
+  // quotes are escaped: {\"name\":\"value\"}.
   [
     new RegExp(
-      `(["'])([\\p{L}_][\\p{L}\\p{N}_.-]*)\\1([ \\t]*:[ \\t]*)(${quoted}|[^\\s,}\\]]+)`,
+      `(\\\\?)(["'])([\\p{L}_][\\p{L}\\p{N}_.-]*)\\1\\2([ \\t]*:[ \\t]*)(${quoted}|[^\\s,}\\]]+)`,
       "gu",
     ),
-    (all, quote, name, joint, value, offset, text) =>
+    (all, slash, quote, name, joint, value, offset, text) =>
       sounds(name) && secretValue(value) && !closesLiteral(value, offset, text)
-        ? `${quote}${name}${quote}${joint}"${redacted}"`
+        ? `${slash}${quote}${name}${slash}${quote}${joint}${hideValue(value)}`
         : all,
+    true,
   ],
   // name: value, as YAML and headers have it.
   [
@@ -280,27 +339,59 @@ const rules: readonly Rule[] = [
     ),
     (all, name, joint, value, offset, text) =>
       sounds(name) && secretValue(value) && !closesLiteral(value, offset, text)
-        ? `${name}${joint}${redacted}`
+        ? `${name}${joint}${hideValue(value)}`
         : all,
+    true,
   ],
   // A hash of a secret is as good as the secret; a commit id or a file's checksum is not one.
   [
     /(?<![0-9a-zA-Z_])(?<!sha(?:1|256|512)[:-])(?<!commit )(?<!diff-)[0-9a-f]{32,}(?![0-9a-zA-Z_])(?!\s{2}\S)/gi,
-    (run) => (run.length === 40 || run.length === 44 ? run : redacted),
+    (run) => (run.length === 40 || run.length === 44 ? run : hide(run)),
   ],
   // Base64 long enough to hold a key. Paths, words and identifiers are long and mixed too:
   // a run needs digits and no long word in it, and is never part of a path.
   [
     /(?<![\w/\\.+=-])(?<!;base64,)(?!sha(?:1|256|384|512)-)[A-Za-z0-9+/_-]{40,}={0,2}(?![\w\\.+-])/g,
-    (run) => (qualifies(run) ? redacted : run),
+    (run) => (qualifies(run) ? hide(run) : run),
   ],
 ]
 
-export const redact = (text: string): string => {
-  let result = text
-  for (const [pattern, replacement] of rules)
-    result = result.replace(pattern, replacement as (substring: string) => string)
+const scan = (text: string, pattern: RegExp, replace: Replacer): string => {
+  let result = ""
+  let last = 0
+  pattern.lastIndex = 0
+  for (let found = pattern.exec(text); found; found = pattern.exec(text)) {
+    const replaced = (replace as (...args: unknown[]) => string)(...found, found.index, text)
+    if (replaced === found[0]) {
+      pattern.lastIndex = found.index + 1
+      continue
+    }
+    result += text.slice(last, found.index) + replaced
+    last = found.index + found[0].length
+  }
+  return result + text.slice(last)
+}
+
+/** `text` with each secret's characters replaced by sentinels, so it keeps its length. */
+const mark = (text: string): string => {
+  let result = text.replaceAll(sentinel, " ")
+  for (const [pattern, replacement, again] of rules)
+    result = again ? scan(result, pattern, replacement) : result.replace(pattern, replacement)
   return result
+}
+
+// Each run of marks, with the newlines between marks it spans, as one mask.
+const render = (marked: string): string =>
+  marked.replaceAll(new RegExp(`${sentinel}(?:\\n*${sentinel})*`, "g"), redacted)
+
+export const redact = (text: string): string => render(mark(text))
+
+/** The pieces of `text` that `redact` masks, for a check on what was masked. */
+export const maskedSpans = (text: string): string[] => {
+  const marked = mark(text)
+  return [...marked.matchAll(new RegExp(`${sentinel}(?:\\n*${sentinel})*`, "g"))].map((match) =>
+    text.slice(match.index, match.index + match[0].length),
+  )
 }
 
 // The screen's rows with a key block masked: every row from a BEGIN marker to its END marker,
@@ -329,19 +420,39 @@ const maskKeyBlocks = (screen: readonly string[], continues: readonly boolean[])
   return rows
 }
 
-// Masks the rows of a group that goes on (each row but the last ended at the pane's edge) when
-// reading them as one text redacts differently than reading each alone: a secret lies across
-// a boundary, or the rows' own context changed what is one. Over-masking such a group is the
-// price; a group that redacts the same either way is left to the rows.
-const maskAcrossRows = (rows: readonly string[], continues: readonly boolean[]): string[] => {
-  const result = [...rows]
+// Redacts the rows of a screen. Rows that go on (each but the last of a group ended at the
+// pane's edge) are marked apart and as one text from each of their starts, and what any of
+// those marks is masked, in whichever row it lies: a secret across a boundary is masked on both
+// sides of it, even when the row before it ended in a word character, and a row's own context
+// changes nothing else. Marking keeps lengths, so the readings line up character for character.
+const redactRows = (rows: readonly string[], continues: readonly boolean[]): string[] => {
+  const result: string[] = []
   for (let first = 0; first < rows.length;) {
     let last = first
     while (continues[last] && last + 1 < rows.length) last += 1
-    if (last > first) {
-      const group = rows.slice(first, last + 1)
-      if (redact(group.join("")) !== group.map(redact).join(""))
-        for (let i = first; i <= last; i += 1) result[i] = redacted
+    const group = rows.slice(first, last + 1)
+    if (group.length === 1) result.push(redact(group[0] ?? ""))
+    else {
+      const text = group.join("")
+      const masked: boolean[] = Array.from({ length: text.length }, () => false)
+      const note = (marked: string, from: number): void => {
+        for (let i = 0; i < marked.length; i += 1)
+          if (marked[i] === sentinel) masked[from + i] = true
+      }
+      let from = 0
+      for (let start = 0; start < group.length; start += 1) {
+        note(mark(group[start] ?? ""), from)
+        note(mark(group.slice(start).join("")), from)
+        from += (group[start] ?? "").length
+      }
+      let offset = 0
+      for (const row of group) {
+        let marked = ""
+        for (let i = offset; i < offset + row.length; i += 1)
+          marked += masked[i] ? sentinel : (text[i] ?? "")
+        result.push(render(marked))
+        offset += row.length
+      }
     }
     first = last + 1
   }
@@ -353,12 +464,10 @@ export const redactDigest = (digest: Digest): Digest => {
   const one = (text: string | null): string | null => (text === null ? null : redact(text))
   const previous = digest.previous && { title: redact(digest.previous.title) }
   if (digest.kind === "shell") {
-    // Key blocks and secrets across the end of a full-width row are masked first, on the
-    // rows as they were drawn; then every row is seen on its own, whatever the row before it
-    // ended in.
+    // Key blocks are masked whole, on the rows as they were drawn; then every row is seen on
+    // its own, and, where it runs to the pane's edge, with the row that goes on from it.
     const continues = digest.continues ?? []
-    const blocks = maskKeyBlocks(digest.screen, continues)
-    const screen = maskAcrossRows(blocks, continues).map(redact)
+    const screen = redactRows(maskKeyBlocks(digest.screen, continues), continues)
     return {
       ...digest,
       project: one(digest.project),
