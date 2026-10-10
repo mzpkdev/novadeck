@@ -1526,6 +1526,64 @@ describe("when the person turns murmur off or removes it", () => {
     expect(subjects.get("a")!.naming.murmur).toEqual({ title: "Title 1" })
   })
 
+  // `fireCleared` leaves murmur usable, so what clearing itself drops shows apart from what
+  // becoming unusable drops.
+  it("drops a request waiting for its quiet, and aborts a job running", async () => {
+    const waiting = create({ work: work(), activity: idle("ok") })
+    waiting.murmur.reported("a", report({ session: true }))
+    waiting.describer.fireCleared()
+    await settle(1_000)
+    expect(waiting.describer.jobs).toHaveLength(0)
+
+    const running = create({ work: work(), activity: idle("ok") })
+    running.describer.hold = true
+    running.murmur.reported("a", report({ session: true }))
+    await settle()
+    expect(running.describer.jobs).toHaveLength(1)
+    running.describer.fireCleared()
+    expect(running.describer.jobs[0]!.signal?.aborted).toBe(true)
+  })
+
+  it("forgets the mission it asked for, so a titled terminal is titled afresh", async () => {
+    const { murmur, describer, subjects } = create({ work: work(), activity: idle("ok") })
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    expect(subjects.get("a")!.naming.murmur).toEqual({ title: "Title 1" })
+    describer.fireCleared()
+    expect(subjects.get("a")!.naming.murmur).toBeNull()
+    murmur.reported("a", report())
+    await settle()
+    expect(describer.jobs).toHaveLength(2)
+  })
+
+  it("forgets a retry it was waiting for, to ask at the next report instead", async () => {
+    const { murmur, describer } = create(
+      { work: work(), activity: idle("ok") },
+      new FakeDescriber({ reply: (_digest, call) => (call === 1 ? undefined : { title: "Back" }) }),
+    )
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    // It did not run: owed again, after a minute.
+    expect(describer.jobs).toHaveLength(1)
+    describer.fireCleared()
+    murmur.reported("a", report())
+    await settle()
+    expect(describer.jobs).toHaveLength(2)
+  })
+
+  it("forgets a shell's description owed, so a brief program's end asks nothing", async () => {
+    const { murmur, describer, change } = create({ agent: null })
+    change({ program: { name: "node", argv: ["node", "dev.js"] } })
+    murmur.sampled("a")
+    murmur.moved("a")
+    describer.fireCleared()
+    await settle(10)
+    change({ program: { name: "bash", argv: null } })
+    murmur.sampled("a")
+    await settle(1_000)
+    expect(describer.jobs).toHaveLength(0)
+  })
+
   it("does not clear on close, a failed check or losing the GPU (only usability changes)", async () => {
     const { murmur, describer, clears } = create({ work: work(), activity: idle("ok") })
     describer.setUsable(false)

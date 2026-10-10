@@ -1134,12 +1134,38 @@ describe("clearing titles", () => {
     await on.murmur.close()
     expect(cleared).toBe(0)
 
+    // The runner closes right after the removal turned murmur off, while it goes on.
     const removing = await installed(resources)
     removing.murmur.watchCleared(() => (cleared += 1))
-    const removal = removing.murmur.uninstall()
-    await removing.murmur.close()
-    await removal.catch(() => {})
+    const save = removing.store.saveMurmurSettings.bind(removing.store)
+    removing.store.saveMurmurSettings = (change) => {
+      save(change)
+      if (change.enabled === false) void removing.murmur.close()
+    }
+    await removing.murmur.uninstall().catch(() => {})
     expect(cleared).toBe(0)
+  })
+
+  it("drops a shown engine failure when an uninstall fails", async ({ resources }) => {
+    if (process.platform === "win32" || process.getuid?.() === 0) return
+    let time = 1_000
+    const { murmur, directory } = await installed(resources, { now: () => time })
+    await writeFile(await modelOf(directory), "crash")
+    for (let i = 0; i < 3; i += 1) {
+      time += 1_000_000
+      // eslint-disable-next-line no-await-in-loop -- One after another.
+      await murmur.describe(digest, { terminal: "t" })
+    }
+    expect(murmur.state().failure).toMatch(/engine/i)
+    const models = join(directory, "models")
+    await chmod(models, 0o555)
+    try {
+      await expect(murmur.uninstall()).rejects.toMatchObject({ code: "CONFLICT" })
+    } finally {
+      await chmod(models, 0o755)
+    }
+
+    expect(murmur.state().failure).toBeNull()
   })
 
   it("fires once for an uninstall whose removal fails", async ({ resources }) => {

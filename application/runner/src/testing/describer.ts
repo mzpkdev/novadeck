@@ -65,9 +65,14 @@ export class FakeDescriber implements Describer {
     return () => this.clearedListeners.delete(listener)
   }
 
-  /** The person turns murmur off or removes it: titles are cleared, and it stops being usable. */
+  /** The person turns murmur off or removes it: it stops being usable, and titles are cleared. */
   clear(): void {
     this.setUsable(false)
+    this.fireCleared()
+  }
+
+  /** Only the clearing, with usability as it is: what a listener does for it by itself. */
+  fireCleared(): void {
     for (const listener of this.clearedListeners) listener()
   }
 

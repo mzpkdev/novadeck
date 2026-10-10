@@ -487,6 +487,9 @@ export class Murmur implements Describer {
       // Off first: a removal that fails halfway must not leave murmur on.
       turnedOff = this.settings.murmurSettings().enabled
       this.settings.saveMurmurSettings({ enabled: false })
+      // As when the person turns it off: what was shown of failing jobs goes.
+      this.runtimeFailure = null
+      this.engineStrikes = 0
       this.changed()
       // The program is in use until it has exited, which Windows will not delete.
       await this.server.stop()
