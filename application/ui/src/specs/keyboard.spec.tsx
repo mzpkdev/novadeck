@@ -739,7 +739,7 @@ describe("pinned project shortcuts", () => {
     })
 
     // On macOS the pin's chord is ⌘ and a digit, so with Ctrl still held for the switcher
-    // the modifiers don't match and the key stays the switcher's.
+    // the modifiers don't match the chord there.
     it.skipIf(isMac())("works from the terminal switcher held open with Ctrl+Tab", async () => {
       pinInOrder()
       await openWorkspace()
