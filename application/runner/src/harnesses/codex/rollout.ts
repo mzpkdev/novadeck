@@ -13,6 +13,7 @@ import {
   type Run,
   type WrittenPlan,
 } from "../harness.js"
+import { callOf, mcpTool } from "./decode.js"
 import { transcripts } from "./transcripts.js"
 
 type Limit = AgentTelemetry["limits"][number]
@@ -140,12 +141,12 @@ const mcpSettled = (
   { server, tool, arguments: input }: Record<string, unknown>,
 ): HarnessEvent[] => {
   if (typeof server !== "string" || !server || typeof tool !== "string" || !tool) return []
-  const toolName = `mcp__${server}__${tool}`
+  const toolName = mcpTool(server, tool)
   return [
     {
       type: "attention-resolved",
       ...base,
-      requestId: callId(null, toolName, input),
+      requestId: callId(null, toolName, callOf(input)),
       actor: null,
       toolName,
       loose: false,

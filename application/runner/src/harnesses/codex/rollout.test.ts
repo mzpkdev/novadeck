@@ -291,6 +291,45 @@ describe("an MCP tool approval the person cancelled, as captured", () => {
   ).scenarios["mcp-tool-approval-esc"]!
   const hook = scenario.hooksAll.find((each) => named(each, "PermissionRequest"))!
 
+  // The request a PermissionRequest of `tool` and `input` asks, and what a completed item
+  // of `server`, `tool` and `input` settles, as Codex 0.159.3 named each (probed).
+  const ids = (hookTool: string, server: string, tool: string, input: object) => {
+    const [asked] = decode({
+      event: "PermissionRequest",
+      seq: 0,
+      instance: "7",
+      env: {},
+      payload: { session_id: "s", tool_name: hookTool, tool_input: input },
+    } as unknown as Report)
+    const item = {
+      type: "event_msg",
+      timestamp: "2026-10-06T14:06:27.609Z",
+      payload: {
+        type: "item_completed",
+        item: { type: "McpToolCall", id: "call_1", server, tool, arguments: input },
+      },
+    }
+    const [settled] = rolloutEvents(JSON.stringify(item), session)
+    return [
+      (asked as { requestId: string }).requestId,
+      (settled as { requestId: string }).requestId,
+    ]
+  }
+
+  it("names a server as its hooks do, with its punctuation as underscores", () => {
+    const [asked, settled] = ids("mcp__probe_srv__touch", "probe-srv", "touch", { name: "a" })
+    expect(settled).toBe(asked)
+    expect(ids("mcp__probe_srv__touch", "probe.srv", "touch", { name: "a" })[1]).toBe(asked)
+  })
+
+  it("knows a call that names a command by its command, as its request does", () => {
+    const [asked, settled] = ids("mcp__probe__touch", "probe", "touch", {
+      command: "ls",
+      name: "a.txt",
+    })
+    expect(settled).toBe(asked)
+  })
+
   it("settles the request its hook asked, as no hook says it was cancelled", () => {
     expect(scenario.hooksAll.some((each) => named(each, "PostToolUse"))).toBe(false)
     const [asked] = decode({

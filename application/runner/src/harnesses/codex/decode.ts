@@ -36,10 +36,7 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
   const tool = text(payload.tool_name) ?? ""
   const actor = text(payload.agent_id) ?? null
   const input = payload.tool_input
-  const call =
-    typeof input === "object" && input !== null && "command" in input
-      ? { command: (input as { command: unknown }).command }
-      : input
+  const call = callOf(input)
   switch (event) {
     case "SessionStart": {
       const cwd = absolute(payload.cwd)
@@ -132,6 +129,20 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
       return []
   }
 }
+
+/** A call as its request and its result both know it: a shell call by its command alone. */
+export const callOf = (input: unknown): unknown =>
+  typeof input === "object" && input !== null && "command" in input
+    ? { command: (input as { command: unknown }).command }
+    : input
+
+/**
+ * An MCP tool's name as Codex's hooks give it: each character of its server and tool
+ * outside letters, digits and `_` as `_` (`probe-srv` and `probe.srv` both `probe_srv`,
+ * probed 0.159.3). A name Codex shortens further matches nothing, so settles nothing.
+ */
+export const mcpTool = (server: string, tool: string): string =>
+  `mcp__${server.replace(/\W/g, "_")}__${tool.replace(/\W/g, "_")}`
 
 const asked = (
   base: {
