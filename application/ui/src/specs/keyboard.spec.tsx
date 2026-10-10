@@ -738,7 +738,9 @@ describe("pinned project shortcuts", () => {
       await expect.element(recentSwitcher()).not.toBeInTheDocument()
     })
 
-    it("works from the terminal switcher held open with Ctrl+Tab", async () => {
+    // On macOS the pin's chord is ⌘ and a digit, so with Ctrl still held for the switcher
+    // the modifiers don't match and the key stays the switcher's.
+    it.skipIf(isMac())("works from the terminal switcher held open with Ctrl+Tab", async () => {
       pinInOrder()
       await openWorkspace()
       await press("{Control>}{Tab}")
