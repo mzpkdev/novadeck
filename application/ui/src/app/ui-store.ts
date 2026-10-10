@@ -70,9 +70,9 @@ export type UiState = {
   readonly crashLoop: number
   // The update the desktop app last told of: downloaded, or to fetch from its release page.
   readonly update: UpdateOffer | null
-  // Whether its popover is open, or waits to open once the footer shows.
+  // Whether its notice is open, or waits to open once the footer shows.
   readonly updateOpen: boolean
-  // The offer (`updateKey`) whose popover came up last, kept across launches: each comes up once.
+  // The offer (`updateKey`) whose notice came up last, kept across launches: each comes up once.
   readonly updateSeen: string | null
   // Whether the page has the person's focus: its window focused and showing.
   readonly pageFocused: boolean
@@ -247,7 +247,7 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
 }
 
 // The update the backend offers, kept for the footer; a later offer replaces the last.
-// One for a version not yet shown opens its popover, which waits while the footer is
+// One for a version not yet shown opens its notice, which waits while the footer is
 // hidden.
 export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => void) =>
   updates?.onOffer((update) =>

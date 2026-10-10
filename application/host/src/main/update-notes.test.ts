@@ -1,7 +1,7 @@
 import { updateNoteLength, updateNotesLength } from "@novadeck/protocol/bridge"
 
 import { context, describe, expect, it } from "../test"
-import { releaseNotesLines } from "./update-notes"
+import { releaseNamed, releaseNotesLines, updateNotesLines } from "./update-notes"
 
 describe("release notes for the page", () => {
   it("makes a line of each list item", () => {
@@ -100,5 +100,46 @@ describe("release notes for the page", () => {
       expect(lines).toHaveLength(updateNotesLength)
       expect(lines[0]).toBe("Note 0")
     })
+  })
+})
+
+describe("common named entities", () => {
+  it("decode to their characters", () => {
+    const html =
+      "<li>Wait&hellip; a&mdash;b c&ndash;d &lsquo;x&rsquo; &ldquo;y&rdquo; &bull; &copy; &rarr;</li>"
+    expect(releaseNotesLines(html)).toEqual([
+      "Wait\u2026 a\u2014b c\u2013d \u2018x\u2019 \u201cy\u201d \u2022 \u00a9 \u2192",
+    ])
+  })
+})
+
+describe("whose release the notes are", () => {
+  it("is the release named for the version, with or without the v", () => {
+    expect(releaseNamed("Novadeck v1.2.3", "1.2.3")).toBe(true)
+    expect(releaseNamed("v1.2.3", "1.2.3")).toBe(true)
+    expect(releaseNamed("1.2.3", "1.2.3")).toBe(true)
+    expect(releaseNamed(" Novadeck 1.2.3 ", "1.2.3")).toBe(true)
+  })
+
+  it("is not another release, nor one without a name", () => {
+    for (const name of [
+      "Novadeck v1.2.4",
+      "Novadeck v11.2.3",
+      "Novadeck v1.2.3-beta.1",
+      "",
+      null,
+      undefined,
+      3,
+    ])
+      expect(releaseNamed(name, "1.2.3")).toBe(false)
+  })
+
+  it("gives the notes only for the named release", () => {
+    const notes = "<li>Faster.</li>"
+    const info = { version: "1.2.3", releaseNotes: notes }
+    expect(updateNotesLines({ ...info, releaseName: "Novadeck v1.2.3" })).toEqual(["Faster."])
+    // The updater fell back to the newest entry of the feed, another version's.
+    expect(updateNotesLines({ ...info, releaseName: "Novadeck v1.2.4" })).toEqual([])
+    expect(updateNotesLines(info)).toEqual([])
   })
 })

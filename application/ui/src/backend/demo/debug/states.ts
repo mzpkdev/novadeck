@@ -70,9 +70,7 @@ const onSelected = (
   hint: string,
   run: (
     key: TerminalKey,
-    context: DemoActionContext & {
-      readonly dispatch: NonNullable<DemoActionContext["dispatch"]>
-    },
+    context: DemoActionContext & { readonly dispatch: NonNullable<DemoActionContext["dispatch"]> },
   ) => void,
 ): DemoAction => ({
   label,
@@ -135,11 +133,7 @@ const elsewhere = (workspace: Workspace | undefined): TerminalKey | undefined =>
       (each) => each.state !== "exited" && each.state !== "failed",
     )
     if (session && terminal)
-      return {
-        projectId: project.id,
-        workspaceSessionId: session.id,
-        terminalId: terminal.id,
-      }
+      return { projectId: project.id, workspaceSessionId: session.id, terminalId: terminal.id }
   }
   return undefined
 }
@@ -150,9 +144,7 @@ const inAnotherProject = (
   hint: string,
   run: (
     key: TerminalKey,
-    context: DemoActionContext & {
-      readonly dispatch: NonNullable<DemoActionContext["dispatch"]>
-    },
+    context: DemoActionContext & { readonly dispatch: NonNullable<DemoActionContext["dispatch"]> },
   ) => void,
 ): DemoAction => ({
   label,
@@ -208,36 +200,18 @@ const gallery: readonly {
   },
   { name: "Working", actions: (key) => agentIn(key, undefined, working) },
   { name: "Planning", actions: (key) => agentIn(key, undefined, planning) },
-  {
-    name: "Subagents",
-    actions: (key) => agentIn(key, undefined, withSubagents),
-  },
-  {
-    name: "Asks a question",
-    actions: (key) => agentIn(key, undefined, asking("question", 1)),
-  },
-  {
-    name: "Plan ready",
-    actions: (key) => agentIn(key, undefined, asking("plan", 1)),
-  },
-  {
-    name: "3 permissions",
-    actions: (key) => agentIn(key, undefined, asking("permission", 3)),
-  },
+  { name: "Subagents", actions: (key) => agentIn(key, undefined, withSubagents) },
+  { name: "Asks a question", actions: (key) => agentIn(key, undefined, asking("question", 1)) },
+  { name: "Plan ready", actions: (key) => agentIn(key, undefined, asking("plan", 1)) },
+  { name: "3 permissions", actions: (key) => agentIn(key, undefined, asking("permission", 3)) },
   { name: "Unheard agent", actions: (key) => unheardAgent(key, "claude") },
   { name: "Running a program", actions: (key) => runProgram(key, "sleep") },
   { name: "Starting", actions: (key) => starting(key) },
   { name: "Idle", actions: () => [] },
   { name: "Exited · code 3", actions: (key) => exitedWithCode(key, 3) },
   { name: "Killed", actions: (key) => killedBy(key, "SIGKILL") },
-  {
-    name: "Failed to start",
-    actions: (key) => failedToStart(key, "Folder not found"),
-  },
-  {
-    name: "Needs permission",
-    actions: (key) => agentIn(key, undefined, asking("permission", 1)),
-  },
+  { name: "Failed to start", actions: (key) => failedToStart(key, "Folder not found") },
+  { name: "Needs permission", actions: (key) => agentIn(key, undefined, asking("permission", 1)) },
 ]
 
 const everyState: DemoAction = {
@@ -354,8 +328,8 @@ const createNotificationActions = (): readonly [DemoAction, DemoAction] => {
 export const createDemoStates = (): DemoStates => {
   const { agents, openWelcome, failNext: failAgents } = createDemoAgents()
   const { notices, Notices } = createDemoNotices()
-  const { updates, offer, finish } = createDemoUpdates()
-  // Each press offers a newer version than the last, so its popover comes up again.
+  const { updates, offer, finish, failInstall } = createDemoUpdates()
+  // Each press offers a newer version than the last, so its notice comes up again.
   let patch = 79
   const nextVersion = (): string => `0.0.${(patch += 1)}`
   const { pickDirectory, failNext: failPick } = createDemoFolders()
@@ -549,7 +523,7 @@ export const createDemoStates = (): DemoStates => {
       actions: [
         {
           label: "Update ready",
-          hint: "A popover over the footer's Update ready chip: Novadeck is ready, four notes, Release notes, Restart now and Later; each press is a newer version, so it comes up again",
+          hint: "A notice above the footer's Update ready chip: Novadeck is ready, four notes, Release notes, Restart now and Later; each press is a newer version, so it comes up again",
           run: () =>
             offer({
               kind: "ready",
@@ -559,12 +533,12 @@ export const createDemoStates = (): DemoStates => {
         },
         {
           label: "Update ready, no notes",
-          hint: "The same popover without notes: the title, Release notes, Restart now and Later",
+          hint: "The same notice without notes: the title, Release notes, Restart now and Later",
           run: () => offer({ kind: "ready", version: nextVersion(), notes: [] }),
         },
         {
           label: "Update available",
-          hint: "A popover over the footer's Update available chip: Novadeck is available, four notes, Download and Later; Download opens no page in the demo",
+          hint: "A notice above the footer's Update available chip: Novadeck is available, four notes, Download and Later; Download opens no page in the demo",
           run: () =>
             offer({
               kind: "available",
@@ -574,7 +548,7 @@ export const createDemoStates = (): DemoStates => {
         },
         {
           label: "Update with long notes",
-          hint: "A popover with the first five of twelve 200-character notes, then “and 7 more”",
+          hint: "A notice with twelve 200-character notes: two lines each, the list scrolling, “and 7 more”, and the buttons always in view",
           run: () =>
             offer({
               kind: "ready",
@@ -584,13 +558,18 @@ export const createDemoStates = (): DemoStates => {
         },
         {
           label: "Newer update replaces it",
-          hint: "A newer ready update replaces an open or dismissed one: the popover names the new version and comes up again after Later; the chip stays",
+          hint: "A newer ready update replaces an open or dismissed one: the notice names the new version and comes up again after Later; the chip stays",
           run: () =>
             offer({
               kind: "ready",
               version: nextVersion(),
               notes: sampleNotes.slice(0, 2),
             }),
+        },
+        {
+          label: "Install failed",
+          hint: "The update waiting turns from ready to available: the chip reads Update available and its notice comes up again, with Download",
+          run: failInstall,
         },
         {
           label: "Early builds on",
@@ -622,11 +601,7 @@ export const createDemoStates = (): DemoStates => {
           hint: "Looks at the agents again; errors clear",
           run: () => agents.refresh(),
         },
-        {
-          label: "Welcome",
-          hint: "Opens the first-run dialog",
-          run: openWelcome,
-        },
+        { label: "Welcome", hint: "Opens the first-run dialog", run: openWelcome },
       ],
     },
     { title: "Chat", actions: chat.actions },

@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process"
+import { readFileSync } from "node:fs"
 import { access, constants, readFile, realpath } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import type { UpdateChannel } from "@novadeck/protocol/bridge"
@@ -11,6 +12,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   nativeTheme,
   Notification,
   powerMonitor,
@@ -29,9 +31,11 @@ import {
   runnerPortChannel,
 } from "../bridge.js"
 import { keepAppearance, registerAppearanceIpc } from "./appearance.js"
-import { offerMove, resolveMoveConflict } from "./applications-folder.js"
+import { bundleVersionOf, offerMove, resolveMoveConflict } from "./applications-folder.js"
 import { dataFolderName } from "./data-folder.js"
+import { linuxMenu } from "./menu.js"
 import { notificationText, registerNoticeIpc, showNotices } from "./notices.js"
+import { verifiedDebUpdater } from "./package-updaters.js"
 import { attachPage, guardPage, lockPagesSession, pagesPartition, webAddress } from "./pages.js"
 import { limitPermissions, ownPage } from "./permissions.js"
 import { quitOnShutdown, saveBeforeClose, saveOnSessionEnd, savePages } from "./quit.js"
@@ -43,6 +47,7 @@ import {
   checkForUpdates,
   developerIdSigned,
   installFallbackMs,
+  installOnlyOnOrderlyQuit,
   installUpdate,
   quitWithoutInstalling,
   registerUpdateIpc,
@@ -76,6 +81,10 @@ const updateState = keepUpdateState(join(app.getPath("userData"), "update.json")
 let server: HttpServer | undefined
 let runner: RunnerHost | undefined
 let stopping = false
+// Whether the quit under way began the orderly way: closing the last window, or
+// restarting into the update. On Linux Electron turns SIGTERM, SIGINT and SIGHUP into an
+// ordinary quit, which must not install an update; see ./updater.ts.
+let orderlyQuit = false
 // The auto-updater of a build that looks for updates, once it has loaded, and what keeps
 // its schedule.
 let updater: (Updater & { quitAndInstall(silent: boolean, relaunch: boolean): void }) | undefined
@@ -188,9 +197,11 @@ const shutDown = async (): Promise<void> => {
 // The last update offer, told to the app's pages as it arrives and to any that ask later.
 const offers = trackOffer(() => appPages(BrowserWindow.getAllWindows()))
 
-/** Whether `codesign` finds a Developer ID signature on the running macOS app bundle. */
+// Whether `codesign` finds a Developer ID signature on the running macOS app bundle; run
+// once, as both the offer to move to Applications and the update plan ask.
+let signature: Promise<boolean> | undefined
 const bundleSigned = (): Promise<boolean> =>
-  new Promise((resolve) => {
+  (signature ??= new Promise((resolve) => {
     execFile(
       "codesign",
       ["--display", "--verbose=2", bundleOf(app.getPath("exe"))],
@@ -198,7 +209,15 @@ const bundleSigned = (): Promise<boolean> =>
       // codesign reports on stderr, and exits non-zero for an unsigned bundle.
       (_error, stdout, stderr) => resolve(developerIdSigned(`${stdout}\n${stderr}`)),
     )
-  })
+  }))
+
+// Whether the signature matters to this launch: a packaged macOS build that looks for
+// updates. Others never ask, and codesign takes a moment.
+const checksSignature = (): boolean =>
+  process.platform === "darwin" &&
+  app.isPackaged &&
+  app.getVersion() !== "0.0.0" &&
+  process.env.NOVADECK_UPDATES !== "off"
 
 /** What `resources/package-type` of a Linux package says, `deb` or `rpm`; undefined without it. */
 const packageType = (): Promise<string | undefined> =>
@@ -231,7 +250,7 @@ const loadUpdater = async (kind: UpdaterKind): Promise<NonNullable<typeof update
     case "appimage":
       return new electronUpdater.AppImageUpdater()
     case "deb":
-      return new electronUpdater.DebUpdater()
+      return verifiedDebUpdater(electronUpdater.DebUpdater, () => offers.current()?.version)
     case "rpm":
       return new electronUpdater.RpmUpdater()
   }
@@ -240,7 +259,7 @@ const loadUpdater = async (kind: UpdaterKind): Promise<NonNullable<typeof update
 // Starts checking for updates in a build that looks for them; see ./updater.ts.
 const startUpdates = async (): Promise<void> => {
   const appDir = process.env.APPDIR
-  const state = await updateState.read()
+  const state = updateState.read()
   const linux = process.platform === "linux"
   const plan = updatePlan({
     packaged: app.isPackaged,
@@ -252,7 +271,7 @@ const startUpdates = async (): Promise<void> => {
     env: { ...process.env, APPDIR: appDir && (await realpath(appDir).catch(() => appDir)) },
     packageType: linux ? await packageType() : undefined,
     // Asked only where it matters: codesign takes a moment.
-    signed: process.platform === "darwin" && (await bundleSigned()),
+    signed: checksSignature() && (await bundleSigned()),
     appImageWritable: linux && (await appImageWritable()),
     installFailed: state.installFailedOn === app.getVersion(),
   })
@@ -347,10 +366,20 @@ const createWindow = (origin: string): BrowserWindow => {
   return window
 }
 
+// The version of the copy of this app already in Applications, if its Info.plist can be read.
+const installedVersion = (): string | undefined => {
+  try {
+    const bundle = join("/Applications", basename(bundleOf(app.getPath("exe"))))
+    return bundleVersionOf(readFileSync(join(bundle, "Contents", "Info.plist"), "utf8"))
+  } catch {
+    return undefined
+  }
+}
+
 // On macOS, offers once per launch to move the app to Applications, the only place it can
 // update itself from. Returns whether the app is restarting from there.
 const moveToApplications = async (): Promise<boolean> => {
-  const state = await updateState.read()
+  const state = updateState.read()
   return offerMove({
     build: {
       packaged: app.isPackaged,
@@ -359,6 +388,7 @@ const moveToApplications = async (): Promise<boolean> => {
       env: process.env,
       inApplications: process.platform === "darwin" && app.isInApplicationsFolder(),
       declined: state.moveDeclined,
+      signed: checksSignature() && (await bundleSigned()),
     },
     ask: async () => {
       const { response, checkboxChecked } = await dialog.showMessageBox({
@@ -373,8 +403,15 @@ const moveToApplications = async (): Promise<boolean> => {
       })
       return { move: response === 0, dontAskAgain: checkboxChecked }
     },
-    decline: updateState.declineMove,
-    move: () => app.moveToApplicationsFolder({ conflictHandler: resolveMoveConflict }),
+    decline: () => updateState.declineMove(),
+    move: () =>
+      app.moveToApplicationsFolder({
+        conflictHandler: (conflict) =>
+          resolveMoveConflict(conflict, {
+            existingVersion: installedVersion(),
+            runningVersion: app.getVersion(),
+          }),
+      }),
     log: (message, error) => console.warn(message, error),
   })
 }
@@ -382,7 +419,7 @@ const moveToApplications = async (): Promise<boolean> => {
 const launch = async (): Promise<void> => {
   // A moved app starts again from Applications, and has nothing more to do here.
   if (await moveToApplications()) return
-  channel = (await updateState.read()).channel
+  channel = updateState.read().channel
   await appearance.restore(nativeTheme)
   runner = startRunner({
     entry: join(currentDirectory, "runner.js"),
@@ -432,7 +469,10 @@ const launch = async (): Promise<void> => {
       installUpdate({
         downloaded: () => offers.current()?.kind === "ready" && updater !== undefined,
         stopping: () => stopping,
-        stop: () => void (stopping = true),
+        stop: () => {
+          stopping = true
+          orderlyQuit = true
+        },
         shutdown: shutDown,
         install: () => updater?.quitAndInstall(true, true),
         quit: () => app.quit(),
@@ -450,9 +490,11 @@ const launch = async (): Promise<void> => {
       if (next === channel) return
       channel = next
       updates?.setChannel(next)
-      void updateState
-        .setChannel(next)
-        .catch((error: unknown) => console.warn("The update channel was not kept.", error))
+      try {
+        updateState.setChannel(next)
+      } catch (error) {
+        console.warn("The update channel was not kept.", error)
+      }
     },
   })
   ipcMain.handle(directoryPickerChannel, async (event) => {
@@ -481,6 +523,17 @@ app.setAppUserModelId(appId)
 app.whenReady().then(() => {
   // A system shutdown quits, which saves every page and terminal before the shells end.
   quitOnShutdown(powerMonitor, quitOnSessionEnd)
+  // Ctrl+Q and the menu's Quit are the person's quit, which installs a waiting update; a
+  // signal's is not. See ./menu.ts.
+  if (process.platform === "linux")
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(
+        linuxMenu(() => {
+          orderlyQuit = true
+          app.quit()
+        }),
+      ),
+    )
   limitPermissions(
     session.defaultSession,
     isAppPage,
@@ -506,7 +559,13 @@ app.whenReady().then(() => {
   })
 })
 
+const declineUnorderlyInstall = installOnlyOnOrderlyQuit(
+  () => updater,
+  () => orderlyQuit,
+)
+
 app.on("before-quit", (event) => {
+  if (process.platform === "linux") declineUnorderlyInstall()
   if ((!server && !runner) || stopping) return
 
   event.preventDefault()
@@ -515,5 +574,6 @@ app.on("before-quit", (event) => {
 })
 
 app.on("window-all-closed", () => {
+  orderlyQuit = true
   if (process.platform !== "darwin") app.quit()
 })

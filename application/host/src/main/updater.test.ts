@@ -20,6 +20,7 @@ import {
   developerIdSigned,
   firstCheckMs,
   installFallbackMs,
+  installOnlyOnOrderlyQuit,
   installUpdate,
   quitWithoutInstalling,
   registerUpdateIpc,
@@ -423,6 +424,16 @@ describe("quitting as the system ends the session", () => {
 })
 
 class FakeUpdater extends EventEmitter implements Pick<Updater, "checkForUpdates"> {
+  download: (() => Promise<unknown>) | null = null
+  installed = 0
+  restarted = 0
+  install(): boolean {
+    this.installed += 1
+    return true
+  }
+  quitAndInstall(): void {
+    this.restarted += 1
+  }
   autoDownload = false
   autoInstallOnAppQuit = false
   allowPrerelease = false
@@ -431,7 +442,7 @@ class FakeUpdater extends EventEmitter implements Pick<Updater, "checkForUpdates
   failing = false
   checkForUpdates(): Promise<unknown> {
     this.checks += 1
-    if (!this.failing) return Promise.resolve()
+    if (!this.failing) return Promise.resolve({ downloadPromise: this.download?.() ?? null })
     const error = new Error("offline")
     this.emit("error", error)
     return Promise.reject(error)
@@ -503,6 +514,7 @@ describe("checking for updates", () => {
       expect(offered).toEqual([])
       updater.emit("update-downloaded", {
         version: "1.2.3",
+        releaseName: "Novadeck v1.2.3",
         releaseNotes: "<ul><li>Faster &amp; smaller.</li><li>Fixes.</li></ul>",
       })
       expect(offered).toEqual([["ready", "1.2.3", ["Faster & smaller.", "Fixes."]]])
@@ -533,9 +545,14 @@ describe("checking for updates", () => {
       expect(updater.autoDownload).toBe(false)
     })
 
-    it("marks a failure after the download as a failed install, stops installing on quit, and offers the update as available", () => {
+    it("marks an error raised while quitting installs as a failed install, stops installing on quit, and offers the update as available", () => {
       const { updater, offered, failed, logged } = checking()
-      updater.emit("update-downloaded", { version: "1.2.3", releaseNotes: "<p>Faster.</p>" })
+      updater.emit("update-downloaded", {
+        version: "1.2.3",
+        releaseName: "Novadeck v1.2.3",
+        releaseNotes: "<p>Faster.</p>",
+      })
+      updater.install()
       updater.emit("error", new Error("pkexec was dismissed"))
       expect(failed).toEqual(["1.2.3"])
       expect(updater.autoInstallOnAppQuit).toBe(false)
@@ -546,18 +563,68 @@ describe("checking for updates", () => {
       expect(logged).toEqual(["Installing the update failed."])
     })
 
+    it("does the same for an error raised while restarting", () => {
+      const { updater, failed } = checking()
+      updater.emit("update-downloaded", { version: "1.2.3" })
+      updater.quitAndInstall()
+      updater.emit("error", new Error("no polkit agent"))
+      expect(failed).toEqual(["1.2.3"])
+    })
+
+    it("does not count an error from a check or channel switch that fails after the download", () => {
+      const { updater, failed, offered, logged } = checking()
+      updater.emit("update-downloaded", { version: "1.2.3" })
+      updater.emit("error", new Error("offline"))
+      expect(failed).toEqual([])
+      expect(updater.autoInstallOnAppQuit).toBe(true)
+      expect(offered).toEqual([["ready", "1.2.3", []]])
+      expect(logged).toEqual(["The update check failed."])
+    })
+
+    it("on macOS counts an error while Squirrel stages the download, and none once it has", () => {
+      const native = new EventEmitter()
+      const { updater, failed } = checking({ native })
+      updater.emit("update-downloaded", { version: "1.2.3" })
+      updater.emit("error", new Error("Squirrel could not stage"))
+      expect(failed).toEqual(["1.2.3"])
+      native.emit("update-downloaded")
+      updater.emit("error", new Error("offline"))
+      expect(failed).toEqual(["1.2.3"])
+    })
+
     it("does not mark a failed check as a failed install", () => {
       const { updater, failed } = checking()
       updater.emit("error", new Error("offline"))
       expect(failed).toEqual([])
       expect(updater.autoInstallOnAppQuit).toBe(true)
     })
+
+    it("catches a download that fails, which the error event has logged", async () => {
+      const { updater } = checking()
+      updater.download = () => Promise.reject(new Error("download failed"))
+      await vi.advanceTimersByTimeAsync(firstCheckMs)
+      expect(updater.checks).toBe(1)
+    })
+
+    it("gives no notes that belong to another release", () => {
+      const { updater, offered } = checking()
+      updater.emit("update-downloaded", {
+        version: "1.2.3",
+        releaseName: "Novadeck v1.2.4",
+        releaseNotes: "<p>Another version's.</p>",
+      })
+      expect(offered).toEqual([["ready", "1.2.3", []]])
+    })
   })
 
   context("in tell mode", () => {
     it("offers each release newer than the build as available, with its notes", () => {
       const { updater, offered } = checking({ mode: "tell" })
-      updater.emit("update-available", { version: "1.2.3", releaseNotes: "<p>Faster.</p>" })
+      updater.emit("update-available", {
+        version: "1.2.3",
+        releaseName: "Novadeck v1.2.3",
+        releaseNotes: "<p>Faster.</p>",
+      })
       updater.emit("update-available", { version: "1.3.0", releaseNotes: null })
       expect(offered).toEqual([
         ["available", "1.2.3", ["Faster."]],
@@ -614,5 +681,33 @@ describe("checking for updates", () => {
     stop()
     await vi.advanceTimersByTimeAsync(checkIntervalMs * 2)
     expect(updater.checks).toBe(0)
+  })
+})
+
+const quitting = (orderly: boolean) => {
+  const updater = { autoInstallOnAppQuit: true }
+  installOnlyOnOrderlyQuit(
+    () => updater,
+    () => orderly,
+  )()
+  return updater
+}
+
+describe("quitting by a signal", () => {
+  it("installs nothing, as a logout or kill delivers SIGTERM and Electron quits normally", () => {
+    expect(quitting(false).autoInstallOnAppQuit).toBe(false)
+  })
+
+  it("still installs on closing the last window or restarting into the update", () => {
+    expect(quitting(true).autoInstallOnAppQuit).toBe(true)
+  })
+
+  it("does nothing in a build that does not update", () => {
+    expect(() =>
+      installOnlyOnOrderlyQuit(
+        () => undefined,
+        () => false,
+      )(),
+    ).not.toThrow()
   })
 })

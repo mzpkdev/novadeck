@@ -16,9 +16,6 @@ export type PopoverProps = {
   tooltip?: string
   // Where it opens from its trigger: below by default, or above for one at the bottom.
   placement?: "bottom-start" | "top-end"
-  // A notice rather than a menu: it never takes focus when it opens, and what the person
-  // does elsewhere, a key or a click, doesn't close it. Its own controls close it.
-  passive?: boolean
 }
 
 export const Popover = ({
@@ -30,7 +27,6 @@ export const Popover = ({
   className,
   tooltip,
   placement = "bottom-start",
-  passive = false,
 }: PopoverProps): React.JSX.Element => {
   // One id for the trigger, which a tooltip around it shares: the popover places itself
   // and hands focus back by it.
@@ -48,13 +44,6 @@ export const Popover = ({
       }}
       lazyMount
       unmountOnExit
-      {...(passive
-        ? {
-            autoFocus: false,
-            closeOnInteractOutside: false,
-            closeOnEscape: false,
-          }
-        : {})}
     >
       {tooltip ? (
         <Tooltip content={tooltip} disabled={open}>

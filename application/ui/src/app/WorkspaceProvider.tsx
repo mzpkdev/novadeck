@@ -57,30 +57,18 @@ const createServices = (
   backend.commit(initial, [])
   const ui = createUiStore(
     initialUi({
-      location: {
-        route,
-        dialogDepth: dialogDepthOf(location.state),
-        navigationType,
-      },
+      location: { route, dialogDepth: dialogDepthOf(location.state), navigationType },
       preferences,
       sidebarCollapsed: readSidebarCollapsed(),
       projectArrangement: readProjectArrangement(),
       updateSeen: readUpdateSeen(),
     }),
   )
-  const { bind, settle, ...navigation } = createNavigator({
-    workspace,
-    ui,
-    now,
-  })
+  const { bind, settle, ...navigation } = createNavigator({ workspace, ui, now })
   const canvas = createRef<CanvasHandle>()
   const panes =
     backend.companions &&
-    createPanes({
-      companions: backend.companions,
-      workspace,
-      messages: backend.messages,
-    })
+    createPanes({ companions: backend.companions, workspace, messages: backend.messages })
   const commands = createWorkspaceCommands({
     workspace,
     ui,

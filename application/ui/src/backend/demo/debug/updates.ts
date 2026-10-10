@@ -13,6 +13,8 @@ export const createDemoUpdates = (
   readonly updates: DemoStates["updates"]
   readonly offer: (offer: UpdateOffer) => void
   readonly finish: () => void
+  // The install failed: the update waiting is offered again, to fetch by hand.
+  readonly failInstall: () => void
   readonly channel: () => UpdateChannel
   readonly pagesOpened: () => number
 } => {
@@ -40,6 +42,11 @@ export const createDemoUpdates = (
     },
     finish: () => {
       if (waiting !== undefined) restart()
+    },
+    failInstall: () => {
+      if (waiting === undefined) return
+      waiting = { ...waiting, kind: "available" }
+      listeners.forEach((listener) => listener(waiting!))
     },
     channel: () => channel,
     pagesOpened: () => pages,

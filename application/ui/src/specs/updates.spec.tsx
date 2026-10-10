@@ -1,22 +1,34 @@
-import { describe as context, describe, expect, it } from "vitest"
+import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { cleanup } from "vitest-browser-react"
-import { page, userEvent, type Locator } from "vitest/browser"
+import { page, type Locator } from "vitest/browser"
 
-import { preferencesDialog } from "./support/keyboard"
-import { commandInput, expectStaysAbsent, openWorkspace, press } from "./support/workspace"
+import { preferencesDialog, recentSwitcher } from "./support/keyboard"
+import {
+  commandInput,
+  enterNavigateMode,
+  expectStaysAbsent,
+  expectTypingIn,
+  focusStage,
+  openWorkspace,
+  press,
+  terminalTab,
+} from "./support/workspace"
 
-// The version whose popover came up last, as the app keeps it between launches.
+// The version whose notice came up last, as the app keeps it between launches.
 const seenKey = "novadeck.update-seen"
 
 const chip = (name: RegExp = /^Update (ready|available):/): Locator =>
   page.getByRole("button", { name })
-const popover = (title: string): Locator => page.getByRole("dialog", { name: title })
+const popover = (title: string): Locator => page.getByRole("region", { name: title })
 const ready = () => popover("Novadeck 0.0.80 is ready")
 const available = () => popover("Novadeck 0.0.80 is available")
 const restart = () => ready().getByRole("button", { name: "Restart now" })
+const typing = () => commandInput("Dev server")
 const later = (dialog: Locator) => dialog.getByRole("button", { name: "Later" })
 
-describe("the update popover", () => {
+describe("the update notice", () => {
+  afterEach(() => page.viewport(1440, 900))
+
   it("is absent where the host does not update", async () => {
     await openWorkspace()
     await expectStaysAbsent(chip())
@@ -138,16 +150,104 @@ describe("the update popover", () => {
     })
   })
 
-  context("while the person types in a terminal", () => {
-    it("never takes the keyboard's focus, and stays through keys typed elsewhere", async () => {
+  context("while the notice is up and the person works", () => {
+    const noticeUp = async (): Promise<void> => {
+      await openWorkspace("/?demo=update")
+      await expect.element(ready()).toBeVisible()
+      await terminalTab("Dev server").click()
+      await expect.element(typing()).toHaveFocus()
+    }
+
+    it("never takes the keyboard's focus when it comes up", async () => {
       await openWorkspace("/?demo=update")
       await expect.element(ready()).toBeVisible()
       expect(ready().element().contains(document.activeElement)).toBe(false)
-      await userEvent.click(commandInput("Checkout implementation"))
-      await expect.element(commandInput("Checkout implementation")).toHaveFocus()
-      await press("{Escape}")
-      await expect.element(commandInput("Checkout implementation")).toHaveFocus()
+    })
+
+    it("is no dialog, so Preferences and the like see no overlay", async () => {
+      await openWorkspace("/?demo=update")
       await expect.element(ready()).toBeVisible()
+      expect(page.getByRole("dialog").query()).toBeNull()
+    })
+
+    it("lets typed keys reach the terminal, and stays up", async () => {
+      await noticeUp()
+      await press("echo hi")
+      await expect.element(typing()).toHaveValue("echo hi")
+      await expect.element(ready()).toBeVisible()
+    })
+
+    it("lets Escape close the terminal switcher", async () => {
+      await noticeUp()
+      await press("{Control>}{Tab}")
+      await expect.element(recentSwitcher()).toBeVisible()
+      await press("{Escape}")
+      await expect.element(recentSwitcher()).not.toBeInTheDocument()
+      await expect.element(ready()).toBeVisible()
+    })
+
+    it("lets Escape, Enter or typing end navigating", async () => {
+      await noticeUp()
+      await enterNavigateMode()
+      await press("{Escape}")
+      await expectTypingIn("Dev server")
+      await enterNavigateMode()
+      await press("{Enter}")
+      await expectTypingIn("Dev server")
+      await enterNavigateMode()
+      await press("a")
+      await expectTypingIn("Dev server")
+      await expect.element(ready()).toBeVisible()
+    })
+
+    it("hands focus back to the terminal when the footer is clicked", async () => {
+      await noticeUp()
+      await focusStage()
+      await page
+        .getByText(/running$/)
+        .last()
+        .click()
+      await expect.element(typing()).toHaveFocus()
+    })
+
+    it("leaves focus in the terminal when its buttons are clicked with the mouse", async () => {
+      await noticeUp()
+      await later(ready()).click()
+      await expect.element(ready()).not.toBeInTheDocument()
+      await expect.element(typing()).toHaveFocus()
+    })
+
+    it("returns focus to the terminal after Later pressed from the keyboard", async () => {
+      await noticeUp()
+      later(ready()).element().focus()
+      await press("{Enter}")
+      await expect.element(ready()).not.toBeInTheDocument()
+      await expect.element(typing()).toHaveFocus()
+    })
+
+    it("moves focus in when the chip opens it, and Escape returns it to the chip", async () => {
+      await noticeUp()
+      await later(ready()).click()
+      await chip().click()
+      await expect.element(ready()).toBeVisible()
+      await expect.poll(() => ready().element().contains(document.activeElement)).toBe(true)
+      await press("{Escape}")
+      await expect.element(ready()).not.toBeInTheDocument()
+      await expect.element(chip()).toHaveFocus()
+      await expect.element(chip()).toHaveAttribute("aria-expanded", "false")
+    })
+  })
+
+  context("while a dialog is open", () => {
+    it("waits for it to close, and counts as shown only then", async () => {
+      await openWorkspace("/?demo=update&dialog=preferences")
+      await expect.element(preferencesDialog()).toBeVisible()
+      await expectStaysAbsent(ready())
+      expect(localStorage.getItem(seenKey)).toBeNull()
+      await preferencesDialog().getByRole("button", { name: "Close preferences" }).click()
+      await expect.element(preferencesDialog()).not.toBeInTheDocument()
+      await expect.element(ready()).toBeVisible()
+      expect(localStorage.getItem(seenKey)).toBe("ready:0.0.80")
     })
   })
 })

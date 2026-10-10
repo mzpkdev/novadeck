@@ -17,7 +17,7 @@ import {
   updateOfferChannel,
   updateRequestChannel,
 } from "../bridge.js"
-import { releaseNotesLines } from "./update-notes.js"
+import { updateNotesLines } from "./update-notes.js"
 
 /** How long after launch the first check waits, so it never competes with startup. */
 export const firstCheckMs = 10_000
@@ -268,6 +268,22 @@ export const quitWithoutInstalling =
     quit()
   }
 
+/**
+ * Switches installing on quit off for a quit that is not an orderly one, on Linux, where
+ * Electron turns SIGTERM, SIGINT and SIGHUP into an ordinary quit with exit code 0, which
+ * electron-updater installs on. A desktop logout or `kill` would then ask for the
+ * password in the middle of ending the session, or kill an AppImage swap halfway. The
+ * orderly quits are closing the last window and restarting into the update, and both
+ * are marked before the quit begins; any other, a signal or the menu's Quit, finds the
+ * mark missing. Switching off is one way: nothing switches it on again.
+ */
+export const installOnlyOnOrderlyQuit =
+  (updater: () => Pick<Updater, "autoInstallOnAppQuit"> | undefined, orderly: () => boolean) =>
+  (): void => {
+    const current = updater()
+    if (current && !orderly()) current.autoInstallOnAppQuit = false
+  }
+
 /** What checking for updates uses of electron-updater's updaters. */
 export type Updater = {
   autoDownload: boolean
@@ -280,10 +296,17 @@ export type Updater = {
   } | null
   on(
     event: "update-available" | "update-downloaded",
-    listener: (info: { readonly version: string; readonly releaseNotes?: unknown }) => void,
+    listener: (info: {
+      readonly version: string
+      readonly releaseName?: unknown
+      readonly releaseNotes?: unknown
+    }) => void,
   ): unknown
   on(event: "error", listener: (error: Error) => void): unknown
   checkForUpdates(): Promise<unknown>
+  /** The install that quitting runs, and the one a restart runs; see `checkForUpdates`. */
+  install?: (isSilent?: boolean, isForceRunAfter?: boolean) => boolean
+  quitAndInstall?: (isSilent?: boolean, isForceRunAfter?: boolean) => void
 }
 
 /** The part of Electron's native `autoUpdater` that learning of a staged update uses. */
@@ -301,10 +324,14 @@ export type NativeUpdater = {
  * tells `offer` the update is `ready` once downloaded. The schedule then ends: a newer
  * release found later empties the folder the downloaded file waits in while the updater
  * still names that file, and quitting then would install nothing, or delete the running
- * AppImage. The next launch checks again. If anything fails after the download, the
- * install must have: installing on quit is switched off, so the same failing install is
- * not tried at every quit, `installFailed` hears of the version, and `offer` is told the
- * update is only `available`.
+ * AppImage. The next launch checks again. An error raised while installing fails the
+ * install: installing on quit is switched off, so the same failing install is not tried
+ * at every quit, `installFailed` hears of the version, and `offer` is told the update is
+ * only `available`. Installing is when the updater's `install` (quitting) or
+ * `quitAndInstall` (restarting) has been called, which this wraps to know, and on macOS
+ * also while Squirrel stages the download; any other error, such as a check still in
+ * flight failing offline, is only logged. The notes of an offer are the release's, and
+ * none unless the update information names that release.
  *
  * In `tell` mode it downloads and installs nothing, and tells `offer` each release newer
  * than this build is `available`, with its notes; the schedule goes on, so a newer
@@ -342,8 +369,22 @@ export const checkForUpdates = (
   updater.logger = { info: () => {}, warn: () => {}, error: () => {} }
 
   let downloaded: { readonly version: string; readonly notes: readonly string[] } | undefined
+  // Once an install has begun the app is on its way out, so the mark never goes back.
+  let installing = false
+  let staging = false
+  for (const method of ["install", "quitAndInstall"] as const) {
+    const original: unknown = updater[method]
+    if (typeof original !== "function") continue
+    Object.assign(updater, {
+      [method]: (...args: unknown[]): unknown => {
+        installing = true
+        return Reflect.apply(original, updater, args)
+      },
+    })
+  }
   updater.on("error", (error) => {
-    if (downloaded === undefined) return log("The update check failed.", error)
+    if (downloaded === undefined || !(installing || staging))
+      return log("The update check failed.", error)
     log("Installing the update failed.", error)
     updater.autoInstallOnAppQuit = false
     installFailed(downloaded.version)
@@ -351,24 +392,37 @@ export const checkForUpdates = (
   })
   if (mode === "tell")
     updater.on("update-available", (info) =>
-      offer("available", info.version, releaseNotesLines(info.releaseNotes)),
+      offer("available", info.version, updateNotesLines(info)),
     )
   updater.on("update-downloaded", (info) => {
     stop()
     // A check still in flight finds no more to download.
     updater.autoDownload = false
-    const notes = releaseNotesLines(info.releaseNotes)
+    const notes = updateNotesLines(info)
     downloaded = { version: info.version, notes }
-    const ready = (): void => offer("ready", info.version, notes)
+    const ready = (): void => {
+      staging = false
+      offer("ready", info.version, notes)
+    }
     // electron-updater reports the download just before it hands the file to Squirrel,
     // so listening now is in time for the native event that follows.
-    if (native) native.once("update-downloaded", ready)
-    else ready()
+    if (native) {
+      staging = true
+      native.once("update-downloaded", ready)
+    } else ready()
   })
 
   const check = (): void => {
-    // The updater reports a failed check through its error event, which logs it.
-    updater.checkForUpdates().catch(() => {})
+    // The updater reports a failed check or download through its error event, which logs
+    // it; the rejections are only there to be caught.
+    updater
+      .checkForUpdates()
+      .then((result) => {
+        const download = (result as { downloadPromise?: Promise<unknown> | null } | null)
+          ?.downloadPromise
+        return download?.catch(() => {})
+      })
+      .catch(() => {})
   }
   let first = setTimeout(check, firstCheckMs)
   const every = setInterval(check, checkIntervalMs)

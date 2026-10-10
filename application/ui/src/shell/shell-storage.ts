@@ -52,7 +52,7 @@ export const writeSubscriptionOrder = (order: readonly string[]): void => {
   }
 }
 
-// The version of the update whose popover came up last, so a relaunch doesn't raise it
+// The version of the update whose notice came up last, so a relaunch doesn't raise it
 // again; a newer version raises its own.
 export const updateSeenStorageKey = "novadeck.update-seen"
 export const readUpdateSeen = (): string | null => {

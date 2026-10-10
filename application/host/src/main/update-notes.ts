@@ -10,6 +10,24 @@ const namedEntities: Readonly<Record<string, string>> = {
   quot: '"',
   apos: "'",
   nbsp: " ",
+  hellip: "\u2026",
+  mdash: "\u2014",
+  ndash: "\u2013",
+  lsquo: "\u2018",
+  rsquo: "\u2019",
+  ldquo: "\u201c",
+  rdquo: "\u201d",
+  bull: "\u2022",
+  middot: "\u00b7",
+  copy: "\u00a9",
+  reg: "\u00ae",
+  trade: "\u2122",
+  times: "\u00d7",
+  larr: "\u2190",
+  rarr: "\u2192",
+  laquo: "\u00ab",
+  raquo: "\u00bb",
+  deg: "\u00b0",
 }
 
 const decodeEntity = (entity: string, name: string): string => {
@@ -77,3 +95,29 @@ export const releaseNotesLines = (notes: unknown): string[] => {
     .filter((line) => line !== "")
     .slice(0, updateNotesLength)
 }
+
+/**
+ * Whether a release's name, "Novadeck v1.2.3" as the release workflow names them, is the
+ * name of `version`'s release: the name ends in the version, alone or after a space and an
+ * optional "v".
+ */
+export const releaseNamed = (name: unknown, version: string): boolean => {
+  if (typeof name !== "string") return false
+  const trimmed = name.trim()
+  if (!trimmed.endsWith(version)) return false
+  const before = trimmed.slice(0, trimmed.length - version.length).replace(/v$/u, "")
+  return before === "" || before.endsWith(" ")
+}
+
+/**
+ * The notes of an update's release as lines, or none unless the update information names
+ * that release. electron-updater falls back to the newest entry of the releases feed when
+ * the promoted tag is not in it, whose notes belong to another version, and gives that
+ * entry's title as the release name.
+ */
+export const updateNotesLines = (info: {
+  readonly version: string
+  readonly releaseName?: unknown
+  readonly releaseNotes?: unknown
+}): string[] =>
+  releaseNamed(info.releaseName, info.version) ? releaseNotesLines(info.releaseNotes) : []

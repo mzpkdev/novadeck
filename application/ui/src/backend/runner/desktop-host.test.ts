@@ -33,11 +33,7 @@ describe("a notice's text", () => {
 
 describe("a notice for the host", () => {
   it("passes for a terminal id, bounded", () => {
-    const notice = hostNotice({
-      id: "3f2a-01",
-      title: "t1 is done",
-      body: "x".repeat(500),
-    })
+    const notice = hostNotice({ id: "3f2a-01", title: "t1 is done", body: "x".repeat(500) })
     expect(notice?.body).toHaveLength(120)
   })
 
@@ -52,11 +48,7 @@ describe("desktop notices", () => {
     it("shows what passes and hears clicks that name a terminal", () => {
       const { bridge, shown, click } = host()
       const notices = desktopNotices(bridge)!
-      notices.show({
-        id: "01",
-        title: "t1 is done: Tests",
-        body: "All green.",
-      })
+      notices.show({ id: "01", title: "t1 is done: Tests", body: "All green." })
       notices.show({ id: "bad id", title: "t1 is done", body: "" })
       expect(shown).toEqual([{ id: "01", title: "t1 is done: Tests", body: "All green." }])
       const clicks: string[] = []

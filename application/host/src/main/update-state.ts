@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { readFileSync, writeFileSync } from "node:fs"
-import { readFile, rename, rm, writeFile } from "node:fs/promises"
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 
 import { updateChannels, type UpdateChannel } from "@novadeck/protocol/bridge"
 
@@ -42,46 +41,35 @@ export const updateStateOf = (text: string): UpdateState => {
 
 /**
  * The update state kept in `file`, a JSON file in the data folder. `read` is what the
- * file holds, or the defaults before it exists. Each change keeps the other fields and
- * writes a temporary file beside `file` that it renames over, so a failed write leaves
- * the file whole; changes run one after another.
+ * file holds, or the defaults before it exists. Every change reads the file again, keeps
+ * the other fields, and writes a temporary file beside `file` that it renames over, so a
+ * failed write leaves the file whole. All of it is synchronous, and so one path serves
+ * every change: the file is small, changes are rare, and a failed install is reported
+ * as the app exits, too late for a write that waits. Changes cannot interleave.
  */
 export const keepUpdateState = (file: string) => {
-  let writing: Promise<void> = Promise.resolve()
-  const read = async (): Promise<UpdateState> =>
-    readFile(file, "utf8").then(updateStateOf, () => defaults)
-  const change = (patch: Partial<UpdateState>): Promise<void> => {
-    const next = writing
-      .catch(() => {})
-      .then(async () => {
-        const temporary = `${file}.${randomUUID()}.tmp`
-        try {
-          await writeFile(temporary, JSON.stringify({ ...(await read()), ...patch }))
-          await rename(temporary, file)
-        } catch (error) {
-          await rm(temporary, { force: true })
-          throw error
-        }
-      })
-    writing = next
-    return next
+  const read = (): UpdateState => {
+    try {
+      return updateStateOf(readFileSync(file, "utf8"))
+    } catch {
+      return defaults
+    }
+  }
+  const change = (patch: Partial<UpdateState>): void => {
+    const temporary = `${file}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(temporary, JSON.stringify({ ...read(), ...patch }))
+      renameSync(temporary, file)
+    } catch (error) {
+      rmSync(temporary, { force: true })
+      throw error
+    }
   }
   return {
     read,
-    setChannel: (channel: UpdateChannel): Promise<void> => change({ channel }),
-    declineMove: (): Promise<void> => change({ moveDeclined: true }),
-    /**
-     * Marks that installing failed on `version`. It writes synchronously: a failed install
-     * on quit is reported as the app exits, too late for a write that waits.
-     */
-    recordInstallFailure: (version: string): void => {
-      let current = defaults
-      try {
-        current = updateStateOf(readFileSync(file, "utf8"))
-      } catch {
-        // Nothing kept yet.
-      }
-      writeFileSync(file, JSON.stringify({ ...current, installFailedOn: version }))
-    },
+    setChannel: (channel: UpdateChannel): void => change({ channel }),
+    declineMove: (): void => change({ moveDeclined: true }),
+    /** Marks that installing failed on `version`. */
+    recordInstallFailure: (version: string): void => change({ installFailedOn: version }),
   }
 }

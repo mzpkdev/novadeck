@@ -20,6 +20,8 @@ const props = (status: FooterStatus, update?: UpdateOffer, onInstall = () => {})
   update: update && {
     offer: update,
     open: false,
+    blocked: false,
+    returnFocus: () => {},
     onOpenChange: () => {},
     onShown: () => {},
     onInstall,
@@ -45,6 +47,8 @@ const show = (status: FooterStatus) => {
     change: (next: FooterStatus) => page.rerender(footer(next)),
   }
 }
+
+const notice = (page: Rendered) => page.container.querySelector("section.update-panel")
 
 const chip = (page: Rendered) => page.container.querySelector<HTMLButtonElement>(".footer-update")!
 
@@ -171,14 +175,20 @@ describe("workspace footer", () => {
       expect(bar.querySelector(".footer-status [role=status]")?.textContent).toBe("Offline")
     })
 
-    context("whose popover is raised", () => {
-      const raised = (hidden: boolean, onShown = (_version: string) => {}) =>
+    context("whose notice is raised", () => {
+      const raised = (
+        { hidden = false, blocked = false } = {},
+        onShown = (_key: string) => {},
+        offer: UpdateOffer = ready,
+      ) =>
         createElement(WorkspaceFooter, {
           ...props("ok"),
           hidden,
           update: {
-            offer: ready,
+            offer,
             open: true,
+            blocked,
+            returnFocus: () => {},
             onOpenChange: () => {},
             onShown,
             onInstall: () => {},
@@ -188,11 +198,45 @@ describe("workspace footer", () => {
 
       it("is not shown while the footer is hidden, and is with the footer", () => {
         const onShown = vi.fn<(key: string) => void>()
-        const page = render(raised(true, onShown))
+        const page = render(raised({ hidden: true }, onShown))
         mounted.push(page)
+        expect(notice(page)).toBeNull()
         expect(onShown).not.toHaveBeenCalled()
-        page.rerender(raised(false, onShown))
+        page.rerender(raised({}, onShown))
+        expect(notice(page)).not.toBeNull()
         expect(onShown).toHaveBeenCalledExactlyOnceWith("ready:0.0.80")
+      })
+
+      it("is not shown, nor marked shown, while a dialog is open", () => {
+        const onShown = vi.fn<(key: string) => void>()
+        const page = render(raised({ blocked: true }, onShown))
+        mounted.push(page)
+        expect(notice(page)).toBeNull()
+        expect(onShown).not.toHaveBeenCalled()
+        page.rerender(raised({}, onShown))
+        expect(notice(page)).not.toBeNull()
+        expect(onShown).toHaveBeenCalledOnce()
+      })
+
+      it("is a labelled region of the footer, not a dialog, taking no focus", () => {
+        const page = render(raised())
+        mounted.push(page)
+        const region = notice(page)!
+        expect(region.getAttribute("role")).toBeNull()
+        expect(document.getElementById(region.getAttribute("aria-labelledby")!)?.textContent).toBe(
+          "Novadeck 0.0.80 is ready",
+        )
+        expect(region.closest("footer")).not.toBeNull()
+        expect(region.contains(document.activeElement)).toBe(false)
+      })
+
+      it("shows five notes and says how many more there are, outside the list", () => {
+        const notes = Array.from({ length: 8 }, (_, index) => `Note ${index + 1}`)
+        const page = render(raised({}, undefined, { ...ready, notes }))
+        mounted.push(page)
+        expect(page.container.querySelectorAll(".update-notes li")).toHaveLength(5)
+        expect(page.container.querySelector(".update-more")?.textContent).toBe("and 3 more")
+        expect(page.container.querySelector(".update-more")?.closest("li")).toBeNull()
       })
     })
 

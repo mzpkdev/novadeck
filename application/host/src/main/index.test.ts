@@ -86,6 +86,9 @@ describe("compiled desktop host", () => {
     it("offers a move to Applications before the windows and the runner start, and opens release pages only from app-update.yml", async () => {
       const main = await read("main/index.js")
 
+      // Linux's Ctrl+Q and Quit item mark the quit as the person's before quitting.
+      expect(main).toContain("linuxMenu(")
+      expect(main).toContain("Menu.setApplicationMenu")
       expect(main).toContain("moveToApplicationsFolder")
       expect(main).toContain("isInApplicationsFolder")
       expect(main.indexOf("await moveToApplications()")).toBeLessThan(main.indexOf("startRunner("))

@@ -67,25 +67,65 @@ build checks its own signature once at launch with `codesign`. See
 - **Telling** builds download nothing and keep checking, so a newer release replaces the
   offer. The offer is `available`, and the page's button opens the release page,
   `https://github.com/<owner>/<repo>/releases/tag/v<version>`, in the browser.
+- **Notes** are shown only when the update information names the offered release (its
+  release name, "Novadeck v<version>", ends in the version). When the promoted tag is not in
+  the releases feed electron-updater falls back to the newest entry, whose notes belong to
+  another version, and the offer carries none.
 - A quit caused by the system shutting down or the session ending installs nothing, as the
   system may kill the installer halfway. On macOS Squirrel.Mac installs a staged update on
   any exit; it swaps the bundle whole, so an interrupted install leaves the old app.
 
 ### Install failures
 
-After an update has downloaded, any error from the updater counts as a failed install: the
+Only an error raised while installing counts as a failed install: one raised after the
+updater's `install` (the quit-time install) or `quitAndInstall` (a restart) was called, which
+the host wraps to know, and on macOS one raised while Squirrel stages the download. The
 person dismissed the `pkexec` prompt, no polkit agent was running, or the folder turned
-read-only. The host then switches installing on quit off, so the same prompt does not come
-back at every quit; writes the running version to `update.json` (synchronously, as the
-failure may be reported while the app exits); and re-offers the update as `available`.
-From the next launch that version only tells. A newer version ignores the mark.
+read-only, say. Any other error, such as a check still in flight failing offline after
+the download, is only logged. The host then switches installing on quit off, so the same
+prompt does not come back at every quit; writes the running version to `update.json`; and
+re-offers the update as `available`. From the next launch that version only tells. A newer
+version ignores the mark. Every write to `update.json` is synchronous and goes through a
+temporary file that is renamed over, re-reading the file first, so the failure mark, which
+is written as the app exits, cannot race another change.
 
 Restarting saves every page and ends the shells before the updater installs. If the
 updater returns without ending the app, the app quits after 10 seconds (30 on macOS) rather
 than go on running without its shells. A deb or rpm install blocks the app on the password
 prompt, and that wait starts only once it returns.
 
+### Quitting by a signal on Linux
+
+Electron 44 on Linux turns SIGTERM, SIGINT and SIGHUP into an ordinary quit: `before-quit`,
+`will-quit` and `quit` with exit code 0, even when the main process has its own
+`process.on("SIGTERM")` handler, which never runs. electron-updater installs on such a quit,
+so a desktop logout or `kill` would show a `pkexec` prompt in the middle of ending the
+session, or kill an AppImage swap halfway. The host tells the orderly quits, the person's,
+from signals by marking them before they begin:
+
+- Closing the last window.
+- Restarting into the update.
+- Ctrl+Q and File > Quit. Electron's default menu is present on Linux even with the menu
+  bar hidden, and its Quit is a role that cannot be told from a signal, so the host sets
+  the same menu (File, Edit, View and Window) with a Quit of its own on the same
+  accelerator (`menu.ts`). Checked under Electron 44 with xvfb: a Ctrl+Q key event reaches
+  that item's handler although the bar is hidden.
+
+The app has no tray and no page command that quits. A `before-quit` without the mark, which
+is what a signal gives, switches installing on quit off.
+
 ### Linux package types
+
+A deb installs with one privileged command, `apt-get install -y <file>` (`dpkg -i` where
+there is no apt-get), run through electron-updater's `pkexec`/`sudo` helper by a subclass of
+its `DebUpdater` (`package-updaters.ts`). electron-updater's own install runs `dpkg -i` and,
+when that fails, `apt-get install -f -y`: a dismissed prompt then shows a second one, and
+approving it installs nothing from the file yet succeeds, so the app relaunched into the old
+version and offered the same download again. The subclass fails on a non-zero exit and,
+after the command, compares the version `dpkg-query` reports for `novadeck` with the
+offered one, treating a mismatch as a failure. The rpm uses electron-updater's `RpmUpdater`
+unchanged: it runs one command, and `spawnSync` raises on a non-zero exit, but the
+installed version is not checked.
 
 The host builds its updater itself rather than take electron-updater's `autoUpdater`, which
 picks a class from `resources/package-type`, a file electron-builder writes into the deb and
@@ -98,10 +138,14 @@ inherit `APPIMAGE`, so a deb started from one is told apart by its executable, a
 
 On a packaged macOS launch from outside the Applications folder, before any window or the
 runner starts, the app asks once per launch whether to move there, because it can only
-update itself from Applications. "Move to Applications" calls
+update itself from Applications; only a Developer ID signed build is asked, as an unsigned
+one only tells of updates. The signature is checked once per launch (`codesign`) and shared
+with the update plan. "Move to Applications" calls
 `app.moveToApplicationsFolder()` and the app starts again from there; "Not Now" carries on
 and asks again next launch. Ticking "Don't ask again" is kept in `update.json` whichever
-button is pressed. A copy already in Applications is replaced unless it is running. Builds
+button is pressed. A copy already in Applications is replaced unless it is running or its `Info.plist`
+version is newer than this app's, in which case the move is cancelled and the launch goes on
+where it is. Builds
 with version 0.0.0, development runs and `NOVADECK_UPDATES=off` never ask. The decision is
 a pure function in `applications-folder.ts`.
 
@@ -145,3 +189,15 @@ replacing the new version with the old one in the download path, which holds the
 `.../download/v1.2.2/novadeck-win-x64-setup.exe.blockmap`. Once an update has been
 installed the block map is cached, and a failed differential download falls back to a
 full one.
+
+## Known limits
+
+- **A channel switch does not cancel work in progress.** An `early` build that is already
+  downloading a prerelease when the person switches to `stable` finishes the download and
+  installs it on quit. The same switch made during an in-flight check can use the old
+  channel's answer; the next check, within four hours, corrects it.
+- **Offers are not retracted.** After switching from `early` to `stable`, an `available`
+  offer for an early-only release stays until a later check offers another version; the
+  bridge has no way to withdraw one. A downloaded update stays `ready` as well.
+- **Windows installs are not watched past the call.** The NSIS installer is started
+  asynchronously as the app exits, so an error there is not seen by the app.

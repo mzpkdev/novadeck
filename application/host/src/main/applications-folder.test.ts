@@ -1,5 +1,7 @@
 import { context, describe, expect, it } from "../test"
 import {
+  bundleVersionOf,
+  isNewerVersion,
   offerMove,
   resolveMoveConflict,
   shouldOfferMove,
@@ -14,6 +16,7 @@ const build = (overrides: Partial<MoveBuild> = {}): MoveBuild => ({
   env: {},
   inApplications: false,
   declined: false,
+  signed: true,
   ...overrides,
 })
 
@@ -30,6 +33,10 @@ describe("when to offer a move to Applications", () => {
     expect(shouldOfferMove(build({ declined: true }))).toBe(false)
   })
 
+  it("does not for a build that is not Developer ID signed, which only tells of updates", () => {
+    expect(shouldOfferMove(build({ signed: false }))).toBe(false)
+  })
+
   it("does not on other platforms", () => {
     for (const platform of ["linux", "win32"] as const)
       expect(shouldOfferMove(build({ platform }))).toBe(false)
@@ -43,12 +50,77 @@ describe("when to offer a move to Applications", () => {
 })
 
 describe("a name taken in Applications", () => {
+  const running = "0.5.0"
+
   it("lets the move replace a copy that is not running", () => {
-    expect(resolveMoveConflict("exists")).toBe(true)
+    expect(
+      resolveMoveConflict("exists", { existingVersion: "0.4.0", runningVersion: running }),
+    ).toBe(true)
+    expect(
+      resolveMoveConflict("exists", { existingVersion: running, runningVersion: running }),
+    ).toBe(true)
+  })
+
+  it("lets it replace a copy whose version cannot be read", () => {
+    expect(
+      resolveMoveConflict("exists", { existingVersion: undefined, runningVersion: running }),
+    ).toBe(true)
+    expect(
+      resolveMoveConflict("exists", { existingVersion: "garbage", runningVersion: running }),
+    ).toBe(true)
+  })
+
+  it("cancels the move rather than replace a newer copy", () => {
+    expect(
+      resolveMoveConflict("exists", { existingVersion: "0.5.1", runningVersion: running }),
+    ).toBe(false)
+    expect(
+      resolveMoveConflict("exists", { existingVersion: "1.0.0", runningVersion: running }),
+    ).toBe(false)
+    expect(
+      resolveMoveConflict("exists", { existingVersion: "0.5.0", runningVersion: "0.5.0-beta.1" }),
+    ).toBe(false)
   })
 
   it("leaves a copy that is running alone", () => {
-    expect(resolveMoveConflict("existsAndRunning")).toBe(false)
+    expect(
+      resolveMoveConflict("existsAndRunning", {
+        existingVersion: "0.1.0",
+        runningVersion: running,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe("which version is newer", () => {
+  it("compares numbers, not text", () => {
+    expect(isNewerVersion("0.10.0", "0.9.0")).toBe(true)
+    expect(isNewerVersion("0.9.0", "0.10.0")).toBe(false)
+    expect(isNewerVersion("1.0.0", "1.0.0")).toBe(false)
+  })
+
+  it("puts a release above its prereleases", () => {
+    expect(isNewerVersion("1.0.0", "1.0.0-beta.1")).toBe(true)
+    expect(isNewerVersion("1.0.0-beta.1", "1.0.0")).toBe(false)
+    expect(isNewerVersion("1.0.0-beta.2", "1.0.0-beta.1")).toBe(true)
+  })
+
+  it("is false for what is not a release's version", () => {
+    expect(isNewerVersion("x", "1.0.0")).toBe(false)
+    expect(isNewerVersion("2.0.0", "x")).toBe(false)
+  })
+})
+
+describe("the version of an app in Applications", () => {
+  it("is the short version string of its Info.plist", () => {
+    const plist =
+      "<dict><key>CFBundleVersion</key><string>9</string>\n<key>CFBundleShortVersionString</key>\n\t<string>1.2.3</string></dict>"
+    expect(bundleVersionOf(plist)).toBe("1.2.3")
+  })
+
+  it("is nothing without one", () => {
+    expect(bundleVersionOf("<dict></dict>")).toBeUndefined()
+    expect(bundleVersionOf("bplist00")).toBeUndefined()
   })
 })
 
@@ -66,7 +138,7 @@ describe("offering the move", () => {
           if (answer instanceof Error) throw answer
           return answer
         },
-        decline: async () => void steps.push("decline"),
+        decline: () => void steps.push("decline"),
         move: () => {
           steps.push("move")
           return moved

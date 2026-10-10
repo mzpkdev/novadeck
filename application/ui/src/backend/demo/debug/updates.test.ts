@@ -45,6 +45,16 @@ describe("demo updates", () => {
     expect(restarts).toBe(1)
   })
 
+  it("offers the update waiting again as one to download once its install failed", () => {
+    const { updates, offer, failInstall } = createDemoUpdates()
+    const heard: string[] = []
+    updates.onOffer((each) => heard.push(`${each.kind} ${each.version}`))
+    failInstall()
+    offer(ready("0.0.80"))
+    failInstall()
+    expect(heard).toEqual(["ready 0.0.80", "available 0.0.80"])
+  })
+
   it("counts the release pages it was asked to open", () => {
     const { updates, pagesOpened } = createDemoUpdates()
     updates.openPage()

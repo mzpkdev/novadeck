@@ -19,7 +19,7 @@ const shown: Record<Exclude<FooterStatus, "ok">, { readonly tone: Tone; readonly
 // turns green with "Reconnected" for a moment. The status is short, bold and set in
 // capitals by CSS, so assistive technology still reads ordinary words. An update waits
 // beside it as a chip, "Update ready" or "Update available", in the bar's own colours;
-// it opens the update's popover (FooterUpdate.tsx).
+// it opens the update's notice (FooterUpdate.tsx).
 export const WorkspaceFooter = ({
   hidden,
   count,
