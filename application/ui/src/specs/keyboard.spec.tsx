@@ -783,6 +783,23 @@ describe("pinned project shortcuts", () => {
       expect(event.defaultPrevented).toBe(false)
       await expect.element(workspaceSwitcher()).toHaveTextContent("storefront")
     })
+
+    it("leaves the project as it is behind a confirmation", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await workspaceSwitcher().click()
+      await page.getByRole("button", { name: "Remove storefront" }).click({ force: true })
+      const confirm = page.getByRole("alertdialog", { name: "Remove “storefront”?" })
+      await expect.element(confirm).toBeVisible()
+
+      await pressDigit(2)
+
+      await expect.element(confirm).toBeVisible()
+      // The workspace behind the confirmation is hidden from the accessibility tree.
+      await expect
+        .element(page.getByRole("button", { name: "Switch workspace", includeHidden: true }))
+        .toHaveTextContent("storefront")
+    })
   })
 
   context("when there is no such pin", () => {

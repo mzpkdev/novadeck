@@ -14,6 +14,7 @@ import type { Platform } from "./shortcuts"
 const nowhere: KeyTarget = {
   editing: false,
   textEntry: false,
+  modal: false,
   terminalInput: false,
   rename: false,
   viewSwitch: false,
@@ -474,6 +475,10 @@ describe("keymap", () => {
           const rename = { editing: true, textEntry: true, rename: true }
           expect(route(platform, "capture", digit(2, { target: rename }))).toEqual([])
           expect(route(platform, "capture", digit(2, { target: { textEntry: true } }))).toEqual([])
+          // A modal dialog keeps the workspace behind it as it is.
+          expect(
+            route(platform, "capture", digit(2, { target: { editing: true, modal: true } })),
+          ).toEqual([])
           // A menu, popover or switcher is not text entry.
           expect(route(platform, "capture", digit(2, { target: { editing: true } }))).toEqual([
             "project.pinned 1",

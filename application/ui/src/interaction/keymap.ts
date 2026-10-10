@@ -203,9 +203,10 @@ const gates: Record<
     !state.dialog && !state.switcher && (!input.target.editing || input.target.terminalInput),
   // Ctrl or ⌘ and a digit, which a terminal would read as its own input, so it runs in
   // capture; with no such pin the command lets the key on. It leaves text fields, a tab's
-  // rename among them, their keys, but works from menus, popovers and the switchers.
+  // rename among them, their keys, and a modal dialog its question, but works from menus,
+  // popovers and the switchers.
   "pinned-project": (input, state) =>
-    !state.dialog && (!input.target.textEntry || input.target.terminalInput),
+    !state.dialog && !input.target.modal && (!input.target.textEntry || input.target.terminalInput),
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,

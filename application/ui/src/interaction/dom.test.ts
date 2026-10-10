@@ -52,6 +52,23 @@ describe("text entry", () => {
   })
 })
 
+describe("a modal dialog", () => {
+  it("is an app dialog or a confirmation, not a popover or the terminal switcher", () => {
+    for (const html of [
+      '<div data-scope="dialog" data-part="content" role="dialog"><button data-target>Go</button></div>',
+      '<div role="alertdialog"><button data-target>Remove</button></div>',
+    ]) {
+      expect(classifyKeyTarget(mount(html)).modal).toBe(true)
+    }
+    for (const html of [
+      '<div data-scope="popover" data-part="content" role="dialog" data-state="open"><button data-target>Go</button></div>',
+      '<section role="dialog" aria-modal="true"><div data-target role="option">A</div></section>',
+    ]) {
+      expect(classifyKeyTarget(mount(html)).modal).toBe(false)
+    }
+  })
+})
+
 describe("focusing Zen's controls after they mount", () => {
   it("focuses the control when focus was left on the page", () => {
     mount('<button data-workspace-zen-create data-target type="button">New</button>')

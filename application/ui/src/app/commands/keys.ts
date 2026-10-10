@@ -274,7 +274,8 @@ export const createKeyCommands = (
     "project.pinned": {
       available: (_input, args) => Boolean(pinnedProject(args ?? 0)),
       run: (_input, args) => {
-        const next = pinnedProject(args ?? 0)!
+        const next = pinnedProject(args ?? 0)
+        if (!next) return "through"
         if (next.id === workspace.getSnapshot().activeProjectId) return "handled"
         commands.setSwitcher(null)
         commands.switchProject(next)
