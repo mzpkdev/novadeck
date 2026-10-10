@@ -221,7 +221,7 @@ describe("a peer as agents read it", () => {
     ).toHaveLength("- t2: Claude Code, waiting on the user: permission to use Bash: ".length + 80)
   })
 
-  it("says who its title is from, and lists murmur's summary on a line of its own", () => {
+  it("says who its title is from, and lists its agent's summary on a line of its own", () => {
     const titled = (
       titleSource: Whereabouts["titleSource"],
       summary: string | null = null,
@@ -241,13 +241,13 @@ describe("a peer as agents read it", () => {
     ])
     expect(titled({ kind: "murmur" }, "Builds the users API.\nThen paging.")).toEqual([
       "  title: Users API (written by Novadeck's local model, not the user)",
-      "  summary: Builds the users API. / Then paging.",
+      "  described by its agent: Builds the users API. / Then paging.",
     ])
     expect(titled({ kind: "default" })).toEqual(["  title: Users API"])
     // A summary stands without a title of murmur's, as when the person named the terminal.
     expect(titled({ kind: "person" }, "Fixes login.")).toEqual([
       "  title: Users API",
-      "  summary: Fixes login.",
+      "  described by its agent: Fixes login.",
     ])
   })
 

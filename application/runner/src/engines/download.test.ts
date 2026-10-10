@@ -24,9 +24,17 @@ const fetchTo = async (
   to: string,
   expected: string,
   signal = new AbortController().signal,
+  size?: number,
 ) => {
   const progress: number[] = []
-  await download({ from, to, sha256: expected, signal, progress: (n) => progress.push(n) })
+  await download({
+    from,
+    to,
+    sha256: expected,
+    ...(size !== undefined && { size }),
+    signal,
+    progress: (n) => progress.push(n),
+  })
   return progress
 }
 
@@ -51,6 +59,19 @@ describe("downloading a file", () => {
     )
 
     expect(await readdir(join(to, ".."))).toEqual([])
+  })
+
+  it("stops at more bytes than the size expected, leaving nothing", async ({ resources }) => {
+    const to = join(await folder(resources), "model.bin")
+    const never = new AbortController().signal
+
+    await expect(
+      fetchTo("https://models.test/model.bin", to, sha256(data), never, data.length - 1),
+    ).rejects.toThrow("larger than expected")
+
+    expect(await readdir(join(to, ".."))).toEqual([])
+    await fetchTo("https://models.test/model.bin", to, sha256(data), never, data.length)
+    await expect(readFile(to)).resolves.toEqual(data)
   })
 
   it("explains a server that refuses", async ({ resources }) => {

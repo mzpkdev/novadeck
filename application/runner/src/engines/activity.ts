@@ -12,8 +12,10 @@ export class ActivityTracker implements Activity {
 
   constructor(private readonly probe: () => boolean) {}
 
+  /** Whether busy now. Time can end a busy spell with no event, so asking also tells the listeners of that. */
   busy(): boolean {
-    return this.probe()
+    this.update()
+    return this.last
   }
 
   watch(listener: (busy: boolean) => void): () => void {

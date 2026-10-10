@@ -171,7 +171,14 @@ const prepare = async (
 // folder at the drive's root, or where the engine's environment variable says.
 const shortBuild = (spec: EngineSpec, key: string): string =>
   process.env[spec.windowsBuild.env] ??
-  join(parse(spec.root).root, spec.windowsBuild.folder, key.slice(0, 8))
+  join(parse(spec.root).root, spec.windowsBuild.folder, shorten(key))
+
+// The commit's first eight characters and the patches' first six, so a changed patch gets a
+// folder of its own, not the last build's CMake cache.
+const shorten = (key: string): string => {
+  const [commit = "", patches = ""] = key.split("-")
+  return `${commit.slice(0, 8)}-${patches.slice(0, 6)}`
+}
 
 // Options for every platform: shared libraries, no OpenMP runtime to ship, and no native CPU
 // tuning (the engine runs on other computers than it is built on).

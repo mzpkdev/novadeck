@@ -6,6 +6,8 @@ import type { Terminal as Screen } from "@xterm/headless"
  */
 export type ScreenText = {
   readonly rows: readonly string[]
+  /** Whether each row continues the one before, as the terminal wrapped a long line. */
+  readonly wrapped?: readonly boolean[]
   readonly bracketedPaste: boolean
   /** How many columns the screen has. */
   readonly columns: number
@@ -22,11 +24,15 @@ export type ScreenText = {
 export const screenText = (screen: Screen): ScreenText => {
   const buffer = screen.buffer.active
   const rows: string[] = []
+  const wrapped: boolean[] = []
   const bright: string[] = []
   const cell = buffer.getNullCell()
   for (let row = 0; row < screen.rows; row += 1) {
     const line = buffer.getLine(buffer.viewportY + row)
-    rows.push(line?.translateToString(true) ?? "")
+    // A row the next one continues is whole to its last column, trailing spaces too.
+    const next = buffer.getLine(buffer.viewportY + row + 1)
+    rows.push(line?.translateToString(!next?.isWrapped) ?? "")
+    wrapped.push(line?.isWrapped ?? false)
     let lit = ""
     if (line)
       for (let column = 0; column < screen.cols; column += 1) {
@@ -38,6 +44,7 @@ export const screenText = (screen: Screen): ScreenText => {
   }
   return {
     rows,
+    wrapped,
     bright,
     columns: screen.cols,
     cursor: { row: buffer.cursorY, column: buffer.cursorX },

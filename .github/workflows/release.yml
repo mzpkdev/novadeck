@@ -333,7 +333,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: application/whisper/dist
-          key: whisper-engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.signing.outputs.engine }}-${{ hashFiles('application/ggml-build/**', 'application/whisper/scripts/**', 'application/whisper/patches/**', 'application/whisper/package.json') }}
+          key: whisper-engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.signing.outputs.engine }}-${{ hashFiles('application/ggml-build/index.ts', 'application/ggml-build/package.json', 'application/whisper/scripts/**', 'application/whisper/patches/**', 'application/whisper/package.json') }}
 
       - name: Build Voice Engine
         if: steps.engine.outputs.cache-hit != 'true'
@@ -348,7 +348,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: application/murmur/dist
-          key: murmur-engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.signing.outputs.engine }}-${{ hashFiles('application/ggml-build/**', 'application/murmur/scripts/**', 'application/murmur/patches/**', 'application/murmur/package.json') }}
+          key: murmur-engine-${{ runner.os }}-${{ runner.arch }}-${{ steps.signing.outputs.engine }}-${{ hashFiles('application/ggml-build/index.ts', 'application/ggml-build/package.json', 'application/murmur/scripts/**', 'application/murmur/patches/**', 'application/murmur/package.json') }}
 
       - name: Build Murmur Engine
         if: steps.murmur.outputs.cache-hit != 'true'
@@ -390,9 +390,10 @@ jobs:
             server="$engine/llama-server"
           fi
           "$server" --help > /dev/null
-          "$server" --list-devices | tee "$RUNNER_TEMP/murmur-devices.txt"
+          "$server" --list-devices | tr -d '\r' | tee "$RUNNER_TEMP/murmur-devices.txt"
           grep -q '^Available devices:' "$RUNNER_TEMP/murmur-devices.txt"
-          if grep -E '^  [^ ]' "$RUNNER_TEMP/murmur-devices.txt" | grep -v -E ' \[(cpu|gpu|igpu|accel)\]$'; then
+          # A runner without a GPU prints "  (none)", which is not a device.
+          if grep -E '^  [^ (]' "$RUNNER_TEMP/murmur-devices.txt" | grep -v -E ' \[(cpu|gpu|igpu|accel)\]$'; then
             echo "::error::A device line has no type."
             exit 1
           fi

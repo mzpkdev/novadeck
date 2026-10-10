@@ -1,7 +1,7 @@
 import type { Store } from "./store"
 
 // Murmur, as a backend offers it: a small model that runs on the backend's machine, on
-// its GPU, and names the terminals and writes a line on what each is doing. The person
+// its GPU, and names the terminals from what they are doing. The person
 // installs it from Preferences; it has no model or language to choose.
 
 // What the person is told it is called. The name isn't final, so every text that says it

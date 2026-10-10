@@ -10,8 +10,8 @@
  * showed, by the same file or url; `open_terminal`, which opens a
  * new terminal beside it, optionally starting a command there; `close_terminal`, which
  * closes another of the project's terminals by its handle; `send` and `agents`, which
- * message the agents in the project's other terminals and list them (see
- * docs/agent-messaging.md). Each call goes to the terminal's runner with the terminal's
+ * message the agents in the project's other terminals and list them; and `summarize`,
+ * which says what the agent's own terminal works on (see docs/agent-messaging.md). Each call goes to the terminal's runner with the terminal's
  * own token, as the relay named them, and the runner's answer is told back as text.
  * Only Claude Code reads a server's own instructions, so each tool's description carries
  * its rules.
@@ -457,15 +457,14 @@ const agents: Tool<Listing> = {
   description:
     "List the other terminals in this Novadeck project and session, each with what Novadeck " +
     "knows of it: its handle, its agent and whether that is busy, its title (the user's, " +
-    "else Novadeck's, else the opening agent's, which it says), its folder and git " +
+    "else Novadeck's, else the opening agent's, which it says), the summary its agent " +
+    "gave of its work, its folder and git " +
     "branch, the user's first and latest prompts there, its plan, the folders it writes in most, and the latest " +
     "message between you, and whether it is your lead or one you lead; whether its agent " +
     "is waiting on the user, which only they can answer, so tell them rather than " +
     "telling it to proceed; and your own " +
     "messages not yet delivered. This is Novadeck's " +
     "knowledge, always current, so call it again rather than rely on what you remember. " +
-    "A terminal's summary is a machine-written guess from a small local model, so check " +
-    "with the terminal before relying on it. " +
     rules,
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   call: "agents",
@@ -473,6 +472,33 @@ const agents: Tool<Listing> = {
   // The runner renders the listing, as it renders a refused send's.
   said: (answer) => answer.text,
   failed: "Novadeck couldn't list the terminals.",
+}
+
+const summarize: Tool<unknown> = {
+  name: "summarize",
+  description:
+    "Summarize your own Novadeck terminal: a line or two (up to 200 characters) on what " +
+    "you work on here, which other agents read in their agents listing, so they can tell " +
+    "terminals apart and route work. It only ever summarizes your " +
+    "own terminal. Call it when Novadeck's automatic notice asks, or when your work " +
+    "changes enough that the summary no longer fits. It sets no title: titles are " +
+    "Novadeck's and the user's.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      summary: {
+        type: "string",
+        description: "A line or two on what you work on here, up to 200 characters.",
+        maxLength: 200,
+      },
+    },
+    required: ["summary"],
+    additionalProperties: false,
+  },
+  call: "summarize",
+  request: (args) => picked(args, ["summary"]),
+  said: () => "Summarized this terminal.",
+  failed: "Novadeck couldn't summarize the terminal.",
 }
 
 const tools: readonly Tool<unknown>[] = [
@@ -483,6 +509,7 @@ const tools: readonly Tool<unknown>[] = [
   closeTerminal,
   send,
   agents,
+  summarize,
 ]
 
 /** A JSON-RPC message the server sends, without its `jsonrpc`. */

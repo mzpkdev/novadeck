@@ -1,48 +1,257 @@
 // Murmur reads terminal text, and terminals show secrets. These fixed rules strip what
 // looks like one before the text reaches the model, by shape alone: nothing is learned or
 // configured, so what leaves the machine's terminal is the same on every machine.
+//
+// Terminals wrap long lines, so a token may be split by a newline wherever the screen was
+// wide enough to break it: the token rules allow one anywhere inside.
 import type { Digest } from "./describer.js"
 
 export const redacted = "[redacted]"
 
-// Names that say their value is a secret. `tokens` and `author` are words, not secrets.
-const secretName =
-  /(secret|token(?!s)|passw|passphrase|credential|api[_-]?key|private[_-]?key|access[_-]?key|auth(?!or)|(^|[_-])key($|[_-])|cookie|session[_-]?id|signature)/i
+// A run of `characters` at least `min` long, each of which may be followed by a wrapping newline.
+const wrapped = (characters: string, min: number): string => `(?:[${characters}]\\n?){${min},}`
+// A literal that the screen may have wrapped anywhere inside.
+const spaced = (literal: string): string =>
+  [...literal].map((character) => `${character.replace(/[.\\-]/g, "\\$&")}\\n?`).join("")
+// What replaces a token, keeping the newline that ended a wrapped run, which is not its own.
+const mask = (run: string): string => (run.endsWith("\n") ? `${redacted}\n` : redacted)
+const url = "A-Za-z0-9_\\-"
 
-const rules: readonly [RegExp, string | ((match: string, ...groups: string[]) => string)][] = [
+type Rule = readonly [RegExp, string | ((...match: string[]) => string)]
+
+// Words that make a name a secret's wherever it is, and ones that do so only whole.
+const secretInside = /(secret|passw|passphrase|apikey|privatekey|credential)/
+const secretWords = new Set(["token", "pass", "pwd", "cookie", "bearer", "signature", "sig"])
+// Words before `key`, which says what it opens: `api key`, but not `primary key` or `sort key`.
+const keyOf = new Set([
+  "api",
+  "secret",
+  "private",
+  "access",
+  "auth",
+  "encryption",
+  "signing",
+  "license",
+  "ssh",
+  "account",
+  "master",
+  "client",
+  "session",
+])
+// Words that end a name which only counts or points at a secret.
+const notSecret = new Set([
+  "count",
+  "size",
+  "budget",
+  "limit",
+  "length",
+  "max",
+  "min",
+  "type",
+  "name",
+  "file",
+  "path",
+  "dir",
+  "id",
+  "ttl",
+  "expiry",
+  "expires",
+  "url",
+  "uri",
+  "header",
+  "field",
+  "prefix",
+])
+// Values that say nothing: a setting, not a secret.
+const plain = new Set([
+  "true",
+  "false",
+  "null",
+  "none",
+  "nil",
+  "undefined",
+  "yes",
+  "no",
+  "on",
+  "off",
+  "required",
+  "optional",
+  "id",
+  "name",
+  "default",
+  "auto",
+  "string",
+  "number",
+  "bpe",
+])
+
+const sounds = (name: string): boolean => {
+  const words = name
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+  const last = words.at(-1)
+  if (last !== undefined && notSecret.has(last)) return last === "id" && words.includes("private")
+  if (words.some((word) => secretInside.test(word))) return true
+  if (words.some((word) => secretWords.has(word))) return true
+  return words.some((word, index) => word === "key" && keyOf.has(words[index - 1] ?? ""))
+}
+
+// Whether `value` is worth hiding: not a path, a short number or a word like `true`.
+const secretValue = (value: string): boolean => {
+  const bare = value.replace(/^["']|["']$/g, "").trim()
+  if (bare === "" || bare.includes(redacted)) return false
+  if (/^[/~]|^\.\.?\//.test(bare)) return false
+  if (/^\d{1,7}$/.test(bare)) return false
+  return !plain.has(bare.toLowerCase())
+}
+
+const qualifies = (text: string): boolean =>
+  text.length >= 40 &&
+  /[a-z]/.test(text) &&
+  /[A-Z]/.test(text) &&
+  text.replaceAll(/\D/g, "").length >= 3 &&
+  !/[a-z]{7}/.test(text)
+
+const quoted = `"[^"\\n]*"|'[^'\\n]*'`
+
+const rules: readonly Rule[] = [
   // A key block, or the start of one whose end scrolled away.
   [/-----BEGIN [A-Z0-9 ]*-----[\s\S]*?(-----END [A-Z0-9 ]*-----|$)/g, redacted],
-  [/\bsk-[A-Za-z0-9_-]{16,}/g, redacted],
-  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, redacted],
-  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, redacted],
-  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, redacted],
-  [/\bxox[abeoprs]-[A-Za-z0-9-]{10,}/g, redacted],
-  [/\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]*/g, redacted],
-  [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{16,}/gi, (_all, scheme) => `${scheme} ${redacted}`],
-  // user:password@host in any URL.
-  [/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, (_all, scheme) => `${scheme}${redacted}@`],
-  // NAME=value when the name sounds secret.
+  // Tokens with a prefix of their own.
+  [new RegExp(`(?<![\\w])${spaced("sk-")}${wrapped(url, 6)}`, "g"), mask],
   [
-    /\b([A-Za-z_][\w.-]*)(\s*=\s*)("[^"]*"|'[^']*'|[^\s"',;&]+)/g,
-    (all, name, joint) => (secretName.test(name) ? `${name}${joint}${redacted}` : all),
+    new RegExp(`(?<![\\w])[sr]\\n?k\\n?_\\n?(?:live|test)\\n?_\\n?${wrapped("A-Za-z0-9", 8)}`, "g"),
+    mask,
   ],
-  // "name": "value", as JSON and YAML-ish dumps have it.
+  [new RegExp(`(?<![\\w])g\\n?h\\n?[pousr]\\n?_\\n?${wrapped("A-Za-z0-9", 4)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])${spaced("github_pat_")}${wrapped("A-Za-z0-9_", 10)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])${spaced("glpat-")}${wrapped(url, 10)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])${spaced("hf_")}${wrapped("A-Za-z0-9", 16)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])${spaced("hvs.")}${wrapped(`${url}.`, 20)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])${spaced("npm_")}${wrapped("A-Za-z0-9", 20)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])${spaced("pypi-")}${wrapped("A-Za-z0-9_=-", 20)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])${spaced("AIza")}${wrapped(url, 30)}`, "g"), mask],
+  [new RegExp(`${spaced("AGE-SECRET-KEY-1")}${wrapped("A-Z0-9", 20)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])(?:AKIA|ASIA)(?:[0-9A-Z]\\n?){16}`, "g"), mask],
+  [new RegExp(`(?<![\\w])xox[abeoprs]-${wrapped("A-Za-z0-9-", 10)}`, "g"), mask],
+  [new RegExp(`(?<![\\w])eyJ(?:[\\w-]\\n?){8,}\\.(?:[\\w-]\\n?){8,}\\.(?:[\\w-]\\n?)*`, "g"), mask],
+  // Webhooks carry their secret in the path.
   [
-    /(["'])([A-Za-z_][\w.-]*)\1(\s*:\s*)("[^"]*"|'[^']*')/g,
-    (all, quote, name, joint) =>
-      secretName.test(name) ? `${quote}${name}${quote}${joint}"${redacted}"` : all,
+    /(hooks\.slack\.com\/services\/|discord(?:app)?\.com\/api\/webhooks\/)[^\s"'<>]+/gi,
+    (_all, host) => `${host}${redacted}`,
   ],
-  // --password hunter2
+  // user:password@host in any URL, even with no user and with a newline before the @.
   [
-    /(--[\w-]*(?:token|secret|passw\w*|api-key|key)[\w-]*)\s+(?!-)(\S+)/gi,
-    (_all, flag) => `${flag} ${redacted}`,
+    /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:(?:[^\s/]*\n){0,6}[^\s/]*@/gi,
+    (_all, scheme) => `${scheme}${redacted}@`,
   ],
-  // A commit id is 40 characters of hex and no secret; longer or shorter runs are hashes of one.
-  [/\b[0-9a-f]{32,}\b/gi, (run) => (run.length === 40 ? run : redacted)],
-  // Base64 long enough to hold a key; mixed case and a digit keeps words and paths out.
+  // A secret in a URL's query.
   [
-    /(?<![\w/.+=-])[A-Za-z0-9+/_-]{40,}={0,2}(?![\w/.+-])/g,
-    (run) => (/[a-z]/.test(run) && /[A-Z]/.test(run) && /\d/.test(run) ? redacted : run),
+    /([?&])([\w.-]+)=([^&\s#]+)/g,
+    (all, mark, name, value) =>
+      sounds(name) && secretValue(value) ? `${mark}${name}=${redacted}` : all,
+  ],
+  // Whole headers: the credential is everything after the name.
+  [
+    /\b(Authorization\s*[:=]\s*)(?:(?:Bearer|Basic|Token|Digest)\s+)?(?!\[redacted\])\S+/gi,
+    (_all, head) => `${head}${redacted}`,
+  ],
+  [/\b((?:Set-)?Cookie\s*:[ \t]*)[^\n]+/gi, (_all, head) => `${head}${redacted}`],
+  [
+    /\b(Bearer|Basic)\s+((?:[A-Za-z0-9._~+/=-]\n?){4,})/gi,
+    (all, scheme, value) =>
+      /\d/.test(value) || value.length >= 16 ? `${scheme} ${mask(value)}` : all,
+  ],
+  // Command lines that take a password in their own way.
+  [
+    /(\b(?:mysql|mysqladmin|mysqldump)\w*\b[^\n]*?\s-p)(?=\S)(\S+)/g,
+    (_all, head) => `${head}${redacted}`,
+  ],
+  [
+    /(\b(?:docker\s+login|sshpass)\b[^\n]*?\s-p\s+)(?!-)(\S+)/g,
+    (_all, head) => `${head}${redacted}`,
+  ],
+  [/(\bcurl\b[^\n]*?\s(?:-u|--user)[ =]\s*)(?!-)(\S+)/g, (_all, head) => `${head}${redacted}`],
+  // --password hunter2, by the flag's exact name.
+  [
+    /(--(?:password|passwd|pass|pwd|token|auth-token|access-token|api-key|apikey|secret|client-secret|auth|bearer|credentials?|passphrase))(?:=|[ \t]+)(?!-)(\S+)/gi,
+    (all, flag, value) =>
+      secretValue(value) ? `${all.slice(0, flag.length + 1)}${redacted}` : all,
+  ],
+  // NAME=value, where the name sounds secret; a value that fills the row goes on in the next.
+  [
+    new RegExp(
+      `(?<![\\w.-])([A-Za-z_][\\w.-]*)([ \\t]*\\n?[ \\t]*=[ \\t]*)(${quoted}|[^\\s"',;&]+)((?:\\n[^\\s"',;&]+)*)`,
+      "g",
+    ),
+    (all, name, joint, value, rest) => {
+      if (!sounds(name) || !secretValue(value)) return all
+      // A row is a continuation while the one before it ran to the screen's edge.
+      const rows = rest === "" ? [] : rest.slice(1).split("\n")
+      let before = `${name}${joint}${value}`
+      let used = 0
+      while (used < rows.length && used < 8 && before.length >= 20) {
+        before = rows[used] ?? ""
+        used += 1
+      }
+      const left = rows.slice(used)
+      return `${name}${joint}${redacted}${left.length > 0 ? `\n${left.join("\n")}` : ""}`
+    },
+  ],
+  // fish: set -x NAME value
+  [
+    /(\bset[ \t]+(?:-\w+[ \t]+)*)([A-Za-z_]\w*)([ \t]+)(?!-)(\S+)/g,
+    (all, head, name, gap, value) =>
+      sounds(name) && secretValue(value) ? `${head}${name}${gap}${redacted}` : all,
+  ],
+  // "name": "value", as JSON has it, and 'name': 'value'.
+  [
+    new RegExp(`(["'])([A-Za-z_][\\w.-]*)\\1([ \\t]*:[ \\t]*)(${quoted}|[^\\s,}\\]]+)`, "g"),
+    (all, quote, name, joint, value) =>
+      sounds(name) && secretValue(value) ? `${quote}${name}${quote}${joint}"${redacted}"` : all,
+  ],
+  // name: value, as YAML and headers have it.
+  [
+    new RegExp(`(?<![\\w.-])([A-Za-z_][\\w.-]*)([ \\t]*:[ \\t]+)(${quoted}|[^\\s"',;]+)`, "g"),
+    (all, name, joint, value) =>
+      sounds(name) && secretValue(value) ? `${name}${joint}${redacted}` : all,
+  ],
+  // A hash of a secret is as good as the secret; a commit id or a file's checksum is not one.
+  [
+    /(?<![0-9a-zA-Z_])(?<!sha(?:1|256|512)[:-])(?<!commit )(?:[0-9a-f]\n?){32,}(?![0-9a-zA-Z_])(?!\s{2}\S)/gi,
+    (run) => {
+      const length = run.replaceAll("\n", "").length
+      return length === 40 ? run : mask(run)
+    },
+  ],
+  // Base64 long enough to hold a key. Paths, words and identifiers are long and mixed too:
+  // a run needs several digits and no long word in it, and is never part of a path. Rows of
+  // ordinary text beside a wrapped key stick to the run, so the part that qualifies is found.
+  [
+    /(?<![\w/\\.+=-])(?<!;base64,)(?:[A-Za-z0-9+_-]\n?){40,}={0,2}(?![\w/\\.+-])/g,
+    (run) => {
+      const rows = run.split("\n")
+      let best: [number, number] | undefined
+      for (let from = 0; from < rows.length; from += 1)
+        for (let to = rows.length; to > from; to -= 1) {
+          const text = rows.slice(from, to).join("")
+          if (!qualifies(text)) continue
+          if (!best || text.length > rows.slice(best[0], best[1]).join("").length) best = [from, to]
+          break
+        }
+      if (!best) return run
+      const [from, to] = best
+      const tail = to === rows.length ? "" : "\n"
+      return [
+        ...rows.slice(0, from),
+        `${redacted}${tail === "" && run.endsWith("\n") ? "\n" : ""}`,
+        ...rows.slice(to),
+      ]
+        .join("\n")
+        .replace(/\n\n$/, "\n")
+    },
   ],
 ]
 
@@ -56,10 +265,7 @@ export const redact = (text: string): string => {
 /** The digest with every string run through `redact`. */
 export const redactDigest = (digest: Digest): Digest => {
   const one = (text: string | null): string | null => (text === null ? null : redact(text))
-  const previous = digest.previous && {
-    title: redact(digest.previous.title),
-    summary: redact(digest.previous.summary),
-  }
+  const previous = digest.previous && { title: redact(digest.previous.title) }
   if (digest.kind === "shell") {
     // The screen goes in whole, so a key block spanning rows is seen as one.
     const screen = redact(digest.screen.join("\n")).split("\n")
@@ -82,6 +288,7 @@ export const redactDigest = (digest: Digest): Digest => {
     folders: digest.folders.map(redact),
     prompts: digest.prompts.map(redact),
     reply: one(digest.reply),
+    summary: one(digest.summary),
     previous,
   }
 }

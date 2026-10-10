@@ -1,48 +1,51 @@
 import { describe, expect, it } from "../test.js"
 import { parseDescription } from "./description.js"
 
-const reply = (title: string, summary: string) => JSON.stringify({ title, summary })
+const reply = (title: unknown) => JSON.stringify({ title })
 
-describe("reading the model's description", () => {
-  it("keeps a title and summary that fit", () => {
-    expect(parseDescription(reply("Upload client retries", "Adding retries. Waiting."))).toEqual({
+describe("reading the model's title", () => {
+  it("keeps a title that fits", () => {
+    expect(parseDescription(reply("Upload client retries"))).toEqual({
       title: "Upload client retries",
-      summary: "Adding retries. Waiting.",
     })
   })
 
   it("tidies whitespace, markdown, quotes and a trailing full stop", () => {
-    expect(parseDescription(reply('  "**Fix** the  build."  ', " Fixing\nthe build. "))).toEqual({
-      title: "Fix the build",
-      summary: "Fixing the build.",
-    })
+    expect(parseDescription(reply('  "**Fix** the  build."  '))).toEqual({ title: "Fix the build" })
   })
 
-  it("keeps the first two sentences of a longer summary", () => {
-    expect(parseDescription(reply("Fix the build", "One. Two! Three? Four."))?.summary).toBe(
-      "One. Two!",
+  it("keeps titles that merely share a word with an example, or start like a chat phrase", () => {
+    expect(parseDescription(reply("Billing invoice export"))?.title).toBe("Billing invoice export")
+    expect(parseDescription(reply("Continuous integration setup"))?.title).toBe(
+      "Continuous integration setup",
     )
   })
 
-  it("does not split a summary at a dot inside a word", () => {
-    expect(
-      parseDescription(reply("Fix the build", "Running vite 1.2 and v0.4.2 now."))?.summary,
-    ).toBe("Running vite 1.2 and v0.4.2 now.")
+  it("ignores fields it didn't ask for", () => {
+    expect(parseDescription(JSON.stringify({ title: "Fix the build", summary: "x" }))).toEqual({
+      title: "Fix the build",
+    })
   })
 
   it.each([
+    ["a question", reply("Hows going?")],
+    ["a question about the work", reply("What is the build status?")],
+    ["a chat phrase", reply("Try again")],
+    ["a greeting", reply("Hello there")],
+    ["an example title", reply("Rotating billing webhook keys")],
+    ["an example title in other case", reply("rotating Billing webhook KEYS.")],
+    ["an example title but for a word", reply("Rotating billing webhook")],
     ["not JSON", "Sure! A title."],
     ["a non-object", "[1]"],
-    ["missing fields", JSON.stringify({ title: "Fix the build" })],
-    ["wrong types", JSON.stringify({ title: 3, summary: "x" })],
-    ["a one-word title", reply("Build", "Fixing.")],
-    ["a seven-word title", reply("one two three four five six seven", "Fixing.")],
+    ["no title", JSON.stringify({ summary: "Fix the build" })],
+    ["a title that isn't text", reply(3)],
+    ["a one-word title", reply("Build")],
+    ["a seven-word title", reply("one two three four five six seven")],
     [
       "a title past 48 characters",
-      reply("Internationalisation internationalisation internationalisation", "x"),
+      reply("Internationalisation internationalisation internationalisation"),
     ],
-    ["an empty summary", reply("Fix the build", "  ")],
-    ["a first sentence past 200 characters", reply("Fix the build", `${"word ".repeat(50)}.`)],
+    ["an empty title", reply("  ")],
   ])("rejects %s", (_name, raw) => {
     expect(parseDescription(raw)).toBeUndefined()
   })

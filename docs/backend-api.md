@@ -230,7 +230,7 @@ title })`; the latest title murmur, the opt-in local model, wrote for it; the on
 agent that opened it gave through `open_terminal`'s `title`; or the runner's default for
 its session ("Terminal 01", "Terminal 02", …, never given twice). `titleSource` says
 which: `{ kind: "person" }`, `{ kind: "murmur" }`, `{ kind: "agent", by: "t2" }` or
-`{ kind: "default" }`. Murmur's summary of a terminal is not on the wire: only
+`{ kind: "default" }`. The summary its agent gave through `summarize` is not on the wire: only
 `agents()` lists it. A terminal the client creates for an
 agent's request (`terminals.requests`) passes that request's `requestId` to
 `terminals.create`, and takes the title the agent asked for as the agent's.

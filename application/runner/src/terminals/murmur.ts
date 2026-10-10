@@ -14,6 +14,7 @@ import type {
   Previous,
   ShellDigest,
 } from "../murmur/describer.js"
+import type { Facts } from "./nudges.js"
 import type { PeerTerminal } from "./peers.js"
 import { busiestFolders, promptChars, shorten, type Work } from "./work.js"
 
@@ -22,23 +23,6 @@ import { busiestFolders, promptChars, shorten, type Work } from "./work.js"
  * "Naming"). The terminals own the triggers, the digests and the coalescing; the service
  * behind the `Describer` owns the model, its prompt, redaction and validation.
  */
-
-/**
- * What drift is told by: the root's plan title, its main "works in" folder, its branch.
- * Null is no information (no plan, no folder written in yet, a branch not read in time),
- * never a change.
- */
-export type Facts = {
-  readonly plan: string | null
-  readonly folder: string | null
-  readonly branch: string | null
-}
-
-// Whether facts differ where both say something: unknown on either side is no change.
-const differs = (a: Facts, b: Facts): boolean =>
-  (["plan", "folder", "branch"] as const).some(
-    (fact) => a[fact] !== null && b[fact] !== null && a[fact] !== b[fact],
-  )
 
 /** The waits and counts that decide when murmur describes; tests shorten them. */
 export type MurmurTimes = {
@@ -56,27 +40,31 @@ export type MurmurTimes = {
   /** How long a plain shell's change of directory waits for quiet. */
   readonly shellSettleMs: number
   /**
-   * How many of the person's prompts since the last description make the next one, at
-   * the end of a turn. A description made while a turn ran had no reply of that turn to
-   * show, so that turn's end describes again whatever the count.
+   * How long a shell opened to run an agent is not described as a shell, while the agent
+   * may yet bind, in milliseconds.
    */
-  readonly promptsBetween: number
+  readonly expectMs: number
 }
 
 export const defaultTimes: MurmurTimes = {
   settleMs: 3_000,
   shellRunMs: 5_000,
   shellSettleMs: 3_000,
-  promptsBetween: 4,
+  expectMs: 10_000,
 }
 
-/** How much of the agent's last reply murmur is shown, in characters, from its end. */
-export const replyChars = 1500
-/** How many rows of a plain shell's screen, how long each, murmur is shown; the lowest rows win. */
-export const screenRows = 30
-export const screenColumns = 160
-/** The longest command line murmur is shown. */
-export const commandChars = 300
+// These are generous safety caps only. The service redacts every string before it cuts
+// any, so a cap here must never cut a secret in half ahead of the redaction; it applies
+// the caps the model is shown (the reply's last 1500 characters, a screen of the last
+// few rows) afterwards.
+
+/** How much of the agent's last reply is passed on, in characters, from its end. */
+export const replyChars = 3000
+/** How many logical lines of a plain shell's screen, how long each; the lowest lines win. */
+export const screenRows = 100
+export const screenColumns = 1000
+/** The longest command line passed on. */
+export const commandChars = 2000
 
 // Characters no reply or screen row shows to a model: C0 and C1 control characters, and DEL.
 // eslint-disable-next-line no-control-regex -- These are the characters it removes.
@@ -129,6 +117,18 @@ const shownFolder = (folder: string, projectFolder: string | undefined): string 
   return placeName(folder)
 }
 
+const greeting = /^(hi|hey|hello|yo|thanks|thank|ok|okay|test|testing|ping)$/i
+
+/**
+ * Whether a prompt says what a terminal is for: at least three words, and not a greeting
+ * or a pleasantry ("hey!", "thanks a lot", "try again" is two words).
+ */
+export const substantial = (prompt: string): boolean => {
+  const words = prompt.match(/[\p{L}\p{N}]+/gu) ?? []
+  if (words.length < 3) return false
+  return !(words.length <= 4 && greeting.test(words[0]!))
+}
+
 /** The prompts murmur is shown, oldest first: the first the person gave, if it left the recent ones. */
 export const promptsOf = (work: Work | null): readonly string[] => {
   if (!work) return []
@@ -149,9 +149,15 @@ export const agentDigest = (input: {
   readonly plan: string | null
   readonly work: Work | null
   readonly reply: string | null
+  /** What the terminal's own agent last said it works on, through `summarize`. */
+  readonly summary: string | null
   readonly previous: Previous
 }): AgentDigest | null => {
-  const prompts = promptsOf(input.work)
+  // Without the agent's summary, a terse prompt would become the title as it is: it is
+  // titled from the first substantial prompt, its mission, alone.
+  const all = promptsOf(input.work)
+  const mission = all.find(substantial)
+  const prompts = input.summary ? all : mission === undefined ? [] : [mission]
   if (prompts.length === 0) return null
   const { projectFolder } = input
   return {
@@ -166,31 +172,41 @@ export const agentDigest = (input: {
     ),
     prompts,
     reply: input.reply,
+    summary: input.summary,
     previous: input.previous,
   }
 }
 
 /**
  * The command a plain shell's foreground program runs with, or its name where the
- * platform tells no more; null at the shell's own prompt, and where none is told.
+ * platform tells no more; null at the shell's own prompt (`atPrompt`: the shell holds the
+ * foreground, so a script its interpreter runs is a program, not the prompt), and where
+ * none is told.
  */
-export const commandOf = (
-  program: ForegroundProcess | null,
-  shell: string | undefined,
-): string | null => {
-  if (!program || (shell !== undefined && program.name === shell)) return null
+export const commandOf = (program: ForegroundProcess | null, atPrompt: boolean): string | null => {
+  if (!program || atPrompt) return null
   const line = program.argv && program.argv.length > 0 ? program.argv.join(" ") : program.name
   return shorten(line, commandChars)
 }
 
 /**
- * The visible rows of a plain shell's screen as murmur is shown them: control characters
- * out, each row trimmed and cut, the blank ones above and below dropped, and at most the
- * last `screenRows` kept.
+ * The visible rows of a plain shell's screen as murmur is shown them: rows the terminal
+ * wrapped (`wrapped[i]` continues the row before) joined into the logical line they
+ * are, so a value split across rows is whole for the redaction; control characters out,
+ * each line trimmed and cut at the safety cap, the blank ones above and below dropped,
+ * and at most the last `screenRows` kept.
  */
-export const screenOf = (rows: readonly string[]): readonly string[] => {
-  const kept = rows.map((row) =>
-    shorten(row.replace(escapes, "").replace(control, " "), screenColumns),
+export const screenOf = (
+  rows: readonly string[],
+  wrapped: readonly boolean[] = [],
+): readonly string[] => {
+  const lines: string[] = []
+  rows.forEach((row, index) => {
+    if (wrapped[index] && lines.length > 0) lines[lines.length - 1] += row
+    else lines.push(row)
+  })
+  const kept = lines.map((line) =>
+    shorten(line.replace(escapes, "").replace(control, " "), screenColumns),
   )
   while (kept.at(-1) === "") kept.pop()
   const start = kept.findIndex((row) => row !== "")
@@ -206,9 +222,11 @@ export const shellDigest = (input: {
   readonly cwd: string
   readonly command: string | null
   readonly rows: readonly string[]
+  /** Which rows continue the one before, as the terminal wrapped a long line. */
+  readonly wrapped?: readonly boolean[]
   readonly previous: Previous
 }): ShellDigest | null => {
-  const screen = screenOf(input.rows)
+  const screen = screenOf(input.rows, input.wrapped)
   if (input.command === null && screen.length < 2) return null
   const { projectFolder } = input
   return {
@@ -332,12 +350,6 @@ export class Descriptions {
 export type Reported = {
   /** The root session is a new one. */
   readonly session: boolean
-  /** The harness compacted the root session's context. */
-  readonly compacted: boolean
-  /** How many of the person's prompts started root turns. */
-  readonly prompts: number
-  /** A root turn ended. */
-  readonly ended: boolean
 }
 
 /** What murmur needs of a running terminal, beyond what peers read of it. */
@@ -346,9 +358,16 @@ export type MurmurSubject = PeerTerminal & {
   readonly agent: AgentName | null
   /** The bound session's transcript, where its hooks named one. */
   readonly transcript: string | null
-  /** The program in the foreground, with the shell's own name to tell its prompt. */
+  /** The program in the foreground. */
   readonly program: ForegroundProcess | null
-  readonly shell: string | undefined
+  /**
+   * Whether the shell itself holds the foreground, as at its prompt: told by the
+   * foreground process group where the platform tells it (a script run by the shell's
+   * own interpreter is not the prompt), else by the program's name.
+   */
+  readonly atPrompt: boolean
+  /** The agent its terminal was opened to run, until one binds or the startup is over. */
+  readonly expecting: AgentName | null
 }
 
 /** What the manager gives murmur's triggers to read and write. */
@@ -358,8 +377,12 @@ export type MurmurHost = {
   subjects(): readonly MurmurSubject[]
   /** The terminal's plan, busiest folder and branch: what drift is told by and the digest shows. */
   facts(subject: MurmurSubject): Promise<Facts>
-  /** The visible rows of the terminal's screen. */
-  screen(terminalId: string): Promise<readonly string[] | undefined>
+  /** The visible rows of the terminal's screen, and which of them the terminal wrapped. */
+  screen(
+    terminalId: string,
+  ): Promise<
+    { readonly rows: readonly string[]; readonly wrapped?: readonly boolean[] } | undefined
+  >
   /** The harness's reader of its transcript's lines. */
   items(agent: AgentName): Items | undefined
   projectFolder(sessionId: string): string | undefined
@@ -369,17 +392,14 @@ export type MurmurHost = {
 
 // What murmur keeps of a terminal between triggers; lost with the runner.
 type Watch = {
-  /** The person's prompts since the last description. */
-  prompts: number
-  /** Whether the last description was made while a turn ran, so without that turn's reply. */
-  partial: boolean
-  /** The facts at the last description, and those drift last fired for. */
-  baseline: Facts | null
-  driftedTo: Facts | null
-  /** A description is owed once the person's first prompt there is known (a new session). */
+  /** A title is owed once a prompt or a summary says what the terminal is for (a new session). */
   owed: boolean
   /** The program in a plain shell's foreground, as a key, and since when; null at the prompt. */
   program: { readonly key: string | null; readonly since: number }
+  /** A shell's description is owed (its directory changed, or it has none yet) and not built. */
+  shellOwed: boolean
+  /** When murmur first looked at the terminal, from which an expected agent is waited for. */
+  since: number
 }
 
 const programKey = (program: ForegroundProcess | null): string | null =>
@@ -389,12 +409,11 @@ const programKey = (program: ForegroundProcess | null): string | null =>
  * Decides when each terminal is described and what from, and hands the result to the
  * manager. Without a describer, nothing happens.
  *
- * An agent's terminal is described: on a new root session once the person's first prompt
- * is known; after a compaction; when its plan, branch or busiest folder drifted from
- * where they were at the last description; when a turn ends and the person prompted
- * since, which is after the next prompt if the last description had no reply to show,
- * else after `promptsBetween` prompts; and, the first time, once that first prompt is
- * known. A plain shell's: when the program in its foreground changed, once it has run
+ * An agent's terminal is titled once, after the person's first substantial prompt of a root
+ * session (its mission; not "hey!" nor "try again"), or its agent's first summary, and then
+ * on every `summarize` call, whose summary is the main input. A compaction, drift or later
+ * prompts nudge the agent to summarize instead, so murmur never retitles from a bare terse
+ * prompt. A plain shell's: when the program in its foreground changed, once it has run
  * `shellRunMs`; when it returns to the prompt after such a run; and when its directory
  * changed. The foreground is sampled only where the platform tells it, so on Windows
  * only the directory triggers. When murmur becomes usable, running terminals with no
@@ -405,7 +424,8 @@ export class Murmur {
   private readonly watches = new Map<string, Watch>()
   private readonly times: MurmurTimes
   private readonly unwatch: () => void
-  private usable = true
+  // Unusable until the describer says otherwise: nothing is built or asked before.
+  private usable = false
 
   constructor(
     describer: Describer,
@@ -417,6 +437,7 @@ export class Murmur {
     this.unwatch = describer.watchUsable((usable) => {
       this.usable = usable
       if (usable) this.catchUp()
+      else this.descriptions.stop()
     })
   }
 
@@ -433,55 +454,50 @@ export class Murmur {
   }
 
   /** An agent's report, as the manager read it for the terminal's root session. */
-  async reported(terminalId: string, told: Reported): Promise<void> {
+  reported(terminalId: string, told: Reported): void {
     try {
-      await this.react(terminalId, told)
+      this.react(terminalId, told)
     } catch (error) {
       console.error("Novadeck could not look at a terminal to describe it:", error)
     }
   }
 
-  private async react(terminalId: string, told: Reported): Promise<void> {
+  private react(terminalId: string, told: Reported): void {
     if (!this.usable) return
     const subject = this.host.subject(terminalId)
     if (!subject?.agent) return
     const watch = this.watch(terminalId)
-    if (told.session) {
-      watch.owed = true
-      watch.prompts = 0
-      watch.partial = false
-      watch.baseline = null
-      watch.driftedTo = null
-    }
-    watch.prompts += told.prompts
-    const prompted = subject.work?.first !== null && subject.work?.first !== undefined
-    // The first description, and a new session's, wait for the person's first prompt
-    // there; one in the making is not asked for again at each report.
+    if (told.session) watch.owed = true
+    // The title waits for a prompt to say what the terminal is for (its mission) or for the
+    // agent's first summary; one in the making is not asked for again at each report. Once
+    // it is titled, only a summary retitles it: never a bare terse prompt, a compaction or
+    // a drift, which nudge the agent to summarize instead.
     if (
       (watch.owed || subject.naming.murmur === null) &&
-      prompted &&
+      this.missionOf(subject) !== undefined &&
       !this.descriptions.busy(terminalId)
     ) {
       watch.owed = false
       this.ask(terminalId, this.times.settleMs)
-      return
     }
-    if (told.compacted && prompted) {
-      this.ask(terminalId, this.times.settleMs)
-      return
-    }
-    if (!told.ended || !prompted) return
-    if (watch.partial || watch.prompts >= this.times.promptsBetween) {
-      this.ask(terminalId, this.times.settleMs)
-      return
-    }
-    // Where nothing else fires, a turn's end looks at whether the work drifted.
-    const facts = await this.host.facts(subject)
-    if (!this.host.subject(terminalId)) return
-    const { baseline, driftedTo } = watch
-    if (!baseline || !differs(baseline, facts)) return
-    if (driftedTo && !differs(driftedTo, facts)) return
-    watch.driftedTo = facts
+  }
+
+  // What the terminal can be titled from: its agent's summary, else the first substantial
+  // prompt it was given; undefined while it has neither.
+  private missionOf(subject: MurmurSubject): string | undefined {
+    if (subject.naming.summary) return subject.naming.summary
+    return promptsOf(subject.work).find(substantial)
+  }
+
+  /**
+   * The terminal's agent summarized its work: its latest summary is the strongest thing
+   * murmur has to title it by, so it looks again, as after any trigger.
+   */
+  summarized(terminalId: string): void {
+    if (!this.usable) return
+    const subject = this.host.subject(terminalId)
+    if (!subject?.agent) return
+    this.watch(terminalId)
     this.ask(terminalId, this.times.settleMs)
   }
 
@@ -492,16 +508,17 @@ export class Murmur {
     if (!subject || subject.agent) return
     const watch = this.watch(terminalId)
     // The shell's own name is its prompt: no program.
-    const key =
-      commandOf(subject.program, subject.shell) === null ? null : programKey(subject.program)
+    const key = subject.atPrompt ? null : programKey(subject.program)
     if (key === watch.program.key) return
     const ranMs = Date.now() - watch.program.since
     const was = watch.program.key
     watch.program = { key, since: Date.now() }
-    // A command that ended before it ran long enough never described anything.
+    // What waits is superseded by this change: a command that ended before it ran long
+    // enough describes nothing, but a directory change or a catch-up still owed is asked
+    // for again at the prompt.
     this.descriptions.withdraw(terminalId)
     if (key === null) {
-      if (was !== null && ranMs >= this.times.shellRunMs)
+      if ((was !== null && ranMs >= this.times.shellRunMs) || watch.shellOwed)
         this.ask(terminalId, this.times.shellSettleMs)
       return
     }
@@ -513,7 +530,7 @@ export class Murmur {
     if (!this.usable) return
     const subject = this.host.subject(terminalId)
     if (!subject || subject.agent) return
-    this.watch(terminalId)
+    this.watch(terminalId).shellOwed = true
     this.ask(terminalId, this.times.shellSettleMs)
   }
 
@@ -521,12 +538,10 @@ export class Murmur {
     let watch = this.watches.get(terminalId)
     if (!watch) {
       watch = {
-        prompts: 0,
-        partial: false,
-        baseline: null,
-        driftedTo: null,
         owed: false,
         program: { key: null, since: Date.now() },
+        shellOwed: false,
+        since: Date.now(),
       }
       this.watches.set(terminalId, watch)
     }
@@ -537,8 +552,12 @@ export class Murmur {
   private catchUp(): void {
     for (const subject of this.host.subjects()) {
       if (subject.naming.murmur !== null) continue
-      if (subject.agent && !subject.work?.first) continue
-      this.watch(subject.summary.id)
+      if (subject.agent && this.missionOf(subject) === undefined) {
+        this.watch(subject.summary.id).owed = true
+        continue
+      }
+      const watch = this.watch(subject.summary.id)
+      if (!subject.agent) watch.shellOwed = true
       this.ask(subject.summary.id, subject.agent ? this.times.settleMs : this.times.shellSettleMs)
     }
   }
@@ -548,17 +567,30 @@ export class Murmur {
    * the program it was asked for, goes only while that program still holds the foreground.
    */
   private ask(terminalId: string, delayMs: number, program?: string): void {
+    // A shell opened to run an agent waits for it to bind, or for the wait to pass.
+    const subject = this.host.subject(terminalId)
+    const wait = subject && !subject.agent ? this.expectedFor(subject) : 0
     this.descriptions.request(
       terminalId,
-      delayMs,
+      Math.max(delayMs, wait),
       async () => {
-        const subject = this.host.subject(terminalId)
-        if (!subject) return undefined
-        if (program !== undefined && programKey(subject.program) !== program) return undefined
-        return subject.agent ? this.agentDigestOf(subject) : this.shellDigestOf(subject)
+        // Nothing is built, read or serialized while murmur isn't usable.
+        if (!this.usable) return undefined
+        const current = this.host.subject(terminalId)
+        if (!current) return undefined
+        if (!current.agent && this.expectedFor(current) > 0) return undefined
+        if (program !== undefined && programKey(current.program) !== program) return undefined
+        return current.agent ? this.agentDigestOf(current) : this.shellDigestOf(current)
       },
       (description) => this.stored(terminalId, description),
     )
+  }
+
+  // How much longer a shell opened to run an agent waits for it to bind, in milliseconds.
+  private expectedFor(subject: MurmurSubject): number {
+    if (!subject.expecting) return 0
+    const since = this.watch(subject.summary.id).since
+    return Math.max(0, this.times.expectMs - (Date.now() - since))
   }
 
   // The digest an agent's terminal is described from, and the facts it is built on.
@@ -577,16 +609,10 @@ export class Murmur {
       plan: facts.plan,
       work: now.work,
       reply,
+      summary: now.naming.summary,
       previous: now.naming.murmur,
     })
     if (!digest) return undefined
-    // What the digest was built from is what drift is measured from, and what the
-    // person prompted so far is described.
-    const watch = this.watch(id)
-    watch.baseline = facts
-    watch.driftedTo = null
-    watch.prompts = 0
-    watch.partial = now.activity?.state === "working"
     return digest
   }
 
@@ -602,15 +628,17 @@ export class Murmur {
   }
 
   private async shellDigestOf(subject: MurmurSubject): Promise<Digest | undefined> {
-    const rows = await this.host.screen(subject.summary.id)
+    const screen = await this.host.screen(subject.summary.id)
     const now = this.host.subject(subject.summary.id)
-    if (!rows || !now || now.agent) return undefined
+    if (!screen || !now || now.agent) return undefined
+    this.watch(subject.summary.id).shellOwed = false
     return (
       shellDigest({
         projectFolder: this.host.projectFolder(now.summary.sessionId),
         cwd: now.summary.cwd,
-        command: commandOf(now.program, now.shell),
-        rows,
+        command: commandOf(now.program, now.atPrompt),
+        rows: screen.rows,
+        ...(screen.wrapped && { wrapped: screen.wrapped }),
         previous: now.naming.murmur,
       }) ?? undefined
     )
@@ -619,11 +647,8 @@ export class Murmur {
   // A description came back: it names the terminal if its title can be one.
   private stored(terminalId: string, description: Description): void {
     const title = description.title.trim()
-    if (!terminalTitle.safeParse(title).success || !description.summary.trim()) return
-    this.host.described(terminalId, {
-      title,
-      summary: description.summary.trim(),
-    })
+    if (!terminalTitle.safeParse(title).success) return
+    this.host.described(terminalId, { title })
   }
 }
 

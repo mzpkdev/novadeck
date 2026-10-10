@@ -2,8 +2,8 @@
 // behind it owns the model, the prompt, redaction and validation, and the terminals own
 // when to ask and what to build a digest from.
 
-/** The title and summary murmur last gave a terminal, shown to it again for stability. */
-export type Previous = { readonly title: string; readonly summary: string } | null
+/** The title murmur last gave a terminal, shown to it again for stability. */
+export type Previous = { readonly title: string } | null
 
 /** What murmur is shown of a terminal running an agent. */
 export type AgentDigest = {
@@ -23,6 +23,8 @@ export type AgentDigest = {
   readonly prompts: readonly string[]
   /** The tail of the agent's last reply. */
   readonly reply: string | null
+  /** The agent's own latest summary of its work, from `summarize`: written with full context, the strongest input. */
+  readonly summary: string | null
   readonly previous: Previous
 }
 
@@ -40,8 +42,8 @@ export type ShellDigest = {
 
 export type Digest = AgentDigest | ShellDigest
 
-/** A terminal's title and summary, written by murmur and already validated. */
-export type Description = { readonly title: string; readonly summary: string }
+/** A terminal's title, written by murmur and already validated. */
+export type Description = { readonly title: string }
 
 export type Describer = {
   /**
@@ -49,6 +51,9 @@ export type Describer = {
    * dropped, superseded or aborted.
    */
   describe(digest: Digest, signal?: AbortSignal): Promise<Description | undefined>
-  /** Calls `listener` whenever murmur becomes usable or stops being usable; returns an unsubscribe. */
+  /**
+   * Calls `listener` at once with whether murmur is usable now, then whenever that changes;
+   * returns an unsubscribe.
+   */
   watchUsable(listener: (usable: boolean) => void): () => void
 }

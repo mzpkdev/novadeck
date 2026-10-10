@@ -44,6 +44,7 @@ export const fetchEngine = async (options: {
     from: locate(source, manifest.file),
     to: archive,
     sha256: manifest.sha256,
+    size: manifest.size,
     signal,
     progress: options.progress,
   })

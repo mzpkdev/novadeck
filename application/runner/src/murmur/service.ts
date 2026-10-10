@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { freemem } from "node:os"
+import { freemem, tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 
 import type { MurmurCheck, MurmurInstall, MurmurSettings, MurmurState } from "@novadeck/protocol"
@@ -60,6 +60,8 @@ export type MurmurOptions = {
   readonly minFreeMiB?: number
   /** The computer's free memory in bytes. */
   readonly freeMemory?: () => number
+  /** How long one description may take before the engine is taken to be stuck. */
+  readonly requestMs?: number
   readonly now?: () => number
 }
 
@@ -86,6 +88,7 @@ const checkDigest: Digest = {
   folders: ["src/checkout"],
   prompts: ["Add retries with backoff to the payment client, and cover them with tests."],
   reply: "I added the retries in src/checkout/payments.ts. The tests pass. Anything else?",
+  summary: null,
   previous: null,
 }
 
@@ -98,7 +101,25 @@ type Config = {
 
 type Facts = { readonly key: string }
 
+/** Resolves when `signal` aborts, never when there is none. */
+const dropped = (signal: AbortSignal | undefined): Promise<void> =>
+  new Promise((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }))
+
 const mebibyte = 1024 * 1024
+
+// The computer's free memory. macOS counts only never-used pages as free and keeps the rest
+// as cache, so it always looks short; there the GPU's own figure (Metal reports its
+// working set in `--list-devices`) is what jobs wait on.
+const computerFreeMemory = (): number =>
+  process.platform === "darwin" ? Number.POSITIVE_INFINITY : freemem()
+
+// Shown, with Try again, when murmur is installed but no check passed: a check that was
+// cancelled, or a runner that restarted after one failed.
+const unchecked =
+  "Murmur is installed but has not passed its check on this computer's GPU yet. Try again."
+
+// How long the model stays loaded once nothing needs it.
+const defaultIdleMs = 2 * 60 * 1000
 
 /**
  * Murmur: the engine and model people install, the settings, and the describing of
@@ -139,6 +160,9 @@ export class Murmur implements Describer {
   private refusedUntil = 0
   // The device the running server was started with, so a warm job doesn't list them again.
   private cached: { readonly device: string } | undefined
+  // While the engine being replaced is removed and the new one unpacked, a refresh must not
+  // bring the old folder back.
+  private replacing = false
 
   constructor(
     private readonly settings: MurmurSettingsStore,
@@ -159,7 +183,7 @@ export class Murmur implements Describer {
   private makeServer(idleMs: number | undefined): Server<Config, Facts> {
     return new Server(this.spec(), {
       ...(this.options.launch && { launch: this.options.launch }),
-      ...(idleMs !== undefined && { idleMs }),
+      idleMs: idleMs ?? defaultIdleMs,
       // A model on an iGPU loads in seconds; this is for a slow disk.
       startMs: 120_000,
     })
@@ -170,7 +194,7 @@ export class Murmur implements Describer {
       program: programFile("llama-server"),
       subject: "Murmur",
       health: "/health",
-      key: (config) => `${config.device}\0${config.model}`,
+      key: (config) => `${config.folder}\0${config.device}\0${config.model}`,
       prepare: (config, port) => {
         this.fresh = token()
         return {
@@ -216,7 +240,7 @@ export class Murmur implements Describer {
     this.modelReady = manifest !== undefined && (await exists(this.modelPath()))
     this.manifest = manifest
     this.engineReady = ready
-    this.engineDir = folder
+    this.engineDir = this.replacing ? undefined : folder
   }
 
   /** Loads the saved state at start; the first watch waits for it. */
@@ -237,6 +261,7 @@ export class Murmur implements Describer {
 
   state(): MurmurState {
     const installed = this.installed()
+    const check = installed ? this.settings.murmurCheck() : null
     return {
       available: this.manifest !== undefined,
       installed,
@@ -244,8 +269,8 @@ export class Murmur implements Describer {
       wanted: this.settings.murmurEnabledChoice() !== false,
       sizes: { engine: this.manifest?.size ?? 0, model: this.model.size },
       installing: this.installing,
-      check: installed ? this.settings.murmurCheck() : null,
-      failure: this.failure,
+      check,
+      failure: this.failure ?? (installed && check === null && !this.installing ? unchecked : null),
     }
   }
 
@@ -276,6 +301,7 @@ export class Murmur implements Describer {
 
   watchUsable(listener: (usable: boolean) => void): () => void {
     this.usableListeners.add(listener)
+    listener(this.usable())
     return () => void this.usableListeners.delete(listener)
   }
 
@@ -300,8 +326,9 @@ export class Murmur implements Describer {
     if (this.uninstalling)
       throw new DomainError("CONFLICT", "Murmur is being removed. Install it afterwards.")
     await this.refresh()
+    // `refresh` yielded: the runner may have closed, or another install may have started.
+    this.assertOpen()
     if (this.manifest === undefined) throw unavailable("Murmur is not available in this build.")
-    // `refresh` yielded: another install may have started.
     if (this.running || this.uninstalling)
       throw new DomainError("CONFLICT", "Murmur is already installing.")
     const controller = new AbortController()
@@ -357,6 +384,8 @@ export class Murmur implements Describer {
     this.uninstalling = true
     try {
       await this.cancel()
+      // The runner may have closed while the install ended.
+      this.assertOpen()
       // Off first: a removal that fails halfway must not leave murmur on.
       this.settings.saveMurmurSettings({ enabled: false })
       this.changed()
@@ -421,23 +450,30 @@ export class Murmur implements Describer {
   private async run(manifest: Manifest, signal: AbortSignal, engineOnly = false): Promise<void> {
     const program = programFile("llama-server")
     try {
+      signal.throwIfAborted()
       if (!(await exists(join(engineFolder(this.directory, manifest.sha256), program)))) {
         const total = manifest.size
         this.progress({ step: "engine", received: 0, total }, true)
-        await fetchEngine({
-          manifest,
-          source: this.source,
-          directory: this.directory,
-          program,
-          signal,
-          progress: (received) => this.progress({ step: "engine", received, total }),
-          // Unpacking removes the engines this one replaces; none may be running.
-          replacing: async () => {
-            this.engineDir = undefined
-            this.changed()
-            await this.server.stop()
-          },
-        })
+        try {
+          await fetchEngine({
+            manifest,
+            source: this.source,
+            directory: this.directory,
+            program,
+            signal,
+            progress: (received) => this.progress({ step: "engine", received, total }),
+            // Unpacking removes the engines this one replaces; none may be running, and a
+            // refresh must not bring one back until the new one is there.
+            replacing: async () => {
+              this.replacing = true
+              this.engineDir = undefined
+              this.changed()
+              await this.server.stop()
+            },
+          })
+        } finally {
+          this.replacing = false
+        }
         await this.refresh()
       }
       if (engineOnly) return
@@ -471,14 +507,15 @@ export class Murmur implements Describer {
       from: this.model.url,
       to: this.modelPath(),
       sha256: this.model.sha256,
+      size: this.model.size,
       signal,
       progress: (received) => this.progress({ step: "model", received, total }),
     })
     await this.refresh()
   }
 
-  /** The devices this engine sees; empty when it can't list them. */
-  private listDevices(folder: string): Promise<Device[]> {
+  /** The devices this engine sees; empty when it can't list them or `signal` aborts. */
+  private listDevices(folder: string, signal: AbortSignal): Promise<Device[]> {
     const program = join(folder, programFile("llama-server"))
     const launch: Launch = this.options.launch ?? ((p, a) => ({ command: p, args: a }))
     const launched = launch(program, ["--list-devices"])
@@ -487,22 +524,26 @@ export class Murmur implements Describer {
         launched.command,
         [...launched.args],
         {
-          cwd: dirname(program),
+          // Not the engine's folder: Windows can't remove a folder a process works in.
+          cwd: tmpdir(),
           timeout: 30_000,
           windowsHide: true,
+          signal,
           env: { ...process.env, ...launched.env },
         },
-        (_error, stdout, stderr) => resolve(parseDevices(`${stdout}\n${stderr}`)),
+        (_error, stdout, stderr) =>
+          resolve(signal.aborted ? [] : parseDevices(`${stdout}\n${stderr}`)),
       )
     })
   }
 
+  // A reply that is no usable title is no failure of the engine: that job gets no title.
   private async complete(
     config: Config,
     server: Server<Config, Facts>,
     chat: readonly Message[],
     signal: AbortSignal,
-  ): Promise<Description> {
+  ): Promise<Description | undefined> {
     const running = await server.acquire(config)
     const response = await server.request(running, "/v1/chat/completions", {
       method: "POST",
@@ -513,11 +554,12 @@ export class Murmur implements Describer {
       body: JSON.stringify({
         messages: chat,
         temperature: 0,
-        max_tokens: 200,
+        max_tokens: 40,
         stream: false,
         response_format: responseFormat,
       }),
-      signal,
+      // A stuck engine must not hold every job behind it.
+      signal: AbortSignal.any([signal, AbortSignal.timeout(this.options.requestMs ?? 60_000)]),
     })
     if (!response.ok)
       throw new EngineError(server.explain(running, `the engine answered ${response.status}`))
@@ -527,8 +569,6 @@ export class Murmur implements Describer {
       | undefined
     const content = body?.choices?.[0]?.message?.content
     const description = typeof content === "string" ? parseDescription(content) : undefined
-    if (description === undefined)
-      throw new EngineError("Murmur's model did not answer with a title and a summary.")
     return description
   }
 
@@ -539,7 +579,7 @@ export class Murmur implements Describer {
   private async measure(signal: AbortSignal): Promise<MurmurCheck> {
     const folder = this.engineDir
     if (folder === undefined) throw new EngineError("The murmur engine is missing.")
-    const devices = candidates(await this.listDevices(folder))
+    const devices = candidates(await this.listDevices(folder, signal))
     signal.throwIfAborted()
     const needs = "Murmur needs a working GPU, and this computer has none it can use."
     if (devices.length === 0) throw new EngineError(needs)
@@ -555,10 +595,10 @@ export class Murmur implements Describer {
         const config = { folder, model: this.modelPath(), device: device.id }
         // The first run loads the model and warms up the GPU, which later jobs do not pay for.
         // eslint-disable-next-line no-await-in-loop -- One device at a time.
-        await this.complete(config, server, chat, limit)
+        if (!(await this.complete(config, server, chat, limit))) throw new EngineError("No title.")
         const started = performance.now()
         // eslint-disable-next-line no-await-in-loop -- One device at a time.
-        await this.complete(config, server, chat, limit)
+        if (!(await this.complete(config, server, chat, limit))) throw new EngineError("No title.")
         return {
           device: device.name.slice(0, 256),
           integrated: device.kind === "igpu",
@@ -598,10 +638,17 @@ export class Murmur implements Describer {
 
   async describe(digest: Digest, signal?: AbortSignal): Promise<Description | undefined> {
     if (signal?.aborted || !this.usable()) return undefined
+    // Our turn ends when we do, but never before the one ahead of us has.
     const before = this.line
     let finish!: () => void
-    this.line = new Promise<void>((resolve) => (finish = resolve))
-    await before
+    const mine = new Promise<void>((resolve) => (finish = resolve))
+    this.line = before.then(() => mine)
+    // A job that is dropped leaves the line at once instead of waiting for its turn.
+    const turn = await Promise.race([before.then(() => true), dropped(signal).then(() => false)])
+    if (!turn) {
+      finish()
+      return undefined
+    }
     try {
       return await this.job(digest, signal)
     } finally {
@@ -610,7 +657,7 @@ export class Murmur implements Describer {
   }
 
   private lowMemory(): boolean {
-    const free = (this.options.freeMemory ?? freemem)() / mebibyte
+    const free = (this.options.freeMemory ?? computerFreeMemory)() / mebibyte
     return free < (this.options.minFreeMiB ?? 2048)
   }
 
@@ -635,18 +682,18 @@ export class Murmur implements Describer {
       signal?.addEventListener("abort", onAbort, { once: true })
       try {
         // eslint-disable-next-line no-await-in-loop -- One job at a time.
-        const config = await this.configuration()
+        const config = await this.configuration(controller.signal)
+        // A voice that began while the devices were listed stopped this job; try again after it.
+        if (controller.signal.aborted) {
+          if (signal?.aborted) return undefined
+          continue
+        }
         if (config === "wait") {
           // eslint-disable-next-line no-await-in-loop -- One look at a time.
           await this.pause(retryMs, signal)
           continue
         }
         if (config === undefined) return undefined
-        // A voice that began while the server started stopped this job; try again after it.
-        if (controller.signal.aborted) {
-          if (signal?.aborted) return undefined
-          continue
-        }
         // eslint-disable-next-line no-await-in-loop -- One job at a time.
         const description = await this.complete(config, this.server, chat, controller.signal)
         this.failures = 0
@@ -655,9 +702,9 @@ export class Murmur implements Describer {
         if (signal?.aborted || this.closed) return undefined
         // Stopped by voice, not by a failure: wait and run again.
         if (controller.signal.aborted) continue
-        this.failures += 1
-        this.refusedUntil =
-          this.clock() + (this.options.backoffMs ?? 30_000) * 2 ** Math.min(this.failures - 1, 4)
+        this.failed()
+        // An engine that failed, or stopped answering, starts afresh next time.
+        void this.server.stop()
         return undefined
       } finally {
         signal?.removeEventListener("abort", onAbort)
@@ -666,19 +713,30 @@ export class Murmur implements Describer {
     }
   }
 
+  // A failed job refuses the next ones for a while, longer with each failure in a row.
+  private failed(): void {
+    this.failures += 1
+    this.refusedUntil =
+      this.clock() + (this.options.backoffMs ?? 30_000) * 2 ** Math.min(this.failures - 1, 4)
+  }
+
   // What to run the server with: the checked GPU, found by name as indexes change; "wait"
   // when that GPU is short of memory to load the model into.
-  private async configuration(): Promise<Config | "wait" | undefined> {
+  private async configuration(signal: AbortSignal): Promise<Config | "wait" | undefined> {
     const folder = this.engineDir
     const check = this.settings.murmurCheck()
     if (folder === undefined || check === null) return undefined
     const model = this.modelPath()
     if (this.server.facts !== undefined && this.cached !== undefined)
       return { ...this.cached, folder, model }
-    const device = (await this.listDevices(folder)).find(
+    const device = (await this.listDevices(folder, signal)).find(
       (candidate) => candidate.name.slice(0, 256) === check.device,
     )
-    if (device === undefined) return undefined
+    if (device === undefined) {
+      // The GPU is gone, or the engine can't list it: not asked again by every trigger.
+      if (!signal.aborted) this.failed()
+      return undefined
+    }
     if (device.freeMiB < (this.options.minFreeMiB ?? 2048)) return "wait"
     this.cached = { device: device.id }
     return { folder, model, device: device.id }

@@ -4,6 +4,7 @@ import { join } from "node:path"
 import type { MurmurState } from "@novadeck/protocol"
 
 import { ActivityTracker } from "../engines/activity.js"
+import type { Launch } from "../engines/server.js"
 import { describe, expect, it } from "../test.js"
 import {
   arc,
@@ -30,6 +31,7 @@ const digest: AgentDigest = {
   folders: [],
   prompts: ["first thing", "fix the build, API_KEY=hunter2 is set"],
   reply: null,
+  summary: null,
   previous: null,
 }
 
@@ -43,6 +45,8 @@ const setup = async (
     directory?: string
     voice?: ConstructorParameters<typeof Murmur>[1]["voice"]
     freeMemory?: () => number
+    requestMs?: number
+    launch?: Launch
     idleMs?: number
     now?: () => number
   } = {},
@@ -61,6 +65,8 @@ const setup = async (
     backoffMs: 60,
     ...(options.voice && { voice: options.voice }),
     ...(options.freeMemory && { freeMemory: options.freeMemory }),
+    ...(options.requestMs !== undefined && { requestMs: options.requestMs }),
+    ...(options.launch && { launch: options.launch }),
     ...(options.idleMs !== undefined && { idleMs: options.idleMs }),
     ...(options.now && { now: options.now }),
   })
@@ -140,7 +146,7 @@ describe("installing murmur", () => {
   it("fails over to the next GPU when the integrated one cannot run the model", async ({
     resources,
   }) => {
-    const { murmur } = await installed(resources, { behaviour: "fail:Vulkan0" })
+    const { murmur } = await installed(resources, { behaviour: "fail:Vulkan0 device" })
 
     expect(murmur.state()).toMatchObject({
       enabled: true,
@@ -148,7 +154,7 @@ describe("installing murmur", () => {
       check: { device: nvidia.name, integrated: false },
     })
     await expect(murmur.describe(digest)).resolves.toMatchObject({
-      summary: "Described on Vulkan1.",
+      title: "Fake title on Vulkan1",
     })
   })
 
@@ -211,6 +217,50 @@ describe("installing murmur", () => {
       failure: null,
       check: { integrated: true },
     })
+  })
+})
+
+describe("installed murmur that never passed its check", () => {
+  it("says a check is needed, to try again, after a cancelled check or a restart", async ({
+    resources,
+  }) => {
+    const store = new WorkspaceStore()
+    resources.defer(() => store.close())
+    const directory = await folder(resources)
+    const manifest = await llamaArchive(resources)
+    const first = await installed(resources, {
+      devices: [processor],
+      store,
+      directory,
+      engine: manifest,
+    })
+    await first.murmur.close()
+
+    const { murmur } = await setup(resources, {
+      store,
+      directory,
+      engine: manifest,
+      devices: [processor],
+    })
+
+    // No failure of its own was kept, yet the card must offer Try again.
+    expect(murmur.state()).toMatchObject({ installed: true, check: null })
+    expect(murmur.state().failure).toMatch(/Try again/)
+    await murmur.install()
+    await murmur.settled()
+    expect(murmur.state().failure).toMatch(/needs a working GPU/)
+  })
+
+  it("does not say so while an install runs, or before anything is installed", async ({
+    resources,
+  }) => {
+    const { murmur } = await setup(resources)
+    expect(murmur.state().failure).toBeNull()
+
+    await murmur.install()
+    expect(murmur.state().failure).toBeNull()
+    await murmur.settled()
+    expect(murmur.state().failure).toBeNull()
   })
 })
 
@@ -277,7 +327,8 @@ describe("murmur's settings", () => {
     await murmur.set({ enabled: false })
     await murmur.set({ enabled: true })
 
-    expect(heard).toEqual([true, false, true])
+    // It says how things are at once, then every change.
+    expect(heard).toEqual([false, true, false, true])
   })
 })
 
@@ -325,15 +376,52 @@ describe("murmur after the app brings a new engine", () => {
   })
 })
 
+describe("murmur after the app brings a new engine, while it is fetched", () => {
+  it("runs the new engine afterwards, never the one it replaced", async ({ resources }) => {
+    const store = new WorkspaceStore()
+    resources.defer(() => store.close())
+    const directory = await folder(resources)
+    const programs: string[] = []
+    const base = fakeLaunch([arc, nvidia])
+    const launch: Launch = (program, args) => {
+      if (!args.includes("--list-devices")) programs.push(program)
+      return base(program, args)
+    }
+    const first = await installed(resources, { store, directory, launch })
+    await first.murmur.describe(digest)
+    const old = programs.at(-1) ?? ""
+    await first.murmur.close()
+
+    const next = await setup(resources, {
+      store,
+      directory,
+      launch,
+      engine: await llamaArchive(resources, "2"),
+    })
+    const watching = watchUntil(next.murmur, (state) => state.installing !== null)
+    await watching
+    // A second look at the disk, as another watcher makes, while the engine is replaced.
+    await next.murmur.refresh()
+    await next.murmur.settled()
+    programs.length = 0
+    await next.murmur.describe(digest)
+
+    expect(programs).toHaveLength(1)
+    expect(programs[0]).not.toBe(old)
+    expect(programs[0]?.startsWith(directory)).toBe(true)
+    expect(next.murmur.state()).toMatchObject({ enabled: true, failure: null })
+  })
+})
+
 describe("describing", () => {
   it("answers with the description, having read the digest without its secrets, the current prompt last", async ({
     resources,
   }) => {
-    const { murmur, directory } = await installed(resources, { behaviour: "log" })
+    const { murmur, directory } = await installed(resources, { behaviour: "log device" })
 
     const description = await murmur.describe(digest)
 
-    expect(description).toMatchObject({ summary: "Described on Vulkan0." })
+    expect(description).toMatchObject({ title: "Fake title on Vulkan0" })
     const asked = (await requests(directory)).at(-1)
     expect(asked?.messages.map((message) => message.role)).toEqual(["system", "user"])
     const text = asked?.messages[1]?.content ?? ""
@@ -351,7 +439,7 @@ describe("describing", () => {
       folder: null,
       command: "tail -f app.log",
       screen: ["token=abc123", "line two"],
-      previous: { title: "Tailing log", summary: "Following app.log." },
+      previous: { title: "Tailing log" },
     }
 
     await murmur.describe(shell)
@@ -417,6 +505,73 @@ describe("describing", () => {
   })
 })
 
+describe("an engine that stops answering", () => {
+  it("fails the job after the request's time, backs off, and lets the next jobs through", async ({
+    resources,
+  }) => {
+    let time = 1_000
+    const context = await installed(resources, { requestMs: 300, now: () => time })
+    await writeFile(join(context.directory, "models", "model.gguf"), "hang")
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+
+    const hung = context.murmur.describe(digest)
+    // Another terminal's job, dropped by its own signal, leaves the line at once.
+    const other = context.murmur.describe(digest, AbortSignal.timeout(100))
+
+    expect(await other).toBeUndefined()
+    expect(await hung).toBeUndefined()
+    // Backing off now.
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+    await writeFile(join(context.directory, "models", "model.gguf"), "plain")
+    time += 10_000
+    expect(await context.murmur.describe(digest)).toBeDefined()
+  })
+})
+
+describe("a reply that is no title", () => {
+  it("gives that job no title, without backing off", async ({ resources }) => {
+    const context = await installed(resources, { now: () => 1_000 })
+    await writeFile(join(context.directory, "models", "model.gguf"), "garbage")
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+
+    await writeFile(join(context.directory, "models", "model.gguf"), "plain")
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+    // The clock didn't move, so a back-off would still refuse.
+    expect(await context.murmur.describe(digest)).toBeDefined()
+  })
+})
+
+describe("a GPU that went missing", () => {
+  it("backs off instead of listing the devices for every job", async ({ resources }) => {
+    let time = 1_000
+    let listings = 0
+    // The GPU is there for the install, and gone afterwards.
+    let devices: FakeDevice[] = [arc]
+    const context = await installed(resources, {
+      now: () => time,
+      launch: (program, args) => {
+        if (args.includes("--list-devices")) listings += 1
+        return fakeLaunch(args.includes("--list-devices") ? devices : [arc])(program, args)
+      },
+    })
+    devices = []
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+    listings = 0
+
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+    expect(await context.murmur.describe(digest)).toBeUndefined()
+
+    expect(listings).toBe(1)
+  })
+})
+
 describe("giving way", () => {
   it("waits while voice input is busy and runs once it is not", async ({ resources }) => {
     let busy = true
@@ -441,7 +596,7 @@ describe("giving way", () => {
   }) => {
     let busy = false
     const tracker = new ActivityTracker(() => busy)
-    const { murmur } = await installed(resources, { voice: tracker, behaviour: "slow" })
+    const { murmur } = await installed(resources, { voice: tracker, behaviour: "slow device" })
     let done = false
 
     const job = murmur.describe(digest).then((value) => {
@@ -456,7 +611,7 @@ describe("giving way", () => {
     busy = false
     tracker.update()
 
-    expect(await job).toMatchObject({ summary: "Described on Vulkan0." })
+    expect(await job).toMatchObject({ title: "Fake title on Vulkan0" })
   })
 
   it("waits while the computer is short of memory", async ({ resources }) => {
@@ -509,6 +664,40 @@ describe("giving way", () => {
 })
 
 describe("closing murmur", () => {
+  it("does not let an install that began just before it run on", async ({ resources }) => {
+    const launches: string[] = []
+    const base = fakeLaunch([arc, nvidia])
+    const { murmur } = await setup(resources, {
+      launch: (program, args) => {
+        launches.push(args.join(" "))
+        return base(program, args)
+      },
+    })
+
+    const installing = murmur.install()
+    await murmur.close()
+    await installing.catch(() => {})
+    const before = launches.length
+    await sleep(500)
+    await murmur.settled()
+
+    expect(launches.length).toBe(before)
+  })
+
+  it("does not let an uninstall that waited for an install go on after it", async ({
+    resources,
+  }) => {
+    const { murmur, directory } = await setup(resources)
+    await murmur.install()
+
+    const removing = murmur.uninstall()
+    await murmur.close()
+
+    await removing.catch(() => {})
+    expect(murmur.state().enabled).toBe(false)
+    void directory
+  })
+
   it("refuses what comes after, and describes nothing", async ({ resources }) => {
     const { murmur } = await installed(resources)
 

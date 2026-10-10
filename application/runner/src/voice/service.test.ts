@@ -1016,6 +1016,43 @@ describe("voice activity", () => {
   })
 })
 
+describe("voice activity and clip lifetimes", () => {
+  const tooLong = 5 * 60 * 1000 + 1
+
+  it("asking whether it is busy forgets no clip, as only a write does", async ({ resources }) => {
+    let now = 0
+    const { voice } = await setup(resources, { now: () => now })
+    await voice.install("small")
+    await voice.settled()
+    await voice.record("owner", "clip", 0, pcm(3200))
+
+    now += tooLong
+    expect(voice.activity.busy()).toBe(false)
+
+    await expect(voice.transcribe("owner", "clip")).resolves.toMatchObject({ language: "pl" })
+  })
+
+  it("tells of a clip's expiry, so the next clip is a change again", async ({ resources }) => {
+    let now = 0
+    const { voice } = await setup(resources, { now: () => now })
+    await voice.install("small")
+    await voice.settled()
+    const { changes } = heard(voice)
+    await voice.record("owner", "old", 0, pcm(3200))
+
+    now += tooLong
+    await voice.record("owner", "new", 0, pcm(3200))
+
+    // The write sweeps the old clip, and the new one keeps voice busy.
+    expect(voice.activity.busy()).toBe(true)
+    expect(changes).toEqual([true])
+    now += tooLong
+    expect(voice.activity.busy()).toBe(false)
+    await voice.record("owner", "later", 0, pcm(3200))
+    expect(changes).toEqual([true, false, true])
+  })
+})
+
 describe("closing voice input", () => {
   it("refuses what comes after, as the runner is closing", async ({ resources }) => {
     const { voice } = await installed(resources)

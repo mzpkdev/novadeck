@@ -4,6 +4,7 @@
 //   "late"          takes half a second to listen, as a model loading
 //   "crash"         exits when it is asked to complete
 //   "slow"          takes half a second to answer
+//   "hang"          never answers a completion
 //   "garbage"       answers with something that isn't the JSON asked for
 //   "log"           appends each request it is sent, as a line of JSON, to the model's file name + ".requests"
 // The real server lists devices before it has a model; here the test hands them over as
@@ -75,6 +76,7 @@ const server = createServer(async (request, response) => {
     console.error("GGML_ASSERT: out of memory")
     process.exit(3)
   }
+  if (behaviour.includes("hang")) await new Promise(() => {})
   if (behaviour.includes("slow")) await new Promise((resolve) => setTimeout(resolve, 500))
   completions += 1
   if (behaviour.includes("log"))
@@ -82,8 +84,9 @@ const server = createServer(async (request, response) => {
   const content = behaviour.includes("garbage")
     ? "Sure! Here is a title for your terminal."
     : JSON.stringify({
-        title: `Fake title ${completions}`,
-        summary: `Described on ${device}.`,
+        title: behaviour.includes("device")
+          ? `Fake title on ${device}`
+          : `Fake title ${completions}`,
       })
   response.end(
     JSON.stringify({

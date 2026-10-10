@@ -37,10 +37,15 @@ export class Clips {
     private readonly changed: () => void = () => {},
   ) {}
 
-  /** Whether a clip is being recorded, one not forgotten for want of attention. */
+  /**
+   * Whether a clip is being recorded: one touched within the keep time. It only reads, so
+   * a clip's lifetime is the same whoever asks; one past it is still there until a write
+   * sweeps it, but nobody is recording it.
+   */
   open(): boolean {
-    this.sweep()
-    return this.clips.size > 0
+    const now = this.now()
+    for (const clip of this.clips.values()) if (now - clip.at <= keepMs) return true
+    return false
   }
 
   /** Whether the clip is new, so the first part can start the engine warming up. */

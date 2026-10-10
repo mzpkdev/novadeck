@@ -49,7 +49,8 @@ export type Ack = { readonly terminalId: string; readonly token: string; readonl
  * there and `dismiss` closes what it showed (see `companions/items.ts`), `open` opens a new terminal beside it (see
  * `terminals/opens.ts`), `close` closes another terminal of its project and session (see
  * `terminals/closes.ts`), and `send` and `agents` message other terminals' agents and
- * describe them (see `messaging/messaging.ts`); the runner reads `request`, and nothing
+ * describe them (see `messaging/messaging.ts`), and `summarize` says what the caller's own
+ * terminal works on (see `terminals/summarize.ts`); the runner reads `request`, and nothing
  * here does.
  */
 export type Call = {
@@ -59,7 +60,16 @@ export type Call = {
   readonly request: { readonly [key: string]: unknown }
 }
 
-const callTypes = ["present", "showing", "dismiss", "open", "close", "send", "agents"] as const
+const callTypes = [
+  "present",
+  "showing",
+  "dismiss",
+  "open",
+  "close",
+  "send",
+  "agents",
+  "summarize",
+] as const
 export type CallType = (typeof callTypes)[number]
 
 /** The answer to a call that failed, took too long, or could not be read. */
@@ -74,6 +84,7 @@ export const unansweredCalls = {
   close: { ok: false, reason: "Novadeck couldn't close the terminal." },
   send: { ok: false, reason: "Novadeck couldn't send the message." },
   agents: { ok: false, reason: "Novadeck couldn't list the terminals." },
+  summarize: { ok: false, reason: "Novadeck couldn't summarize the terminal." },
 } as const satisfies { readonly [type in CallType]: { ok: false; reason: string } }
 
 const object = (value: unknown): value is { readonly [key: string]: unknown } =>

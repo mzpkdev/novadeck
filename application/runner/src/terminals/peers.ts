@@ -11,8 +11,8 @@ import type { Waiting, Whereabouts } from "../messaging/peers.js"
 import { unansweredCalls, type Ack, type Call } from "../shell/reports.js"
 import type { HintFacts } from "../voice/hint.js"
 import { gitBranch } from "./branch.js"
-import type { Facts } from "./murmur.js"
-import { summaryOf, type Naming } from "./naming.js"
+import type { Naming } from "./naming.js"
+import type { Facts } from "./nudges.js"
 import { busiestFolders, shorten, type Work } from "./work.js"
 
 /** What the terminal manager tells of a terminal, for its agent to message others. */
@@ -168,7 +168,7 @@ export class TerminalPeers {
         const where: Whereabouts = {
           title: terminal.summary.title,
           titleSource: terminal.summary.titleSource,
-          summary: summaryOf(terminal.naming),
+          summary: terminal.naming.summary,
           folder: place(cwd),
           branch,
           plan,
@@ -188,7 +188,7 @@ export class TerminalPeers {
   }
 
   /**
-   * What tells whether a terminal's work drifted from where murmur described it: its root's own
+   * What tells whether a terminal's work drifted from where its agent last summarized it: its root's own
    * plan's title (never a subagent's), the folder it writes in most, and its git branch.
    */
   async facts(terminal: PeerTerminal): Promise<Facts> {

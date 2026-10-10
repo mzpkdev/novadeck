@@ -10,8 +10,7 @@ export type FakeJob = {
 
 /**
  * A describer as terminal tests drive one: every call is recorded in `jobs`, answered at
- * once with what `reply` makes of the digest (a title from the current prompt or
- * command, by default), or, with `hold`, left until a test answers it. A call aborted
+ * once with what `reply` makes of the digest (a numbered title, by default), or, with `hold`, left until a test answers it. A call aborted
  * answers undefined, as the real one does.
  */
 export class FakeDescriber implements Describer {
@@ -28,12 +27,7 @@ export class FakeDescriber implements Describer {
     } = {},
   ) {
     this.usable = options.usable ?? true
-    this.reply =
-      options.reply ??
-      ((digest, call) => ({
-        title: `Title ${call}`,
-        summary: `${digest.kind === "agent" ? digest.prompts.at(-1) : digest.command} (${call})`,
-      }))
+    this.reply = options.reply ?? ((_digest, call) => ({ title: `Title ${call}` }))
   }
 
   private readonly reply: (digest: Digest, call: number) => Description | undefined
@@ -54,6 +48,8 @@ export class FakeDescriber implements Describer {
 
   watchUsable(listener: (usable: boolean) => void): () => void {
     this.listeners.add(listener)
+    // As the real service does: the state now, then each change.
+    listener(this.usable)
     return () => this.listeners.delete(listener)
   }
 

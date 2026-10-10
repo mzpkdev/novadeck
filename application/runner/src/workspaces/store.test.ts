@@ -266,15 +266,13 @@ describe("workspace metadata", () => {
     }
   })
 
-  it("refuses a database that still has the describe tool's summary column", ({ directory }) => {
+  it("refuses a database from before murmur titles, which has no murmur_title", ({ directory }) => {
     const path = join(directory(), "workspace.sqlite")
     new WorkspaceStore(path).close()
     const old = new DatabaseSync(path)
     old.exec("ALTER TABLE terminals DROP COLUMN murmur_title")
-    old.exec("ALTER TABLE terminals DROP COLUMN murmur_summary")
-    old.exec("ALTER TABLE terminals ADD COLUMN summary TEXT")
     old.close()
-    expect(() => new WorkspaceStore(path)).toThrow(/expects murmur_title TEXT.*has summary TEXT/s)
+    expect(() => new WorkspaceStore(path)).toThrow(/expects murmur_title TEXT/)
   })
 
   it("refuses a database an earlier build wrote, naming it and saying to delete it", ({
@@ -353,7 +351,7 @@ const numbered = (id: string, handle: string) => ({
   agents: {},
   promptedAt: null,
   handle,
-  naming: { person: null, agent: null, murmur: null },
+  naming: { person: null, agent: null, murmur: null, summary: null },
   openedBy: null,
   ledBy: null,
   command: null,
@@ -378,10 +376,8 @@ describe("saved terminals", () => {
       naming: {
         person: null,
         agent: { title: "API author", by: "t1" },
-        murmur: {
-          title: "Building the API",
-          summary: "Builds the API.\nThen its tests.",
-        },
+        murmur: { title: "Building the API" },
+        summary: "Builds the API.\nThen its tests.",
       },
       openedBy: "t2",
       ledBy: "t2",
@@ -421,44 +417,46 @@ describe("saved terminals", () => {
     expect(reopened.terminal(terminal.id)).toBeUndefined()
   })
 
-  it("keep murmur's title and summary beside the person's and the opening agent's, replaced as a pair", ({
+  it("keep murmur's title and the agent's summary beside the person's and the opener's title", ({
     directory,
     store,
   }) => {
     const path = join(directory(), "workspace.sqlite")
     const workspace = store(path)
     const agent = { title: "Server", by: "t1" }
-    const murmur = { title: "Fixing login", summary: "Fixes the login bug." }
+    const murmur = { title: "Fixing login" }
+    const summary = "Fixes the login bug."
     workspace.saveTerminal({
       ...numbered("a", "t2"),
-      naming: { person: "Mine", agent, murmur },
+      naming: { person: "Mine", agent, murmur, summary },
     })
-    expect(workspace.terminal("a")?.naming).toEqual({
-      person: "Mine",
-      agent,
-      murmur,
-    })
-    // Taking the person's title away leaves the other two layers.
+    expect(workspace.terminal("a")?.naming).toEqual({ person: "Mine", agent, murmur, summary })
+    // Taking the person's title away leaves the other layers.
     expect(workspace.renameTerminal("a", null)).toBe(true)
     expect(workspace.terminalIdentity("a")?.naming).toEqual({
       person: null,
       agent,
       murmur,
+      summary,
     })
-    const next = { title: "Fixing signup", summary: "Fixes signup." }
+    // The summary and murmur's title change apart.
+    const next = { title: "Fixing signup" }
     workspace.saveTerminal({
       ...numbered("a", "t2"),
-      naming: { person: null, agent, murmur: next },
+      naming: { person: null, agent, murmur: next, summary },
     })
-    expect(workspace.terminals().map(({ naming }) => naming.murmur)).toEqual([next])
+    expect(workspace.terminals().map(({ naming }) => naming)).toEqual([
+      { person: null, agent, murmur: next, summary },
+    ])
     workspace.saveTerminal({
       ...numbered("a", "t2"),
-      naming: { person: null, agent, murmur: null },
+      naming: { person: null, agent, murmur: null, summary: null },
     })
     expect(workspace.terminal("a")?.naming).toEqual({
       person: null,
       agent,
       murmur: null,
+      summary: null,
     })
     workspace.close()
   })
@@ -473,7 +471,7 @@ describe("saved terminals", () => {
       agents: {},
       promptedAt: null,
       handle: "t1",
-      naming: { person: null, agent: null, murmur: null },
+      naming: { person: null, agent: null, murmur: null, summary: null },
       openedBy: null,
       ledBy: null,
       command: null,
@@ -499,7 +497,7 @@ describe("saved terminals", () => {
         agents: {},
         promptedAt: null,
         handle: `t${index + 1}`,
-        naming: { person: null, agent: null, murmur: null },
+        naming: { person: null, agent: null, murmur: null, summary: null },
         openedBy: null,
         ledBy: null,
         command: null,
@@ -543,7 +541,7 @@ describe("saved terminals", () => {
       agents: {},
       promptedAt: null,
       handle: "t1",
-      naming: { person: null, agent: null, murmur: null },
+      naming: { person: null, agent: null, murmur: null, summary: null },
       openedBy: null,
       ledBy: null,
       command: null,
@@ -558,6 +556,7 @@ describe("saved terminals", () => {
       person: "API author",
       agent: null,
       murmur: null,
+      summary: null,
     })
     expect(reopened.nextTerminalNumber("s")).toBe(3)
     // Taking the person's title away leaves it automatic.
@@ -627,7 +626,7 @@ describe("the mailbox", () => {
       agents: {},
       promptedAt: null,
       handle: "t1",
-      naming: { person: null, agent: null, murmur: null },
+      naming: { person: null, agent: null, murmur: null, summary: null },
       openedBy: null,
       ledBy: null,
       command: null,
@@ -671,7 +670,7 @@ const keptTerminal = (workspace: WorkspaceStore, sessionId: string, handle: stri
     agents: {},
     promptedAt: null,
     handle,
-    naming: { person: null, agent: null, murmur: null },
+    naming: { person: null, agent: null, murmur: null, summary: null },
     openedBy: null,
     ledBy: null,
     command: null,

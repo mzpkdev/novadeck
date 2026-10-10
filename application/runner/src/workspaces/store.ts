@@ -91,9 +91,10 @@ const extras = `
     -- The latest title an agent gave it, and that agent's terminal's handle.
     agent_title TEXT,
     agent_titled_by TEXT,
-    -- The title and summary murmur last wrote for it; both null, or both set.
+    -- The title murmur last wrote for it.
     murmur_title TEXT,
-    murmur_summary TEXT,
+    -- What its own agent said it works on, through summarize.
+    summary TEXT,
     -- The handle of the terminal whose agent opened it; null otherwise.
     opened_by TEXT,
     -- The handle of its lead: the terminal whose agent opened it with a brief for the agent
@@ -309,7 +310,7 @@ type TerminalRow = {
   agent_title: string | null
   agent_titled_by: string | null
   murmur_title: string | null
-  murmur_summary: string | null
+  summary: string | null
   opened_by: string | null
   led_by: string | null
   command: string | null
@@ -328,7 +329,7 @@ const workOf = (text: string | null): Work | null => {
 
 type NamingRow = Pick<
   TerminalRow,
-  "person_title" | "agent_title" | "agent_titled_by" | "murmur_title" | "murmur_summary"
+  "person_title" | "agent_title" | "agent_titled_by" | "murmur_title" | "summary"
 >
 
 const namingOf = (row: NamingRow): Naming => ({
@@ -337,10 +338,8 @@ const namingOf = (row: NamingRow): Naming => ({
     row.agent_title !== null && row.agent_titled_by !== null
       ? { title: row.agent_title, by: row.agent_titled_by }
       : null,
-  murmur:
-    row.murmur_title !== null && row.murmur_summary !== null
-      ? { title: row.murmur_title, summary: row.murmur_summary }
-      : null,
+  murmur: row.murmur_title !== null ? { title: row.murmur_title } : null,
+  summary: row.summary,
 })
 
 const listed = (row: Omit<TerminalRow, "transcript">): ListedTerminal => ({
@@ -642,7 +641,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
   terminal(terminalId: string): SavedTerminal | undefined {
     const row = this.queries.get`
       SELECT id, session_id, cwd, agents, prompted_at, transcript, updated_at, handle,
-        person_title, agent_title, agent_titled_by, murmur_title, murmur_summary, opened_by,
+        person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by,
         led_by, command, last_program, work
       FROM terminals WHERE id = ${terminalId}
     ` as TerminalRow | undefined
@@ -654,12 +653,12 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
       sessionId === undefined
         ? this.queries.all`
           SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
-            person_title, agent_title, agent_titled_by, murmur_title, murmur_summary, opened_by, led_by,
+            person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by, led_by,
             command, last_program, work
           FROM terminals ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
         : this.queries.all`
           SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
-            person_title, agent_title, agent_titled_by, murmur_title, murmur_summary, opened_by, led_by,
+            person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by, led_by,
             command, last_program, work
           FROM terminals WHERE session_id = ${sessionId}
           ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
@@ -684,7 +683,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   terminalIdentity(terminalId: string): TerminalIdentity | undefined {
     const row = this.queries.get`
-      SELECT handle, person_title, agent_title, agent_titled_by, murmur_title, murmur_summary, opened_by, led_by
+      SELECT handle, person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by, led_by
       FROM terminals WHERE id = ${terminalId}
     ` as (NamingRow & Pick<TerminalRow, "handle" | "opened_by" | "led_by">) | undefined
     return (
@@ -706,43 +705,43 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     const { handle, naming, openedBy, ledBy, command, lastProgram } = terminal
     const { person } = naming
     const murmurTitle = naming.murmur?.title ?? null
-    const murmurSummary = naming.murmur?.summary ?? null
+    const { summary } = naming
     const agentTitle = naming.agent?.title ?? null
     const agentBy = naming.agent?.by ?? null
     const work = terminal.work === null ? null : JSON.stringify(terminal.work)
     if (terminal.transcript === undefined)
       void this.queries.run`
         INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, updated_at, handle,
-          person_title, agent_title, agent_titled_by, murmur_title, murmur_summary, opened_by,
+          person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by,
           led_by, command, last_program, work)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
           ${terminal.promptedAt}, ${now}, ${handle}, ${person}, ${agentTitle}, ${agentBy},
-          ${murmurTitle}, ${murmurSummary}, ${openedBy}, ${ledBy}, ${command}, ${lastProgram},
+          ${murmurTitle}, ${summary}, ${openedBy}, ${ledBy}, ${command}, ${lastProgram},
           ${work})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
           updated_at = excluded.updated_at, handle = excluded.handle,
           person_title = excluded.person_title, agent_title = excluded.agent_title,
           agent_titled_by = excluded.agent_titled_by, murmur_title = excluded.murmur_title,
-          murmur_summary = excluded.murmur_summary, opened_by = excluded.opened_by,
+          summary = excluded.summary, opened_by = excluded.opened_by,
           led_by = excluded.led_by, command = excluded.command,
           last_program = excluded.last_program, work = excluded.work
       `
     else
       void this.queries.run`
         INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, transcript, updated_at,
-          handle, person_title, agent_title, agent_titled_by, murmur_title, murmur_summary,
+          handle, person_title, agent_title, agent_titled_by, murmur_title, summary,
           opened_by, led_by, command, last_program, work)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
           ${terminal.promptedAt}, ${terminal.transcript}, ${now}, ${handle}, ${person},
-          ${agentTitle}, ${agentBy}, ${murmurTitle}, ${murmurSummary}, ${openedBy}, ${ledBy},
+          ${agentTitle}, ${agentBy}, ${murmurTitle}, ${summary}, ${openedBy}, ${ledBy},
           ${command}, ${lastProgram}, ${work})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
           transcript = excluded.transcript, updated_at = excluded.updated_at,
           handle = excluded.handle, person_title = excluded.person_title,
           agent_title = excluded.agent_title, agent_titled_by = excluded.agent_titled_by,
-          murmur_title = excluded.murmur_title, murmur_summary = excluded.murmur_summary,
+          murmur_title = excluded.murmur_title, summary = excluded.summary,
           opened_by = excluded.opened_by, led_by = excluded.led_by, command = excluded.command,
           last_program = excluded.last_program, work = excluded.work
       `

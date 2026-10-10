@@ -47,7 +47,7 @@ export const main = (): Promise<void> =>
       "-DLLAMA_USE_PREBUILT_UI=OFF",
       "-DLLAMA_TOOLS_INSTALL=OFF",
     ],
-    windowsBuild: { env: "NOVADECK_MURMUR_BUILD", folder: "nvm" },
+    windowsBuild: { env: "NOVADECK_MURMUR_BUILD", folder: "nvmu" },
     extras: async (source, staging) => {
       await cp(join(source, "LICENSE"), join(staging, "LICENSE"))
     },

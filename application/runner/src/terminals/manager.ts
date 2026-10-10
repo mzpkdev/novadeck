@@ -86,7 +86,6 @@ import {
 } from "../shell/reports.js"
 import type { HintFacts } from "../voice/hint.js"
 import { Answers, type AnswerHost, type AnswerOptions } from "./answers.js"
-import { artifactsNotice } from "./artifacts.js"
 import {
   allowClose,
   closeLimit,
@@ -124,13 +123,17 @@ import {
   type Reported,
 } from "./murmur.js"
 import {
+  cleanSummary,
   murmured,
   openedWith,
   renamed as renamedTo,
+  summarized,
+  summaryRefusal,
   titleOf,
   unnamed,
   type Naming,
 } from "./naming.js"
+import { atPrompt, described, fired, noNudges, noticesAt, type Nudges } from "./nudges.js"
 import {
   allowOpen,
   openLimit,
@@ -155,6 +158,7 @@ import { freshNonce } from "./ring.js"
 import { screenText, type ScreenText } from "./screen.js"
 import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
+import { readSummarizeRequest, type SummarizeAnswer } from "./summarize.js"
 import { replay, transcriptOf } from "./transcript.js"
 import { transcriptChanges } from "./transcripts.js"
 import { TerminalWatcher } from "./watcher.js"
@@ -397,8 +401,10 @@ type Record = {
   seenEntry: { readonly transcript: string; readonly id: number } | undefined
   /** The shell's own name, as its foreground sample shows it at its prompt; undefined where none is told. */
   shellName: string | undefined
-  /** Whether its session has yet to hear of the bar beside its terminal (see `artifacts.ts`). */
-  artifacts: boolean
+  /** When its agent is next nudged to summarize its work; kept for this runner's lifetime. */
+  nudges: Nudges
+  /** The agent its shell was opened or restarted to run, until one binds or its startup ends. */
+  expecting: AgentName | null
   /** Unsaved changes: output, directory, or prompts. */
   changed: boolean
   /**
@@ -525,8 +531,24 @@ const murmurSubject = (record: Record): MurmurSubject => ({
   agent: record.binding?.agent ?? null,
   transcript: record.transcript,
   program: record.summary.process,
-  shell: record.shellName,
+  atPrompt: shellAtPrompt(record),
+  expecting: record.binding === null ? record.expecting : null,
 })
+
+// Whether the shell holds its terminal's foreground, as at its prompt: by the foreground
+// process group where the platform tells it, so a script its own interpreter runs (`bash
+// deploy.sh`) is a program; else by the foreground program's name, and, with none told (as
+// on Windows), it does.
+const shellAtPrompt = (record: Record): boolean => {
+  const group = record.foreground?.group
+  if (group !== undefined && group !== null) return group === record.process.pid
+  const name = record.summary.process?.name
+  return name === undefined || record.shellName === undefined || name === record.shellName
+}
+
+// How much time a prompt's hook must have left for drift to be read, in milliseconds:
+// a git branch and a plan's file, each with its own short timeout.
+const driftReadMs = 1_500
 
 const sameToken = (a: string, b: string): boolean =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
@@ -950,7 +972,8 @@ export class Terminals {
           opener !== undefined && !kept && expectedAgent(opener.command, undefined) !== null,
         seenEntry: undefined,
         shellName: shellProcess(shell)?.name,
-        artifacts: false,
+        nudges: noNudges,
+        expecting: null,
       }
       this.records.set(record.summary.id, record)
       // Restored as a shell that resumes nothing, there is no agent left to lead.
@@ -1075,6 +1098,7 @@ export class Terminals {
       record.summary.ledBy,
     )
     this.messaging.expect(id, agent)
+    record.expecting = agent
   }
 
   /**
@@ -1277,13 +1301,16 @@ export class Terminals {
           this.live(record.summary.id) ? [murmurSubject(record)] : [],
         ),
       facts: (terminal) => this.peers.facts(terminal),
-      screen: async (terminalId) => (await this.screenOf(terminalId))?.rows,
+      screen: async (terminalId) => {
+        const screen = await this.screenOf(terminalId)
+        return screen && { rows: screen.rows, ...(screen.wrapped && { wrapped: screen.wrapped }) }
+      },
       items: (agent) => harnesses[agent].transcripts?.items,
       projectFolder: (sessionId) => this.projectFolder(sessionId),
       described: (terminalId, description) => {
         const record = this.live(terminalId)
         if (!record) return
-        record.naming = murmured(record.naming, description)
+        record.naming = murmured(record.naming, description.title)
         this.retitle(record)
         this.save(record, false)
       },
@@ -1797,6 +1824,8 @@ export class Terminals {
         // Restarted to resume the worker's agent session, it stays led; restarted as a plain
         // shell, there is no agent left to lead.
         if (!started.resumes) this.endLead(record)
+        // The earlier shell's job and what murmur kept of it are not the new one's.
+        this.murmur?.gone(record.summary.id)
         this.register(record, input.resume ?? null)
         this.listen(record)
         this.announce(record)
@@ -2424,7 +2453,36 @@ export class Terminals {
         return this.send(call)
       case "agents":
         return this.agents(call)
+      case "summarize":
+        return this.summarize(call)
     }
+  }
+
+  /**
+   * Summarizes the caller's own terminal, as its agent asked through Novadeck's MCP
+   * server: the summary of its work `agents()` lists. It names nothing: titles are the
+   * person's, murmur's and the opener's, so an agent has no way to set one. The call
+   * tells murmur to look at the terminal again, now that its agent said what it works on.
+   * A call without the shell's own token learns nothing more.
+   */
+  async summarize(call: Call): Promise<SummarizeAnswer> {
+    const record = this.records.get(call.terminalId)
+    if (!record || record.exitQueued || !sameToken(record.token, call.token))
+      return unansweredCalls.summarize
+    const read = readSummarizeRequest(call.request)
+    if (!read.ok) return read
+    const summary = cleanSummary(read.request.summary)
+    const refusal = summaryRefusal(summary)
+    if (refusal) return refused(refusal)
+    // Drift is measured from where its work is now.
+    const facts = await this.peers.facts(record)
+    if (this.stopping || this.records.get(call.terminalId) !== record)
+      return unansweredCalls.summarize
+    record.naming = summarized(record.naming, summary)
+    record.nudges = described(record.nudges, facts)
+    this.save(record, false)
+    this.murmur?.summarized(record.summary.id)
+    return { ok: true }
   }
 
   /** Sends another terminal's agent a message, as an agent asked through Novadeck's MCP server. */
@@ -3000,6 +3058,8 @@ export class Terminals {
     } else if (binding.instance && alive(binding.instance)) {
       record.suspended = binding.instance
     } else this.endLead(record)
+    // Nothing came of the agent the shell was opened to run: it is a plain shell now.
+    if (binding === null && ran) record.expecting = null
     this.endBinding(record)
     // An agent whose prompt showed, with no session bound, left with it.
     this.messaging.unshown(record.summary.id)
@@ -3187,8 +3247,8 @@ export class Terminals {
           event.type === "session-observed" && event.compacted && rootedIn(record.root, event),
       )
     )
-      record.artifacts = true
-    this.murmur?.reported(report.terminalId, this.reported(record, told, changes))
+      record.nudges = fired(record.nudges, "compaction")
+    this.murmur?.reported(report.terminalId, this.reported(changes))
     if (deadline === undefined) {
       this.messaging.observe(report.terminalId, told)
       this.escaped(record)
@@ -3207,26 +3267,12 @@ export class Terminals {
     }
     this.escaped(record)
     this.judgeFirst(record)
-    return this.noticed(record, report, told, answer, deadline)
+    return this.nudged(record, report, told, answer, deadline)
   }
 
   /** What a report tells murmur of the terminal's root session (see `Murmur.reported`). */
-  private reported(
-    record: Record,
-    events: readonly HarnessEvent[],
-    changes: readonly RootChange[],
-  ): Reported {
-    const rooted = (event: HarnessEvent) => rootedIn(record.root, event)
-    return {
-      session: changes.some((change) => change.type === "new"),
-      compacted: events.some(
-        (event) => event.type === "session-observed" && event.compacted && rooted(event),
-      ),
-      prompts: events.filter(
-        (event) => event.type === "turn-started" && event.cause === "prompt" && rooted(event),
-      ).length,
-      ended: events.some((event) => event.type === "turn-ended" && rooted(event)),
-    }
+  private reported(changes: readonly RootChange[]): Reported {
+    return { session: changes.some((change) => change.type === "new") }
   }
 
   /** A Stop Novadeck continued, lapsed as delivery took it, ends the agent's turn too. */
@@ -3273,30 +3319,44 @@ export class Terminals {
   }
 
   /**
-   * A prompt-time hook's answer, with Novadeck's notice of the bar beside the terminal when
-   * it is due (see `artifacts.ts`): for a session that begins or lost its context, only
-   * at the person's prompt, as a paragraph of its own, never in an answer that carries
-   * messages or another notice, nor at Stop, nor one that might miss the hook's deadline,
-   * which never spends it.
+   * A prompt-time hook's answer, with Novadeck's notices when any is due (see
+   * `nudges.ts`): the bar beside the terminal, for a session that begins or lost its
+   * context, which a `summarize` never clears, and a nudge to summarize the terminal's
+   * work, when a trigger fired since the last `summarize`; only at the person's prompt, as
+   * a paragraph each, never in an answer that carries messages or another notice, nor at
+   * Stop. Each of the person's prompts counts toward the backstop, and where nothing else
+   * is said, whether the work drifted is looked at.
    */
-  private noticed(
+  private async nudged(
     record: Record,
     report: Report,
     events: readonly HarnessEvent[],
     answer: HookAnswer,
     deadline: number,
-  ): HookAnswer {
+  ): Promise<HookAnswer> {
     const { messaging } = harnesses[report.agent]
-    if (!record.artifacts || messaging.asks[report.event] !== "prompt") return answer
+    if (messaging.asks[report.event] !== "prompt") return answer
     const prompt = events.some(
       (event) =>
         event.type === "turn-started" && event.cause === "prompt" && rootedIn(record.root, event),
     )
     if (!prompt) return answer
     const silent = answer.leaseId === null && answer.stdout === silentFor(messaging, report.event)
-    if (!silent || deadline - Date.now() < leaseMargin) return answer
-    record.artifacts = false
-    return { leaseId: null, stdout: messaging.prompt(artifactsNotice) }
+    const inTime = (ms: number) => deadline - Date.now() >= ms
+    // Read only for an answer that has nothing else to say, so a delivery never waits on
+    // it, and only with time to spare.
+    const facts =
+      silent && record.nudges.baseline && inTime(driftReadMs)
+        ? await this.peers.facts(record)
+        : undefined
+    // A nudge that may miss the hook's deadline is never spent: its trigger waits.
+    const taken = atPrompt(record.nudges, { quiet: silent && inTime(leaseMargin), facts })
+    record.nudges = taken.nudges
+    if (!taken.nudge) return answer
+    return {
+      leaseId: null,
+      stdout: messaging.prompt(noticesAt(taken, { summary: record.naming.summary })),
+    }
   }
 
   /**
@@ -3307,7 +3367,7 @@ export class Terminals {
   private trackRoot(record: Record, events: readonly HarnessEvent[], statusLine: boolean): boolean {
     const changes = this.followRootOf(record, events, statusLine)
     const tallied = this.tallyWork(record, events, changes)
-    this.murmur?.reported(record.summary.id, this.reported(record, events, changes))
+    this.murmur?.reported(record.summary.id, this.reported(changes))
     return tallied
   }
 
@@ -3330,7 +3390,8 @@ export class Terminals {
     record.root = root
     if (changes.length > 0) this.messaging.rooted(id, changes)
     // A new root session has yet to hear of the bar beside its terminal.
-    if (changes.some((change) => change.type === "new")) record.artifacts = true
+    if (changes.some((change) => change.type === "new"))
+      record.nudges = fired(record.nudges, "session")
     return changes
   }
 

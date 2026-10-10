@@ -586,6 +586,7 @@ export class Voice {
           from: artifact.url,
           to: path,
           sha256: artifact.sha256,
+          size: artifact.size,
           signal,
           progress: (received) =>
             this.progress({ model, step: "model", received: done + received, total }),
