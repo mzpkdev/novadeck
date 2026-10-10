@@ -13,6 +13,7 @@ import type { Platform } from "./shortcuts"
 
 const nowhere: KeyTarget = {
   editing: false,
+  textEntry: false,
   terminalInput: false,
   rename: false,
   viewSwitch: false,
@@ -24,7 +25,7 @@ const nowhere: KeyTarget = {
   companion: false,
   chat: false,
 }
-const terminalInput: Partial<KeyTarget> = { editing: true, terminalInput: true }
+const terminalInput: Partial<KeyTarget> = { editing: true, textEntry: true, terminalInput: true }
 
 type Press = Partial<Omit<KeyInput, "target">> & { target?: Partial<KeyTarget> }
 type Situation = { state?: Partial<KeyState>; environment?: Partial<KeyEnvironment> }
@@ -470,9 +471,13 @@ describe("keymap", () => {
         })
 
         it("leaves text fields, such as a tab's rename, their keys", () => {
-          const rename = { editing: true, rename: true }
+          const rename = { editing: true, textEntry: true, rename: true }
           expect(route(platform, "capture", digit(2, { target: rename }))).toEqual([])
-          expect(route(platform, "capture", digit(2, { target: { editing: true } }))).toEqual([])
+          expect(route(platform, "capture", digit(2, { target: { textEntry: true } }))).toEqual([])
+          // A menu, popover or switcher is not text entry.
+          expect(route(platform, "capture", digit(2, { target: { editing: true } }))).toEqual([
+            "project.pinned 1",
+          ])
           expect(route(platform, "capture", digit(2, { target: terminalInput }))).toEqual([
             "project.pinned 1",
           ])

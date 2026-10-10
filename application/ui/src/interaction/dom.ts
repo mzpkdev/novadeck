@@ -8,6 +8,10 @@ import type { SidebarPanel } from "../model/types"
 const editingOrOverlay =
   'input:not([type="radio"], [type="checkbox"], [type="button"], [type="submit"], [type="reset"]), textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm, [role="textbox"], [role="searchbox"], [role="combobox"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="slider"], [role="spinbutton"], [role="tablist"], [data-scope="popover"][data-state="open"], [data-own-keys]'
 
+// Where text is typed, outside the menus and dialogs that merely hold focus.
+const textEntry =
+  'input:not([type="radio"], [type="checkbox"], [type="button"], [type="submit"], [type="reset"], [type="range"]), textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="searchbox"], [role="combobox"], [role="spinbutton"]'
+
 export const workspaceShortcutTarget = (target: EventTarget | null): boolean =>
   !(target instanceof Element && target.closest(editingOrOverlay))
 
@@ -54,6 +58,8 @@ export const insideTerminalInput = (target: EventTarget | null): boolean =>
 export type KeyTarget = {
   // Text fields, editors, and open menus or dialogs keep their own keys.
   readonly editing: boolean
+  // A text field or editor, where a chord would interrupt typing.
+  readonly textEntry: boolean
   readonly terminalInput: boolean
   readonly rename: boolean
   readonly viewSwitch: boolean
@@ -69,6 +75,7 @@ export type KeyTarget = {
 
 export const classifyKeyTarget = (target: EventTarget | null): KeyTarget => ({
   editing: !workspaceShortcutTarget(target),
+  textEntry: within(target, textEntry),
   terminalInput: insideTerminalInput(target),
   rename: insideTerminalRename(target),
   viewSwitch: insideViewSwitch(target),

@@ -34,6 +34,24 @@ describe("key targets", () => {
   })
 })
 
+describe("text entry", () => {
+  it("is a field or editor, not a menu, popover or switcher around it", () => {
+    expect(classifyKeyTarget(mount('<input data-target type="text" />')).textEntry).toBe(true)
+    expect(classifyKeyTarget(mount("<textarea data-target></textarea>")).textEntry).toBe(true)
+    expect(classifyKeyTarget(mount("<div contenteditable data-target></div>")).textEntry).toBe(true)
+    for (const html of [
+      '<div role="dialog"><button data-target type="button">Go</button></div>',
+      '<div role="listbox"><div data-target role="option">A</div></div>',
+      '<div role="menu"><div data-target role="menuitem">A</div></div>',
+      '<div data-scope="popover" data-state="open"><button data-target>Go</button></div>',
+    ]) {
+      const classified = classifyKeyTarget(mount(html))
+      expect(classified.editing).toBe(true)
+      expect(classified.textEntry).toBe(false)
+    }
+  })
+})
+
 describe("focusing Zen's controls after they mount", () => {
   it("focuses the control when focus was left on the page", () => {
     mount('<button data-workspace-zen-create data-target type="button">New</button>')

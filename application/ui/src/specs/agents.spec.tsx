@@ -570,10 +570,14 @@ describe("A pinned project", () => {
     await pin("storefront").click()
     await expect.element(pin("storefront")).toHaveAttribute("aria-current", "true")
     const before = xs()
-    await pin("docs-site").click()
-    await expect.element(pin("docs-site")).toHaveAttribute("aria-current", "true")
-    // Every pin keeps its width, so none after it moves.
-    expect(xs()).toEqual(before)
+    // Each pin in turn becomes current, and every pin keeps its width, so none moves.
+    for (const name of ["api-service", "docs-site", "mobile-app", "storefront"]) {
+      // eslint-disable-next-line no-await-in-loop -- Each pin is current in turn.
+      await pin(name).click()
+      // eslint-disable-next-line no-await-in-loop -- Each pin is current in turn.
+      await expect.element(pin(name)).toHaveAttribute("aria-current", "true")
+      expect(xs()).toEqual(before)
+    }
   })
 
   it("keeps a moved pin shown: the last shown pin can't step into the hidden ones", async () => {

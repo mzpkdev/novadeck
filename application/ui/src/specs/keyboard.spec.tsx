@@ -702,15 +702,53 @@ describe("pinned project shortcuts", () => {
     it("works from a terminal input without typing the digit there", async () => {
       pinInOrder()
       await openWorkspace()
+      const input = commandInput("Checkout implementation").element()
       await commandInput("Checkout implementation").click()
+
+      // The key is ours, so it never reaches the terminal's own handlers.
+      expect(digitKeydown(2, {}, input).defaultPrevented).toBe(true)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+      await pressDigit(1)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+    })
+
+    it("works from the open project switcher, and closes it", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await workspaceSwitcher().click()
+      await expect.element(page.getByRole("dialog")).toBeVisible()
 
       await pressDigit(2)
 
       await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
-      await pressDigit(1)
-      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
-      for (const field of document.querySelectorAll<HTMLInputElement>("[data-terminal-input]"))
-        expect(field.value).not.toMatch(/[12]/)
+      await expect.element(page.getByRole("dialog")).not.toBeInTheDocument()
+    })
+
+    it("works from the terminal switcher, and closes it", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await terminal("Checkout implementation")
+        .getByRole("button", { name: "Switch terminal" })
+        .click()
+      await expectFocusWithin(recentSwitcher())
+
+      await pressDigit(2)
+
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+      await expect.element(recentSwitcher()).not.toBeInTheDocument()
+    })
+
+    it("works from the terminal switcher held open with Ctrl+Tab", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await press("{Control>}{Tab}")
+      await expect.element(recentSwitcher()).toBeVisible()
+
+      await press("2")
+
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+      await expect.element(recentSwitcher()).not.toBeInTheDocument()
+      await press("{/Control}")
     })
 
     it("keeps the key from the terminal even when the pin is already the current project", async () => {
