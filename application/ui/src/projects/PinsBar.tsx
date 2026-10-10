@@ -1,18 +1,19 @@
 import {
   Accessibility,
   Cursor,
+  type DragDropManager,
   Feedback,
   PointerActivationConstraints,
   PointerSensor,
 } from "@dnd-kit/dom"
 import { RestrictToWindow } from "@dnd-kit/dom/modifiers"
-import { DragDropProvider } from "@dnd-kit/react"
+import { DragDropProvider, useDragDropManager } from "@dnd-kit/react"
 import { isSortable, useSortable } from "@dnd-kit/react/sortable"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
 import { pinnedProjectShortcut } from "../interaction/shortcuts"
 import { Tooltip } from "../ui-toolkit/Tooltip"
-import { usePinDrop } from "./pin-drop"
+import { usePinDrop, type PinHandoff } from "./pin-drop"
 import { pinsThatFit } from "./pins-fit"
 import { needsPerson, statusText, type ProjectStatus } from "./project-status"
 
@@ -51,8 +52,9 @@ const leeway = 24
 // arrangement, which is the caller's. A pin dragged well off the bar shows it will go, and
 // let go there it is unpinned (`onUnpin`); stepped, it never leaves the bar, as it can't
 // pass the last pin shown.
-// A project dragged out of the switcher's list (`usePinDrop`) drops between the pins, or
-// as the first into an empty bar, which opens for the drag; the bar marks where it lands.
+// A project dragged out of the switcher's list (`usePinDrop`) comes in pinned, and the bar
+// drags its pin on from the pointer as it would any pin's; an empty bar opens for such a
+// drag, ready for the first.
 export const PinsBar = ({
   pins,
   current,
@@ -77,7 +79,7 @@ export const PinsBar = ({
   onUnpin: (id: string) => void
   onShown: (ids: readonly string[]) => void
 }): React.JSX.Element => {
-  const { channel, drag } = usePinDrop()
+  const { channel, drag, handoff } = usePinDrop()
   // A drag from the switcher's list that the bar can take.
   const dropping = drag?.accepts === true
   // The last pins stay while the bar slides out, but not in a bar opened for a drop.
@@ -158,33 +160,67 @@ export const PinsBar = ({
     // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [items, drags, current])
 
-  // Where a point lands among the pins shown, the dragged project's own pin aside, for a
-  // drag from the switcher's list: on the bar, before the first pin whose middle is past
-  // it, or after the last.
+  // Where a point along the bar lands among the pins shown, the dragged project's own pin
+  // aside, for a drag handed over from the switcher's list: before the first pin whose
+  // middle is past it, or after the last.
   useLayoutEffect(() => {
     if (!channel) return
-    channel.setBar({
-      locate: (point, id) => {
-        const element = row.current
-        const box = strip.current?.getBoundingClientRect()
-        if (!element || !box || box.height === 0) return null
-        if (point.x < box.left || point.x > box.right) return null
-        if (point.y < box.top || point.y > box.bottom + 8) return null
-        const origin = element.getBoundingClientRect().left
-        const others = [...element.querySelectorAll<HTMLElement>(".pin:not([inert])")]
-          .filter((pin) => pin.dataset.pin !== id)
-          .map((pin) => pin.getBoundingClientRect())
-        const found = others.findIndex((pin) => point.x < pin.left + pin.width / 2)
-        const index = found < 0 ? others.length : found
-        const x =
-          others[index]?.left ??
-          others.at(-1)?.right ??
-          origin + parseFloat(getComputedStyle(element).paddingLeft)
-        return { index, x: x - origin, bottom: box.bottom }
-      },
+    channel.setLocate((point, id) => {
+      const others = [...(row.current?.querySelectorAll<HTMLElement>(".pin:not([inert])") ?? [])]
+        .filter((pin) => pin.dataset.pin !== id)
+        .map((pin) => pin.getBoundingClientRect())
+      const found = others.findIndex((pin) => point.x < pin.left + pin.width / 2)
+      return found < 0 ? others.length : found
     })
-    return () => channel.setBar(null)
+    return () => channel.setLocate(null)
   }, [channel])
+
+  // A drag handed over from the switcher's list: once its pin shows, the bar drags it on,
+  // held where the pointer is, as the pointer moves until it lets go (or Escape cancels).
+  const manager = useRef<DragDropManager | null>(null)
+  const takeManager = useCallback((next: DragDropManager | null) => {
+    manager.current = next
+  }, [])
+  const took = useRef<PinHandoff | null>(null)
+  const following = useRef<(() => void) | null>(null)
+  useLayoutEffect(() => {
+    if (!handoff || took.current === handoff) return
+    const actions = manager.current?.actions
+    const pin = row.current?.querySelector<HTMLElement>(
+      `.pin[data-pin="${CSS.escape(handoff.id)}"]`,
+    )
+    if (!actions || !pin) return
+    took.current = handoff
+    const box = pin.getBoundingClientRect()
+    actions.start({
+      source: handoff.id,
+      coordinates: { x: box.left + 20, y: box.top + box.height / 2 },
+    })
+    actions.move({ to: handoff.point })
+    const move = (event: PointerEvent): void =>
+      actions.move({ to: { x: event.clientX, y: event.clientY }, event })
+    const drop = (event: PointerEvent): void => actions.stop({ event })
+    const cancel = (): void => actions.stop({ canceled: true })
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      event.stopPropagation()
+      cancel()
+    }
+    window.addEventListener("pointermove", move, true)
+    window.addEventListener("pointerup", drop, true)
+    window.addEventListener("pointercancel", cancel, true)
+    window.addEventListener("keydown", escape, true)
+    following.current = () => {
+      window.removeEventListener("pointermove", move, true)
+      window.removeEventListener("pointerup", drop, true)
+      window.removeEventListener("pointercancel", cancel, true)
+      window.removeEventListener("keydown", escape, true)
+    }
+    // Its pin shows after the arrangement changes, and a drag's end remounts the pins.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
+  }, [handoff, items, drags])
+  useEffect(() => () => following.current?.(), [])
 
   // Tells which show, once at first and then only when they change.
   const told = useRef<readonly string[] | null>(null)
@@ -207,7 +243,7 @@ export const PinsBar = ({
         <div
           ref={strip}
           className="pins-bar-strip flex items-stretch pl-3.5"
-          data-drop={drag?.spot ? "over" : dropping ? "ready" : undefined}
+          data-drop={dropping ? "ready" : undefined}
         >
           {/* The chord before each pin's number, as a reminder; each pin names its own. */}
           <kbd className="hint self-center whitespace-nowrap" aria-hidden="true">
@@ -243,16 +279,25 @@ export const PinsBar = ({
                 setLeaving(away)
               }}
               onDragEnd={(event) => {
+                const handedOver = took.current !== null
+                if (handedOver) {
+                  following.current?.()
+                  following.current = null
+                  took.current = null
+                }
                 const unpins = off.current && !event.canceled
                 off.current = false
                 setLeaving(false)
                 setDragging(false)
                 setDrags((made) => made + 1)
+                // A handed-over drag let go off the bar, or canceled, puts everything back as
+                // it was before it: the project was never placed.
+                if (handedOver) channel?.settle(unpins || event.canceled)
                 const { source } = event.operation
                 if (!isSortable(source)) return
                 const id = String(source.id)
                 if (unpins) {
-                  onUnpin(id)
+                  if (!handedOver) onUnpin(id)
                   return
                 }
                 setFocusRequest({ id })
@@ -260,6 +305,7 @@ export const PinsBar = ({
                 onMove(id, Math.min(source.index, pins.length - 1))
               }}
             >
+              <ManagerOf onManager={takeManager} />
               {items.map((project, index) => {
                 // A project only working shows nothing: the bar stays still while agents work.
                 const status = needsPerson(statuses[project.id]) ? statuses[project.id] : undefined
@@ -290,13 +336,6 @@ export const PinsBar = ({
                 Drop here to pin
               </span>
             )}
-            {drag?.spot && items.length > 0 && (
-              <span
-                className="pins-bar-drop"
-                style={{ "--_x": `${drag.spot.x}px` } as React.CSSProperties}
-                aria-hidden="true"
-              />
-            )}
             {line && items.length > 0 && (
               <span
                 className="pins-bar-indicator"
@@ -315,6 +354,17 @@ export const PinsBar = ({
       </div>
     </div>
   )
+}
+
+// Hands the bar its drag manager, which a drag handed over from the switcher's list runs.
+const ManagerOf = ({
+  onManager,
+}: {
+  onManager: (manager: DragDropManager | null) => void
+}): null => {
+  const manager = useDragDropManager()
+  useLayoutEffect(() => onManager(manager), [manager, onManager])
+  return null
 }
 
 const PinButton = ({
@@ -365,6 +415,8 @@ const PinButton = ({
     button.current?.focus()
     onFocused()
   }, [focusRequest, project.id, onFocused])
+  // A pin being dragged shows, though it has no room in the bar, as one just handed over.
+  const shows = fits || isDragSource
   const shortcut = pinnedProjectShortcut(index)
   return (
     <Tooltip content={`${project.directory} · ${shortcut.display.join(" ")}`} disabled={dragging}>
@@ -375,8 +427,8 @@ const PinButton = ({
         }}
         type="button"
         data-pin={project.id}
-        inert={!fits}
-        style={fits ? undefined : { visibility: "hidden" }}
+        inert={!shows}
+        style={shows ? undefined : { visibility: "hidden" }}
         className="pin flex min-w-0 max-w-50 shrink-0 items-center text-body"
         aria-current={current ? "true" : undefined}
         aria-keyshortcuts={[

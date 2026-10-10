@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react"
 
 import type { Project } from "../model/types"
 import { Tooltip } from "../ui-toolkit/Tooltip"
-import { usePinDrop } from "./pin-drop"
 import { statusText, type ProjectStatus } from "./project-status"
 
 // One project's row in the list: its button, and the pin and remove buttons that show
@@ -49,9 +48,6 @@ export const ProjectRow = ({
     transition: { duration: 180, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
   })
   const button = useRef<HTMLButtonElement>(null)
-  // Dragged over the pins bar, the row moves under it, so the bar shows where it goes.
-  const { drag } = usePinDrop()
-  const overPins = isDragSource && drag?.id === project.id && drag.spot !== null
   useEffect(() => {
     if (focusRequest?.id !== project.id) return
     button.current?.focus()
@@ -65,7 +61,6 @@ export const ProjectRow = ({
       className="workspace-switcher-row group relative"
       data-pinned={pinned ? "true" : undefined}
       data-dragging={isDragSource ? "true" : undefined}
-      data-over-pins={overPins ? "true" : undefined}
     >
       <Tooltip content={project.directory} placement="right-start">
         <button

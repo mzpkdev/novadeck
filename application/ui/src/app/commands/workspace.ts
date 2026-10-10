@@ -64,6 +64,8 @@ export type WorkspaceCommands = ShellCommands &
     readonly toggleProjectPin: (id: string) => void
     // Pins a project at this place among the pinned ones, or moves it there if pinned.
     readonly pinProjectAt: (id: string, index: number) => void
+    // Puts back an arrangement read before, as a canceled drag does.
+    readonly restoreProjectArrangement: (arrangement: ProjectArrangement) => void
     // Selects a terminal and brings it into view, optionally fitting Canvas around it.
     readonly select: (id: string, fit?: boolean) => void
     readonly setSelected: (terminal: string) => void
@@ -289,6 +291,7 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     toggleProjectPin: (id) => arrange((projects, current) => togglePin(projects, current, id)),
     pinProjectAt: (id, index) =>
       arrange((projects, current) => pinAt(projects, current, id, index)),
+    restoreProjectArrangement: (arrangement) => arrange(() => arrangement),
     updatePreferences: (next) => {
       const snapshot = workspace.getSnapshot()
       const { view } = currentState(snapshot)

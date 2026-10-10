@@ -15,9 +15,7 @@
    only working doesn't mark it. Their glyphs and tones are project-status.css's.
 
    Hooks: on a row, data-pinned="true" for a pinned project and data-dragging="true" while
-   it is dragged, and data-over-pins="true" while that drag is over the pins bar; on the
-   list of projects, data-dragged-out="true" once a drag has left it, which fades the
-   menu. On the trigger, aria-expanded="true" while the popover is open; on a row,
+   it is dragged. On the trigger, aria-expanded="true" while the popover is open; on a row,
    aria-current="true" for the current project. On the trigger and on a row,
    data-project-status="question" | "attention" | "failed" | "done" | "running" (never
    "running" on the trigger), which the status mark inside reads.
@@ -79,22 +77,6 @@
 .workspace-switcher-row[data-dragging="true"] > .workspace-switcher-project {
   background-color: var(--item-highlighted-bg, var(--color-soft));
   box-shadow: var(--workspace-switcher-drag-shadow, var(--shadow-control));
-}
-/* A row dragged out of the menu leaves it faded away, clear of the pins bar, until the
-   drag ends and the menu closes; the dragged row, raised above the page, still shows. */
-.workspace-switcher-menu:has(> [data-dragged-out="true"]) {
-  opacity: 0;
-  transition: opacity var(--motion-state) var(--ease-interface);
-}
-/* The floating menu sets its own pointer-events, so its parts let the pointer through. */
-.workspace-switcher-menu:has(> [data-dragged-out="true"]) > * {
-  pointer-events: none;
-}
-
-/* Over the pins bar, the dragged row keeps its look but sits by the pointer and under
-   the bar, so the bar's gap mark stays in view. */
-.workspace-switcher-row[data-over-pins="true"] > .workspace-switcher-project {
-  translate: var(--pin-drop-x, 0) var(--pin-drop-y, 0);
 }
 
 /* The rule that closes the pinned group. */

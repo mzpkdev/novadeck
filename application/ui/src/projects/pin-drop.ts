@@ -1,50 +1,57 @@
 import { createContext, useContext, useSyncExternalStore } from "react"
 
-type Point = { readonly x: number; readonly y: number }
+import type { ProjectArrangement } from "./project-arrangement"
 
-// Where a dragged project would land on the pins bar: its place among the pins, the gap's
-// offset from the start of the bar's row, where the bar marks it, and the bar's bottom on
-// screen, which the dragged row keeps below.
-export type PinDropSpot = { readonly index: number; readonly x: number; readonly bottom: number }
+export type Point = { readonly x: number; readonly y: number }
 
-// A project dragged out of the switcher's list, while the drag lasts: whether the pins
-// bar can take it (it is pinned, or a pin is free), and where it would land while the
-// pointer is over the bar.
-export type PinDrop = {
-  readonly id: string
-  readonly accepts: boolean
-  readonly spot: PinDropSpot | null
+// A project dragged in the switcher's list, while that drag lasts: whether the pins bar
+// can take it (it is pinned, or a pin is free).
+export type PinDrag = { readonly id: string; readonly accepts: boolean }
+
+// A drag the switcher's list handed to the pins bar as it left the list: the project,
+// pinned by then, and where the pointer was, from which the bar drags its pin on.
+export type PinHandoff = { readonly id: string; readonly point: Point }
+
+export type PinDropState = { readonly drag: PinDrag | null; readonly handoff: PinHandoff | null }
+
+// What the channel does to the arrangement, which is the caller's: pins a project at a
+// place among the pins, and reads and puts back the whole arrangement.
+export type PinDropArrangement = {
+  readonly pin: (id: string, index: number) => void
+  readonly current: () => ProjectArrangement
+  readonly restore: (arrangement: ProjectArrangement) => void
 }
 
-// The pins bar, as the channel knows it: where a point lands among its pins, null off the
-// bar or while it isn't shown.
-export type PinDropBar = {
-  readonly locate: (point: Point, id: string) => PinDropSpot | null
-}
-
-// Carries a drag from the switcher's list to the pins bar, which are apart in the tree:
-// the list tells where the drag starts, moves and ends, and the bar, which knows where
-// its pins are, says where a point lands among them. A drop on a spot pins the project
-// there, through `drop`; the spot is found again as the drag ends, in case the bar went
-// meanwhile, as into Zen.
+// Carries a drag from the switcher's list to the pins bar, which are apart in the tree.
+// The list tells where its drag starts and ends; once the drag leaves the list it hands
+// it over: the project is pinned at once, where the pointer is along the bar (or last),
+// and the bar goes on with a drag of that pin, as a reorder, so the person drags one pin
+// from then on. Let go off the bar, it is unpinned as any pin is; canceled, the
+// arrangement goes back to how it was before the drag.
 export type PinDropChannel = {
-  readonly getSnapshot: () => PinDrop | null
+  readonly getSnapshot: () => PinDropState
   readonly subscribe: (listener: () => void) => () => void
-  readonly setBar: (bar: PinDropBar | null) => void
+  // The bar's place for a point among its pins, the dragged project's own aside.
+  readonly setLocate: (locate: ((point: Point, id: string) => number) | null) => void
   readonly start: (id: string, accepts: boolean) => void
-  // A point the bar can't see, as over the open list, is null.
-  readonly move: (point: Point | null) => void
-  // Ends the drag, pinning the project where it was let go unless it was canceled;
-  // true when it was dropped on the bar.
-  readonly end: (canceled: boolean) => boolean
+  // Pins the dragged project and hands its drag to the bar; false where the bar can't
+  // take it.
+  readonly handOff: (point: Point) => boolean
+  // The list's drag is over, handed off or not.
+  readonly end: () => void
+  // The bar's drag of the handed-off pin is over.
+  readonly settle: (canceled: boolean) => void
 }
 
-export const createPinDrop = (drop: (id: string, index: number) => void): PinDropChannel => {
-  let state: PinDrop | null = null
-  let bar: PinDropBar | null = null
-  let last: Point | null = null
+const idle: PinDropState = { drag: null, handoff: null }
+
+export const createPinDrop = (arrangement: PinDropArrangement): PinDropChannel => {
+  let state = idle
+  let locate: ((point: Point, id: string) => number) | null = null
+  // The arrangement before the handed-off drag pinned its project.
+  let before: ProjectArrangement | null = null
   const listeners = new Set<() => void>()
-  const set = (next: PinDrop | null): void => {
+  const set = (next: PinDropState): void => {
     state = next
     for (const listener of listeners) listener()
   }
@@ -54,32 +61,25 @@ export const createPinDrop = (drop: (id: string, index: number) => void): PinDro
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    setBar: (next) => {
-      bar = next
+    setLocate: (next) => {
+      locate = next
     },
-    start: (id, accepts) => {
-      last = null
-      set({ id, accepts, spot: null })
-    },
-    move: (point) => {
-      if (!state) return
-      last = point
-      const spot = state.accepts && point && bar ? bar.locate(point, state.id) : null
-      const was = state.spot
-      const same =
-        was && spot && was.index === spot.index && was.x === spot.x && was.bottom === spot.bottom
-      if (was === spot || same) return
-      set({ ...state, spot })
-    },
-    end: (canceled) => {
-      const was = state
-      if (!was) return false
-      set(null)
-      const spot = !canceled && was.spot && last && bar ? bar.locate(last, was.id) : null
-      last = null
-      if (!spot) return false
-      drop(was.id, spot.index)
+    start: (id, accepts) => set({ ...state, drag: { id, accepts } }),
+    handOff: (point) => {
+      const { drag } = state
+      if (!drag?.accepts || state.handoff) return false
+      before = arrangement.current()
+      arrangement.pin(drag.id, locate ? locate(point, drag.id) : Number.MAX_SAFE_INTEGER)
+      set({ drag, handoff: { id: drag.id, point } })
       return true
+    },
+    end: () => {
+      if (state.drag) set({ ...state, drag: null })
+    },
+    settle: (canceled) => {
+      if (canceled && before) arrangement.restore(before)
+      before = null
+      if (state.handoff) set({ ...state, handoff: null })
     },
   }
 }
@@ -87,15 +87,15 @@ export const createPinDrop = (drop: (id: string, index: number) => void): PinDro
 export const PinDropContext = createContext<PinDropChannel | null>(null)
 
 const none = (): (() => void) => () => {}
-const nothing = (): null => null
+const nothing = (): PinDropState => idle
 
-// The channel, where one is given, and the drag it carries now.
-export const usePinDrop = (): { channel: PinDropChannel | null; drag: PinDrop | null } => {
+// The channel, where one is given, and the drags it carries now.
+export const usePinDrop = (): { channel: PinDropChannel | null } & PinDropState => {
   const channel = useContext(PinDropContext)
-  const drag = useSyncExternalStore(
+  const state = useSyncExternalStore(
     channel?.subscribe ?? none,
     channel?.getSnapshot ?? nothing,
     nothing,
   )
-  return { channel, drag }
+  return { channel, ...state }
 }

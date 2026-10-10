@@ -38,9 +38,9 @@ const leeway = 24
 // the rest. Rows drag into any order within the list; the arrangement itself is the
 // caller's, told by `onMove` (to a place in the list, pinned ones first) and `onStep`
 // (one place, as Alt and the arrows move the focused row). Where a pins bar listens
-// (`PinDropContext`), a row also drags out of the list and onto the bar, which pins it:
-// the list fades for good as the drag leaves it, and `onDraggedOut` closes it once let go.
-// A row dragged past its sides never scrolls it sideways.
+// (`PinDropContext`), a row dragged out of the list is pinned there and then, and the bar
+// drags its pin on (`onDraggedOut` closes the list). A row dragged past its sides never
+// scrolls it sideways.
 export const ProjectList = ({
   projects,
   current,
@@ -66,8 +66,8 @@ export const ProjectList = ({
   onStep: (id: string, by: -1 | 1) => void
   onTogglePin: (id: string) => void
   onRemove: (project: Project) => void
-  // A row was dragged out of the list and let go, on the pins bar or not; the list's own
-  // order stays as it was.
+  // A row was dragged out of the list and its drag went to the pins bar, which closes it;
+  // the list's own order stays as it was.
   onDraggedOut?: () => void
 }): React.JSX.Element => {
   // The projects as listed: the pinned ones, then the rest.
@@ -77,15 +77,10 @@ export const ProjectList = ({
   // The element that holds the rows, which a drag stays within.
   const [list, setList] = useState<HTMLDivElement | null>(null)
   const pinDrop = useContext(PinDropContext)
-  // The drag has left the list, which then fades away, out of the way of the pins bar,
-  // until the drag ends; it stays in the page meanwhile, as the drag needs its row.
-  const out = useRef(false)
+  // The drag left the list and went to the pins bar.
+  const handedOff = useRef(false)
   // Where the rows began on screen as the drag started, before they made room for it.
   const rowsTop = useRef<number | null>(null)
-  // Where the dragged row and the pointer were as the drag started: the row follows the
-  // pointer from there, so where it is now needs no measuring a step behind.
-  const grabbed = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
-  const [draggedOut, setDraggedOut] = useState(false)
   // A row that can reach the pins bar leaves the list; otherwise it stays in it.
   const modifiers = useMemo(
     () =>
@@ -111,7 +106,6 @@ export const ProjectList = ({
     <div
       className="workspace-switcher-projects flex max-h-[min(560px,calc(100vh-150px))] flex-col gap-1 overflow-x-hidden overflow-y-auto p-[5px]"
       aria-label="Workspaces"
-      data-dragged-out={draggedOut ? "true" : undefined}
       ref={setList}
     >
       <DragDropProvider
@@ -127,54 +121,35 @@ export const ProjectList = ({
           const { source } = event.operation
           if (!source) return
           const id = String(source.id)
-          out.current = false
+          handedOff.current = false
           rowsTop.current =
             list?.querySelector(".workspace-switcher-row")?.getBoundingClientRect().top ?? null
-          const from = source.element?.getBoundingClientRect()
-          const at = event.operation.position.initial
-          grabbed.current = from ? { x: at.x, y: at.y, left: from.left, top: from.top } : null
           pinDrop?.start(id, pinAvailable || pinned.some((project) => project.id === id))
         }}
-        onDragMove={(event) => {
-          if (!pinDrop) return
+        onDragMove={(event, manager) => {
+          if (!pinDrop || handedOff.current) return
           const point = event.to ?? event.operation.position.current
           const menu = list?.parentElement?.getBoundingClientRect()
-          const accepts = pinDrop.getSnapshot()?.accepts === true
-          if (menu && accepts) {
-            // Out once clearly past the menu: a little above its rows (the pinned label at
-            // most, over the bar) or its top where they're scrolled away, or past its sides
-            // or bottom, so a reorder that swings wide or flicks to the top stays one. Out
-            // stays out: the menu doesn't come back for this drag.
-            const away =
-              point.y < Math.max(rowsTop.current ?? menu.top, menu.top) - 4 ||
-              point.x < menu.left - leeway ||
-              point.x > menu.right + leeway ||
-              point.y > menu.bottom + leeway
-            if (!out.current && away) {
-              out.current = true
-              setDraggedOut(true)
-            }
-          }
-          // While the open list covers the bar, the bar can't take the drop.
-          pinDrop.move(out.current ? point : null)
-          // Over the bar the row sits by the pointer and under the bar.
-          const spot = pinDrop.getSnapshot()?.spot
-          const row = event.operation.source?.element
-          const start = grabbed.current
-          if (!spot || !start || !(row instanceof HTMLElement)) return
-          // The row's top left, moved with the pointer since the drag started.
-          const top = start.top + point.y - start.y
-          row.style.setProperty("--pin-drop-x", `${start.x + 12 - start.left}px`)
-          row.style.setProperty("--pin-drop-y", `${spot.bottom + 4 - top}px`)
+          if (!menu) return
+          // Out once clearly past the menu: a little above its rows (the pinned label at
+          // most, over the bar) or its top where they're scrolled away, or past its sides
+          // or bottom, so a reorder that swings wide or flicks to the top stays one. Out,
+          // the project is pinned and the bar drags its pin on; the list's drag ends.
+          const away =
+            point.y < Math.max(rowsTop.current ?? menu.top, menu.top) - 4 ||
+            point.x < menu.left - leeway ||
+            point.x > menu.right + leeway ||
+            point.y > menu.bottom + leeway
+          if (!away || !pinDrop.handOff(point)) return
+          handedOff.current = true
+          queueMicrotask(() => manager.actions.stop({ canceled: true }))
         }}
         onDragEnd={(event) => {
           if (list) scrolledTo.current = { list, top: list.scrollTop }
           setDragged((count) => count + 1)
-          const pinnedThere = pinDrop?.end(event.canceled) ?? false
-          const wentOut = out.current
-          out.current = false
-          setDraggedOut(false)
-          if (wentOut && !event.canceled) {
+          pinDrop?.end()
+          if (handedOff.current) {
+            handedOff.current = false
             onDraggedOut?.()
             return
           }
@@ -182,8 +157,7 @@ export const ProjectList = ({
           if (!isSortable(source)) return
           const id = String(source.id)
           setFocusRequest({ id })
-          if (pinnedThere || wentOut || event.canceled || source.initialIndex === source.index)
-            return
+          if (event.canceled || source.initialIndex === source.index) return
           onMove(id, source.index)
         }}
       >

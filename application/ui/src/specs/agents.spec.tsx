@@ -591,7 +591,7 @@ describe("A pinned project", () => {
       await dragOut("mobile-app")
 
       await expect.element(pin("mobile-app")).toHaveTextContent("3mobile-app")
-      // The menu, faded once the drag left it, closes; it lists the project as pinned.
+      // The menu closed as the drag left it, handing the bar a pin; it lists it as pinned.
       await expect
         .element(page.getByRole("dialog", { name: "Switch workspace" }))
         .not.toBeInTheDocument()

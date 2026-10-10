@@ -17,8 +17,7 @@
    "running"); data-dragging="true" on the pin being dragged along the bar, which lifts
    as a dragged row of the switcher does. The others slide aside. data-leaving="true" on
    it once dragged well off the bar, where letting go unpins it. On the strip,
-   data-drop="ready" while a project dragged from the switcher's list could drop on it,
-   and "over" while the pointer is over it, with `.pins-bar-drop` at the gap.
+   data-drop="ready" while a project dragged in the switcher's list could come to it.
 
    Tokens, each optional (its fallback in brackets):
    --pins-bar-bg (--region-header-bg, paper), --pins-bar-image (--region-header-image),
@@ -31,9 +30,7 @@
    (--item-selected-border-color, line), --pin-drag-shadow (shadow-control): the pin being
    dragged, raised and outlined as a selected item is.
    --pins-bar-indicator-bg (--tabs-indicator-bg, strong),
-   --pins-bar-indicator-shadow (--tabs-indicator-shadow, none): the current pin's line, and
-   the mark where a project dragged from the switcher would drop.
-   --pins-bar-drop-bg (soft): the bar under such a drag. */
+   --pins-bar-indicator-shadow (--tabs-indicator-shadow, none): the current pin's line. */
 .pins-bar {
   --_height: var(--pins-bar-height, 34px);
   display: grid;
@@ -139,21 +136,7 @@
       var(--pin-drag-border-color, var(--item-selected-border-color, var(--color-line))),
     var(--pin-drag-shadow, var(--shadow-control));
 }
-/* A project dragged from the switcher's list: the bar marks the gap it would drop into,
-   and tints while the pointer is over it; an empty bar, open for the drag, says so. */
-.pins-bar-strip[data-drop="over"] {
-  background-color: var(--pins-bar-drop-bg, var(--color-soft));
-}
-.pins-bar-drop {
-  position: absolute;
-  inset-block: 7px;
-  left: 0;
-  width: 2px;
-  translate: calc(var(--_x) - 1px) 0;
-  border-radius: 1px;
-  background-color: var(--pins-bar-indicator-bg, var(--tabs-indicator-bg, var(--color-strong)));
-  pointer-events: none;
-}
+/* An empty bar, open for a project dragged from the switcher's list, says so. */
 .pins-bar-empty {
   color: var(--pin-fg, var(--color-muted));
 }

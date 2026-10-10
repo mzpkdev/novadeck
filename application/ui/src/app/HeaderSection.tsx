@@ -21,7 +21,7 @@ const sameProjects = (a: readonly Project[], b: readonly Project[]): boolean =>
 // The app header wired to the workspace: projects, views, search and preferences, and
 // under it the bar of pinned projects.
 export const HeaderSection = memo((): React.JSX.Element => {
-  const { backend, commands, navigation } = useWorkspaceServices()
+  const { backend, commands, navigation, ui } = useWorkspaceServices()
   const {
     switchProject,
     openFolder,
@@ -30,6 +30,7 @@ export const HeaderSection = memo((): React.JSX.Element => {
     stepProject,
     toggleProjectPin,
     pinProjectAt,
+    restoreProjectArrangement,
     changeView,
     enterZen,
     setSwitcher,
@@ -66,7 +67,13 @@ export const HeaderSection = memo((): React.JSX.Element => {
     shallowEqual,
   )
   // Carries a project dragged out of the switcher's list onto the pins bar.
-  const [pinDrop] = useState(() => createPinDrop(pinProjectAt))
+  const [pinDrop] = useState(() =>
+    createPinDrop({
+      pin: pinProjectAt,
+      current: () => ui.getSnapshot().projectArrangement,
+      restore: restoreProjectArrangement,
+    }),
+  )
   const pins = useMemo(() => arrangeProjects(projects, arrangement).pinned, [projects, arrangement])
   // The switcher's dot leaves out the pins the bar shows.
   const [shownPins, setShownPins] = useState<readonly string[]>(noIds)
