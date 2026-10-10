@@ -715,7 +715,7 @@ Transitions:
 | Settled, Ready                           | The person's input, but Escape                                                   | Drafting              |
 | Settled, Ready                           | Messages waiting and the gate passes                                             | Ringing               |
 | Ringing                                  | Confirmed: a doorbell prompt with its nonce                                      | Working               |
-| Ringing                                  | The test paste fails, or no confirmation within 5 s                              | Unknown               |
+| Ringing                                  | The test paste fails, or no confirmation within 5 s (20 s on Windows)            | Unknown               |
 | Ringing                                  | A request is asked, before or after its Enter                                    | Unknown               |
 | Ringing                                  | Another root prompt or an abnormal end (the binding ending: Unbound, as above)   | As from Settled       |
 
@@ -964,8 +964,9 @@ text in `record.screen` (`@xterm/headless`), with its paste mode. The ring, in o
    ring began; a hold that lapsed abandons the ring, and a request asked meanwhile (a
    background subagent's, say) fails it, Unknown, as its dialog may hold the line and
    would take the Enter.
-7. **Confirm.** A root turn starts within 5 s of the Enter, and its prompt-time hook
-   sees the line with the ring's own nonce: Claude Code and Codex in the hook's `prompt`,
+7. **Confirm.** A root turn starts within 5 s of the Enter (20 s on Windows, where the
+   hook's shell may take most of 15 s to start), and its prompt-time hook sees the line
+   with the ring's own nonce: Claude Code and Codex in the hook's `prompt`,
    Antigravity in the transcript's new typed entry. A doorbell prompt with another
    nonce, as a stale line submitted alone, is no confirmation. Its lease delivers. A
    request asked after the Enter, before the confirmation, fails the ring too: the Enter

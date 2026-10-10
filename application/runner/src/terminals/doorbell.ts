@@ -56,6 +56,15 @@ export type DoorbellOptions = {
   readonly confirmMs?: number
 }
 
+/**
+ * How long after its Enter a ring waits by default for the doorbell prompt that confirms
+ * it, in milliseconds: the hook that tells it starts in the harness's shell first, and on
+ * Windows PowerShell takes most of 15 s to start cold on a busy CI runner, where a ring
+ * failed before its Codex hook came, and the message waited for the turn's Stop.
+ */
+export const confirmMs = (platform: NodeJS.Platform): number =>
+  platform === "win32" ? 20_000 : 5_000
+
 // The longest a ring holds the person's input, in milliseconds: a safety cap, well beyond
 // its test paste.
 const inputCapMs = 3_000
@@ -105,7 +114,7 @@ export class Doorbell {
     this.now = options.now ?? Date.now
     this.pollMs = options.pollMs ?? 50
     this.pasteMs = options.pasteMs ?? 1_500
-    this.confirmMs = options.confirmMs ?? 5_000
+    this.confirmMs = options.confirmMs ?? confirmMs(process.platform)
     this.calmMs = options.calmMs ?? calmMs
     this.settleMs = options.settleMs ?? 6_000
   }
