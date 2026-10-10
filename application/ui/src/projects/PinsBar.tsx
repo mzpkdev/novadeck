@@ -213,14 +213,13 @@ export const PinsBar = ({
         return
       }
       actions.move({ to: pointer })
-      frame = requestAnimationFrame(() => {
-        // dnd-kit sets the dragged pin's transitions, so the fade is an animation of its own.
-        pin.animate([{ filter: "opacity(0)" }, { filter: "opacity(1)" }], {
-          duration: slide(),
-          easing: ease,
-        })
-        setLanded(handoff)
+      // dnd-kit sets the dragged pin's transitions, so the fade is an animation of its own;
+      // it starts part way, so the pin is seen at once where the pointer is.
+      pin.animate([{ filter: "opacity(0.4)" }, { filter: "opacity(1)" }], {
+        duration: slide(),
+        easing: ease,
       })
+      setLanded(handoff)
     })
     const move = (event: PointerEvent): void => {
       pointer = { x: event.clientX, y: event.clientY }
