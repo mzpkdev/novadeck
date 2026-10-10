@@ -68,7 +68,7 @@ const messaging: MessagingProfile = {
 const handler = (platform: NodeJS.Platform, event: string) => ({
   type: "command",
   command: hook(platform, event),
-  timeout: hookSeconds,
+  timeout: hookSeconds(platform),
 })
 
 export const agy = {

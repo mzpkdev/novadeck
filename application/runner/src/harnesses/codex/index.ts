@@ -114,7 +114,13 @@ export const codex = {
                 ...(event === "PreToolUse" && {
                   matcher: "request_user_input|request_permissions",
                 }),
-                hooks: [{ type: "command", command: hook(platform, event), timeout: hookSeconds }],
+                hooks: [
+                  {
+                    type: "command",
+                    command: hook(platform, event),
+                    timeout: hookSeconds(platform),
+                  },
+                ],
               },
             ],
           ]),

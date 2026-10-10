@@ -918,10 +918,11 @@ closes it, and is raised with the person first (see AGENTS.md, "Harness Parity")
 reason to leave a harness out. One stands today:
 
 - **Codex on Windows loses characters outside the Basic Multilingual Plane**
-  (`losesAstral`). An emoji such as 👨 never reaches it through the ConPTY that node-pty
-  bundles, though Windows' own ConPTY delivers it: a prompt holding one never shows whole
-  in its box, and fails without Enter. Pinned by chat.e2e.ts, "gives its agent emoji
-  sequences and CJK, then the next prompt".
+  (`losesAstral`). An emoji such as 👨 mostly never reaches it through the ConPTY that
+  node-pty bundles, though Windows' own ConPTY delivers it: a prompt holding one never
+  shows whole in its box, and fails without Enter. One CI run of many got it through.
+  Pinned by chat.e2e.ts, "gives its agent emoji sequences and CJK, then the next prompt",
+  which takes either until it lands every time.
 
 `known-gaps.ts` names each one as a `Gap`, with the harnesses it affects (and the
 platforms, where only some have it), documented
