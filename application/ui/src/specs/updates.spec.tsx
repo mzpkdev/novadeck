@@ -2,16 +2,19 @@ import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { cleanup } from "vitest-browser-react"
 import { page, type Locator } from "vitest/browser"
 
+import { boxOf, doubleClickHeader, fillsView, sameBox } from "./support/canvas"
 import { findDialog, pressShortcut, preferencesDialog, recentSwitcher } from "./support/keyboard"
 import {
   commandInput,
   enterNavigateMode,
   expectStaysAbsent,
   expectTypingIn,
+  chooseView,
   focusStage,
   navigateChip,
   openWorkspace,
   press,
+  terminal,
   terminalTab,
 } from "./support/workspace"
 
@@ -26,6 +29,7 @@ const available = () => popover("Novadeck 0.0.80 is available")
 const restart = () => ready().getByRole("button", { name: "Restart now" })
 const typing = () => commandInput("Dev server")
 const pill = () => page.getByRole("group", { name: "Subscriptions" }).getByRole("button").first()
+const checkout = () => boxOf(terminal("Checkout implementation"))
 const later = (dialog: Locator) => dialog.getByRole("button", { name: "Later" })
 
 describe("the update notice", () => {
@@ -248,6 +252,21 @@ describe("the update notice", () => {
       await press("{Shift>}{Escape}{/Shift}")
       await expect.element(navigateChip()).toBeVisible()
       await expect.element(ready()).toBeVisible()
+    })
+
+    it("closes on Escape in Canvas without moving the camera back to its origin", async () => {
+      await openWorkspace("/?demo=update")
+      await chooseView("Canvas")
+      await later(ready()).click()
+      await doubleClickHeader("Checkout implementation")
+      await expect.poll(() => fillsView(checkout())).toBe(true)
+      const zoomed = checkout()
+      await chip().click()
+      await expect.element(ready()).toHaveFocus()
+      await press("{Escape}")
+      await expect.element(ready()).not.toBeInTheDocument()
+      await new Promise((done) => setTimeout(done, 600))
+      expect(sameBox(checkout(), zoomed)).toBe(true)
     })
 
     it("returns focus to the chip after a dialog opened from inside it closes", async () => {

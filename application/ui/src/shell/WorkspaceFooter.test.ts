@@ -48,6 +48,13 @@ const show = (status: FooterStatus) => {
   }
 }
 
+const added = (html: string): Element => {
+  const holder = document.createElement("div")
+  holder.innerHTML = html
+  document.body.append(holder)
+  return holder
+}
+
 const notice = (page: Rendered) => page.container.querySelector("section.update-panel")
 
 const chip = (page: Rendered) => page.container.querySelector<HTMLButtonElement>(".footer-update")!
@@ -228,6 +235,30 @@ describe("workspace footer", () => {
         )
         expect(region.closest("footer")).not.toBeNull()
         expect(region.contains(document.activeElement)).toBe(false)
+      })
+
+      context("with a menu or a hover card already in the page", () => {
+        it("does not show, nor count as shown, until the menu is gone", () => {
+          vi.useFakeTimers()
+          const menu = added('<div role="menu"></div>')
+          const onShown = vi.fn<(key: string) => void>()
+          const page = render(raised({}, onShown))
+          mounted.push(page)
+          expect(notice(page)).toBeNull()
+          expect(onShown).not.toHaveBeenCalled()
+          menu.remove()
+          act(() => vi.advanceTimersByTime(200))
+          expect(notice(page)).not.toBeNull()
+          expect(onShown).toHaveBeenCalledOnce()
+        })
+
+        it("shows through a hover card, which asks for nothing", () => {
+          const card = added('<div role="dialog" class="floating peek"></div>')
+          const page = render(raised())
+          mounted.push(page)
+          expect(notice(page)).not.toBeNull()
+          card.remove()
+        })
       })
 
       it("puts focus on the chip when closed from the keyboard with no terminal to return to", () => {

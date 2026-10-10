@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 
-import { workspaceOverlayOpen } from "../interaction/dom"
+import { blockingOverlayOpen } from "../interaction/dom"
 import { updateKey, type UpdateOffer } from "../model/update"
 
 // The release-note lines the notice shows; the release page has the rest.
@@ -31,14 +31,18 @@ export type FooterUpdateProps = {
 type Return = "origin" | "terminal"
 
 // Whether a dialog, menu or popover is open, looked at while `active`: they come and go
-// in portals, so there is nothing to subscribe to.
+// in portals, so there is nothing to subscribe to. Looked at as `active` begins, so an
+// offer that arrives with one open never shows, and then every 150 ms.
 const useOverlayOpen = (active: boolean): boolean => {
+  const [was, setWas] = useState(false)
   const [open, setOpen] = useState(false)
+  if (active !== was) {
+    setWas(active)
+    setOpen(active && blockingOverlayOpen())
+  }
   useEffect(() => {
     if (!active) return undefined
-    const look = (): void => setOpen(workspaceOverlayOpen())
-    look()
-    const timer = setInterval(look, 150)
+    const timer = setInterval(() => setOpen(blockingOverlayOpen()), 150)
     return () => clearInterval(timer)
   }, [active])
   return active && open
@@ -141,7 +145,8 @@ export const FooterUpdate = ({
   const key = offer && updateKey(offer)
   if (pressed !== undefined && pressed !== key) setPressed(undefined)
   const installing = offer?.kind === "ready" && pressed === key
-  const overlay = useOverlayOpen((update?.open ?? false) && !hidden)
+  const wanted = (update?.open ?? false) && !hidden && !update?.blocked
+  const overlay = useOverlayOpen(wanted)
   const blocked = (update?.blocked ?? false) || overlay
   const visible = (update?.open ?? false) && !hidden && !blocked && !installing
   const onShown = update?.onShown
@@ -229,6 +234,7 @@ export const FooterUpdate = ({
             <section
               ref={panel}
               id={panelId}
+              data-workspace-notice
               aria-labelledby={titleId}
               className="floating update-panel"
               tabIndex={-1}
