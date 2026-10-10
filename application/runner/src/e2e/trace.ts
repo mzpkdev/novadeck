@@ -15,6 +15,9 @@ import type { FakeModel } from "./model/server.js"
  */
 const folder = process.env.NOVADECK_E2E_TRACES
 
+/** Whether every test writes its trace, passed or not (`NOVADECK_E2E_TRACE_ALL=1`). */
+export const tracesAll = process.env.NOVADECK_E2E_TRACE_ALL === "1"
+
 // What one line of a trace shows of a value: its JSON, cut short.
 const brief = (value: unknown, most = 160): string => {
   const text = JSON.stringify(value) ?? String(value)
@@ -35,6 +38,7 @@ type Runner = {
   queue: <T>(terminalId: string, work: () => Promise<T>, fallback: T) => Promise<T>
   report: (report: Report, deadline?: number) => Promise<unknown>
   connected: (agent: string | undefined) => Promise<boolean>
+  persisting: (work: () => void) => boolean
 }
 
 /**
@@ -127,7 +131,17 @@ export const startTrace = (name: string, model: FakeModel) => {
 
   // When a report came, began after the terminal's earlier ones, and was done.
   const runner = Terminals.prototype as unknown as Runner
-  const { queue, report: handle, connected } = runner
+  const { queue, report: handle, connected, persisting } = runner
+  // Saving a terminal blocks the process until its store has written it.
+  runner.persisting = function (work) {
+    const began = performance.now()
+    try {
+      return persisting.call(this, work)
+    } finally {
+      const took = Math.round(performance.now() - began)
+      if (took > 50) add(`slow: saving a terminal blocked everything for ${took} ms`)
+    }
+  }
   runner.connected = async function (agent) {
     const began = Date.now()
     try {
@@ -166,7 +180,7 @@ export const startTrace = (name: string, model: FakeModel) => {
     /** Puts the runner back as it was. */
     stop: () => {
       clearInterval(calls)
-      Object.assign(runner, { queue, report: handle, connected })
+      Object.assign(runner, { queue, report: handle, connected, persisting })
       for (const [agent, decode] of decoders)
         (harnesses[agent as keyof typeof harnesses] as { decode: Harness["decode"] }).decode =
           decode
