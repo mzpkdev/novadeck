@@ -46,6 +46,17 @@ const news: Rule[] = [
   own((call) => (delivered(call, "t2") ? { text: "Noted the news." } : undefined)),
 ]
 
+/**
+ * The model call that carries t2's news to t1 once the person left what hid t1's box: on
+ * Windows t1 stayed Settled, no ring having started, so the doorbell rings it as soon as
+ * its box shows again; elsewhere the failed ring left it Unknown, and the person's prompt
+ * carries it.
+ */
+const carried = async (model: FakeModel, t1: DeckTerminal, calls: number) => {
+  if (process.platform !== "win32") await t1.submit("Carry on")
+  return await model.waitFor((call) => delivered(call, "t2"), { after: calls })
+}
+
 // With the news, t1 makes the file through a tool its harness asks the person about
 // first, `asking` answering its prompt with that tool call, and says so once it ran.
 const rules = (asking: Rule): Rule[] => [
@@ -273,11 +284,8 @@ for (const setup of setups) {
             "Esc to close what Esc-Esc opened",
           )
           const next = t1.mark()
-          await t1.submit("Carry on")
-          const carrying = await run.model.waitFor((call) => delivered(call, "t2"), {
-            after: calls,
-          })
-          expect(latest(carrying)).toContain("Carry on")
+          const carrying = await carried(run.model, t1, calls)
+          expect(latest(carrying)).toMatch(process.platform === "win32" ? ring : /Carry on/)
           await through(t1, ["working", holds("t2", "t1", "delivered"), "settled"], {
             after: next,
           })
@@ -375,11 +383,8 @@ for (const setup of setups) {
           "Esc to close the popup",
         )
         const next = t1.mark()
-        await t1.submit("Carry on")
-        const carrying = await run.model.waitFor((call) => delivered(call, "t2"), {
-          after: calls,
-        })
-        expect(latest(carrying)).toContain("Carry on")
+        const carrying = await carried(run.model, t1, calls)
+        expect(latest(carrying)).toMatch(process.platform === "win32" ? ring : /Carry on/)
         expect(carrying.model).toBe(said.model)
         await t1.until("Noted the news.")
         await through(t1, ["working", holds("t2", "t1", "delivered"), "settled"], {

@@ -2673,6 +2673,7 @@ describe("Antigravity's prompts, told from its transcript", () => {
         startedWith: given.startedWith,
       },
       () => Promise.resolve({ text, at: null, id }),
+      { waitMs: 2, gapMs: 1 },
     )
 
   // Resumed in a terminal the runner restored: Ready at the conversation its status line
