@@ -143,3 +143,27 @@ describe("reading the model's title", () => {
     expect(parseDescription(raw)).toBeUndefined()
   })
 })
+
+describe("refusing a title that looks like a secret", () => {
+  it.each([
+    "Fix PR 131",
+    "Upgrade to Node 26",
+    "Migrate v2 API",
+    "Review EMO-104",
+    "Bump React 19.2 types",
+    "Internationalisation of checkout",
+  ])("keeps %s", (text) => {
+    expect(title(text)).toBe(text)
+  })
+
+  it.each([
+    "Rotate ghp_A1b2C3d4E5f6G7h8 key",
+    "Token Zq8rT2mWx9LpKd3VnB7s",
+    "Using sk-proj-abc123DEF456",
+    "Fix [redacted] login",
+    "Set password: hunter2",
+    "Deploy a1b2c3d4e5f6g7h8i9",
+  ])("refuses %s", (text) => {
+    expect(title(text)).toBeUndefined()
+  })
+})

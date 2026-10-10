@@ -1,6 +1,7 @@
 // What the model writes is a guess in JSON. This keeps the guesses that fit a terminal's
 // title bar, tidies them, and drops the rest, so nothing downstream checks again.
 import type { Description } from "./describer.js"
+import { redact, redacted } from "./redact.js"
 
 export const titleWords = { min: 2, max: 6 }
 export const titleCharacters = 48
@@ -89,6 +90,31 @@ const tidy = (text: string): string => text.replace(/\s+/g, " ").trim()
 const plain = (text: string): string =>
   tidy(text.replace(/[*_`#]+/g, " ").replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, ""))
 
+// Murmur reads text that may hold a secret that redaction missed, and writes a title that is
+// shown on screen. A title that looks like a secret, or that redaction would change, or that
+// already holds a mask, is refused whatever the input was.
+const entropy = (word: string): number => {
+  const counts = new Map<string, number>()
+  for (const character of word) counts.set(character, (counts.get(character) ?? 0) + 1)
+  let total = 0
+  for (const count of counts.values()) {
+    const share = count / word.length
+    total -= share * Math.log2(share)
+  }
+  return total
+}
+
+const looksSecret = (title: string): boolean =>
+  title.includes(redacted) ||
+  redact(title) !== title ||
+  title
+    .split(/\s+/)
+    .some(
+      (word) =>
+        (word.length >= 12 && /\d/.test(word) && /\p{L}/u.test(word)) ||
+        (word.length >= 16 && entropy(word) >= 3.6),
+    )
+
 /**
  * The title in `raw`, the model's reply, or undefined when it can't be used. `source` is
  * the text the model was shown, which tells a title that copies an example from one that
@@ -121,6 +147,7 @@ export const parseDescription = (raw: string, source?: string): Description | un
   if (given.length > 0 && given.every((word) => chatWords.has(word))) return undefined
   if (spacelessChat.has(cleanTitle.replaceAll(/\s/g, ""))) return undefined
   const shown = source === undefined ? undefined : fold(source)
+  if (looksSecret(cleanTitle)) return undefined
   if (exampleTitles.some((example) => copies(cleanTitle, example, shown))) return undefined
   return { title: cleanTitle }
 }

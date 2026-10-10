@@ -49,6 +49,20 @@ behind a random API key made for each launch and passed in the environment
 - **Prompt** (`prompt.ts`): the current prompt comes last and is labelled. The size is
   capped to fit the 4096-token window.
 
+## Known limits
+
+- Redaction is best effort, and weakest on a narrow pane that splits a secret across rows.
+  Rows that run to the pane's edge are read together with the next; a group that redacts
+  differently as one is masked whole (so a neighbouring row can go with a secret). A quote left
+  open across rows that did not run to the edge is not followed. Key blocks are masked from the
+  first BEGIN marker to its END, or to the end of the screen.
+- An output guard backs it up. Murmur writes only a title, and a title is refused (as no title)
+  if redaction would change it, if it holds a mask, or if a word in it looks like a key (12 or
+  more characters mixing letters and digits, or high entropy). Titles with ordinary numbers
+  ("Fix PR 131", "Upgrade to Node 26") pass.
+- Everything stays on this machine: the digest goes to a server on `127.0.0.1` behind a key
+  made for the run, and nothing is sent anywhere else.
+
 ## Device policy
 
 Murmur needs a GPU; there is no CPU mode. `llama-server --list-devices` prints each device

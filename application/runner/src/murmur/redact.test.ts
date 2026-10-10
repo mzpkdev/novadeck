@@ -387,7 +387,8 @@ describe("redacting a shell's screen, row by row", () => {
 
     expect(screen.join("\n")).not.toContain(secret)
     expect(screen).toHaveLength(4)
-    expect(screen[1]).toBe(before)
+    // The row before may go too: a group that redacts differently as one is masked whole.
+    expect([before, redacted]).toContain(screen[1])
   })
 
   it("masks a secret split across a full row on both rows", () => {
@@ -541,5 +542,88 @@ describe("redacting key blocks and values across a screen's rows", () => {
     'console.log("secret: " + secret)',
   ])("keeps the code line %s", (line) => {
     expect(redact(line)).toBe(line)
+  })
+})
+
+describe("redacting what a last review found", () => {
+  const rowsOf = (lines: string[], width: number) => {
+    const screen: string[] = []
+    const continues: boolean[] = []
+    for (const line of lines) {
+      const pieces = chop(line, width)
+      pieces.forEach((piece, i) => {
+        screen.push(piece)
+        continues.push(i + 1 < pieces.length)
+      })
+    }
+    return redactDigest({
+      kind: "shell",
+      project: null,
+      folder: null,
+      command: null,
+      screen,
+      continues,
+      previous: null,
+    }) as ShellDigest
+  }
+  const key = [
+    "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7aaaa",
+    "bbbbQyNTUxOQAAACDx4kq9YtmpHq1q2kQZp0bq2M9r9kq8Xq1wQnR3sQe9Rg",
+  ]
+
+  it("masks a key that begins on the row where a certificate ends", () => {
+    const { screen } = rowsOf(
+      [
+        "$ cat cert.pem key.pem",
+        "-----END CERTIFICATE----------BEGIN PRIVATE KEY-----",
+        ...key,
+        "-----END PRIVATE KEY-----",
+        "$",
+      ],
+      80,
+    )
+
+    expect(screen.join("\n")).not.toMatch(/MIIEvQ|bbbbQy/)
+    expect(screen.at(-1)).toBe("$")
+  })
+
+  it.each([["-----BEGIN PRIVATE KEY"], ["-----BEGIN RSA PRIVATE KEY--"]])(
+    "starts a block at %s, a marker cut short",
+    (begin) => {
+      const { screen } = rowsOf(["$ cat key", begin, ...key], 80)
+
+      expect(screen.join("\n")).not.toMatch(/MIIEvQ|bbbbQy/)
+      expect(screen[0]).toBe("$ cat key")
+    },
+  )
+
+  it("masks from the top of the screen to an END whose BEGIN scrolled away", () => {
+    const { screen } = rowsOf([...key, "-----END PRIVATE KEY-----", "$ ls"], 80)
+
+    expect(screen.join("\n")).not.toMatch(/MIIEvQ|bbbbQy/)
+    expect(screen.at(-1)).toBe("$ ls")
+  })
+
+  it.each([
+    "DATABASE_PASSWORD=Zq8rT2mWx9LpKd3VnB7sYcHt5GfAb4Cd6EfGh8Ij",
+    "curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'",
+  ])("masks every row of a secret across three rows or more: %s", (line) => {
+    for (const width of [20, 33, 40]) {
+      const { screen } = rowsOf(["$ run", line, "$"], width)
+
+      expect(screen.join("\n")).not.toMatch(/Zq8r|LpKd|Ij$|dozjg|R8U|eyJhb/m)
+      expect(screen[0]).toBe("$ run")
+    }
+  })
+
+  it.each([
+    "it's a password: \"correct horse battery",
+    "the user's token: 'abc def ghi",
+    "can't say, secret: 'two words",
+  ])("still masks an unclosed quote after an apostrophe: %s", (line) => {
+    const result = redact(line)
+
+    expect(result).toContain(redacted)
+    expect(result).not.toMatch(/horse|def|words/)
   })
 })

@@ -3136,10 +3136,12 @@ const context = (printed: string): string =>
     : ""
 
 // Murmur's waits, short for the tests.
-const murmurTimes = { settleMs: 30, shellRunMs: 400, shellSettleMs: 60, promptsBetween: 3 }
+const murmurTimes = { settleMs: 30, shellRunMs: 400, shellSettleMs: 60 }
 
 describe.skipIf(process.platform === "win32" || !existsSync(bash))(
   "murmur naming terminals in bash terminals",
+  // Polls wait up to 30 s for a loaded machine; the tests have room for them.
+  { timeout: 90_000 },
   () => {
     it("titles an agent's terminal from its prompts while the agent summarizes it, beneath the person's title", async ({
       shell,
@@ -3174,7 +3176,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(first[0]).toMatch(/^Novadeck: automatic notice, not from the user: beside this/)
       expect(first[1]).toMatch(/this terminal has no summary yet.*summarize tool/)
       // Murmur titles it once its first prompt is known.
-      await expect.poll(() => manager.get(codex.id).title).toBe("Login fix")
+      await expect.poll(() => manager.get(codex.id).title, { timeout: 30_000 }).toBe("Login fix")
       expect(manager.get(codex.id).titleSource).toEqual({ kind: "murmur" })
       expect(describer.digests[0]).toMatchObject({
         kind: "agent",
@@ -3190,12 +3192,14 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await expect(
         summarize("Fixes the login bug.\nThen its tests.", { title: "Evil", to: "t1" }),
       ).resolves.toEqual({ ok: true, text: "Summarized this terminal." })
-      await expect.poll(() => describer.digests.length).toBe(2)
+      await expect.poll(() => describer.digests.length, { timeout: 30_000 }).toBe(2)
       expect(describer.digests[1]).toMatchObject({
         summary: "Fixes the login bug.\nThen its tests.",
         previous: { title: "Login fix" },
       })
-      await expect.poll(() => manager.get(codex.id).title).toBe("Login fix and tests")
+      await expect
+        .poll(() => manager.get(codex.id).title, { timeout: 30_000 })
+        .toBe("Login fix and tests")
       expect(manager.get(claude.id).title).toBe("Terminal 01")
       expect(await listed()).toContain(
         "- t2: Codex, busy, last active just now\n" +
@@ -3247,12 +3251,12 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         context(await step(terminal.id, { hook: "UserPromptSubmit", payload: { prompt: text } }))
       await prompt("Fix the build")
       // Murmur titles it from the prompt before the agent summarizes, so the two are two jobs.
-      await expect.poll(() => describer.digests.length).toBe(1)
+      await expect.poll(() => describer.digests.length, { timeout: 30_000 }).toBe(1)
       await step(terminal.id, {
         call: "summarize",
         request: { summary: "Fixes the build." },
       })
-      await expect.poll(() => describer.digests.length).toBe(2)
+      await expect.poll(() => describer.digests.length, { timeout: 30_000 }).toBe(2)
       await step(terminal.id, { hook: "Stop", payload: {} })
       await expect(prompt("go on")).resolves.toBe("")
       await step(terminal.id, { hook: "Stop", payload: {} })
@@ -3300,7 +3304,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       // The next substantial one is, and the terse one is not shown.
       await step(terminal.id, { hook: "Stop", payload: {} })
       await step(terminal.id, { hook: "UserPromptSubmit", payload: { prompt: "Fix the build" } })
-      await expect.poll(() => describer.digests.length).toBe(1)
+      await expect.poll(() => describer.digests.length, { timeout: 30_000 }).toBe(1)
       expect(describer.digests[0]).toMatchObject({ prompts: ["Fix the build"] })
       // Drift and further turns retitle nothing.
       for (const _ of [1, 2, 3, 4])
@@ -3331,24 +3335,34 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(describer.jobs).toHaveLength(0)
       // One that runs on is described by its command line (where the platform tells it) and screen.
       manager.write({ terminalId: terminal.id, data: "sleep 30\r" }, "owner")
-      await expect.poll(() => describer.digests.length, { timeout: 10_000 }).toBe(1)
+      await expect.poll(() => describer.digests.length, { timeout: 30_000 }).toBe(1)
       expect(describer.digests[0]).toMatchObject({
         kind: "shell",
         command: expect.stringContaining("sleep"),
         screen: expect.arrayContaining([expect.stringContaining("sleep 30")]),
       })
-      await expect.poll(() => manager.get(terminal.id).title).toBe("Waiting")
+      await expect.poll(() => manager.get(terminal.id).title, { timeout: 30_000 }).toBe("Waiting")
       expect(manager.get(terminal.id).titleSource).toEqual({ kind: "murmur" })
-      // Interrupted, back at the prompt after a long run: described again.
+      // Interrupted, back at the prompt after a long run: described again, from the prompt
+      // (no program in its digest), whenever the machine gets to it.
       manager.write({ terminalId: terminal.id, data: "\x03" }, "owner")
+      // Polled as the commands asked about so far, so a failure shows what was asked.
       await expect
-        .poll(() => manager.get(terminal.id).title, { timeout: 10_000 })
+        .poll(
+          () => describer.digests.map((digest) => (digest.kind === "shell" ? digest.command : "")),
+          {
+            timeout: 30_000,
+          },
+        )
+        .toContain(null)
+      await expect
+        .poll(() => manager.get(terminal.id).title, { timeout: 30_000 })
         .toBe("Back at the prompt")
       // Another directory describes it too.
       const before = describer.digests.length
       mkdirSync(join(shell.home, "sub"))
       manager.write({ terminalId: terminal.id, data: "cd sub\r" }, "owner")
-      await expect.poll(() => describer.digests.length, { timeout: 10_000 }).toBeGreaterThan(before)
+      await expect.poll(() => describer.digests.length, { timeout: 30_000 }).toBeGreaterThan(before)
       expect(describer.digests.at(-1)).toMatchObject({
         kind: "shell",
         folder: expect.stringContaining("sub"),
@@ -3365,10 +3379,10 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await shell.until(manager, terminal.id, "$ ")
       mkdirSync(join(shell.home, "sub"))
       manager.write({ terminalId: terminal.id, data: "cd sub\r" }, "owner")
-      await expect.poll(() => describer.jobs.length, { timeout: 10_000 }).toBe(1)
+      await expect.poll(() => describer.jobs.length, { timeout: 30_000 }).toBe(1)
       // The shell ends and restarts while the model is still working.
       manager.write({ terminalId: terminal.id, data: "exit\r" }, "owner")
-      await expect.poll(() => manager.get(terminal.id).exit, { timeout: 10_000 }).not.toBeNull()
+      await expect.poll(() => manager.get(terminal.id).exit, { timeout: 30_000 }).not.toBeNull()
       await manager.restart({ terminalId: terminal.id, cols: 100, rows: 20 }, "owner")
       expect(describer.jobs[0]!.signal?.aborted).toBe(true)
       describer.jobs[0]!.answer({ title: "Stale shell" })
@@ -3399,7 +3413,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(describer.jobs).toHaveLength(0)
       expect(manager.get(terminal.id).titleSource).toEqual({ kind: "default" })
       describer.setUsable(true)
-      await expect.poll(() => manager.get(terminal.id).titleSource).toEqual({ kind: "murmur" })
+      await expect
+        .poll(() => manager.get(terminal.id).titleSource, { timeout: 30_000 })
+        .toEqual({ kind: "murmur" })
     })
 
     it("does nothing without a describer: terminals keep their default titles and have no summary", async ({

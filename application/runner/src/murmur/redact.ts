@@ -133,7 +133,20 @@ const closesLiteral = (value: string, offset: unknown, text: unknown): boolean =
   const quote = value[0]
   if (quote !== '"' && quote !== "'") return false
   if (value.length > 1 && value.endsWith(quote)) return false
-  return (String(text).slice(0, Number(offset)).split(quote).length - 1) % 2 === 1
+  const before = String(text).slice(0, Number(offset))
+  let count = 0
+  for (let i = 0; i < before.length; i += 1) {
+    if (before[i] !== quote) continue
+    // An apostrophe inside a word (can't, user's) opens and closes nothing.
+    if (
+      quote === "'" &&
+      /\p{L}/u.test(before[i - 1] ?? "") &&
+      /\p{L}/u.test(String(text)[i + 1] ?? "")
+    )
+      continue
+    count += 1
+  }
+  return count % 2 === 1
 }
 
 // A quoted value; one opened and never closed runs to the end of the line.
@@ -290,9 +303,6 @@ export const redact = (text: string): string => {
   return result
 }
 
-// How much of `text` is left once the masks are taken out.
-const visible = (text: string): number => text.replaceAll(redacted, "").length
-
 // The screen's rows with a key block masked: every row from a BEGIN marker to its END marker,
 // or to the end of the screen if that is not visible. A marker may be split by the end of a
 // row, so rows that go on in the next are read together; the whole group is masked.
@@ -303,32 +313,38 @@ const maskKeyBlocks = (screen: readonly string[], continues: readonly boolean[])
     let last = first
     while (continues[last] && last + 1 < rows.length) last += 1
     const text = rows.slice(first, last + 1).join("")
-    const begins = /-----BEGIN [A-Z0-9 ]*-----/.test(text)
-    const ends = /-----END [A-Z0-9 ]*-----/.test(text)
-    if (inside || begins) {
+    // A marker cut short by the pane's width still starts or ends a block: its dashes may be
+    // on the next row, or lost. Whichever comes last in the group says if a block is open.
+    const lastBegin = text.lastIndexOf("-----BEGIN")
+    const lastEnd = text.lastIndexOf("-----END")
+    if (lastEnd >= 0 && !inside && lastBegin < 0) {
+      // An END with no BEGIN on screen: its block began above the top.
+      for (let i = 0; i <= last; i += 1) rows[i] = redacted
+    } else if (inside || lastBegin >= 0) {
       for (let i = first; i <= last; i += 1) rows[i] = redacted
-      if (ends) inside = false
-      else if (begins) inside = true
     }
+    if (lastBegin >= 0 || lastEnd >= 0) inside = lastBegin > lastEnd
     first = last + 1
   }
   return rows
 }
 
-// Masks both rows of a pair that goes on, when reading them as one finds more to mask than
-// reading each alone: a secret across the boundary. Over-masking a pair is the price.
+// Masks the rows of a group that goes on (each row but the last ended at the pane's edge) when
+// reading them as one text redacts differently than reading each alone: a secret lies across
+// a boundary, or the rows' own context changed what is one. Over-masking such a group is the
+// price; a group that redacts the same either way is left to the rows.
 const maskAcrossRows = (rows: readonly string[], continues: readonly boolean[]): string[] => {
   const result = [...rows]
-  continues.forEach((goesOn, i) => {
-    if (!goesOn || i + 1 >= rows.length) return
-    const first = rows[i] ?? ""
-    const second = rows[i + 1] ?? ""
-    const apart = redact(first) + redact(second)
-    if (visible(redact(first + second)) < visible(apart)) {
-      result[i] = redacted
-      result[i + 1] = redacted
+  for (let first = 0; first < rows.length;) {
+    let last = first
+    while (continues[last] && last + 1 < rows.length) last += 1
+    if (last > first) {
+      const group = rows.slice(first, last + 1)
+      if (redact(group.join("")) !== group.map(redact).join(""))
+        for (let i = first; i <= last; i += 1) result[i] = redacted
     }
-  })
+    first = last + 1
+  }
   return result
 }
 
