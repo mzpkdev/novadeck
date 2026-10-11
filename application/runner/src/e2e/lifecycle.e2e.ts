@@ -224,10 +224,7 @@ for (const setup of setups) {
         after: mark,
         timeoutMs: 60_000,
       })
-      // Ready is the new start's, which drew its banner as it started. A count of banners
-      // needn't grow: the start may come before a first look, and on a short screen the
-      // first's banner scrolls away under the second's (Antigravity's, which it leaves).
-      await t1.until(setup.banner)
+      // Ready again is the new start's; `after !== before` below says it is another session.
       await prompted(t1, setup)
       const [first] = messages(t1)
       expect(first).toMatchObject({ from: "t2", to: "t1", state: "gone" })

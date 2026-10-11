@@ -116,6 +116,19 @@ const intact = (): string | undefined => {
   return undefined
 }
 
+// Removes the listers of other sources, as earlier versions of this one compiled: a run of
+// one may still use it, which leaves it there.
+const sweep = (): void => {
+  const others = /^novadeck-e2e-reap-[0-9a-f]{16}(-[0-9a-f]{16})?\.exe$/
+  for (const name of readdirSync(tmpdir()))
+    if (others.test(name) && !name.startsWith(`${listerName}-`))
+      try {
+        rmSync(join(tmpdir(), name), { force: true })
+      } catch {
+        // In use.
+      }
+}
+
 // Why the lister can't be run, with what usually causes it on a developer's machine: a
 // program that reads every process's memory is what an antivirus quarantines.
 const blocked = (program: string, cause: unknown): Error =>
@@ -143,6 +156,7 @@ const compiledLister = (): Promise<string> =>
       )
       const program = join(tmpdir(), `${listerName}-${hashOf(`${staging}.exe`)}.exe`)
       renameSync(`${staging}.exe`, program)
+      sweep()
       return program
     } catch (cause) {
       compiled = undefined
@@ -163,7 +177,8 @@ const windowsList = async (sandbox: Scope): Promise<readonly Process[]> => {
       { windowsHide: true, timeout: 60_000, maxBuffer: 16 * 1024 * 1024 },
     ))
   } catch (cause) {
-    // One removed or blocked since it was compiled is compiled again next time.
+    // One removed or changed since is compiled again next time; one still there, as one an
+    // antivirus blocks but leaves, is tried again, and fails the same way, naming it.
     compiled = undefined
     throw blocked(program, cause)
   }

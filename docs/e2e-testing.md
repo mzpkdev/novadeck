@@ -112,8 +112,10 @@ network:
   the machine's, which its programs need to start, never the developer's). PATH there is
   the pinned harnesses, `node`'s folder, the system's folders (`System32`, Windows
   PowerShell's), and git's and PowerShell 7's own installs, as each reports it
-  (`<Git>\cmd`, above `git --exec-path`; `$PSHOME`), never the folder the tests found
-  them in, which may be a package manager's shims of every global tool. The deck gives the runner's terminals the sandbox's environment
+  (`<Git>\cmd`, above `git --exec-path`; `$PSHOME`), not the folder the tests found
+  them in, which may be a package manager's shims of every global tool. Where an install
+  can't be told, as an MSYS2 git's, the folder it was found in stands in, with a warning,
+  and is refused where it holds Node or a harness. The deck gives the runner's terminals the sandbox's environment
   as their `baseEnv`, so they don't start from the runner's own as they do in the app,
   and runs plugin commands with it as it is (`createHarnesses`'s `login: false`), so no
   login shell's startup files, `/etc/profile` included, can put another PATH first. The

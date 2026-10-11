@@ -125,26 +125,53 @@ const pwshHome = (): string | undefined => {
       "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($PSHOME))",
     ])
   const home = printed && Buffer.from(printed, "base64").toString("utf8")
-  pwsh = home && existsSync(join(home, "pwsh.exe")) ? home : found ? found : null
+  pwsh = home && existsSync(join(home, "pwsh.exe")) ? home : null
   return pwsh ?? undefined
+}
+
+// Programs a folder on the sandbox's PATH must never hold: a harness under test, or Node,
+// which installs harnesses globally beside it.
+const forbidden = ["node", "npm", "npx", "claude", "codex", "agy"].flatMap((name) => [
+  `${name}.exe`,
+  `${name}.cmd`,
+])
+
+/**
+ * The folder a tool was found in, standing in for its install where that can't be told:
+ * said so, and refused where it holds a harness or Node, as a package manager's shims
+ * folder (scoop's `shims`, `%LOCALAPPDATA%\Microsoft\WindowsApps`) may.
+ */
+const standIn = (folder: string, tool: string): string => {
+  const held = forbidden.filter((name) => existsSync(join(folder, name)))
+  if (held.length > 0)
+    throw new Error(
+      `The e2e sandbox can't tell where ${tool} is installed, and the folder it was found in, ${folder}, holds ${held.join(", ")}, which the sandbox's PATH must not: put ${tool}'s own install first on PATH.`,
+    )
+  console.warn(`The e2e sandbox can't tell where ${tool} is installed; it uses ${folder}.`)
+  return folder
 }
 
 /**
  * The folders of git and PowerShell 7 a sandbox on Windows puts on PATH: each one's own
- * install, as it reports it, never the folder the tests found it in, which may be a
- * package manager's (scoop's `shims`, Chocolatey's `bin`) holding a shim of every global
- * tool, a harness or Node among them. Not the programs alone, linked: Git's `cmd\git.exe`
- * finds the rest of Git by its own path, as `pwsh.exe` its libraries, and a shim its
- * `.shim`. Git's is `<Git>\cmd` (see `gitOnPath`); PowerShell's is `$PSHOME`. Where either
- * can't be told, as for an MSYS2 git, the folder it was found in stands in, rather than
- * leaving it off PATH for a harness to fail on later, unclearly.
+ * install, as it reports it, not the folder the tests found it in, which may be a package
+ * manager's (scoop's `shims`, Chocolatey's `bin`) holding a shim of every global tool, a
+ * harness or Node among them. Not the programs alone, linked: Git's `cmd\git.exe` finds
+ * the rest of Git by its own path, as `pwsh.exe` its libraries, and a shim its `.shim`.
+ * Git's is `<Git>\cmd` (see `gitOnPath`); PowerShell's is `$PSHOME`. Where either can't be
+ * told, as for an MSYS2 git, the folder it was found in stands in (see `standIn`), rather
+ * than leaving it off PATH for a harness to fail on later, unclearly.
  */
-const toolFolders = (): readonly string[] => {
-  const found = gitOnPath()
-  return [found && (found.install ? join(found.install, "cmd") : found.found), pwshHome()].filter(
-    (folder) => folder !== undefined,
-  )
-}
+let tools: readonly string[] | undefined
+const toolFolders = (): readonly string[] =>
+  (tools ??= (() => {
+    const gitFound = gitOnPath()
+    const pwshFound = onPath("pwsh.exe")
+    return [
+      gitFound &&
+        (gitFound.install ? join(gitFound.install, "cmd") : standIn(gitFound.found, "git")),
+      pwshHome() ?? (pwshFound && standIn(pwshFound, "PowerShell 7")),
+    ].filter((folder) => folder !== undefined)
+  })())
 
 // Windows' own variables, which its programs need to start and to find the system: the
 // machine's, never the developer's.
