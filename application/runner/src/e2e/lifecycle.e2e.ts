@@ -1,6 +1,5 @@
-import type { AgentSetup } from "./agents/agent.js"
 import { setups } from "./agents/index.js"
-import { occurrences, type DeckTerminal } from "./deck.js"
+import type { DeckTerminal } from "./deck.js"
 import { describe, e2e, expect, supported } from "./fixture.js"
 import { latest, type Call } from "./model/script.js"
 import {
@@ -70,26 +69,6 @@ const cleared = (terminal: DeckTerminal) =>
 const ended = async (terminal: DeckTerminal, from: number, shows: string): Promise<void> => {
   await terminal.until(shows)
   await through(terminal, ["working", "settled"], { after: from })
-}
-
-/**
- * Waits until the screen shows the harness's banner once more than the fewest times it
- * has since the call: the next instance's, drawn as it starts. One that clears its screen
- * as it exits (Claude Code, Codex) draws it again from none, one that leaves it there
- * (Antigravity) a second time, so the first's banner left on screen can't pass for it.
- * Called once the person's command to leave is submitted.
- */
-const redrawn = (terminal: DeckTerminal, { banner, name }: AgentSetup): Promise<unknown> => {
-  let fewest = Number.POSITIVE_INFINITY
-  return terminal.poll(
-    async () => {
-      const shown = occurrences(await terminal.screen(), banner)
-      fewest = Math.min(fewest, shown)
-      return shown > fewest ? true : undefined
-    },
-    `${name} to draw its banner again as it starts anew`,
-    60_000,
-  )
 }
 
 for (const setup of setups) {
@@ -236,10 +215,6 @@ for (const setup of setups) {
         await t2.submit("Ask t1 for the word")
         await t1.reached(holds("t2", "t1", "queued"), { after: mark })
       })
-      const anew = redrawn(t1, setup)
-      // Awaited below, once Novadeck has seen the new start; a failure before then is the test's.
-      anew.catch(() => {})
-
       // The agent left, and the message for its session won't arrive; then the new start is
       // Ready. With no shell prompt between the two, Novadeck notices the first's process is
       // gone only as the next reports, in the same handling as the new session it binds, so
@@ -249,7 +224,10 @@ for (const setup of setups) {
         after: mark,
         timeoutMs: 60_000,
       })
-      await anew
+      // Ready is the new start's, which drew its banner as it started. A count of banners
+      // needn't grow: the start may come before a first look, and on a short screen the
+      // first's banner scrolls away under the second's (Antigravity's, which it leaves).
+      await t1.until(setup.banner)
       await prompted(t1, setup)
       const [first] = messages(t1)
       expect(first).toMatchObject({ from: "t2", to: "t1", state: "gone" })
