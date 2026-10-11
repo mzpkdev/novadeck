@@ -245,6 +245,16 @@ describe("agents Novadeck can connect", () => {
     expect(await agents.connected("agy")).toBe(false)
   })
 
+  it("drop an unfinished reinstall for an agent uninstalled since", async ({ fixture }) => {
+    const agents = fixture.agents()
+    const marker = `${fixture.paths.plugins.agy}.reinstalling`
+    // Antigravity's home is gone: the mark goes, and nothing is installed.
+    writeFileSync(marker, "")
+    expect(await agents.refresh()).toEqual([])
+    expect(existsSync(marker)).toBe(false)
+    expect(fixture.calls()).toEqual([])
+  })
+
   it("say so where the agent's copy still differs once installed again", async ({ fixture }) => {
     installed(fixture.home, "agy")
     const agents = fixture.agents({ FAKE_REWRITE: " " })

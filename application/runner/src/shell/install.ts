@@ -159,8 +159,10 @@ const settled = async (move: () => Promise<void>, tries = 5): Promise<void> => {
  * person's AutoRun runs first. "prints" where anything came out, whatever cmd exited with,
  * as an AutoRun that leaves an error level; "slow" where cmd ran past `timeoutMs`, which
  * may yet print; undefined where it printed nothing, or didn't start, and runs no hook
- * either. It answers by `timeoutMs` whatever cmd leaves running, as a process the AutoRun
- * started that holds its output open. It gets the runner's environment without what
+ * either. It answers once cmd's output closes, or by `timeoutMs` whatever cmd leaves
+ * running: "slow" where a process the AutoRun started holds that output open, as what
+ * cmd printed can't be known to have been read whole. It gets the runner's environment
+ * without what
  * children never inherit, as the AutoRun is the person's own code. `program` and `args`
  * are for tests.
  */
@@ -197,8 +199,6 @@ export const cmdPrints = ({
       resolve(undefined)
     })
     child.on("close", done)
-    // Its output may come a moment after it exits, or never close, held by a child of its.
-    child.on("exit", () => setTimeout(done, 100))
   })
 
 // cmd's `for` gives a path's short name, as Windows keeps one on most volumes; a path

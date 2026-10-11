@@ -67,16 +67,17 @@ describe("whether cmd prints of its own before a command", () => {
     ).resolves.toBe("slow")
   })
 
-  it("answers once cmd exits, though something it started holds its output open", async () => {
-    // As an AutoRun that starts a background program: cmd exits, its output stays open.
+  it("answers by its time, safely, though something cmd started holds its output open", async () => {
+    // As an AutoRun that starts a background program: cmd exits, its output stays open,
+    // and what it printed can't be known read whole, so it may print.
     const began = Date.now()
     const answer = await cmdPrints({
       ...node(
         "require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10_000)'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true, windowsHide: true }).unref()",
       ),
-      timeoutMs: 5_000,
+      timeoutMs: 500,
     })
-    expect(answer).toBeUndefined()
+    expect(answer).toBe("slow")
     expect(Date.now() - began).toBeLessThan(4_000)
   })
 

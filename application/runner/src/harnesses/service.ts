@@ -177,6 +177,8 @@ export const createHarnesses = (
   }
   // One change at a time: an agent's plugin commands edit its configuration.
   let queue = Promise.resolve()
+  // The agents the person asked to disconnect, until that is done.
+  const disconnecting = new Set<AgentName>()
   const queued = <T>(work: () => Promise<T>): Promise<T> => {
     const change = queue.then(work)
     queue = change.then(
@@ -259,8 +261,16 @@ export const createHarnesses = (
       return Promise.all(agents.map((agent) => state(harnesses[agent], install(agent))))
     },
     /** Installs or removes Novadeck's plugin in the agent; resolves to where it stands after. */
-    set: (agent: AgentName, connected: boolean): Promise<AgentIntegration> =>
-      queued(() => apply(agent, connected)),
+    set: (agent: AgentName, connected: boolean): Promise<AgentIntegration> => {
+      if (connected) return queued(() => apply(agent, true))
+      // The person's disconnect stands from when it is asked for: a refresh queued ahead of
+      // it leaves the agent alone, and a quit before it runs leaves no reinstall to finish.
+      disconnecting.add(agent)
+      void installs().then((install) =>
+        install ? rm(reinstalling(install(agent)), { force: true }) : undefined,
+      )
+      return queued(() => apply(agent, false)).finally(() => disconnecting.delete(agent))
+    },
     /**
      * Installs the plugin again into each connected agent that keeps a copy of it whose
      * files differ from Novadeck's (`Harness.installed`), as a connect would: a hook that
@@ -282,6 +292,12 @@ export const createHarnesses = (
         try {
           // eslint-disable-next-line no-await-in-loop -- One agent at a time, as `set` runs them.
           const done = await queued(async () => {
+            if (disconnecting.has(agent)) return false
+            // An agent uninstalled since keeps no unfinished reinstall, nor takes one later.
+            if (!(await exists(harnesses[agent].home(where)))) {
+              await rm(reinstalling(where), { force: true })
+              return false
+            }
             const unfinished = await exists(reinstalling(where))
             const connected = await harnesses[agent].connected(where)
             if (!connected && !unfinished) return false
