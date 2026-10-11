@@ -243,28 +243,36 @@ const windows: Table = {
 }
 
 /**
- * Parses `ps -o pid=,stat=,lstart=,comm=` in the C locale: each process's pid, state,
- * start (`Thu Oct  9 11:03:47 2026`, local time, to the second) and its command's path,
- * which may hold spaces, named by its last part as Linux's `comm` is.
+ * Parses `ps -o pid=,ppid=,pgid=,stat=,lstart=,comm=` in the C locale: each process's pid,
+ * its parent's and its process group's, state, start (`Thu Oct  9 11:03:47 2026`, local
+ * time, to the second) and its command's path, which may hold spaces, named by its last
+ * part as Linux's `comm` is.
  */
 export const parseDarwinProcesses = (
   output: string,
-): readonly (Process & { readonly zombie: boolean })[] =>
+): readonly (Process & {
+  readonly ppid: number
+  readonly pgid: number
+  readonly zombie: boolean
+})[] =>
   output.split("\n").flatMap((line) => {
-    const match = /^\s*(\d+)\s+(\S+)\s+(\w{3}\s+\w{3}\s+\d+\s+\d\d:\d\d:\d\d\s+\d{4})\s+(.+)$/.exec(
-      line,
-    )
+    const match =
+      /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\w{3}\s+\w{3}\s+\d+\s+\d\d:\d\d:\d\d\s+\d{4})\s+(.+)$/.exec(
+        line,
+      )
     if (!match) return []
-    const start = new Date(match[3]!.replace(/\s+/g, " ")).getTime()
+    const start = new Date(match[5]!.replace(/\s+/g, " ")).getTime()
     if (Number.isNaN(start)) return []
     return [
       {
         pid: Number(match[1]),
-        comm: match[4]!.trim().split("/").at(-1)!,
+        ppid: Number(match[2]),
+        pgid: Number(match[3]),
+        comm: match[6]!.trim().split("/").at(-1)!,
         start,
         // Z is a zombie, which `darwinList` passes over; T is stopped.
-        stopped: match[2]!.includes("T"),
-        zombie: match[2]!.includes("Z"),
+        stopped: match[4]!.includes("T"),
+        zombie: match[4]!.includes("Z"),
       },
     ]
   })
@@ -298,19 +306,24 @@ export const parseDarwinFolders = (output: string): ReadonlyMap<number, string> 
 }
 
 /**
- * macOS, which has no /proc: `ps` for the processes, their states and starts, which it
- * gives to the second, so one started in the second the sandbox was made counts; `lsof`
- * for the working folders of those that started since; and for the rest `ps -E`, which
- * shows the environment after the command of the user's own processes, searched only for
- * `HOME=<sandbox home>` and neither kept nor printed. macOS shows none of its own
- * programs' (bash, sleep), so one of those is found only by its working folder; the
- * harnesses are never one.
+ * macOS, which has no /proc: `ps` for the processes, their parents, groups, states and
+ * starts, which it gives to the second, so one started in the second the sandbox was made
+ * counts; `lsof` for the working folders of those that started since; and for the rest
+ * `ps -E`, which shows the environment after the command of the user's own processes,
+ * searched only for `HOME=<sandbox home>` and neither kept nor printed. macOS shows none
+ * of its own programs' (bash, sleep), so one of those is found by its working folder, or
+ * as a child of one found, or in a process group of one found, as a job left running in
+ * the background is; never in the tests' own group.
  */
 const darwinList = async (sandbox: Scope): Promise<readonly Process[]> => {
   const since = Math.floor(sandbox.started / 1000) * 1000
-  const recent = parseDarwinProcesses(
-    await run("ps", ["-axww", "-o", "pid=,stat=,lstart=,comm="]),
-  ).filter((one) => one.pid !== process.pid && !one.zombie && one.start >= since)
+  const listed = parseDarwinProcesses(
+    await run("ps", ["-axww", "-o", "pid=,ppid=,pgid=,stat=,lstart=,comm="]),
+  )
+  const ownGroup = listed.find((one) => one.pid === process.pid)?.pgid
+  const recent = listed.filter(
+    (one) => one.pid !== process.pid && !one.zombie && one.start >= since,
+  )
   if (recent.length === 0) return []
   const pids = recent.map(({ pid }) => String(pid)).join(",")
   const folders = parseDarwinFolders(
@@ -319,7 +332,9 @@ const darwinList = async (sandbox: Scope): Promise<readonly Process[]> => {
   const inside = (folder: string | undefined) =>
     folder !== undefined && (folder === sandbox.root || folder.startsWith(`${sandbox.root}/`))
   const outside = recent.filter((one) => !inside(folders.get(one.pid)))
-  const own = new Set<number>()
+  const members = new Set(
+    recent.filter((one) => inside(folders.get(one.pid))).map(({ pid }) => pid),
+  )
   if (outside.length > 0) {
     const environments = await run("ps", [
       "-Eww",
@@ -330,12 +345,41 @@ const darwinList = async (sandbox: Scope): Promise<readonly Process[]> => {
     ])
     for (const line of environments.split("\n")) {
       const match = /^\s*(\d+)\s(.*)$/.exec(line)
-      if (match && match[2]!.split(" ").includes(`HOME=${sandbox.home}`)) own.add(Number(match[1]))
+      if (match && match[2]!.split(" ").includes(`HOME=${sandbox.home}`))
+        members.add(Number(match[1]))
     }
   }
+  const all = sandboxed(recent, members, ownGroup)
   return recent
-    .filter((one) => inside(folders.get(one.pid)) || own.has(one.pid))
+    .filter((one) => all.has(one.pid))
     .map(({ pid, comm, start, stopped }) => ({ pid, comm, start, stopped }))
+}
+
+/**
+ * Those found of the processes, with every one of the processes whose parent is one of
+ * them or whose process group holds one of them, until no more join, but never one in
+ * `ownGroup`, the tests' own group, which the sandbox's processes have no business in.
+ */
+export const sandboxed = (
+  processes: readonly { readonly pid: number; readonly ppid: number; readonly pgid: number }[],
+  found: ReadonlySet<number>,
+  ownGroup: number | undefined,
+): ReadonlySet<number> => {
+  const members = new Set(found)
+  for (let grown = true; grown;) {
+    grown = false
+    const groups = new Set(processes.filter(({ pid }) => members.has(pid)).map(({ pgid }) => pgid))
+    for (const one of processes)
+      if (
+        !members.has(one.pid) &&
+        one.pgid !== ownGroup &&
+        (members.has(one.ppid) || (one.pgid > 1 && groups.has(one.pgid)))
+      ) {
+        members.add(one.pid)
+        grown = true
+      }
+  }
+  return members
 }
 
 const darwin: Table = {

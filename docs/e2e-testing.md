@@ -22,8 +22,7 @@ names its Keychain items after `CLAUDE_CONFIG_DIR`, the sandbox's own, and Codex
 keep its login in a file. So, as on Windows, a test of Antigravity refuses to start while
 the Keychain holds its item (service `gemini`, account `antigravity`), asked for by its
 attributes alone, never its secret. The leftover-process check asks `ps` and `lsof`, and
-macOS shows no environment of its own programs (bash, sleep), so one of those is found only
-by its working folder. Codex follows the system's Reduce motion and then draws no logo on
+macOS shows no environment of its own programs (bash, sleep), so one of those is found by its working folder, as a child of a process found, or in a process group of one, never the tests' own. Codex follows the system's Reduce motion and then draws no logo on
 its first screen, a state one scenario rings it in: GitHub's macOS image turns it on, so
 the E2E workflow turns it off there first, and a Mac with it on fails that scenario, saying
 so. Anywhere else the fixture fails each test, saying why (`unsupported` in `support.ts`);
