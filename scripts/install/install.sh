@@ -21,7 +21,8 @@
 #
 #   NOVADECK_INSTALL_BASE_URL         The folder to download from, for a mirror or a test.
 #   XDG_DATA_HOME                     Where the install puts its files, as usual; the default
-#                                     is ~/.local/share. The profile covers that path too.
+#                                     is ~/.local/share, and a path that is not absolute
+#                                     counts as unset. The profile covers that path too.
 #
 # Test hooks, not for use otherwise:
 #
@@ -32,8 +33,9 @@
 #                                     /proc/sys/kernel/apparmor_restrict_unprivileged_userns.
 #   NOVADECK_INSTALL_APPARMOR_DIR     The folder the profile goes to, in place of
 #                                     /etc/apparmor.d.
-#   NOVADECK_INSTALL_PROFILES         The file listing the loaded AppArmor profiles, in
-#                                     place of /sys/kernel/security/apparmor/profiles.
+#   NOVADECK_INSTALL_PROFILES         The folder with one folder per loaded AppArmor
+#                                     profile, each holding a `name` file, in place of
+#                                     /sys/kernel/security/apparmor/policy/profiles.
 #   NOVADECK_INSTALL_FUSE_DEVICE      The device AppImages mount through, in place of
 #                                     /dev/fuse.
 #
@@ -134,14 +136,22 @@ check_fuse() {
   say "--appimage-extract-and-run."
 }
 
+# XDG_DATA_HOME, which the XDG spec says to ignore unless it is an absolute path.
+data_home() {
+  case "${XDG_DATA_HOME:-}" in
+    /*) printf '%s\n' "$XDG_DATA_HOME" ;;
+    *) printf '%s\n' "$HOME/.local/share" ;;
+  esac
+}
+
 # Where the AppImage lives; the sandbox profile names this path.
 image_path() {
-  printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/novadeck/novadeck.AppImage"
+  printf '%s\n' "$(data_home)/novadeck/novadeck.AppImage"
 }
 
 install_appimage() {
   base="$1"
-  data="${XDG_DATA_HOME:-$HOME/.local/share}"
+  data="$(data_home)"
   bin="$HOME/.local/bin"
   folder="$data/novadeck"
   image="$(image_path)"
@@ -194,7 +204,8 @@ EOF
 canonical_path() {
   folder="${1%/*}"
   rest="${1##*/}"
-  while [ -n "$folder" ] && [ ! -d "$folder" ]; do
+  # A relative path has no slash left to strip at some point, and stops there.
+  while [ -n "$folder" ] && [ ! -d "$folder" ] && [ "$folder" != "${folder%/*}" ]; do
     rest="${folder##*/}/$rest"
     folder="${folder%/*}"
   done
@@ -238,11 +249,19 @@ userns_restricted() {
   [ "$(cat "${NOVADECK_INSTALL_USERNS_SYSCTL:-/proc/sys/kernel/apparmor_restrict_unprivileged_userns}" 2> /dev/null || true)" = 1 ]
 }
 
-# True when the kernel already has the profile of that name. The list is often readable by
-# root only; then this cannot tell, and says no.
+# True when the kernel already has a profile of that name. Anyone can list the folder of
+# loaded profiles, unlike the file of their names that only root may read.
 profile_loaded() {
-  list="${NOVADECK_INSTALL_PROFILES:-/sys/kernel/security/apparmor/profiles}"
-  [ -r "$list" ] && grep -q "^$1 (" "$list"
+  for entry in "${NOVADECK_INSTALL_PROFILES:-/sys/kernel/security/apparmor/policy/profiles}"/*; do
+    [ "$(cat "$entry/name" 2> /dev/null || true)" = "$1" ] && return 0
+  done
+  return 1
+}
+
+# The numeric owner of the home folder.
+home_owner() {
+  # shellcheck disable=SC2012
+  ls -nd "$HOME" | awk '{ print $3 }'
 }
 
 # Lets the AppImage create user namespaces by loading an AppArmor profile. A failure here
@@ -256,16 +275,23 @@ setup_sandbox() {
     return 0
   fi
 
+  # As root for somebody else's home folder (sudo -E), the profile would be uid 0's and
+  # name that user's paths, where it may clash with the user's own.
+  uid="$(id -u)"
+  if [ "$uid" = 0 ] && [ "$(home_owner)" != 0 ]; then
+    sandbox_warning "this ran as root for a home folder that is not root's. Run it as the user who runs Novadeck." "$base"
+    return 0
+  fi
+
   # One file per user, named for the uid, so one user's install never replaces another's,
   # and apart from the novadeck name the .deb's own profile uses.
-  uid="$(id -u)"
   name="novadeck-appimage-$uid"
   target="${NOVADECK_INSTALL_APPARMOR_DIR:-/etc/apparmor.d}/$name"
   location="$(canonical_path "$(image_path)")"
   brew="$(canonical_path "$HOME/Applications/novadeck.AppImage")"
   for path in "$location" "$brew"; do
     case "$path" in
-      *[\"{}\[\]*?^,\\]* | *[![:print:]]*)
+      *[\"{}\[\]*?^,\\]* | *[[:cntrl:]]*)
         sandbox_warning "the path $path has characters AppArmor profiles cannot name." "$base"
         return 0
         ;;
@@ -277,19 +303,20 @@ setup_sandbox() {
     sandbox_warning "this system's AppArmor rejected the profile." "$base"
     return 0
   fi
-  if cmp -s profile "$target" && profile_loaded "$name"; then
+  brewname="$name-brew"
+  if cmp -s profile "$target" && profile_loaded "$name" && { [ "$location" = "$brew" ] || profile_loaded "$brewname"; }; then
     say "Novadeck's sandbox is already set up."
     return 0
   fi
   say "Writing an AppArmor profile so Novadeck's sandbox works on this system."
-  if ! as_root cp profile "$target"; then
-    sandbox_warning "the profile could not be written as root." "$base"
-  elif as_root "$parser" --replace "$target" > /dev/null; then
+  # Loaded before it is saved, so a profile that will not load never replaces a working one
+  # and never loads at the next boot.
+  if ! as_root "$parser" --replace profile > /dev/null; then
+    sandbox_warning "the profile could not be loaded as root." "$base"
+  elif as_root cp profile "$target"; then
     say "Novadeck's sandbox is set up."
   else
-    # Left behind, it would load at the next boot.
-    as_root rm -f "$target" || true
-    sandbox_warning "the profile could not be loaded." "$base"
+    sandbox_warning "the profile loaded but could not be saved, so it will be gone after a restart." "$base"
   fi
 }
 

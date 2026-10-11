@@ -527,6 +527,9 @@ const launch = async (): Promise<void> => {
           "/proc/sys/kernel/apparmor_restrict_unprivileged_userns",
           "utf8",
         ).catch(() => undefined),
+        label: await readFile("/proc/self/attr/apparmor/current", "utf8").catch(() =>
+          readFile("/proc/self/attr/current", "utf8").catch(() => undefined),
+        ),
         env: process.env,
         home: homedir(),
         realpath: (path) => {

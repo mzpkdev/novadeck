@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react"
 
 import { useOverlayOpen } from "./FooterUpdate"
+import { KeepFocus, useRecoverFocus } from "./notice-focus"
 
 const copiedMs = 1500
 
@@ -63,6 +64,7 @@ export const FooterSandbox = ({
   const wanted = (sandbox?.open ?? false) && !hidden && !sandbox?.blocked
   const overlay = useOverlayOpen(wanted)
   const visible = wanted && !overlay
+  const lost = useRecoverFocus((sandbox?.blocked ?? false) || overlay || hidden, chip)
   useEffect(() => {
     if (!visible || !requested.current) return
     // A frame on, after the click that asked has been through the workspace's own click
@@ -120,6 +122,7 @@ export const FooterSandbox = ({
             close()
           }}
         >
+          <KeepFocus lost={lost} selector=".sandbox-panel" />
           <p id={titleId} className="update-title">
             Novadeck is running without its security sandbox
           </p>

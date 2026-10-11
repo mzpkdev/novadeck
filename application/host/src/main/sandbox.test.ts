@@ -13,6 +13,7 @@ const host = (overrides: Partial<SandboxHost> = {}): SandboxHost => ({
   platform: "linux",
   repository,
   restricted: "1\n",
+  label: "unconfined\n",
   env: { APPIMAGE: `${home}/.local/share/novadeck/novadeck.AppImage` },
   home,
   realpath: (path) => path,
@@ -42,6 +43,33 @@ describe("the command that turns the sandbox on", () => {
     const env = { APPIMAGE: `${home}/Downloads/novadeck.AppImage` }
     expect(sandboxFix(host({ env }))).toBe(installer)
     expect(sandboxFix(host({ env, realpath: () => undefined }))).toBe(installer)
+  })
+
+  it("treats a relative XDG_DATA_HOME as unset", () => {
+    const env = {
+      APPIMAGE: `${home}/.local/share/novadeck/novadeck.AppImage`,
+      XDG_DATA_HOME: "data",
+    }
+    expect(sandboxFix(host({ env }))).toBe(fix)
+  })
+
+  it("is nothing when the installer's profile is already in effect", () => {
+    for (const label of [
+      "novadeck-appimage-1000 (unconfined)\n",
+      "novadeck-appimage-1000-brew (enforce)",
+      "novadeck-appimage-7",
+    ])
+      expect(sandboxFix(host({ label }))).toBeUndefined()
+  })
+
+  it("is still offered under another label or none", () => {
+    for (const label of [
+      "unconfined",
+      "novadeck-other (enforce)",
+      "xnovadeck-appimage-1000",
+      undefined,
+    ])
+      expect(sandboxFix(host({ label }))).toBe(fix)
   })
 
   it("is nothing when the system does not restrict user namespaces", () => {

@@ -1,7 +1,15 @@
 import { describe as context, describe, expect, it } from "vitest"
 import { page, type Locator } from "vitest/browser"
 
-import { expectStaysAbsent, openWorkspace, press } from "./support/workspace"
+import { findDialog, pressShortcut } from "./support/keyboard"
+import {
+  commandInput,
+  expectStaysAbsent,
+  focusStage,
+  openWorkspace,
+  press,
+  terminalTab,
+} from "./support/workspace"
 
 const chip = (): Locator => page.getByRole("button", { name: /^No sandbox:/ })
 const notice = (): Locator =>
@@ -43,6 +51,30 @@ describe("the sandbox notice", () => {
       await page.getByRole("button", { name: /^Update ready:/ }).click()
       await expect.element(update).toBeVisible()
       await expect.element(notice()).not.toBeInTheDocument()
+    })
+
+    it("returns focus to the chip after a dialog opened from inside it closes", async () => {
+      await openWorkspace("/?sandbox=off")
+      await chip().click()
+      await expect.element(notice()).toHaveFocus()
+      await pressShortcut("find")
+      await expect.element(findDialog()).toBeVisible()
+      await expectStaysAbsent(notice())
+      await press("{Escape}")
+      await expect.element(findDialog()).not.toBeInTheDocument()
+      await expect.element(chip()).toHaveFocus()
+    })
+
+    it("hands focus to the terminal when its text is clicked while the view has focus", async () => {
+      await openWorkspace("/?sandbox=off")
+      await terminalTab("Dev server").click()
+      await chip().click()
+      await expect.element(notice()).toBeVisible()
+      await focusStage()
+      await notice()
+        .getByText(/^This system blocks/)
+        .click()
+      await expect.element(commandInput("Dev server")).toHaveFocus()
     })
 
     it("closes on Escape", async () => {

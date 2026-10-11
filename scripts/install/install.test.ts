@@ -82,6 +82,12 @@ type Scenario = {
   linked?: boolean
   /** Puts Homebrew's AppImage in place as a symlink to a file in the Caskroom. */
   brew?: "symlink"
+  /** The uid that owns the home folder; the user's own when unset. */
+  homeOwner?: number
+  /** A profile file already installed, which a failed load must leave alone. */
+  existing?: string
+  /** A relative XDG_DATA_HOME, which counts as unset. */
+  relativeXdg?: string
   /** Tools present on the PATH, such as fusermount3. */
   extra?: string[]
   /** Tools present only in the system folders a user's PATH lacks. */
@@ -90,6 +96,14 @@ type Scenario = {
   fuseDevice?: boolean
   /** Leaves the download folder unset, so the script builds it from its repository. */
   rendered?: boolean
+}
+
+// How the kernel lists a loaded profile: a folder named for it, with its name inside.
+const load = (folder: string, ...names: string[]) => {
+  for (const [index, name] of names.entries()) {
+    mkdirSync(join(folder, `${name}.${index}`))
+    writeFileSync(join(folder, `${name}.${index}`, "name"), `${name}\n`)
+  }
 }
 
 const folders: string[] = []
@@ -124,6 +138,11 @@ const run = (scenario: Scenario = {}) => {
   const { system = "Linux", machine = "x86_64" } = scenario.uname ?? {}
   shim(bin, "uname", `[ "$1" = -s ] && echo ${system} || echo ${machine}`)
   shim(bin, "id", `echo ${scenario.root ? 0 : 1000}`)
+  shim(
+    bin,
+    "ls",
+    `echo "drwx------ 2 ${scenario.homeOwner ?? (scenario.root ? 0 : 1000)} 4096 Jan 1 00:00 $3"`,
+  )
   shim(
     bin,
     "curl",
@@ -167,6 +186,8 @@ esac`,
     symlinkSync(real, data)
   }
   const profiles = join(root, "profiles")
+  mkdirSync(profiles)
+  if (scenario.existing) writeFileSync(join(apparmor, `novadeck-appimage-1000`), scenario.existing)
   if (scenario.brew) {
     mkdirSync(join(home, "Applications"))
     mkdirSync(join(home, "Caskroom"))
@@ -187,6 +208,7 @@ esac`,
         NOVADECK_INSTALL_FUSE_DEVICE: device,
         NOVADECK_INSTALL_PROFILES: profiles,
         ...(data ? { XDG_DATA_HOME: data } : {}),
+        ...(scenario.relativeXdg ? { XDG_DATA_HOME: scenario.relativeXdg } : {}),
         ...(scenario.rendered ? {} : { NOVADECK_INSTALL_BASE_URL: `http://mirror.test/dl/` }),
       },
       encoding: "utf8",
@@ -288,7 +310,7 @@ describe.skipIf(!linux)("install.sh", () => {
       expect(result.stdout).toContain("so Novadeck's sandbox works on this system")
       expect(result.commands).toHaveLength(2)
       expect(result.commands[0]).toMatch(/^apparmor_parser --skip-kernel-load --debug \S+$/)
-      expect(result.commands[1]).toBe(`sudo apparmor_parser --replace ${result.profilePath}`)
+      expect(result.commands[1]).toBe("sudo apparmor_parser --replace profile")
       expect(basename(result.profilePath)).toBe("novadeck-appimage-1000")
       expect(result.profile).toBe(`abi <abi/4.0>,
 include <tunables/global>
@@ -308,7 +330,7 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
     it("names the profile for root's uid and skips sudo for root", () => {
       const result = run({ ...restricted, root: true, sudo: false })
       expect(basename(result.profilePath)).toBe("novadeck-appimage-0")
-      expect(result.commands[1]).toBe(`apparmor_parser --replace ${result.profilePath}`)
+      expect(result.commands[1]).toBe("apparmor_parser --replace profile")
       expect(result.profile).toContain("profile novadeck-appimage-0 ")
     })
 
@@ -336,11 +358,13 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       expect(result.profile).toContain(`"${join(result.home, "Caskroom/novadeck.AppImage")}"`)
     })
 
-    it("does not ask for sudo again when the profile is already loaded", () => {
+    it("does not ask for sudo again when both profiles are already loaded", () => {
       const result = run(restricted)
-      writeFileSync(result.profiles, "novadeck-appimage-1000 (unconfined)\nother (enforce)\n")
+      load(result.profiles, "novadeck-appimage-1000", "novadeck-appimage-1000-brew", "other")
       const before = result.log().length
-      expect(result.again().stdout).toContain("already set up")
+      const again = result.again()
+      expect(again.stdout).toContain("already set up")
+      expect(again.stderr).toBe("")
       expect(
         result
           .log()
@@ -349,20 +373,47 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       ).toEqual([])
     })
 
-    it("asks again when the profile is not loaded, or the list cannot be read", () => {
+    it("asks again when a profile is not loaded, or none are", () => {
       const result = run(restricted)
-      writeFileSync(result.profiles, "other (enforce)\n")
+      load(result.profiles, "novadeck-appimage-1000", "novadeck-appimage-1000-other")
       expect(result.again().stdout).toContain("Writing an AppArmor profile")
-      rmSync(result.profiles)
+      rmSync(result.profiles, { recursive: true })
       expect(result.again().stdout).toContain("Writing an AppArmor profile")
     })
 
     it("asks again when the installed profile differs", () => {
       const result = run(restricted)
-      writeFileSync(result.profiles, "novadeck-appimage-1000 (unconfined)\n")
+      load(result.profiles, "novadeck-appimage-1000", "novadeck-appimage-1000-brew")
       writeFileSync(result.profilePath, "old")
       expect(result.again().stdout).toContain("Writing an AppArmor profile")
       expect(readFileSync(result.profilePath, "utf8")).toContain("userns,")
+    })
+
+    it("treats a relative XDG_DATA_HOME as unset", () => {
+      const result = run({ ...restricted, relativeXdg: "relative/data" })
+      expect(result.status).toBe(0)
+      expect(existsSync(join(result.home, ".local/share/novadeck", image))).toBe(true)
+      expect(result.profile).toContain(join(result.home, ".local/share/novadeck", image))
+    })
+
+    it("names a path with UTF-8 characters, which AppArmor accepts", () => {
+      const result = run({ ...restricted, xdg: "józef" })
+      expect(result.profile).toContain(`"${join(result.data, "novadeck", image)}"`)
+    })
+
+    it("warns instead of writing a profile for a path with a control character", () => {
+      const result = run({ ...restricted, xdg: "odd\tpath" })
+      expect(result.status).toBe(0)
+      expect(result.profile).toBeUndefined()
+      expect(result.stdout).toContain("without its sandbox")
+    })
+
+    it("skips the sandbox as root for a home folder that is someone else's", () => {
+      const result = run({ ...restricted, root: true, sudo: false, homeOwner: 1000 })
+      expect(result.status).toBe(0)
+      expect(result.commands).toEqual([])
+      expect(result.profile).toBeUndefined()
+      expect(result.stdout).toContain("Run it as the user who runs Novadeck")
     })
 
     it("leaves the install working and says how to retry when sudo refuses", () => {
@@ -397,11 +448,13 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       expect(result.stdout).toContain("without its sandbox")
     })
 
-    it("removes the file it wrote when loading fails, so it does not load at boot", () => {
-      const result = run({ restrict: "1", parser: "unloadable" })
-      expect(result.status).toBe(0)
-      expect(result.profile).toBeUndefined()
-      expect(result.stdout).toContain("without its sandbox")
+    it("writes nothing when loading fails, and keeps a profile that was already there", () => {
+      const fresh = run({ restrict: "1", parser: "unloadable" })
+      expect(fresh.status).toBe(0)
+      expect(fresh.profile).toBeUndefined()
+      expect(fresh.stdout).toContain("without its sandbox")
+      const old = run({ restrict: "1", parser: "unloadable", existing: "old" })
+      expect(old.profile).toBe("old")
     })
 
     it("warns without apparmor_parser", () => {
@@ -530,6 +583,18 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       })
       expect(result.lines).toEqual([])
       expect(result.profile).toBeUndefined()
+    })
+  })
+
+  context("when finding the real path of a relative one", () => {
+    it("stops instead of looping", () => {
+      const functionText = script.match(/^canonical_path\(\) \{[\s\S]*?^\}/m)![0]
+      const result = spawnSync("/bin/sh", ["-c", `${functionText}\ncanonical_path no/such/file`], {
+        encoding: "utf8",
+        timeout: 5000,
+      })
+      expect(result.status).toBe(0)
+      expect(result.stdout.trim().endsWith("/no/such/file")).toBe(true)
     })
   })
 })
