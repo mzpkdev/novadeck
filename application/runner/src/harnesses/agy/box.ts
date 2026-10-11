@@ -39,9 +39,10 @@ export const shellCommandOf = (
     return (
       /(^|[&|(])[\s;,=@]*(rem(\W|$)|:)/i.test(text) ||
       /\b(else|do)[\s;,=@]+rem(\W|$)/i.test(text) ||
-      /(^|[&|(])[\s;,=@]*if\b.*\srem(\W|$)/i.test(text) ||
+      /(^|[&|(])[\s;,=@]*if\b.*[\s;,=@]rem(\W|$)/i.test(text) ||
       text.includes("%") ||
-      (text.match(/"/g) ?? []).length % 2 === 1 ||
+      // A `^"` is a quote cmd prints, which opens nothing.
+      (text.replaceAll('^"', "").match(/"/g) ?? []).length % 2 === 1 ||
       /[\^(&|]$/.test(text) ||
       /^[)&|]/.test(text) ||
       (at > 0 && lines[at - 1]!.trimEnd().endsWith("^"))

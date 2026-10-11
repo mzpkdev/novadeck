@@ -185,18 +185,19 @@ describe("refreshing PATH", () => {
       reads += 1
       return Promise.resolve("timeout" as const)
     }
-    const options = { platform: "win32" as const, retryMs: 60_000, timeoutRetryMs: 40, read }
+    // Waits wide enough apart that a slow timer or a pause of the process tells nothing.
+    const options = { platform: "win32" as const, retryMs: 60_000, timeoutRetryMs: 200, read }
     const env = { Path: "C:\\Here" }
     await refreshPath(env, options)
-    await pause(50)
-    // Past the first wait of 40 ms: read again, and timed out again.
+    await pause(300)
+    // Past the first wait of 200 ms: read again, and timed out again.
     await refreshPath(env, options)
     expect(reads).toBe(2)
-    await pause(50)
-    // Within the second wait, of 80 ms: no read.
+    await pause(100)
+    // Well within the second wait, of 400 ms: no read.
     await refreshPath(env, options)
     expect(reads).toBe(2)
-    await pause(50)
+    await pause(500)
     await refreshPath(env, options)
     expect(reads).toBe(3)
     forgetPath()

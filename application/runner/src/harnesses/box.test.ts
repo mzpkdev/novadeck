@@ -398,10 +398,16 @@ describe("the command Antigravity's shell mode is given", () => {
       "for %%f in (*) do rem x\necho b",
       "if exist x (echo y) else rem n\necho b",
       'echo "a\necho b',
+      "if exist x ;rem n\necho b",
+      "if exist x ,rem n\necho b",
+      "if exist x @rem n\necho b",
+      // `^"` opens nothing, so the `"` after it does.
+      'echo ^"a" b\necho c',
     ])
       expect(agyShellCommand(command, "win32"), command).toBeUndefined()
-    // Quotes in pairs join as written.
+    // Quotes in pairs join as written, and a quote cmd only prints is none.
     expect(agyShellCommand('echo "a b"\necho c', "win32")).toBe('echo "a b" & echo c')
+    expect(agyShellCommand('echo ^"a\necho c', "win32")).toBe('echo ^"a & echo c')
     // A remark alone, or one word that only starts like one, runs as written.
     expect(agyShellCommand("rem nothing", "win32")).toBe("rem nothing")
     expect(agyShellCommand("echo a\nremove-it.cmd", "win32")).toBe("echo a & remove-it.cmd")
