@@ -20,22 +20,26 @@ import { transcripts, typedEntry } from "./transcripts.js"
 const gemini = (home: string) => join(home, ".gemini")
 const cli = ({ home: user }: Install) => join(gemini(user), "antigravity-cli")
 
-// Antigravity reads every hook's answer as JSON, even outside Novadeck's shells. It
-// denies a tool whose PreToolUse answer says nothing (`{}` too), so that one's answer is
-// "ask", which leaves the call to the person's own policy, here as in Novadeck's shells;
-// cmd passes it on intact.
+// Antigravity reads every hook's answer as JSON, even outside Novadeck's shells. On Linux
+// and macOS it denies a tool whose PreToolUse answer says nothing (`{}` too), so that
+// one's answer is "ask", which leaves the call to the person's own policy, here as in
+// Novadeck's shells.
 const ask = '{"decision":"ask"}'
 // PreToolUse also falls back where the launcher is set but missing or not runnable, as a
 // variable that outlives its Novadeck (a plugin is global; tmux carries variables on).
-// cmd's commands hold no double quote, as the agents' own spawning escapes one as `\"`,
-// which cmd doesn't read (Node's does, and the plugin tests run them so): they therefore
-// take a launcher path without spaces only. Antigravity runs them in cmd on Windows
-// (probed 2026-10-09, 1.2.14).
+// On Windows Antigravity runs each command as `cmd /c "<command>"`, its double quotes
+// escaped as `\"`, which cmd keeps. There a PreToolUse answer that isn't JSON (an `echo`
+// of the answer printed `{\"decision\":\"ask\"}`), or a hook that exits non-zero, let the
+// tool run unasked, where no answer at all, exiting 0, left it to the person's policy
+// (probed 2026-10-11, 1.2.14). So cmd's commands hold no double quote, and PreToolUse's
+// runs in a cmd of its own, then exits 0 whatever that did: without a runnable launcher,
+// as one whose path has a space and breaks the inner line, it prints nothing, and the
+// tool still asks. Novadeck's shells name the launcher by its short name, without spaces.
 const hook = (platform: NodeJS.Platform, event: string): string => {
   const pre = event === "PreToolUse"
   if (platform === "win32")
     return pre
-      ? `if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy ${event}) else (echo ${ask})) else (echo ${ask})`
+      ? `cmd /d /c if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy ${event})) & exit /b 0`
       : `if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy ${event}) else (echo {})`
   return pre
     ? `if [ -x "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '${ask}'; fi`

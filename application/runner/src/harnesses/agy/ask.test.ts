@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process"
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 import type { Report } from "../../shell/reports.js"
 import { describe, expect, it } from "../../test.js"
@@ -178,17 +181,25 @@ const hookRun = (env: NodeJS.ProcessEnv) =>
     encoding: "utf8",
   }).stdout.trim()
 
-const cmdRun = (env: NodeJS.ProcessEnv) =>
-  spawnSync(
+// As Antigravity runs it on Windows: `cmd /c "<command>"`, its double quotes escaped as
+// `\"`, which cmd keeps (probed 2026-10-11, 1.2.14); verbatim, as Node escapes otherwise.
+const cmdRun = (env: NodeJS.ProcessEnv, event = "PreToolUse") => {
+  const run = spawnSync(
     process.env.COMSPEC ?? "cmd.exe",
-    // As written: Node's own quoting would escape the answer's quotes as `\"`.
-    ["/d", "/s", "/c", `"${agy.hook("win32", "PreToolUse")}"`],
+    ["/c", `"${agy.hook("win32", event).replaceAll('"', String.raw`\"`)}"`],
     {
-      env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, ...env },
+      env: {
+        PATH: process.env.PATH,
+        SystemRoot: process.env.SystemRoot,
+        COMSPEC: process.env.COMSPEC,
+        ...env,
+      },
       encoding: "utf8",
       windowsVerbatimArguments: true,
     },
-  ).stdout.trim()
+  )
+  return { status: run.status, stdout: run.stdout.trim() }
+}
 
 describe("Antigravity's PreToolUse answer", () => {
   it("is ask wherever it prints one: Novadeck's runner, its launcher, and the hook command alone", () => {
@@ -197,16 +208,19 @@ describe("Antigravity's PreToolUse answer", () => {
     expect(Object.keys(agy.messaging.asks)).not.toContain("PreToolUse")
     expect(agy.hook("linux", "PreToolUse")).toContain(`[ -x "$NOVADECK_HOOK" ]`)
     expect(agy.hook("linux", "PreToolUse")).toContain(`else echo '{"decision":"ask"}'; fi`)
-    // cmd's hold no double quote, which the agents' spawning escapes where cmd can't read it.
+    // cmd's hold no double quote, which Antigravity escapes where cmd keeps the escape, and
+    // PreToolUse's prints nothing without a runnable launcher and always exits 0: an answer
+    // that isn't JSON there, or a non-zero exit, let the tool run unasked, where none leaves
+    // it to the person's policy.
     expect(agy.hook("win32", "PreToolUse")).toBe(
-      `if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy PreToolUse) else (echo {"decision":"ask"})) else (echo {"decision":"ask"})`,
+      "cmd /d /c if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy PreToolUse)) & exit /b 0",
     )
     expect(agy.hook("win32", "Stop")).toBe(
       "if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy Stop) else (echo {})",
     )
-    expect(agy.hook("win32", "PreToolUse")).toMatch(/else \(echo \{"decision":"ask"\}\)$/)
+    for (const event of ["PreToolUse", "PreInvocation", "Stop", "PostToolUse"])
+      expect(agy.hook("win32", event)).not.toContain('"')
     expect(agy.hook("linux", "Stop")).toContain(`else echo '{}'; fi`)
-    expect(agy.hook("win32", "Stop")).toContain("else (echo {})")
   })
 
   it.skipIf(process.platform === "win32")(
@@ -219,14 +233,26 @@ describe("Antigravity's PreToolUse answer", () => {
     },
   )
 
-  // Antigravity runs it in cmd there, and denies every tool on an answer of nothing.
+  // Antigravity runs it in cmd there, and on no answer asks as the person's policy says.
   it.runIf(process.platform === "win32")(
-    "is ask from cmd when its launcher is unset or missing",
-    () => {
-      expect(cmdRun({})).toBe('{"decision":"ask"}')
-      expect(cmdRun({ NOVADECK_HOOK: String.raw`C:\nonexistent\hook.exe` })).toBe(
-        '{"decision":"ask"}',
-      )
+    "is nothing from cmd, exiting 0, when its launcher is unset, missing or named with a space",
+    ({ resources }) => {
+      const nothing = { status: 0, stdout: "" }
+      expect(cmdRun({})).toEqual(nothing)
+      expect(cmdRun({ NOVADECK_HOOK: String.raw`C:\nonexistent\hook.exe` })).toEqual(nothing)
+      // A space breaks the inner line; the outer still exits 0.
+      expect(cmdRun({ NOVADECK_HOOK: String.raw`C:\Program Files\x\hook.exe` })).toEqual(nothing)
+      // A launcher's own answer passes through.
+      const folder = mkdtempSync(join(tmpdir(), "novadeck-agy-hook-"))
+      resources.defer(() => rmSync(folder, { recursive: true, force: true }))
+      const launcher = join(folder, "launcher.cmd")
+      writeFileSync(launcher, '@echo {"decision":"ask","by":"launcher"}')
+      expect(cmdRun({ NOVADECK_HOOK: launcher })).toEqual({
+        status: 0,
+        stdout: '{"decision":"ask","by":"launcher"}',
+      })
+      // The other events' empty answer is JSON as cmd prints it.
+      expect(cmdRun({}, "Stop")).toEqual({ status: 0, stdout: "{}" })
     },
   )
 
