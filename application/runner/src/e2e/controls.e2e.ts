@@ -6,6 +6,7 @@ import type { FolderQuestion } from "./agents/agent.js"
 import { setups } from "./agents/index.js"
 import type { DeckTerminal } from "./deck.js"
 import { describe, e2e, expect, gated, supported } from "./fixture.js"
+import { racesOwnSettings } from "./known-gaps.js"
 import { asked, gate, latest, Refusal, tool, type Call } from "./model/script.js"
 import {
   answers,
@@ -614,10 +615,9 @@ for (const setup of setups) {
           await choose(t1, question!)
         })
         trusting.catch(() => {})
-        // The second starts once the first asks, so the two never start together: Antigravity
-        // rewrites its settings as it starts, and one starting at the same time read them
-        // mid-write on a Windows runner, its onboarding shown in place of the question.
-        await t1.until(shows, 60_000)
+        // Known gap (known-gaps.ts, `racesOwnSettings`): there the second starts once the
+        // first asks, as two starting together may race on the harness's own settings.
+        if (racesOwnSettings(setup)) await t1.until(shows, 60_000)
         const t2 = await run.deck.open(setup.agent)
         expect([t1.handle, t2.handle]).toEqual(["t1", "t2"])
         const calls = run.model.mark()

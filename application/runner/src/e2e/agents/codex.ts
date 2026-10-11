@@ -72,6 +72,7 @@ export const codex: AgentSetup = {
   dialect: responses,
   banner: "OpenAI Codex",
   bindsAtReady: false,
+  steers: true,
   idleCommand: "/status",
   // Its curated-plugin sync and its startup tips (see `prepare`).
   refused: ["github.com", "api.github.com", "raw.githubusercontent.com"],

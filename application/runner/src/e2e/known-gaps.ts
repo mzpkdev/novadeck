@@ -31,8 +31,9 @@ export const has = (gap: Gap, setup: AgentSetup): boolean =>
  * it, though the joiners between such emoji do (probed 2026-10-09: Codex 0.159.3,
  * OpenConsole 1.25.260303002; Windows' own ConPTY delivers it, as both deliver it to
  * cmd). A prompt holding one never shows whole in its box, so Novadeck presses no Enter
- * and the prompt fails (PROMPT_FAILED). Not every time: one CI run of many (2026-10-10)
- * got it through, the prompt landing as on Linux. Pinned by chat.e2e.ts, "gives its agent
+ * and the prompt fails (PROMPT_FAILED), what was pasted left in the box as a draft the
+ * next prompt is refused for until the person clears it. Not every time: one CI run of
+ * many (2026-10-10) got it through, the prompt landing as on Linux. Pinned by chat.e2e.ts, "gives its agent
  * emoji sequences and CJK, then the next prompt", which takes either. Once fixed, the
  * prompt lands every time and its turn runs as on Linux.
  */
@@ -40,3 +41,17 @@ const astralLost: Gap = { agents: ["codex"], platforms: ["win32"] }
 
 /** Whether the harness loses a character outside the BMP that a prompt pastes. */
 export const losesAstral = (setup: AgentSetup): boolean => has(astralLost, setup)
+
+/**
+ * Antigravity on Windows, two of it starting together in one home, may read its settings
+ * as the other rewrites them, and show its first-run onboarding in place of the
+ * folder-trust question (seen once on a Windows CI runner, 2026-10-10, 1.2.14): its own
+ * settings write, not anything of Novadeck's. controls.e2e.ts, "never rings an agent at
+ * its folder-trust question", starts the second once the first asks there; elsewhere both
+ * start together, as a workspace restored. A race, it has no pin that fails every time;
+ * once Antigravity writes its settings whole, drop the stagger.
+ */
+const settingsRaced: Gap = { agents: ["agy"], platforms: ["win32"] }
+
+/** Whether two of the harness starting together may race on its own settings. */
+export const racesOwnSettings = (setup: AgentSetup): boolean => has(settingsRaced, setup)

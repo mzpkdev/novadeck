@@ -916,14 +916,21 @@ probe output, and keep their own loader.
 
 A known gap is a difference between harnesses the suite works around until Novadeck
 closes it, and is raised with the person first (see AGENTS.md, "Harness Parity"): never a
-reason to leave a harness out. One stands today:
+reason to leave a harness out. These stand today:
 
 - **Codex on Windows loses characters outside the Basic Multilingual Plane**
   (`losesAstral`). An emoji such as 👨 mostly never reaches it through the ConPTY that
   node-pty bundles, though Windows' own ConPTY delivers it: a prompt holding one never
-  shows whole in its box, and fails without Enter. One CI run of many got it through.
+  shows whole in its box, and fails without Enter, what was pasted left there as a draft
+  the next prompt is refused for until the person clears it. One CI run of many got it
+  through.
   Pinned by chat.e2e.ts, "gives its agent emoji sequences and CJK, then the next prompt",
   which takes either until it lands every time.
+- **Antigravity on Windows, two starting together, may race on its own settings**
+  (`racesOwnSettings`). One read them as the other rewrote them and showed its first-run
+  onboarding in place of the folder-trust question, on a CI runner. Its own settings
+  write, not Novadeck's: controls.e2e.ts starts the second once the first asks there,
+  and elsewhere both start together. A race, it has no pin that fails every time.
 
 `known-gaps.ts` names each one as a `Gap`, with the harnesses it affects (and the
 platforms, where only some have it), documented

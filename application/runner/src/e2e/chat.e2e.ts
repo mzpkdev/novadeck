@@ -241,6 +241,12 @@ for (const setup of setups) {
         )
         if (failure !== undefined) {
           expect(failure).toMatchObject({ code: "PROMPT_FAILED" })
+          // What the paste left stays in the box, a draft the next prompt is refused for,
+          // until the person clears it (probed 2026-10-11, Codex 0.159.3).
+          await expect(t1.prompt("Carry on")).rejects.toMatchObject({
+            code: "CONFLICT",
+            reason: "draft",
+          })
           return
         }
       } else await t1.prompt(prompt)
@@ -260,10 +266,10 @@ for (const setup of setups) {
       run.model.use(
         replies("First quick", "Did first."),
         replies("Second quick", "Did second."),
-        // Given while the third's turn starts, the fourth may join it, as Codex steers a
-        // running turn with what is queued: one call then holds both.
+        // Given while the third's turn starts, the fourth may join it where the harness
+        // steers a running turn with what is queued: one call then holds both.
         own((call) =>
-          asked(call, "Third one") && asked(call, "Fourth one")
+          setup.steers && asked(call, "Third one") && asked(call, "Fourth one")
             ? { text: "Did third. Did fourth." }
             : undefined,
         ),
@@ -287,9 +293,12 @@ for (const setup of setups) {
       for (const reply of ["Did first.", "Did second.", "Did third.", "Did fourth.", "Did then."])
         await item(t1, "assistant", (text) => text.includes(reply))
       const users = await texts(t1, "user")
-      // Each once, alone or in the turn it joined.
+      // Each once, as its own prompt; or, where the harness steers, maybe in the turn it
+      // joined.
       for (const sent of ["First quick", "Second quick", "Third one", "Fourth one", "Then one"])
-        expect(users.filter((text) => text.includes(sent))).toHaveLength(1)
+        expect(
+          users.filter((text) => (setup.steers ? text.includes(sent) : text === sent)),
+        ).toHaveLength(1)
     })
 
     it("queues a prompt given mid-turn as the person's would be, and answers both", async ({

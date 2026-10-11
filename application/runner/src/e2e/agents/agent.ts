@@ -250,6 +250,11 @@ export type AgentSetup = {
    */
   readonly bindsAtReady: boolean
   /**
+   * Whether a prompt given as its turn starts may join that turn, as Codex steers a running
+   * turn with what is queued: one model call then holds both prompts.
+   */
+  readonly steers?: true
+  /**
    * Hosts it tries through the proxy on every run, which no setting turns off: their
    * refused tunnels are expected. Any other refused tunnel is not.
    */
