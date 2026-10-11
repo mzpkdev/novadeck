@@ -44,27 +44,40 @@ const node = (script: string) => ({ program: process.execPath, args: ["-e", scri
 describe("whether cmd prints of its own before a command", () => {
   it("is any output at all, a line break included", async () => {
     await expect(cmdPrints(node("process.stdout.write('Active code page: 65001.')"))).resolves.toBe(
-      true,
+      "prints",
     )
-    await expect(cmdPrints(node("process.stdout.write('\\r\\n')"))).resolves.toBe(true)
-    await expect(cmdPrints(node(""))).resolves.toBe(false)
+    await expect(cmdPrints(node("process.stdout.write('\\r\\n')"))).resolves.toBe("prints")
+    await expect(cmdPrints(node(""))).resolves.toBeUndefined()
   })
 
-  it("is no only for a cmd that doesn't start, as it runs no hook either", async () => {
-    await expect(cmdPrints({ program: join(tmpdir(), "no-such-cmd.exe") })).resolves.toBe(false)
+  it("is nothing for a cmd that doesn't start, as it runs no hook either", async () => {
+    await expect(cmdPrints({ program: join(tmpdir(), "no-such-cmd.exe") })).resolves.toBeUndefined()
   })
 
-  it("fails safe: a cmd that failed after printing, or ran too long, prints", async () => {
+  it("fails safe: a cmd that failed after printing prints, and one that ran too long may", async () => {
     // As `chcp 65001 & cd /d D:\gone`: output, then an error level `rem` leaves.
     await expect(
       cmdPrints(node("process.stdout.write('Active code page: 65001.'); process.exit(1)")),
-    ).resolves.toBe(true)
+    ).resolves.toBe("prints")
     // An error level with nothing printed leaves the hook's answer alone.
-    await expect(cmdPrints(node("process.exit(1)"))).resolves.toBe(false)
+    await expect(cmdPrints(node("process.exit(1)"))).resolves.toBeUndefined()
     // A slow AutoRun may print anything, after the probe gave up on it.
     await expect(
       cmdPrints({ ...node("setTimeout(() => {}, 10_000)"), timeoutMs: 200 }),
-    ).resolves.toBe(true)
+    ).resolves.toBe("slow")
+  })
+
+  it("answers once cmd exits, though something it started holds its output open", async () => {
+    // As an AutoRun that starts a background program: cmd exits, its output stays open.
+    const began = Date.now()
+    const answer = await cmdPrints({
+      ...node(
+        "require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10_000)'], { stdio: ['ignore', 'inherit', 'ignore'], detached: true, windowsHide: true }).unref()",
+      ),
+      timeoutMs: 5_000,
+    })
+    expect(answer).toBeUndefined()
+    expect(Date.now() - began).toBeLessThan(4_000)
   })
 
   it("keeps the runner's own variables from the person's AutoRun", async ({ resources }) => {
@@ -76,13 +89,13 @@ describe("whether cmd prints of its own before a command", () => {
     process.env.NOVADECK_TOKEN = "secret"
     await expect(
       cmdPrints(node("if (process.env.NOVADECK_TOKEN) process.stdout.write('leaked')")),
-    ).resolves.toBe(false)
+    ).resolves.toBeUndefined()
   })
 
   it.runIf(process.platform === "win32")(
     "is no for this machine's cmd, which has no AutoRun",
     async () => {
-      await expect(cmdPrints()).resolves.toBe(false)
+      await expect(cmdPrints()).resolves.toBeUndefined()
     },
   )
 })

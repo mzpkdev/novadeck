@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { promisify } from "node:util"
@@ -48,12 +48,18 @@ export const installShellFiles = async (
   )
   await Promise.all(staleShellFiles(directory).map((stale) => rm(stale, { force: true })))
   // An agent that runs its hooks in cmd reads nothing they answer after cmd's own output.
-  const prints = process.platform === "win32" && (await cmdPrints())
-  if (prints)
+  const prints = process.platform === "win32" ? await cmdPrints() : undefined
+  if (prints === "prints")
     console.error(
       "Novadeck: cmd prints something of its own before every command, as an AutoRun (HKLM or HKCU\\Software\\Microsoft\\Command Processor\\AutoRun) that doesn't send its output to nul does. Antigravity can read none of its hooks' answers then, so Novadeck registers no PreToolUse hook for it, and installs its plugin again where it is connected; its own policy asks before each tool, and messaging with it won't work until that output goes.",
     )
-  for (const file of shellFiles(paths, process.platform, undefined, { cmdPrints: prints })) {
+  if (prints === "slow")
+    console.error(
+      "Novadeck: cmd took more than 5 seconds to run a command, as a slow AutoRun (HKLM or HKCU\\Software\\Microsoft\\Command Processor\\AutoRun) may on a cold start, so whether it prints anything of its own isn't known. In case it does, which would let Antigravity's tools run unasked, Novadeck registers no PreToolUse hook for it this time; Antigravity's own policy asks before each tool. It looks again at the next start.",
+    )
+  for (const file of shellFiles(paths, process.platform, undefined, {
+    cmdPrints: prints !== undefined,
+  })) {
     // eslint-disable-next-line no-await-in-loop -- A few small files, one after another.
     await mkdir(dirname(file.path), { recursive: true, mode: 0o700 })
     // eslint-disable-next-line no-await-in-loop -- Unchanged files are left alone.
@@ -150,14 +156,15 @@ const settled = async (move: () => Promise<void>, tries = 5): Promise<void> => {
 /**
  * Whether cmd prints something of its own before a command, as it runs a hook: `rem`,
  * which prints nothing, run without `/d`, as an agent runs it, so the machine's and the
- * person's AutoRun runs first. Any output at all is theirs. It fails safe: a cmd that ran
- * but failed, as an AutoRun that leaves an error level, still printed what it printed, and
- * one that ran past `timeoutMs` may have printed anything, so it counts as printing; only
- * a cmd that didn't start, which runs no hook either, doesn't. It gets the runner's
- * environment without what children never inherit, as the AutoRun is the person's own
- * code. `program` and `args` are for tests.
+ * person's AutoRun runs first. "prints" where anything came out, whatever cmd exited with,
+ * as an AutoRun that leaves an error level; "slow" where cmd ran past `timeoutMs`, which
+ * may yet print; undefined where it printed nothing, or didn't start, and runs no hook
+ * either. It answers by `timeoutMs` whatever cmd leaves running, as a process the AutoRun
+ * started that holds its output open. It gets the runner's environment without what
+ * children never inherit, as the AutoRun is the person's own code. `program` and `args`
+ * are for tests.
  */
-export const cmdPrints = async ({
+export const cmdPrints = ({
   program = process.env.COMSPEC || "cmd.exe",
   args = ["/c", "rem"],
   timeoutMs = 5_000,
@@ -165,23 +172,34 @@ export const cmdPrints = async ({
   readonly program?: string
   readonly args?: readonly string[]
   readonly timeoutMs?: number
-} = {}): Promise<boolean> => {
-  try {
-    const { stdout } = await promisify(execFile)(program, args, {
+} = {}): Promise<"prints" | "slow" | undefined> =>
+  new Promise((resolve) => {
+    let printed = false
+    const child = spawn(program, args, {
       env: withoutInherited(process.env),
       windowsHide: true,
-      timeout: timeoutMs,
+      stdio: ["ignore", "pipe", "ignore"],
     })
-    return stdout.length > 0
-  } catch (error) {
-    const { code, killed, stdout } = error as NodeJS.ErrnoException & {
-      readonly killed?: boolean
-      readonly stdout?: string
+    const timer = setTimeout(() => {
+      child.kill()
+      resolve(printed ? "prints" : "slow")
+    }, timeoutMs)
+    const done = () => {
+      clearTimeout(timer)
+      resolve(printed ? "prints" : undefined)
     }
-    if (code === "ENOENT") return false
-    return killed === true || (stdout ?? "").length > 0
-  }
-}
+    child.stdout.on("data", () => {
+      printed = true
+    })
+    // Not started: no hook runs either.
+    child.on("error", () => {
+      clearTimeout(timer)
+      resolve(undefined)
+    })
+    child.on("close", done)
+    // Its output may come a moment after it exits, or never close, held by a child of its.
+    child.on("exit", () => setTimeout(done, 100))
+  })
 
 // cmd's `for` gives a path's short name, as Windows keeps one on most volumes; a path
 // that still needs quoting stays as it is.

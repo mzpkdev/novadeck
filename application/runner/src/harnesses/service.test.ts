@@ -5,6 +5,7 @@ import { delimiter, join } from "node:path"
 import { MessageChannel } from "node:worker_threads"
 
 import { connectRunner, messagePort } from "@novadeck/protocol/client"
+import { vi } from "vitest"
 
 import { createRunner, servePort } from "../index.js"
 import { installShellFiles } from "../shell/install.js"
@@ -45,7 +46,8 @@ if (agent === "agy") {
   if (command === "install") {
     write(path.join(folder, "plugin.json"), "{}")
     const hooks = path.join(args.at(-1), "hooks.json")
-    if (fs.existsSync(hooks)) write(path.join(folder, "hooks.json"), fs.readFileSync(hooks, "utf8"))
+    // FAKE_REWRITE: an agent that changes what it copies.
+    if (fs.existsSync(hooks)) write(path.join(folder, "hooks.json"), fs.readFileSync(hooks, "utf8") + (process.env.FAKE_REWRITE ?? ""))
   }
   if (command === "uninstall novadeck") fs.rmSync(folder, { recursive: true, force: true })
 }
@@ -208,6 +210,52 @@ describe("agents Novadeck can connect", () => {
     ])
     expect(readFileSync(copy, "utf8")).toBe('{"novadeck":{}}')
     expect(await agents.refresh()).toEqual([])
+  })
+
+  it("never undo a disconnect asked for before the refresh looked", async ({ fixture }) => {
+    installed(fixture.home, "agy")
+    const agents = fixture.agents()
+    await agents.set("agy", true)
+    writeFileSync(join(fixture.paths.plugins.agy, "hooks.json"), '{"novadeck":{}}')
+    // The person turns it off as Novadeck starts: their change goes first.
+    const off = agents.set("agy", false)
+    const refreshed = agents.refresh()
+    await off
+    expect(await refreshed).toEqual([])
+    expect(await agents.connected("agy")).toBe(false)
+  })
+
+  it("finish at the next start a reinstall a quit cut short, unless disconnected since", async ({
+    fixture,
+  }) => {
+    installed(fixture.home, "agy")
+    const agents = fixture.agents()
+    const marker = `${fixture.paths.plugins.agy}.reinstalling`
+    // Uninstalled, not installed again yet: it looks disconnected.
+    writeFileSync(marker, "")
+    expect(await agents.connected("agy")).toBe(false)
+    expect(await agents.refresh()).toEqual(["agy"])
+    expect(await agents.connected("agy")).toBe(true)
+    expect(existsSync(marker)).toBe(false)
+    // A disconnect the person asks for takes the mark away with it.
+    writeFileSync(marker, "")
+    await agents.set("agy", false)
+    expect(existsSync(marker)).toBe(false)
+    expect(await agents.refresh()).toEqual([])
+    expect(await agents.connected("agy")).toBe(false)
+  })
+
+  it("say so where the agent's copy still differs once installed again", async ({ fixture }) => {
+    installed(fixture.home, "agy")
+    const agents = fixture.agents({ FAKE_REWRITE: " " })
+    await agents.set("agy", true)
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect(await agents.refresh()).toEqual(["agy"])
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("its copy still differs"))
+    } finally {
+      logged.mockRestore()
+    }
   })
 
   it.skipIf(windows)(
