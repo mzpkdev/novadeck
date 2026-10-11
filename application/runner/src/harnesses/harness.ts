@@ -13,6 +13,7 @@ import type { Report } from "../shell/reports.js"
 import type { BoxProfile } from "./box.js"
 import type { DialogAdapter } from "./dialogs.js"
 import type { HarnessEvent, PlanSource, PromptShown } from "./events.js"
+import type { Dialect } from "./hook-command.js"
 
 /** Where a harness lives on this machine, as its setup and inspection need it. */
 export type Install = {
@@ -54,7 +55,12 @@ export type Harness = {
   /** Its plugin commands, run in order. */
   readonly connect: (install: Install) => readonly Command[]
   readonly disconnect: readonly Command[]
-  /** The command its plugin runs for a hook `event`, through the harness's own shell. */
+  /** The shell it runs its hook commands in on `platform` (see `hook-command.ts`). */
+  readonly hookDialect: (platform: NodeJS.Platform) => Dialect
+  /**
+   * The command its plugin runs for a hook `event`, in that shell: `hookCommand`'s, with
+   * what it prints without Novadeck.
+   */
   readonly hook: (platform: NodeJS.Platform, event: string) => string
   /**
    * Its plugin's manifests, hook registrations and MCP server, relative to its plugin
