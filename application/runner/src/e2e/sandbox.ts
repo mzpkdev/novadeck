@@ -13,7 +13,12 @@ import { basename, delimiter, dirname, join } from "node:path"
 /**
  * Where an end-to-end test runs its harnesses: a throwaway home and project, and an
  * environment made only of what the sandbox sets, never the developer's. Nothing in it
- * can reach the developer's real configuration, login or keyring.
+ * can reach the developer's real configuration, login or keyring, with one gap on
+ * Windows: the registry, which no environment moves. A terminal's `cmd /k`, as the
+ * runner starts one, and Antigravity's `cmd /c` for its hooks run the developer's
+ * `HKCU\Software\Microsoft\Command Processor\AutoRun` (clink, doskey macros, a `cd`),
+ * as cmd does without `/d`; the runner leaves it so, as a person's terminal should run
+ * it. A developer with one set may see a test fail that CI, which has none, passes.
  */
 export type Sandbox = {
   readonly root: string
@@ -62,6 +67,53 @@ export const gitBash = (): string | undefined => {
   return above.map((root) => join(root, "bin", "bash.exe")).find((path) => existsSync(path))
 }
 
+// What a program prints, or undefined should it fail.
+const asked = (program: string, args: readonly string[]): string | undefined => {
+  try {
+    return execFileSync(program, args, {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 30_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim()
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The folders of git and PowerShell 7 a sandbox on Windows puts on PATH: each one's own
+ * install, as it reports it, never the folder the tests found it in, which may be a
+ * package manager's (scoop's `shims`, Chocolatey's `bin`) holding a shim of every global
+ * tool, a harness or Node among them. Not the programs alone, linked: Git's `cmd\git.exe`
+ * finds the rest of Git by its own path, as `pwsh.exe` its libraries, and a shim its
+ * `.shim`. Git's is `<Git>\cmd`, above `git --exec-path`'s `<Git>\mingw64\libexec\git-core`;
+ * PowerShell's is `$PSHOME`. Asked once a run.
+ */
+let installs: readonly string[] | undefined
+const toolFolders = (): readonly string[] =>
+  (installs ??= [
+    (() => {
+      const found = onPath("git.exe")
+      const core = found && asked(join(found, "git.exe"), ["--exec-path"])
+      const cmd = core && join(dirname(dirname(dirname(core))), "cmd")
+      return cmd && existsSync(join(cmd, "git.exe")) ? cmd : undefined
+    })(),
+    (() => {
+      const found = onPath("pwsh.exe")
+      const home =
+        found &&
+        asked(join(found, "pwsh.exe"), [
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "$PSHOME",
+        ])
+      return home && existsSync(join(home, "pwsh.exe")) ? home : undefined
+    })(),
+  ].filter((folder) => folder !== undefined))
+
 // Windows' own variables, which its programs need to start and to find the system: the
 // machine's, never the developer's.
 const systemVariables = [
@@ -91,7 +143,8 @@ const systemVariables = [
  * What a sandbox on Windows adds: the system's variables; the user's folders, as Node,
  * Go and Rust find a home by USERPROFILE and configuration by APPDATA and LOCALAPPDATA
  * there, never HOME; PowerShell's own modules only; and the system's folders on PATH,
- * with git (Codex's project and Claude Code's bash) and PowerShell 7 when installed.
+ * with git (Codex's project and Claude Code's bash) and PowerShell 7 when installed,
+ * each by its own install (see `toolFolders`).
  */
 const windowsEnvironment = (
   home: string,
@@ -124,7 +177,7 @@ const windowsEnvironment = (
       root,
       join(root, "System32", "Wbem"),
       powershell,
-      ...[onPath("git.exe"), onPath("pwsh.exe")].filter((one) => one !== undefined),
+      ...toolFolders(),
     ],
   }
 }
