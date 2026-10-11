@@ -782,7 +782,14 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
   private scrub(): void {
     clearTimeout(this.scrubbing)
     this.scrubbing = undefined
-    if (this.database.isOpen) this.database.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+    if (!this.database.isOpen) return
+    // From a timer, nothing would catch it: a full disk's failure leaves the frames in
+    // the log until the next checkpoint, SQLite's own included, and the runner running.
+    try {
+      this.database.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+    } catch (error) {
+      console.error("Novadeck could not scrub deleted content from its store's log:", error)
+    }
   }
 
   messages(): Message[] {
@@ -1023,24 +1030,27 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   /** TERMINAL_NOT_FOUND when the terminal is not kept. */
   dockItem(itemId: string, terminalId: string): Placed {
-    return this.transaction(() => {
-      const item = this.item(itemId)
-      if (!item) throw new DomainError("NOT_FOUND", "Item not found")
-      const left = item.windowId === null ? undefined : this.window(item.windowId)
-      const row = this.queries.get`
+    // An item docked where one with its pointer was replaces it, deleting its content.
+    return this.forget(() =>
+      this.transaction(() => {
+        const item = this.item(itemId)
+        if (!item) throw new DomainError("NOT_FOUND", "Item not found")
+        const left = item.windowId === null ? undefined : this.window(item.windowId)
+        const row = this.queries.get`
         SELECT * FROM companion_items
         WHERE terminal_id = ${terminalId} AND pointer_key = ${item.pointerKey} AND id <> ${itemId}
       ` as ItemRow | undefined
-      if (row) void this.queries.run`DELETE FROM companion_items WHERE id = ${row.id}`
-      referencing(
-        "TERMINAL_NOT_FOUND",
-        () => this.queries.run`
+        if (row) void this.queries.run`DELETE FROM companion_items WHERE id = ${row.id}`
+        referencing(
+          "TERMINAL_NOT_FOUND",
+          () => this.queries.run`
           UPDATE companion_items SET terminal_id = ${terminalId}, window_id = NULL
           WHERE id = ${itemId}`,
-      )
-      if (left) void this.queries.run`DELETE FROM companion_windows WHERE id = ${left.id}`
-      return { item: this.item(itemId)!, left, replaced: row && itemOf(row) }
-    })
+        )
+        if (left) void this.queries.run`DELETE FROM companion_windows WHERE id = ${left.id}`
+        return { item: this.item(itemId)!, left, replaced: row && itemOf(row) }
+      }),
+    )
   }
 
   undockItem(itemId: string, window: { readonly id: string; readonly createdAt: number }): Placed {

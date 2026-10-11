@@ -483,6 +483,18 @@ describe("saved terminals", () => {
             workspace.removeItem(kept.id)
           },
         ],
+        [
+          "an item docked over",
+          "SECRET_REPLACED_DETAIL",
+          () => {
+            const there = keptTerminal(workspace, session.id, "t8")
+            const shown = item(session.id, there, "/work/y", { detail: "SECRET_REPLACED_DETAIL" })
+            workspace.saveItem(shown)
+            const moving = item(session.id, keptTerminal(workspace, session.id, "t7"), "/work/y")
+            workspace.saveItem(moving)
+            workspace.dockItem(moving.id, there)
+          },
+        ],
       ]
       for (const [what, secret, forget] of forgetting) {
         forget()
