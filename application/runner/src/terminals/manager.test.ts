@@ -1554,6 +1554,48 @@ describe.skipIf(process.platform === "win32")("terminal message watches", () => 
   })
 })
 
+describe("a terminal's output", () => {
+  type Inside = {
+    records: Map<string, { process: unknown }>
+    output: (record: unknown, child: unknown, data: string) => void
+    applySize: (record: unknown, size: { cols: number; rows: number }) => void
+    emit: (record: unknown, payload: { type: string; data?: string }) => void
+  }
+
+  it("is drawn in order with a resize queued between, never joining a draw ahead of it", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as Inside
+    const record = inside.records.get(terminal.id)!
+    const seen: string[] = []
+    const { emit } = inside
+    inside.emit = function (target, payload) {
+      if (payload.type === "resized") seen.push("resized")
+      else if (payload.type === "output")
+        for (const mark of ["DRAW-A", "DRAW-B", "DRAW-C"])
+          if (payload.data?.includes(mark)) seen.push(mark)
+      emit.call(this, target, payload)
+    }
+    try {
+      // Output, a resize as a pane changes size, and the program's redraw after it.
+      inside.output(record, record.process, "DRAW-A")
+      inside.applySize(record, { cols: 100, rows: 30 })
+      inside.output(record, record.process, "DRAW-B")
+      // Output while a draw waits, with nothing between, still joins it.
+      inside.output(record, record.process, "DRAW-C")
+      await vi.waitFor(() => expect(seen).toHaveLength(4))
+      expect(seen).toEqual(["DRAW-A", "resized", "DRAW-B", "DRAW-C"])
+    } finally {
+      inside.emit = emit
+    }
+  })
+})
+
 describe("a turn the person's Escape ended", () => {
   type Inside = {
     records: Map<string, { binding: unknown; activity: Activity | null }>

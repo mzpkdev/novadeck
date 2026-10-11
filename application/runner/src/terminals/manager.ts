@@ -286,8 +286,13 @@ type Record = {
   pendingReads: number
   /** The output read but not yet on its screen, in characters; see `output`. */
   pendingOutput: number
-  /** Output read since the last draw began, and the program each came from. */
-  unread: { readonly child: pty.IPty; readonly data: string }[]
+  /**
+   * Output read for the draw queued last, and the program each came from, while that draw
+   * is still the chain's last work and hasn't begun: later output joins it. Null once it
+   * began, or once other work was queued after it, as a resize, which later output must
+   * not be drawn ahead of.
+   */
+  unread: { readonly child: pty.IPty; readonly data: string }[] | null
   pendingAttachments: number
   exitQueued: boolean
   /** Closed by the person or an agent, and forgotten: nothing saves it again. */
@@ -904,7 +909,7 @@ export class Terminals {
         chain: Promise.resolve(),
         pendingReads: 0,
         pendingOutput: 0,
-        unread: [],
+        unread: null,
         pendingAttachments: 0,
         exitQueued: false,
         closed: false,
@@ -2819,6 +2824,8 @@ export class Terminals {
   }
 
   private enqueue<T>(record: Record, operation: () => T | Promise<T>): Promise<T> {
+    // Output read from now on is drawn after this, in a draw of its own.
+    record.unread = null
     const result = record.chain.then(operation)
     record.chain = result.then(
       () => {},
@@ -2839,13 +2846,16 @@ export class Terminals {
   private output(record: Record, child: pty.IPty, data: string): void {
     record.pendingOutput += data.length
     if (record.pendingOutput > OUTPUT_WAITING_CHARS) child.pause()
-    record.unread.push({ child, data })
-    // A draw already queued takes this with it.
-    if (record.unread.length > 1) return
+    // The draw queued last takes this with it, while nothing was queued after it.
+    if (record.unread) {
+      record.unread.push({ child, data })
+      return
+    }
+    const batch = [{ child, data }]
     record.pendingReads += 1
     let drawn = 0
     void this.enqueue(record, async () => {
-      const batch = record.unread.splice(0)
+      if (record.unread === batch) record.unread = null
       drawn = batch.reduce((total, one) => total + one.data.length, 0)
       // Output a previous run left queued belongs to a screen that is gone.
       const text = batch
@@ -2869,14 +2879,11 @@ export class Terminals {
     }).finally(() => {
       record.pendingReads -= 1
       record.pendingOutput -= drawn
-      if (
-        record.pendingReads === 0 &&
-        record.unread.length === 0 &&
-        !record.exitQueued &&
-        record.process === child
-      )
-        child.resume()
+      // The program running now, which a restart's output may have paused in a batch the
+      // one before began.
+      if (record.pendingReads === 0 && !record.exitQueued) record.process.resume()
     })
+    record.unread = batch
   }
 
   private emit(
