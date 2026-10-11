@@ -21,11 +21,14 @@ import { own, start } from "./scenarios.js"
 // before the key; Antigravity's reply wins the key let go together with it, the Stop told after.
 
 const attempts = 12
+// How long before the key a turn's end still counts as racing it.
+const raceMs = 300
 // On Windows the key won every attempt with Linux's leads, and Codex's with leads up to
-// 500 ms (probed 2026-10-09): longer ones are tried there too, a second and more for Codex.
+// 500 ms, while with a second or more its turn had ended before the key (probed
+// 2026-10-09 and 2026-10-11): longer ones are tried there, Codex's between the two.
 const leads: { readonly [agent: string]: readonly number[] } =
   process.platform === "win32"
-    ? { claude: [20, 200, 500], codex: [20, 200, 500, 1000, 2000], agy: [0, 200, 500] }
+    ? { claude: [20, 200, 500], codex: [550, 650, 750, 850, 950], agy: [0, 200, 500] }
     : { claude: [20], codex: [20, 200], agy: [0] }
 
 for (const setup of setups) {
@@ -43,6 +46,10 @@ for (const setup of setups) {
           return { text: "Too late." }
         }),
       )
+      // Each attempt's lead and how it went: the reply won a race only where the turn ended
+      // at most `raceMs` before the key, or after it, not long before as a lead long enough
+      // lets it (Codex's Stop comes just before the key whenever its reply wins).
+      const tried: string[] = []
       let lost = 0
       for (let attempt = 1; attempt <= attempts && lost === 0; attempt += 1) {
         held = gate()
@@ -55,15 +62,20 @@ for (const setup of setups) {
 
         // What a client reads of the last turn, as often as the loop turns.
         const read: string[] = []
+        // When the turn first read as over.
+        let endedAt: number | undefined
         const watching = setInterval(() => {
           const outcome = t1.summary().activity?.lastTurn?.outcome
           if (outcome && read.at(-1) !== outcome) read.push(outcome)
+          if (outcome) endedAt ??= Date.now()
         }, 5)
         const ahead = leads[setup.agent]![(attempt - 1) % leads[setup.agent]!.length]!
         if (ahead > 0) {
           held.open()
           await sleep(ahead)
         }
+        // Whether the turn had ended well before the key: then the reply raced nothing.
+        const ended = endedAt !== undefined && Date.now() - endedAt > raceMs
         t1.press("\x1b")
         held.open()
         // The harness has had its say, and the runner the window to hear it.
@@ -76,12 +88,14 @@ for (const setup of setups) {
         const why = `attempt ${attempt}, lead ${ahead} ms, read ${read.join(", ")}:\n${shown}`
         expect(activity?.state, why).toBe("idle")
         if (shown.includes("Too late.") && !stopped) {
-          lost += 1
+          tried.push(`${ahead} ms: ${ended ? "ended well before the key" : "the reply won"}`)
+          if (!ended) lost += 1
           expect(activity?.lastTurn, why).toMatchObject({
             outcome: "completed",
             reply: "Too late.",
           })
         } else {
+          tried.push(`${ahead} ms: the key won`)
           expect(activity?.lastTurn?.outcome, why).toBe("interrupted")
           // Where the Escape ended the turn first, a Stop after it is not the end until the
           // harness has said it didn't take the key. (A Stop told before the key ended the
@@ -91,7 +105,10 @@ for (const setup of setups) {
         }
         await run.deck.terminals.close({ terminalId: t1.id }, "e2e").catch(() => {})
       }
-      expect(lost, `the reply won the race in none of ${attempts} attempts`).toBeGreaterThan(0)
+      expect(
+        lost,
+        `the reply won no race the key was in, in ${tried.length} attempts: ${tried.join("; ")}`,
+      ).toBeGreaterThan(0)
     })
   })
 }
