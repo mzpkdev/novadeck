@@ -20,10 +20,10 @@ import { transcripts, typedEntry } from "./transcripts.js"
 const gemini = (home: string) => join(home, ".gemini")
 const cli = ({ home: user }: Install) => join(gemini(user), "antigravity-cli")
 
-// Antigravity reads every hook's answer as JSON, even outside Novadeck's shells. On Linux
-// and macOS it denies a tool whose PreToolUse answer says nothing (`{}` too), so that
-// one's answer is "ask", which leaves the call to the person's own policy, here as in
-// Novadeck's shells.
+// Antigravity reads every hook's answer as JSON, even outside Novadeck's shells. It denies
+// a tool whose PreToolUse answer gives no decision, `{}` included (probed 2026-10-06 on
+// Linux, 1.2.14), so that one's answer is "ask", which leaves the call to the person's
+// own policy, here as in Novadeck's shells.
 const ask = '{"decision":"ask"}'
 // Each event also falls back where the launcher is set but missing or not runnable, as a
 // variable that outlives its Novadeck (a plugin is global; tmux carries variables on).
@@ -35,6 +35,9 @@ const ask = '{"decision":"ask"}'
 // runs in a cmd of its own, then exits 0 whatever that did: without a runnable launcher,
 // as one whose path has a space and breaks the inner line, it prints nothing, and the
 // tool still asks. Novadeck's shells name the launcher by its short name, without spaces.
+// A launcher whose path holds `&`, as a profile folder may, which cmd splits the line at
+// once it has put the path in, breaks every event's line: PreToolUse's still prints
+// nothing and exits 0, so tools still ask, but the other events' reports are lost.
 const hook = (platform: NodeJS.Platform, event: string): string => {
   const pre = event === "PreToolUse"
   if (platform === "win32")

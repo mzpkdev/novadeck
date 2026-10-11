@@ -240,8 +240,9 @@ describe("Antigravity's PreToolUse answer", () => {
       const nothing = { status: 0, stdout: "" }
       expect(cmdRun({})).toEqual(nothing)
       expect(cmdRun({ NOVADECK_HOOK: String.raw`C:\nonexistent\hook.exe` })).toEqual(nothing)
-      // A space breaks the inner line; the outer still exits 0.
+      // A space breaks the inner line, as an `&` does the outer one too; it still exits 0.
       expect(cmdRun({ NOVADECK_HOOK: String.raw`C:\Program Files\x\hook.exe` })).toEqual(nothing)
+      expect(cmdRun({ NOVADECK_HOOK: String.raw`C:\Users\a&b\hook.exe` })).toEqual(nothing)
       // A launcher's own answer passes through.
       const folder = mkdtempSync(join(tmpdir(), "novadeck-agy-hook-"))
       resources.defer(() => rmSync(folder, { recursive: true, force: true }))
