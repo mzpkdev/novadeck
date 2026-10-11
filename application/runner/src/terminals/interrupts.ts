@@ -127,8 +127,15 @@ export class Interrupts {
     // only after the box has settled, as once the stopped turn took a busy machine longer
     // to end (Codex on Windows CI: its queued turn began 0.8 s after the first Escape, and a
     // second Escape 0.6 s after it stopped nothing): it is waited for first.
+    // Text the box holds by then, with no such turn, is the person's, typed meanwhile, as
+    // nothing was put back yet: it is left as it is, as no second Escape goes over it.
     if (box !== undefined && isEmpty(box) && queued && host.alive(terminalId)) {
-      await this.turnStarts(terminalId, profile)
+      const started = await this.turnStarts(terminalId)
+      if (!started) {
+        const screen = await host.screen(terminalId)
+        const now = screen && profile.read(screen)
+        if (now !== undefined && !isEmpty(now)) return none
+      }
       host.type(terminalId, "\x1b")
       box = await this.settled(terminalId, profile)
     }
@@ -158,23 +165,22 @@ export class Interrupts {
   }
 
   /**
-   * Waits until the terminal's agent works again, on the turn it starts with what was
-   * queued, for up to `queuedTurnMs`. It holds the terminal's input queue meanwhile, so
-   * it stops early where the box holds text, the person's or put back, or the terminal is
-   * gone. The queued messages leaving the screen says nothing: Codex's Escape sends them
-   * at once as a steer, though the turn that runs them came 1.4 s later on Windows CI.
+   * Whether the terminal's agent works again, on the turn it starts with what was queued,
+   * within `queuedTurnMs`, which bounds how long this holds the terminal's input queue.
+   * Nothing else ends the wait: the second Escape must come after that turn has started,
+   * or it stops nothing. The queued messages leaving the screen says nothing either:
+   * Codex's Escape sends them at once as a steer, though the turn that runs them came
+   * 1.4 s later on Windows CI.
    */
-  private async turnStarts(terminalId: string, profile: BoxProfile): Promise<void> {
+  private async turnStarts(terminalId: string): Promise<boolean> {
     const { host } = this
     const until = Date.now() + this.queuedTurnMs
-    while (!host.working(terminalId) && host.alive(terminalId) && Date.now() < until) {
+    while (host.alive(terminalId) && Date.now() < until) {
+      if (host.working(terminalId)) return true
       // eslint-disable-next-line no-await-in-loop -- Looks again until it works.
-      const screen = await host.screen(terminalId)
-      const box = screen && profile.read(screen)
-      if (!screen || (box !== undefined && !isEmpty(box))) return
-      // eslint-disable-next-line no-await-in-loop -- As above.
       await sleep(50)
     }
+    return host.working(terminalId)
   }
 
   /**

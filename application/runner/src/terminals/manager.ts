@@ -161,7 +161,7 @@ import { snapshot } from "./snapshot.js"
 import { Subscription } from "./subscription.js"
 import { replay, transcriptOf } from "./transcript.js"
 import { transcriptChanges } from "./transcripts.js"
-import { anyRunning, taskkillTree, Trees, type Member } from "./trees.js"
+import { anyRunning, relayMs, taskkillTree, Trees, type Member } from "./trees.js"
 import { TerminalWatcher } from "./watcher.js"
 import { judgedFirst, workAfter, type Work } from "./work.js"
 
@@ -542,8 +542,12 @@ const sameProcess = (a: ForegroundProcess | null, b: ForegroundProcess | null): 
  * How long before the hook that bound a session another hook the harness fired with it
  * may have started, in milliseconds: Antigravity fires its status line and a model call's
  * PreInvocation at once, and either may start, and be heard, first. A newly bound
- * session's activity takes facts from then on, by the hooks' own starts (`startedAt`), as
- * each fact is compared by its own. On CI (2026-10-11, Windows) the
+ * session's activity takes facts from that long before the binding's hook fired (its
+ * `firedAt`, on Windows its shell's start): each fact is compared by its relay's start,
+ * never earlier than its own firing, so one fired with the binding is kept, however long
+ * its own shell took to start. The relays' starts alone can't tell: two hooks fired
+ * together start their own cmd or PowerShell, and under load their relays start well over
+ * 250 ms apart. On CI (2026-10-11, Windows) the
  * PreInvocation that started a session's first turn had started 5 µs, and once 1.4 ms,
  * before the status line that bound the session, was heard after it, and was dropped as
  * older than the binding, with every fact after it: the turn never showed.
@@ -557,6 +561,11 @@ const boundTogetherMs = 250
 // shuts down, which the app gives five seconds in all (host/src/main/runner.ts).
 const treeGraceMs = 3_000
 const shutdownTreeGraceMs = 1_000
+
+// How long ending terminals' trees may take in all as the runner shuts down, in
+// milliseconds: every relay run, taskkill and grace then takes its time from this, within
+// the five seconds the app gives the runner.
+const shutdownTreesMs = 4_000
 
 /**
  * Terminals that have drawn. node-pty on Windows queues a kill until then; after, its kill
@@ -698,6 +707,8 @@ export class Terminals {
   private creating = 0
   private exits = 0
   private stopping = false
+  /** When the runner's shutdown must have ended terminals' trees by, once it has begun. */
+  private shutdownBy: number | undefined
   private shutdownPromise: Promise<void> | undefined
 
   constructor(options: TerminalOptions = {}) {
@@ -2674,6 +2685,7 @@ export class Terminals {
   }
 
   private async stop(): Promise<void> {
+    this.shutdownBy = Date.now() + shutdownTreesMs
     await Promise.all([...this.records.values()].map((record) => this.terminate(record)))
     for (const record of [...this.records.values(), ...this.draining.values()]) {
       for (const subscription of record.subscribers.values()) subscription.cancel()
@@ -3242,7 +3254,7 @@ export class Terminals {
       if (!same) {
         record.activity = next.binding
           ? fresh(
-              event.startedAt - boundTogetherMs,
+              (event.firedAt ?? event.startedAt) - boundTogetherMs,
               harnesses[next.binding.agent].wakes,
               harnesses[next.binding.agent].records,
             )
@@ -4203,8 +4215,9 @@ export class Terminals {
         child.pid > 0 &&
         drawnTerminals.has(child) &&
         !record.exitQueued
-      const tree = owned ? await this.trees.read(child.pid) : undefined
-      if (owned && tree === undefined) await taskkillTree(child.pid).catch(() => {})
+      const tree = owned ? await this.trees.read(child.pid, this.runMs(relayMs)) : undefined
+      if (owned && tree === undefined)
+        await taskkillTree(child.pid, this.runMs(5_000)).catch(() => {})
       try {
         child.kill()
       } catch {
@@ -4240,11 +4253,18 @@ export class Terminals {
    * each by its start.
    */
   private async endLeft(tree: readonly Member[]): Promise<void> {
-    const deadline = Date.now() + (this.stopping ? shutdownTreeGraceMs : treeGraceMs)
-    while (anyRunning(tree) && Date.now() < deadline)
+    const began = Date.now()
+    // A close already waiting as shutdown begins waits no longer than shutdown's own grace.
+    const graceEnds = () =>
+      this.shutdownBy === undefined
+        ? began + treeGraceMs
+        : Math.min(began + treeGraceMs, this.shutdownBy - shutdownTreesMs + shutdownTreeGraceMs)
+    while (anyRunning(tree) && Date.now() < graceEnds())
       // eslint-disable-next-line no-await-in-loop -- Waits for them to end.
       await sleep(100)
-    const again = await Promise.all(tree.map((member) => this.trees.read(member)))
+    const again = await Promise.all(
+      tree.map((member) => this.trees.read(member, this.runMs(relayMs))),
+    )
     const left = new Map(
       [...tree, ...again.flatMap((each) => each ?? [])].map((member) => [
         `${member.pid}:${member.startedAt}`,
@@ -4252,7 +4272,16 @@ export class Terminals {
       ]),
     )
     const members = [...left.values()]
-    if (anyRunning(members)) await this.trees.end(members)
+    if (anyRunning(members)) await this.trees.end(members, this.runMs(relayMs))
+  }
+
+  /**
+   * How long a relay or taskkill run may take now: `usual`, or as the runner shuts down,
+   * what is left of its time for terminals' trees, never under a quarter second.
+   */
+  private runMs(usual: number): number {
+    if (this.shutdownBy === undefined) return usual
+    return Math.max(250, Math.min(usual, this.shutdownBy - Date.now()))
   }
 
   /** Ends a Windows process and every one under it now, by taskkill where the relay can't. */

@@ -5,20 +5,33 @@ import { promisify } from "node:util"
 /** A process of a terminal's tree: its pid and its start, which together name it alone. */
 export type Member = { readonly pid: number; readonly startedAt: number }
 
-/** Runs Novadeck's relay with `args`, for its output; rejects where it can't run. */
-export type RunRelay = (relay: string, args: readonly string[]) => Promise<string>
+/**
+ * Runs Novadeck's relay with `args`, for its output, within `timeoutMs`; rejects where it
+ * can't run.
+ */
+export type RunRelay = (
+  relay: string,
+  args: readonly string[],
+  timeoutMs: number,
+) => Promise<string>
 
-// Each run's bound: closing terminals as the runner shuts down waits on it, within the
-// time the app gives the runner to end (host/src/main/runner.ts).
-const runRelay: RunRelay = async (relay, args) =>
-  (await promisify(execFile)(relay, [...args], { windowsHide: true, timeout: 4_000 })).stdout
+/** A run's bound unless its callers ask for less, as the runner shutting down does. */
+export const relayMs = 4_000
+
+const runRelay: RunRelay = async (relay, args, timeoutMs) =>
+  (await promisify(execFile)(relay, [...args], { windowsHide: true, timeout: timeoutMs })).stdout
 
 /** How a tree is named to the relay: a process by its pid, or one read before by its start too. */
 const rootName = (root: number | Member): string =>
   typeof root === "number" ? String(root) : `${root.pid}:${root.startedAt}`
 
 /** One relay run's worth of asks, made in the same tick. */
-type Batch<Ask, Answer> = { readonly asks: Ask[]; readonly done: Promise<Answer> }
+type Batch<Ask, Answer> = {
+  readonly asks: Ask[]
+  /** The shortest bound its asks gave. */
+  timeoutMs: number
+  readonly done: Promise<Answer>
+}
 
 /**
  * A terminal's process tree on Windows, read and ended through Novadeck's relay
@@ -45,51 +58,58 @@ export class Trees {
    * root read before, named by its start, is walked from even once it has ended, so what
    * it started since, or left behind, is found too.
    */
-  async read(root: number | Member): Promise<readonly Member[] | undefined> {
-    const batch = (this.reading ??= this.batch((roots) => this.readAll(roots), "reading"))
+  async read(root: number | Member, timeoutMs = relayMs): Promise<readonly Member[] | undefined> {
+    const batch = (this.reading ??= this.batch((roots, ms) => this.readAll(roots, ms), "reading"))
     const name = rootName(root)
     batch.asks.push(name)
+    batch.timeoutMs = Math.min(batch.timeoutMs, timeoutMs)
     return (await batch.done)?.get(name)
   }
 
   /** Ends each of `members` still running as the process it was; done once all are. */
-  async end(members: readonly Member[]): Promise<void> {
+  async end(members: readonly Member[], timeoutMs = relayMs): Promise<void> {
     if (members.length === 0) return
-    const batch = (this.ending ??= this.batch((all) => this.endAll(all), "ending"))
+    const batch = (this.ending ??= this.batch((all, ms) => this.endAll(all, ms), "ending"))
     batch.asks.push(...members)
+    batch.timeoutMs = Math.min(batch.timeoutMs, timeoutMs)
     await batch.done
   }
 
   private batch<Ask, Answer>(
-    flush: (asks: readonly Ask[]) => Promise<Answer>,
+    flush: (asks: readonly Ask[], timeoutMs: number) => Promise<Answer>,
     field: "reading" | "ending",
   ): Batch<Ask, Answer> {
     const asks: Ask[] = []
-    const done = new Promise<void>((resolve) => setImmediate(resolve)).then(() => {
-      this[field] = undefined
-      return flush(asks)
-    })
-    return { asks, done }
+    const batch: Batch<Ask, Answer> = {
+      asks,
+      timeoutMs: relayMs,
+      done: new Promise<void>((resolve) => setImmediate(resolve)).then(() => {
+        this[field] = undefined
+        return flush(asks, batch.timeoutMs)
+      }),
+    }
+    return batch
   }
 
   private async readAll(
     roots: readonly string[],
+    timeoutMs: number,
   ): Promise<Map<string, readonly Member[]> | undefined> {
     const relay = await this.relay()
     if (relay === undefined) return undefined
     try {
-      return trees(await this.run(relay, ["tree", ...new Set(roots)]))
+      return trees(await this.run(relay, ["tree", ...new Set(roots)], timeoutMs))
     } catch (error) {
       this.unavailable("tree", error)
       return undefined
     }
   }
 
-  private async endAll(members: readonly Member[]): Promise<void> {
+  private async endAll(members: readonly Member[], timeoutMs: number): Promise<void> {
     const relay = await this.relay()
     if (relay === undefined) return
     const named = [...new Set(members.map(rootName))]
-    await this.run(relay, ["end", ...named]).catch((error: unknown) =>
+    await this.run(relay, ["end", ...named], timeoutMs).catch((error: unknown) =>
       this.unavailable("end", error),
     )
   }
@@ -136,12 +156,12 @@ export const trees = (output: string): Map<string, readonly Member[]> => {
  * can't read the tree: by recorded parent pids, which may name an unrelated process
  * whose pid an ended parent left.
  */
-export const taskkillTree = async (pid: number): Promise<void> => {
+export const taskkillTree = async (pid: number, timeoutMs = 5_000): Promise<void> => {
   const windows = process.env.SystemRoot ?? "C:\\Windows"
   await promisify(execFile)(
     join(windows, "System32", "taskkill.exe"),
     ["/T", "/F", "/PID", String(pid)],
-    { windowsHide: true, timeout: 5000 },
+    { windowsHide: true, timeout: timeoutMs },
   )
 }
 

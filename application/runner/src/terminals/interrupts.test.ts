@@ -80,8 +80,21 @@ const terminal = (
       return true
     },
   }
-  const interrupts = new Interrupts(host, { restoreMs: 600, restoreCalmMs: 100, settleMs: 0 })
-  return { interrupt: () => interrupts.interrupt("terminal"), typed, written }
+  const interrupts = new Interrupts(host, {
+    restoreMs: 600,
+    restoreCalmMs: 100,
+    settleMs: 0,
+    queuedTurnMs: 1_000,
+  })
+  return {
+    interrupt: () => interrupts.interrupt("terminal"),
+    typed,
+    written,
+    // The person's own typing, which the box shows.
+    personTypes: (text: string) => {
+      box = text
+    },
+  }
 }
 
 describe("interrupts", () => {
@@ -188,14 +201,14 @@ describe("interrupts", () => {
   })
 
   it("waits for the queued turn, whatever the screen says of the queue", async () => {
-    // The queue leaves the screen at the Escape; its turn shows working only at 2 s, as a
+    // The queue leaves the screen at the Escape; its turn shows working only at 600 ms, as a
     // hook held back would: the second Escape waits for it.
     const pressed: number[] = []
     const since = () => (pressed.length === 0 ? 0 : Date.now() - pressed[0]!)
     const queued = {
       queued: () => pressed.length === 0,
       prompt: "Hold on",
-      working: () => pressed.length === 0 || since() >= 2_000,
+      working: () => pressed.length === 0 || since() >= 600,
     }
     const waits = terminal({
       ...queued,
@@ -205,8 +218,18 @@ describe("interrupts", () => {
       },
     })
     expect(await waits.interrupt()).toEqual({ returned: "Queued beta" })
-    expect(pressed[1]! - pressed[0]!).toBeGreaterThanOrEqual(2_000)
+    expect(pressed[1]! - pressed[0]!).toBeGreaterThanOrEqual(600)
   }, 10_000)
+
+  it("leaves what the person typed while no queued turn came, pressing no second Escape over it", async () => {
+    const t = terminal({ queued: true, prompt: "Hold on", working: () => t.typed.length === 0 })
+    const stopping = t.interrupt()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    t.personTypes("mine")
+    expect(await stopping).toEqual({ returned: null })
+    expect(t.typed).toEqual([ESC])
+    expect(t.written).toEqual([])
+  })
 
   it("returns nothing where the first Escape alone leaves the box empty and nothing is queued", async () => {
     const t = terminal({ prompt: "Say hi" })
