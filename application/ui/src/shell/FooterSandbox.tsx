@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react"
 
+import { useOverlayOpen } from "./FooterUpdate"
+
 const copiedMs = 1500
 
 // The fix to copy: a button that puts it on the clipboard and says so for a moment.
@@ -14,7 +16,10 @@ const CopyFix = ({ fix }: { readonly fix: string }): React.JSX.Element => {
     <button
       type="button"
       className="button min-h-8 px-3"
-      onClick={() => {
+      onClick={(event) => {
+        // The panel keeps mouse focus from moving, and the workspace hands it to the
+        // terminal after a click: take it here, so Escape still closes the panel.
+        event.currentTarget.focus()
         void navigator.clipboard?.writeText(fix).then(
           () => setCopied(true),
           () => undefined,
@@ -26,26 +31,38 @@ const CopyFix = ({ fix }: { readonly fix: string }): React.JSX.Element => {
   )
 }
 
+export type FooterSandboxProps = {
+  // The command that lets the app run sandboxed; "" where none is known.
+  readonly fix: string
+  // Whether the notice is raised. It shows only while the footer does, and while nothing
+  // else asks for the person's attention (`blocked`).
+  readonly open: boolean
+  readonly blocked: boolean
+  readonly onOpenChange: (open: boolean) => void
+}
+
 // Novadeck running without Electron's security sandbox, beside the footer's status: a
-// chip, "No sandbox", and the notice above it, which says why and gives the one command
-// that fixes it (`fix`, empty where none is known). Quiet like the update's chip: it
-// never opens by itself, and the notice is a plain panel that takes no focus until the
-// person opens it from the chip, where Escape closes it and returns.
+// chip, "No sandbox", and the notice above it, which says what happened and gives the one
+// command that fixes it. Quiet like the update's chip: it never opens by itself, and the
+// notice is a plain panel that takes no focus until the person opens it from the chip,
+// where Escape closes it and returns. Opening it closes the update's notice, which shares
+// its place, and it waits behind any dialog, menu or popover.
 export const FooterSandbox = ({
-  fix,
+  sandbox,
   hidden,
 }: {
   // Undefined while the app is sandboxed, or the host does not say.
-  readonly fix: string | undefined
+  readonly sandbox: FooterSandboxProps | undefined
   readonly hidden: boolean
 }): React.JSX.Element | null => {
-  const [open, setOpen] = useState(false)
   const panel = useRef<HTMLElement>(null)
   const chip = useRef<HTMLButtonElement>(null)
   const requested = useRef(false)
   const titleId = useId()
   const panelId = useId()
-  const visible = open && !hidden
+  const wanted = (sandbox?.open ?? false) && !hidden && !sandbox?.blocked
+  const overlay = useOverlayOpen(wanted)
+  const visible = wanted && !overlay
   useEffect(() => {
     if (!visible || !requested.current) return
     // A frame on, after the click that asked has been through the workspace's own click
@@ -56,11 +73,12 @@ export const FooterSandbox = ({
     })
     return () => cancelAnimationFrame(frame)
   }, [visible])
-  if (fix === undefined) return null
+  if (!sandbox) return null
+  const { fix } = sandbox
   const close = (): void => {
     const inside = panel.current?.contains(document.activeElement) === true
     requested.current = false
-    setOpen(false)
+    sandbox.onOpenChange(false)
     if (inside) chip.current?.focus()
   }
   return (
@@ -69,7 +87,7 @@ export const FooterSandbox = ({
         ref={chip}
         type="button"
         className="footer-action footer-update cursor-pointer font-bold"
-        aria-label="Running without the security sandbox"
+        aria-label="No sandbox: Novadeck is running without its security sandbox"
         aria-expanded={visible}
         aria-controls={visible ? panelId : undefined}
         onClick={() => {
@@ -78,11 +96,10 @@ export const FooterSandbox = ({
             return
           }
           requested.current = true
-          setOpen(true)
+          sandbox.onOpenChange(true)
         }}
       >
-        <span className="max-[701px]:hidden">No sandbox</span>
-        <span className="hidden max-[701px]:inline">Sandbox</span>
+        No sandbox
       </button>
       {visible && (
         <section
@@ -90,7 +107,7 @@ export const FooterSandbox = ({
           id={panelId}
           data-workspace-notice
           aria-labelledby={titleId}
-          className="floating update-panel"
+          className="floating sandbox-panel"
           tabIndex={-1}
           // A click anywhere on it leaves focus where it was, in a terminal.
           onMouseDown={(event) => event.preventDefault()}
@@ -107,8 +124,9 @@ export const FooterSandbox = ({
             Novadeck is running without its security sandbox
           </p>
           <p className="sandbox-text">
-            This system blocks the sandbox.
-            {fix !== "" && " Run this command, then restart Novadeck."}
+            {fix === ""
+              ? "Novadeck was started without its security sandbox."
+              : "This system blocks the sandbox. Run this command, then quit Novadeck and start it again from your applications menu."}
           </p>
           {fix !== "" && (
             <>

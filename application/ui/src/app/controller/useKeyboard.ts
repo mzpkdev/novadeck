@@ -99,13 +99,14 @@ export const useKeyboard = (dictation?: Dictation): void => {
     const pointerdown = (): void => commands.setNavigate(false)
     // Only a mouse: a tap that focused a terminal would raise a phone's keyboard. A click
     // whose control moves focus itself, as Zen's do, keeps where it put it, and one in a
-    // region that takes its own keys leaves focus to it, even off its controls.
+    // region that takes its own keys leaves focus to it, even off its controls. So does one in
+    // a footer notice, whose Copy takes focus so that Escape closes it.
     const click = (event: MouseEvent): void => {
       if (!(event instanceof PointerEvent) || event.pointerType !== "mouse") return
       const clicked = document.activeElement
       const on = classifyKeyTarget(event.target)
       // A chat holds text to select and controls that keep the focus they take.
-      if (on.companion || on.zenDock || on.chat || insideOwnKeys(event.target)) return
+      if (on.companion || on.zenDock || on.chat || on.notice || insideOwnKeys(event.target)) return
       if (window.getSelection()?.isCollapsed === false) return
       requestAnimationFrame(() => {
         const now = document.activeElement

@@ -257,8 +257,8 @@ export const quitWithoutInstalling =
 /**
  * Switches installing on quit off for a quit that is not an orderly one, on Linux, where
  * Electron turns SIGTERM, SIGINT and SIGHUP into an ordinary quit with exit code 0, which
- * electron-updater installs on. A desktop logout or `kill` would then ask for the
- * password in the middle of ending the session, or kill an AppImage swap halfway. The
+ * electron-updater installs on. A desktop logout or `kill` would then swap the AppImage in
+ * the middle of ending the session, and the system may kill the swap halfway. The
  * orderly quits are closing the last window and restarting into the update, and both
  * are marked before the quit begins; any other, a signal or the menu's Quit, finds the
  * mark missing. Switching off is one way: nothing switches it on again.

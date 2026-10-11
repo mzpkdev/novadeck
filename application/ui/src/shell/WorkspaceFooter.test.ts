@@ -307,63 +307,90 @@ describe("workspace footer", () => {
   })
 })
 
+const sandboxLabel = "No sandbox: Novadeck is running without its security sandbox"
 const sandboxChip = (page: Rendered) =>
   [...page.container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.getAttribute("aria-label") === "Running without the security sandbox",
+    (button) => button.getAttribute("aria-label") === sandboxLabel,
   )
-const panel = (page: Rendered) => page.container.querySelector("section.update-panel")
+const panel = (page: Rendered) => page.container.querySelector("section.sandbox-panel")
 
 describe("the footer without the security sandbox", () => {
-  const sandbox = (fix: string | undefined, hidden = false) =>
-    createElement(WorkspaceFooter, { ...props("ok"), hidden, fix })
-  const open = (fix: string | undefined) => {
-    const page = render(sandbox(fix))
+  const sandbox = ({
+    fix = "sudo fix",
+    open = false,
+    blocked = false,
+    hidden = false,
+    onOpenChange = (_open: boolean) => {},
+  } = {}) =>
+    createElement(WorkspaceFooter, {
+      ...props("ok"),
+      hidden,
+      sandbox: { fix, open, blocked, onOpenChange },
+    })
+  const mount = (options: Parameters<typeof sandbox>[0] = {}) => {
+    const page = render(sandbox(options))
     mounted.push(page)
     return page
   }
 
   it("shows nothing where the app is sandboxed or the host does not say", () => {
-    const page = open(undefined)
+    const page = render(createElement(WorkspaceFooter, props("ok")))
+    mounted.push(page)
     expect(sandboxChip(page)).toBeUndefined()
     expect(panel(page)).toBeNull()
   })
 
-  it("shows a closed chip, which opens a region saying why, with the command", () => {
-    const page = open("sudo fix")
+  it("shows a closed chip, saying No sandbox at every width, that asks to open", () => {
+    const onOpenChange = vi.fn<(open: boolean) => void>()
+    const page = mount({ onOpenChange })
     const button = sandboxChip(page)!
+    expect(button.textContent).toBe("No sandbox")
+    expect(button.getAttribute("aria-label")!.startsWith(button.textContent)).toBe(true)
     expect(button.getAttribute("aria-expanded")).toBe("false")
     expect(panel(page)).toBeNull()
     act(() => button.click())
+    expect(onOpenChange).toHaveBeenCalledExactlyOnceWith(true)
+  })
+
+  it("opens a region saying why and what to run, with the command", () => {
+    const page = mount({ open: true })
     const region = panel(page)!
-    expect(button.getAttribute("aria-expanded")).toBe("true")
+    expect(sandboxChip(page)!.getAttribute("aria-expanded")).toBe("true")
     expect(document.getElementById(region.getAttribute("aria-labelledby")!)?.textContent).toBe(
       "Novadeck is running without its security sandbox",
     )
-    expect(region.textContent).toContain("Run this command, then restart Novadeck.")
+    expect(region.textContent).toContain(
+      "This system blocks the sandbox. Run this command, then quit Novadeck and start it again from your applications menu.",
+    )
     expect(region.querySelector("code")?.textContent).toBe("sudo fix")
   })
 
-  it("explains without a command or a copy button where there is no fix", () => {
-    const page = open("")
-    act(() => sandboxChip(page)!.click())
-    const region = panel(page)!
-    expect(region.querySelector("code")).toBeNull()
-    expect(region.querySelector("button")).toBeNull()
-    expect(region.textContent).not.toContain("Run this command")
+  it("is not marked as the update's notice, whose focus handling keys on its class", () => {
+    const page = mount({ open: true })
+    expect(page.container.querySelector(".update-panel")).toBeNull()
   })
 
-  it("copies the command and says so for a moment", async () => {
+  it("says it was started without, blocking nothing, and has no command or button without a fix", () => {
+    const page = mount({ fix: "", open: true })
+    const region = panel(page)!
+    expect(region.textContent).toContain("Novadeck was started without its security sandbox.")
+    expect(region.textContent).not.toContain("blocks")
+    expect(region.querySelector("code")).toBeNull()
+    expect(region.querySelector("button")).toBeNull()
+  })
+
+  it("copies the command, says so for a moment, and keeps focus on its button", async () => {
     vi.useFakeTimers()
     const writeText = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
     vi.stubGlobal("navigator", { clipboard: { writeText } })
     try {
-      const page = open("sudo fix")
-      act(() => sandboxChip(page)!.click())
+      const page = mount({ open: true })
       const copy = panel(page)!.querySelector("button")!
       expect(copy.textContent).toBe("Copy")
       await act(async () => copy.click())
       expect(writeText).toHaveBeenCalledExactlyOnceWith("sudo fix")
       expect(copy.textContent).toBe("Copied")
+      expect(document.activeElement).toBe(copy)
       act(() => vi.advanceTimersByTime(2_000))
       expect(copy.textContent).toBe("Copy")
     } finally {
@@ -371,15 +398,25 @@ describe("the footer without the security sandbox", () => {
     }
   })
 
-  it("closes on Escape and when the footer hides", () => {
-    const page = open("sudo fix")
-    act(() => sandboxChip(page)!.click())
+  it("asks to close on Escape", () => {
+    const onOpenChange = vi.fn<(open: boolean) => void>()
+    const page = mount({ open: true, onOpenChange })
     act(() =>
       panel(page)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
     )
-    expect(panel(page)).toBeNull()
-    act(() => sandboxChip(page)!.click())
-    page.rerender(sandbox("sudo fix", true))
-    expect(panel(page)).toBeNull()
+    expect(onOpenChange).toHaveBeenCalledExactlyOnceWith(false)
+  })
+
+  it("waits while the footer is hidden or a dialog asks, and while a menu is open", () => {
+    expect(panel(mount({ open: true, hidden: true }))).toBeNull()
+    expect(panel(mount({ open: true, blocked: true }))).toBeNull()
+    const menu = document.createElement("div")
+    menu.setAttribute("role", "menu")
+    document.body.append(menu)
+    try {
+      expect(panel(mount({ open: true }))).toBeNull()
+    } finally {
+      menu.remove()
+    }
   })
 })

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 
-import { FooterSandbox } from "./FooterSandbox"
+import { FooterSandbox, type FooterSandboxProps } from "./FooterSandbox"
 import { FooterUpdate, type FooterUpdateProps } from "./FooterUpdate"
 
 // How the backend link is doing, most severe first: "ok" shows nothing.
@@ -30,7 +30,7 @@ export const WorkspaceFooter = ({
   navigate = false,
   onRetry,
   update,
-  fix,
+  sandbox,
   usage,
 }: {
   readonly hidden: boolean
@@ -44,9 +44,9 @@ export const WorkspaceFooter = ({
   // An update waiting, downloaded or to fetch. Quiet: it never tones the bar, and the
   // link's status keeps its place after it.
   readonly update?: FooterUpdateProps | undefined
-  // Set while the app runs without its security sandbox: the command that lets it, or ""
-  // where none is known. A chip beside the update's opens the notice that says so.
-  readonly fix?: string | undefined
+  // Set while the app runs without its security sandbox: a chip beside the update's
+  // opens the notice that says so.
+  readonly sandbox?: FooterSandboxProps | undefined
   // The account's subscriptions, at its end before the status.
   readonly usage?: ReactNode
 }): React.JSX.Element => {
@@ -87,7 +87,7 @@ export const WorkspaceFooter = ({
       </span>
       <span className="flex items-center gap-4">
         {usage}
-        <FooterSandbox fix={fix} hidden={hidden} />
+        <FooterSandbox sandbox={sandbox} hidden={hidden} />
         <FooterUpdate update={update} hidden={hidden} />
         <span className="footer-status flex items-center gap-1.5 font-bold">
           <span role="status" aria-live={current?.tone === "danger" ? "assertive" : "polite"}>

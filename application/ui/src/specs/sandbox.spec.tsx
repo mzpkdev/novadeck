@@ -3,8 +3,7 @@ import { page, type Locator } from "vitest/browser"
 
 import { expectStaysAbsent, openWorkspace, press } from "./support/workspace"
 
-const chip = (): Locator =>
-  page.getByRole("button", { name: "Running without the security sandbox" })
+const chip = (): Locator => page.getByRole("button", { name: /^No sandbox:/ })
 const notice = (): Locator =>
   page.getByRole("region", { name: "Novadeck is running without its security sandbox" })
 
@@ -22,14 +21,36 @@ describe("the sandbox notice", () => {
       await expect.element(notice()).not.toBeInTheDocument()
       await chip().click()
       await expect.element(notice()).toBeVisible()
-      await expect.element(notice().getByText(/^sudo /)).toBeVisible()
+      await expect.element(notice().getByText(/^curl .*--sandbox$/)).toBeVisible()
       await expect.element(notice().getByRole("button", { name: "Copy" })).toBeVisible()
+    })
+
+    it("keeps Escape working after Copy is pressed with the mouse", async () => {
+      await openWorkspace("/?sandbox=off")
+      await chip().click()
+      await notice().getByRole("button", { name: "Copy" }).click()
+      await press("{Escape}")
+      await expect.element(notice()).not.toBeInTheDocument()
+    })
+
+    it("closes the update notice when opened, and is closed by the update chip", async () => {
+      await openWorkspace("/?demo=update&sandbox=off")
+      const update = page.getByRole("region", { name: "Novadeck 0.0.80 is ready" })
+      await expect.element(update).toBeVisible()
+      await chip().click()
+      await expect.element(notice()).toBeVisible()
+      await expect.element(update).not.toBeInTheDocument()
+      await page.getByRole("button", { name: /^Update ready:/ }).click()
+      await expect.element(update).toBeVisible()
+      await expect.element(notice()).not.toBeInTheDocument()
     })
 
     it("closes on Escape", async () => {
       await openWorkspace("/?sandbox=off")
       await chip().click()
       await expect.element(notice()).toBeVisible()
+      // The panel takes focus a frame after it shows.
+      await expect.element(notice()).toHaveFocus()
       await press("{Escape}")
       await expect.element(notice()).not.toBeInTheDocument()
     })

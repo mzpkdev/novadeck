@@ -571,7 +571,7 @@ describe("checking for updates", () => {
         releaseNotes: "<p>Faster.</p>",
       })
       updater.install()
-      updater.emit("error", new Error("pkexec was dismissed"))
+      updater.emit("error", new Error("the installer failed"))
       expect(failed).toEqual(["1.2.3"])
       expect(updater.autoInstallOnAppQuit).toBe(false)
       expect(offered).toEqual([
@@ -585,7 +585,7 @@ describe("checking for updates", () => {
       const { updater, failed } = checking()
       updater.emit("update-downloaded", { version: "1.2.3" })
       updater.quitAndInstall()
-      updater.emit("error", new Error("no polkit agent"))
+      updater.emit("error", new Error("the file could not be replaced"))
       expect(failed).toEqual(["1.2.3"])
     })
 

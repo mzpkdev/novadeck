@@ -78,6 +78,8 @@ export type UiState = {
   // Whether the desktop app runs in its security sandbox, as the host said at startup; null
   // until then, and where it does not say.
   readonly sandbox: SandboxState | null
+  // Whether its notice is open. It and the update's share a place, so one open closes the other.
+  readonly sandboxOpen: boolean
   // Whether the page has the person's focus: its window focused and showing.
   readonly pageFocused: boolean
   // The terminals whose agent finished while the person looked elsewhere.
@@ -133,6 +135,7 @@ export const initialUi = ({
   updateOpen: false,
   updateSeen,
   sandbox: null,
+  sandboxOpen: false,
   pageFocused: true,
   unread: noUnread,
   answering: noTerminalAnswers,

@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { access, constants, readFile, realpath } from "node:fs/promises"
+import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
@@ -519,11 +520,23 @@ const launch = async (): Promise<void> => {
   registerSandboxIpc(ipcMain, {
     window: appWindow,
     state: async () =>
-      sandboxState(
-        app.commandLine.hasSwitch("no-sandbox"),
-        process.platform,
-        await releaseRepository(),
-      ),
+      sandboxState(app.commandLine.hasSwitch("no-sandbox"), {
+        platform: process.platform,
+        repository: await releaseRepository(),
+        restricted: await readFile(
+          "/proc/sys/kernel/apparmor_restrict_unprivileged_userns",
+          "utf8",
+        ).catch(() => undefined),
+        env: process.env,
+        home: homedir(),
+        realpath: (path) => {
+          try {
+            return realpathSync(path)
+          } catch {
+            return undefined
+          }
+        },
+      }),
   })
   ipcMain.handle(directoryPickerChannel, async (event) => {
     const window = appWindow(event)

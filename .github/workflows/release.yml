@@ -523,7 +523,7 @@ jobs:
 
       # Chromium's sandbox needs unprivileged user namespaces, which Ubuntu 24.04 refuses to
       # programs without an AppArmor profile (kernel.apparmor_restrict_unprivileged_userns is
-      # 1 on this runner). install.sh writes a profile for the installed AppImage; without it
+      # 1 on this runner, and the step fails if that changes). install.sh writes a profile for the installed AppImage; without it
       # AppRun starts the app with --no-sandbox. So the installed app must run with its
       # renderers in a user namespace of their own, which is how the sandbox shows itself,
       # and without --no-sandbox on the browser process.
@@ -533,10 +533,12 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2> /dev/null || echo 0)" != 1 ]]; then
-            echo "::warning::This runner doesn't restrict unprivileged user namespaces, so the check proves less than it should."
+            echo "::error::This runner no longer restricts unprivileged user namespaces (kernel.apparmor_restrict_unprivileged_userns is not 1), so install.sh writes no profile and this check proves nothing. Update the step for the new runner image."
+            exit 1
           fi
-          if [[ ! -f /etc/apparmor.d/novadeck ]]; then
-            echo "::error::install.sh wrote no AppArmor profile at /etc/apparmor.d/novadeck."
+          profile="/etc/apparmor.d/novadeck-appimage-$(id -u)"
+          if [[ ! -f "$profile" ]]; then
+            echo "::error::install.sh wrote no AppArmor profile at $profile."
             exit 1
           fi
           unset APPDIR APPIMAGE
@@ -558,7 +560,7 @@ jobs:
             args="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2> /dev/null)" || continue
             if [[ "$args" == *"--type=renderer"* ]]; then
               renderers+=("$pid")
-            elif [[ "$args" != *"--type="* && "$args" == *"/tmp/.mount_"* ]]; then
+            elif [[ "$args" != *"--type="* && "$args" == *".mount_"* ]]; then
               # The Electron binary inside the AppImage's mount, which AppRun starts.
               browser_ns="$(sudo readlink "/proc/$pid/ns/user")"
               browser_args="$args"

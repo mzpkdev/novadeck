@@ -8,12 +8,13 @@ import {
   mkdtempSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { afterEach } from "vitest"
@@ -30,19 +31,20 @@ const tools = [
   "awk",
   "cat",
   "chmod",
+  "cmp",
   "cp",
   "grep",
   "ln",
   "mkdir",
   "mktemp",
   "mv",
+  "readlink",
   "rm",
   "sha256sum",
 ]
 
 const download = "novadeck-linux-x86_64.AppImage"
 const image = "novadeck.AppImage"
-const profileSource = "@{HOME}/{.local/share/novadeck,Applications}/novadeck.AppImage"
 
 const sha256 = (content: string) => createHash("sha256").update(content).digest("hex")
 
@@ -73,9 +75,13 @@ type Scenario = {
   /** The value of apparmor_restrict_unprivileged_userns; the file is absent when unset. */
   restrict?: "0" | "1"
   /** apparmor_parser on the fake computer, which "rejects" every dry run when "invalid". */
-  parser?: "valid" | "invalid"
+  parser?: "valid" | "invalid" | "unloadable"
   /** Moves the data folder, as XDG_DATA_HOME does, to this folder inside the test's. */
   xdg?: string
+  /** Makes that folder a symlink to a real one. */
+  linked?: boolean
+  /** Puts Homebrew's AppImage in place as a symlink to a file in the Caskroom. */
+  brew?: "symlink"
   /** Tools present on the PATH, such as fusermount3. */
   extra?: string[]
   /** Tools present only in the system folders a user's PATH lacks. */
@@ -140,7 +146,10 @@ cp "${served}/\${url##*/}" "$out"`,
       bin,
       "apparmor_parser",
       `echo "\${SUDO:+sudo }apparmor_parser $*" >> "${log}"
-case "$*" in *--skip-kernel-load*) [ "${scenario.parser}" = valid ] ;; esac`,
+case "$*" in
+*--skip-kernel-load*) [ "${scenario.parser}" != invalid ] ;;
+*--replace*) [ "${scenario.parser}" = valid ] ;;
+esac`,
     )
   }
   const sysctl = join(root, "restrict")
@@ -152,6 +161,21 @@ case "$*" in *--skip-kernel-load*) [ "${scenario.parser}" = valid ] ;; esac`,
   const entry = join(root, "install.sh")
   writeFileSync(entry, text)
   const data = scenario.xdg ? join(root, scenario.xdg) : undefined
+  const real = join(root, "real-data")
+  if (data && scenario.linked) {
+    mkdirSync(real)
+    symlinkSync(real, data)
+  }
+  const profiles = join(root, "profiles")
+  if (scenario.brew) {
+    mkdirSync(join(home, "Applications"))
+    mkdirSync(join(home, "Caskroom"))
+    writeFileSync(join(home, "Caskroom/novadeck.AppImage"), appImage)
+    symlinkSync(
+      join(home, "Caskroom/novadeck.AppImage"),
+      join(home, "Applications/novadeck.AppImage"),
+    )
+  }
   const start = () =>
     spawnSync("/bin/sh", [entry, ...(scenario.args ?? [])], {
       env: {
@@ -161,6 +185,7 @@ case "$*" in *--skip-kernel-load*) [ "${scenario.parser}" = valid ] ;; esac`,
         NOVADECK_INSTALL_USERNS_SYSCTL: sysctl,
         NOVADECK_INSTALL_APPARMOR_DIR: apparmor,
         NOVADECK_INSTALL_FUSE_DEVICE: device,
+        NOVADECK_INSTALL_PROFILES: profiles,
         ...(data ? { XDG_DATA_HOME: data } : {}),
         ...(scenario.rendered ? {} : { NOVADECK_INSTALL_BASE_URL: `http://mirror.test/dl/` }),
       },
@@ -168,15 +193,17 @@ case "$*" in *--skip-kernel-load*) [ "${scenario.parser}" = valid ] ;; esac`,
     })
   const result = start()
   const lines = readFileSync(log, "utf8").split("\n").filter(Boolean)
-  const profile = join(apparmor, "novadeck")
+  const profile = join(apparmor, `novadeck-appimage-${scenario.root ? 0 : 1000}`)
   return {
     ...result,
     home,
-    data: data ?? join(home, ".local/share"),
+    data: scenario.linked ? real : (data ?? join(home, ".local/share")),
     lines,
     commands: lines.filter((line) => !line.startsWith("curl")),
     profile: existsSync(profile) ? readFileSync(profile, "utf8") : undefined,
     profilePath: profile,
+    profiles,
+    log: () => readFileSync(log, "utf8").split("\n").filter(Boolean),
     again: start,
   }
 }
@@ -233,8 +260,8 @@ describe.skipIf(!linux)("install.sh", () => {
       expect(run({ extra: ["fusermount"] }).stdout).not.toContain("FUSE")
     })
 
-    it("finds fusermount3 in the system folders when the PATH lacks it", () => {
-      expect(run({ sbin: ["fusermount3"] }).stdout).not.toContain("FUSE")
+    it("looks only on the PATH, as the AppImage runtime does", () => {
+      expect(run({ sbin: ["fusermount3"] }).stdout).toContain("needs FUSE 3")
     })
 
     it("explains when there is no fusermount", () => {
@@ -256,25 +283,33 @@ describe.skipIf(!linux)("install.sh", () => {
 
     it("installs an AppArmor profile through sudo and loads it", () => {
       const result = run(restricted)
+      const target = join(result.data, "novadeck", image)
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("so Novadeck's sandbox works on this system")
       expect(result.commands).toHaveLength(2)
       expect(result.commands[0]).toMatch(/^apparmor_parser --skip-kernel-load --debug \S+$/)
       expect(result.commands[1]).toBe(`sudo apparmor_parser --replace ${result.profilePath}`)
+      expect(basename(result.profilePath)).toBe("novadeck-appimage-1000")
       expect(result.profile).toBe(`abi <abi/4.0>,
 include <tunables/global>
 
-profile novadeck ${profileSource} flags=(unconfined) {
+profile novadeck-appimage-1000 "${target}" flags=(unconfined) {
   userns,
-  include if exists <local/novadeck>
+  include if exists <local/novadeck-appimage-1000>
+}
+
+profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.AppImage")}" flags=(unconfined) {
+  userns,
+  include if exists <local/novadeck-appimage-1000-brew>
 }
 `)
     })
 
-    it("skips sudo for root", () => {
+    it("names the profile for root's uid and skips sudo for root", () => {
       const result = run({ ...restricted, root: true, sudo: false })
+      expect(basename(result.profilePath)).toBe("novadeck-appimage-0")
       expect(result.commands[1]).toBe(`apparmor_parser --replace ${result.profilePath}`)
-      expect(result.profile).toContain("userns,")
+      expect(result.profile).toContain("profile novadeck-appimage-0 ")
     })
 
     it("finds apparmor_parser in the system folders when the PATH lacks it", () => {
@@ -283,12 +318,51 @@ profile novadeck ${profileSource} flags=(unconfined) {
       expect(result.profile).toContain("userns,")
     })
 
-    it("covers an install moved by XDG_DATA_HOME", () => {
+    it("names the literal path of an install moved by XDG_DATA_HOME", () => {
       const result = run({ ...restricted, xdg: "xdg" })
-      expect(result.profile).toContain(`profile novadeck ${profileSource}`)
       expect(result.profile).toContain(
-        `profile novadeck-custom "${join(result.data, "novadeck", image)}" flags=(unconfined)`,
+        `profile novadeck-appimage-1000 "${join(result.data, "novadeck", image)}" flags=(unconfined)`,
       )
+    })
+
+    it("names the real path when the data folder is a symlink", () => {
+      const result = run({ ...restricted, xdg: "xdg", linked: true })
+      expect(result.profile).toContain(`"${join(realpathSync(result.data), "novadeck", image)}"`)
+      expect(result.profile).not.toContain(`/xdg/`)
+    })
+
+    it("names the real path of Homebrew's AppImage when it is a symlink", () => {
+      const result = run({ ...restricted, brew: "symlink" })
+      expect(result.profile).toContain(`"${join(result.home, "Caskroom/novadeck.AppImage")}"`)
+    })
+
+    it("does not ask for sudo again when the profile is already loaded", () => {
+      const result = run(restricted)
+      writeFileSync(result.profiles, "novadeck-appimage-1000 (unconfined)\nother (enforce)\n")
+      const before = result.log().length
+      expect(result.again().stdout).toContain("already set up")
+      expect(
+        result
+          .log()
+          .slice(before)
+          .filter((line) => line.startsWith("sudo")),
+      ).toEqual([])
+    })
+
+    it("asks again when the profile is not loaded, or the list cannot be read", () => {
+      const result = run(restricted)
+      writeFileSync(result.profiles, "other (enforce)\n")
+      expect(result.again().stdout).toContain("Writing an AppArmor profile")
+      rmSync(result.profiles)
+      expect(result.again().stdout).toContain("Writing an AppArmor profile")
+    })
+
+    it("asks again when the installed profile differs", () => {
+      const result = run(restricted)
+      writeFileSync(result.profiles, "novadeck-appimage-1000 (unconfined)\n")
+      writeFileSync(result.profilePath, "old")
+      expect(result.again().stdout).toContain("Writing an AppArmor profile")
+      expect(readFileSync(result.profilePath, "utf8")).toContain("userns,")
     })
 
     it("leaves the install working and says how to retry when sudo refuses", () => {
@@ -323,11 +397,19 @@ profile novadeck ${profileSource} flags=(unconfined) {
       expect(result.stdout).toContain("without its sandbox")
     })
 
-    it("does nothing without apparmor_parser", () => {
+    it("removes the file it wrote when loading fails, so it does not load at boot", () => {
+      const result = run({ restrict: "1", parser: "unloadable" })
+      expect(result.status).toBe(0)
+      expect(result.profile).toBeUndefined()
+      expect(result.stdout).toContain("without its sandbox")
+    })
+
+    it("warns without apparmor_parser", () => {
       const result = run({ restrict: "1" })
       expect(result.status).toBe(0)
       expect(result.profile).toBeUndefined()
-      expect(result.stdout).not.toContain("sandbox")
+      expect(result.stdout).toContain("without its sandbox")
+      expect(result.stdout).toContain("apparmor_parser")
     })
   })
 
@@ -367,6 +449,23 @@ profile novadeck ${profileSource} flags=(unconfined) {
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("needs no setup")
       expect(result.profile).toBeUndefined()
+    })
+
+    it("warns without apparmor_parser too", () => {
+      const result = run({ args: ["--sandbox"], restrict: "1" })
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("without its sandbox")
+    })
+
+    it("names the real path of an AppImage that is not installed yet", () => {
+      const result = run({
+        args: ["--sandbox"],
+        restrict: "1",
+        parser: "valid",
+        xdg: "xdg",
+        linked: true,
+      })
+      expect(result.profile).toContain(`"${join(realpathSync(result.data), "novadeck", image)}"`)
     })
 
     it("warns with the same command when sudo refuses", () => {

@@ -33,6 +33,7 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   const offer = useUiState((state) => state.update)
   const updateOpen = useUiState((state) => state.updateOpen)
   const sandbox = useUiState((state) => state.sandbox)
+  const sandboxOpen = useUiState((state) => state.sandboxOpen)
   // A dialog, the switcher or a question holds the notice back until it is answered.
   const asking = useUiState(
     (state) =>
@@ -98,7 +99,7 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
           ? {
               offer,
               open: updateOpen,
-              blocked: asking || welcome,
+              blocked: asking || welcome || sandboxOpen,
               onOpenChange: commands.setUpdateOpen,
               onShown: commands.updateShown,
               onInstall: updates.install,
@@ -112,7 +113,16 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
             }
           : undefined
       }
-      fix={sandbox && !sandbox.sandboxed ? sandbox.fix : undefined}
+      sandbox={
+        sandbox && !sandbox.sandboxed
+          ? {
+              fix: sandbox.fix,
+              open: sandboxOpen,
+              blocked: asking || welcome,
+              onOpenChange: commands.setSandboxOpen,
+            }
+          : undefined
+      }
       usage={<SubscriptionUsage accounts={accounts} onMove={move} />}
     />
   )

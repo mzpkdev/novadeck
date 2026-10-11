@@ -33,7 +33,7 @@ type Return = "origin" | "terminal"
 // Whether a dialog, menu or popover is open, looked at while `active`: they come and go
 // in portals, so there is nothing to subscribe to. Looked at as `active` begins, so an
 // offer that arrives with one open never shows, and then every 150 ms.
-const useOverlayOpen = (active: boolean): boolean => {
+export const useOverlayOpen = (active: boolean): boolean => {
   const [was, setWas] = useState(false)
   const [open, setOpen] = useState(false)
   if (active !== was) {

@@ -22,10 +22,11 @@ canvas. Keep related work together and switch between sessions from the sidebar.
   and running it again upgrades. The AppImage needs FUSE 3 (the `fuse3` package).
 
   On systems that block unprivileged user namespaces, as Ubuntu does from 24.04, Electron's
-  sandbox can only start with an AppArmor profile, so the script asks for your password
-  once to write `/etc/apparmor.d/novadeck`. Without it Novadeck still runs, without its
-  sandbox, and says so in the footer. To write the profile later, or for an AppImage
-  installed another way, run the script with `--sandbox`:
+  sandbox starts only with an AppArmor profile, so the script asks for your password once
+  to write `/etc/apparmor.d/novadeck-appimage-<uid>`, which lets only your installed
+  AppImage use user namespaces. Without it Novadeck still runs, without its sandbox, and
+  says so in the footer. To write the profile later, or for the AppImage a Homebrew cask
+  puts in `~/Applications`, run the script with `--sandbox`:
 
   ```sh
   curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh -s -- --sandbox

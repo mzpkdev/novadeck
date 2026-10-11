@@ -220,7 +220,8 @@
    a layer, so it never takes keys or focus. Its title, up to a few release notes (two
    lines each, scrolling past a few), a link to the rest, then Later and the action, which
    always stay in view. */
-.update-panel {
+.update-panel,
+.sandbox-panel {
   position: absolute;
   right: 12px;
   bottom: calc(100% + 8px);
@@ -240,7 +241,8 @@
   text-transform: none;
   font-weight: 400;
 }
-.update-panel:focus {
+.update-panel:focus,
+.sandbox-panel:focus {
   outline: none;
 }
 .update-title {
@@ -289,7 +291,8 @@
 }
 
 /* The sandbox notice (FooterSandbox.tsx) reuses the update's panel: a sentence, and the
-   fix command in the mono face, wrapping at any character so none of it is cut off. */
+   fix command in the mono face, breaking at spaces only: a token too long for the line, as
+   the install URL, scrolls inside the block. */
 .sandbox-text {
   margin: 0;
 }
@@ -302,7 +305,8 @@
   color: var(--color-ink);
   font-family: var(--font-mono);
   font-size: var(--text-caption);
-  overflow-wrap: anywhere;
+  overflow-x: auto;
+  white-space: pre-wrap;
   user-select: all;
 }
 
