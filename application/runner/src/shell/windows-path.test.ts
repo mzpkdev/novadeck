@@ -2,9 +2,14 @@ import { describe, expect, it } from "../test.js"
 import { forgetPath, mergePath, pathKey, refreshPath, registryFolders } from "./windows-path.js"
 
 const windows = process.platform === "win32"
-// The lookup's answer: each key's values as the registry holds them, unexpanded.
-const answer = (machine: object, user: object) =>
-  Buffer.from(JSON.stringify({ machine, user }), "utf8").toString("base64")
+// The lookup's answer: a line for each of a key's values as the registry holds it,
+// unexpanded, its name and value in base64.
+const b64 = (text: string) => Buffer.from(text, "utf8").toString("base64")
+const answer = (machine: Record<string, string>, user: Record<string, string>) =>
+  [
+    ...Object.entries(machine).map(([name, value]) => `machine ${b64(name)} ${b64(value)}`),
+    ...Object.entries(user).map(([name, value]) => `user ${b64(name)} ${b64(value)}`),
+  ].join("\r\n")
 
 describe("PATH merged with the registry's", () => {
   it("keeps the folders the app started with first, and adds the ones it lacks", () => {
@@ -61,8 +66,10 @@ describe("the registry's PATH folders", () => {
   })
 
   it("are unknown for an answer that isn't the lookup's", () => {
-    expect(registryFolders("not base64 JSON")).toBeUndefined()
-    expect(registryFolders(Buffer.from('{"machine":{}}').toString("base64"))).toBeUndefined()
+    expect(registryFolders("")).toBeUndefined()
+    expect(registryFolders("not the lookup's")).toBeUndefined()
+    expect(registryFolders(`machine ${b64("Path")}`)).toBeUndefined()
+    expect(registryFolders(`machine ${b64("Path")} not*base64`)).toBeUndefined()
   })
 })
 

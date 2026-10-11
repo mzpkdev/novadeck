@@ -56,9 +56,13 @@ const expand = (value: string, variables: Variables, env: NodeJS.ProcessEnv): st
   return text
 }
 
+const base64 = /^[A-Za-z0-9+/]*={0,2}$/
+const decoded = (text: string): string => Buffer.from(text, "base64").toString("utf8")
+
 /**
- * The machine's and then the user's PATH folders, from the lookup's base64 answer: each
- * key's values as the registry holds them, unexpanded. Each PATH is expanded against the
+ * The machine's and then the user's PATH folders, from the lookup's answer: a line for
+ * each of a key's text values as the registry holds it, unexpanded, as `machine` or
+ * `user`, its name and its value, each in base64. Each PATH is expanded against the
  * registry's own variables, the user's over the machine's for the user's PATH, as Windows
  * builds a new process's environment, before `env`'s stale ones: an install that added a
  * variable and a PATH entry naming it (nvm-windows' `%NVM_SYMLINK%`, a JDK's
@@ -68,17 +72,17 @@ export const registryFolders = (
   answer: string,
   env: NodeJS.ProcessEnv = {},
 ): readonly string[] | undefined => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(Buffer.from(answer.trim(), "base64").toString("utf8"))
-  } catch {
-    return undefined
+  const machines: Record<string, string> = {}
+  const users: Record<string, string> = {}
+  const lines = answer.split(/\r?\n/).filter((line) => line.trim() !== "")
+  if (lines.length === 0) return undefined
+  for (const line of lines) {
+    const [scope, name, value, ...more] = line.trim().split(" ")
+    if (scope !== "machine" && scope !== "user") return undefined
+    if (name === undefined || value === undefined || more.length > 0) return undefined
+    if (!base64.test(name) || !base64.test(value)) return undefined
+    ;(scope === "machine" ? machines : users)[decoded(name)] = decoded(value)
   }
-  const { machine, user } = (parsed ?? {}) as { machine?: unknown; user?: unknown }
-  if (typeof machine !== "object" || machine === null) return undefined
-  if (typeof user !== "object" || user === null) return undefined
-  const machines = machine as Variables
-  const users = user as Variables
   const machinePath = pathOf(machines)
   const userPath = pathOf(users)
   return [
@@ -89,13 +93,15 @@ export const registryFolders = (
   ]
 }
 
-// Each key's values unexpanded, as JSON; base64 keeps any folder's name, which a console
-// code page would not, as reg.exe's output loses "Ł".
+// Each key's text values unexpanded, a line each (see `registryFolders`); base64 keeps
+// any folder's name, which a console code page would not, as reg.exe's output loses "Ł".
+// .NET alone, no cmdlet: one, as ConvertTo-Json, has PowerShell look through every
+// module on PSModulePath first, which took past five seconds on a CI runner with many.
 const lookup = [
-  "$read = { param($key) $values = @{}; if ($key) { foreach ($name in $key.GetValueNames()) { $values[$name] = $key.GetValue($name, '', 'DoNotExpandEnvironmentNames') } }; $values }",
-  "$machine = & $read ([Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment'))",
-  "$user = & $read ([Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment'))",
-  "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json @{ machine = $machine; user = $user } -Compress -Depth 3)))",
+  "$b64 = { param($text) [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) }",
+  "$read = { param($scope, $key) if ($key) { foreach ($name in $key.GetValueNames()) { $value = $key.GetValue($name, '', 'DoNotExpandEnvironmentNames'); if ($value -is [string]) { $scope + ' ' + (& $b64 $name) + ' ' + (& $b64 $value) } } } }",
+  "& $read 'machine' ([Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment'))",
+  "& $read 'user' ([Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment'))",
 ].join("; ")
 
 /** PATH's folders as the registry has them now, or undefined when it can't be read. */
