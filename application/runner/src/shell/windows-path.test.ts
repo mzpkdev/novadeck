@@ -148,6 +148,33 @@ describe("refreshing PATH", () => {
     forgetPath()
   })
 
+  it("tries again soon after a read that only ran long, as on a cold boot", async () => {
+    forgetPath()
+    let reads = 0
+    let answering: readonly string[] | "timeout" = "timeout"
+    const read = () => {
+      reads += 1
+      return Promise.resolve(answering)
+    }
+    const options = {
+      platform: "win32" as const,
+      maxAgeMs: 60_000,
+      retryMs: 60_000,
+      timeoutRetryMs: 20,
+      read,
+    }
+    const env = { Path: "C:\\Here" }
+    expect(await refreshPath(env, options)).toBe(env)
+    // Within its short wait, no read.
+    expect(await refreshPath(env, options)).toBe(env)
+    expect(reads).toBe(1)
+    answering = ["C:\\Installed"]
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect((await refreshPath(env, options)).Path).toBe("C:\\Here;C:\\Installed")
+    expect(reads).toBe(2)
+    forgetPath()
+  })
+
   it.runIf(windows)("adds the registry's folders to a PATH that lacks them", async () => {
     forgetPath()
     // As Windows spells it, whatever spelling the test runner's own uses.
