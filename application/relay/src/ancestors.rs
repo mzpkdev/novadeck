@@ -2,7 +2,9 @@
 //! process ran it, and when the agent fired the hook: up to eight, each by its pid, name
 //! and start in milliseconds since the Unix epoch, where the platform tells. The start of
 //! the one just below the agent is when the agent started the hook's shell, which on
-//! Windows comes seconds before the relay, behind a cold PowerShell or cmd.
+//! Windows comes seconds before the relay, behind a cold PowerShell or cmd. The runner
+//! reads the starts only there; on Linux and macOS, where a shell starts at once, they
+//! are sent for what they tell, as the relay reads every platform alike.
 
 use serde_json::{Map, Value};
 

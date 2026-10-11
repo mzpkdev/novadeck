@@ -11,6 +11,16 @@ import type { AgentName } from "@novadeck/protocol"
  */
 export type Dialect = "sh" | "powershell" | "cmd"
 
+/**
+ * The programs a dialect's shell runs as, by their file names without `.exe`, as the
+ * relay names a hook's ancestors.
+ */
+export const dialectPrograms: Readonly<Record<Dialect, readonly string[]>> = {
+  sh: ["sh", "bash", "dash", "zsh"],
+  powershell: ["pwsh", "powershell"],
+  cmd: ["cmd"],
+}
+
 /** What a hook command runs: Novadeck's launcher, for `agent`'s `event`. */
 export type HookCall = {
   readonly agent: AgentName

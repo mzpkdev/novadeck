@@ -7,7 +7,7 @@ import { promisify } from "node:util"
 
 import { relayPath } from "@novadeck/relay"
 
-import { anyRunning, Trees } from "../terminals/trees.js"
+import { anyRunning, taskkillTree, Trees } from "../terminals/trees.js"
 import type { Sandbox } from "./sandbox.js"
 
 type Scope = Pick<Sandbox, "root" | "home" | "started">
@@ -230,7 +230,10 @@ const windows: Table = {
       return
     }
     const tree = await trees.read(one.pid)
-    if (tree?.[0]?.startedAt !== one.start) return
+    // Where the relay can't read it, taskkill ends the tree, awaited, as it did before:
+    // only the root is checked, just before, by its start.
+    if (tree === undefined) return taskkillTree(one.pid).catch(() => {})
+    if (tree[0]?.startedAt !== one.start) return
     await trees.end(tree)
     const deadline = Date.now() + 30_000
     while (anyRunning(tree) && Date.now() < deadline)

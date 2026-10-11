@@ -312,7 +312,7 @@ export const hookSeconds = (platform: NodeJS.Platform): number =>
  */
 export const firedFacts = <Fact extends { readonly startedAt: number }>(
   facts: readonly Fact[],
-  { seq, firedAt }: Pick<Report, "seq" | "firedAt">,
+  { seq, firedAt }: { readonly seq: number; readonly firedAt?: number | undefined },
 ): readonly Fact[] =>
   firedAt === undefined
     ? facts

@@ -30,7 +30,7 @@ const USAGE: &str = "usage: novadeck-relay mcp <server-version> <protocol-versio
        novadeck-relay hook [--config <relay.json>] [--<option> <value>]... <agent> [event]
        novadeck-relay --version
        novadeck-relay environment                    (Windows)
-       novadeck-relay tree <pid>...                  (Windows)
+       novadeck-relay tree <pid>[:<started-ms>]...   (Windows)
        novadeck-relay end <pid>:<started-ms>...      (Windows)";
 
 /// The leading `--name value` options, and the arguments after them. Every option takes a
@@ -85,11 +85,10 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         #[cfg(windows)]
-        Some((mode, rest)) if mode == "tree" => match pids(rest) {
-            Some(roots) => {
-                processes::print_trees(&roots);
-                ExitCode::SUCCESS
-            }
+        Some((mode, rest)) if mode == "tree" => match roots(rest) {
+            Some(roots) if processes::print_trees(&roots) => ExitCode::SUCCESS,
+            // Windows refused the snapshot: no tree is known, so the runner falls back.
+            Some(_) => ExitCode::FAILURE,
             None => usage(),
         },
         #[cfg(windows)]
@@ -109,11 +108,30 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
-/// Process ids, one or more; None where any isn't one.
+/// A root as `<pid>` or `<pid>:<started-ms>`, each as written and as read; None where
+/// any isn't one, or none is given.
 #[cfg(any(windows, test))]
-fn pids(args: &[String]) -> Option<Vec<u32>> {
-    let found: Option<Vec<u32>> = args.iter().map(|arg| arg.parse().ok()).collect();
-    found.filter(|pids| !pids.is_empty())
+fn parsed_roots(args: &[String]) -> Option<Vec<(String, u32, Option<u64>)>> {
+    let found: Option<Vec<(String, u32, Option<u64>)>> = args
+        .iter()
+        .map(|arg| match arg.split_once(':') {
+            Some((pid, started)) => {
+                Some((arg.clone(), pid.parse().ok()?, Some(started.parse().ok()?)))
+            }
+            None => Some((arg.clone(), arg.parse().ok()?, None)),
+        })
+        .collect();
+    found.filter(|roots| !roots.is_empty())
+}
+
+#[cfg(windows)]
+fn roots(args: &[String]) -> Option<Vec<(String, processes::Root)>> {
+    Some(
+        parsed_roots(args)?
+            .into_iter()
+            .map(|(named, pid, started)| (named, processes::Root { pid, started }))
+            .collect(),
+    )
 }
 
 /// Processes as `<pid>:<started-ms>`, one or more; None where any isn't one.
@@ -151,9 +169,16 @@ mod tests {
     }
 
     #[test]
-    fn reads_process_ids_and_refuses_anything_else() {
-        assert_eq!(pids(&args(&["12", "34"])), Some(vec![12, 34]));
-        assert_eq!(pids(&args(&[])), None);
-        assert_eq!(pids(&args(&["12", "x"])), None);
+    fn reads_roots_by_pid_or_by_pid_and_start_and_refuses_anything_else() {
+        assert_eq!(
+            parsed_roots(&args(&["12", "34:5600"])),
+            Some(vec![
+                ("12".to_owned(), 12, None),
+                ("34:5600".to_owned(), 34, Some(5600))
+            ])
+        );
+        assert_eq!(parsed_roots(&args(&[])), None);
+        assert_eq!(parsed_roots(&args(&["12", "x"])), None);
+        assert_eq!(parsed_roots(&args(&["12:x"])), None);
     }
 }

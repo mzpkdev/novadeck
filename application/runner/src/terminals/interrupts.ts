@@ -128,7 +128,7 @@ export class Interrupts {
     // to end (Codex on Windows CI: its queued turn began 0.8 s after the first Escape, and a
     // second Escape 0.6 s after it stopped nothing): it is waited for first.
     if (box !== undefined && isEmpty(box) && queued && host.alive(terminalId)) {
-      await this.turnStarts(terminalId)
+      await this.turnStarts(terminalId, profile)
       host.type(terminalId, "\x1b")
       box = await this.settled(terminalId, profile)
     }
@@ -159,13 +159,22 @@ export class Interrupts {
 
   /**
    * Waits until the terminal's agent works again, on the turn it starts with what was
-   * queued, for up to `queuedTurnMs`, or the terminal is gone.
+   * queued, for up to `queuedTurnMs`. It holds the terminal's input queue meanwhile, so
+   * it stops early where the box holds text, the person's or put back, or the terminal is
+   * gone. The queued messages leaving the screen says nothing: Codex's Escape sends them
+   * at once as a steer, though the turn that runs them came 1.4 s later on Windows CI.
    */
-  private async turnStarts(terminalId: string): Promise<void> {
+  private async turnStarts(terminalId: string, profile: BoxProfile): Promise<void> {
+    const { host } = this
     const until = Date.now() + this.queuedTurnMs
-    while (!this.host.working(terminalId) && this.host.alive(terminalId) && Date.now() < until)
+    while (!host.working(terminalId) && host.alive(terminalId) && Date.now() < until) {
       // eslint-disable-next-line no-await-in-loop -- Looks again until it works.
+      const screen = await host.screen(terminalId)
+      const box = screen && profile.read(screen)
+      if (!screen || (box !== undefined && !isEmpty(box))) return
+      // eslint-disable-next-line no-await-in-loop -- As above.
       await sleep(50)
+    }
   }
 
   /**

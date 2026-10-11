@@ -1,6 +1,7 @@
 import { agentName } from "@novadeck/protocol"
 
 import { hookShellSlackMs } from "../harnesses/harness.js"
+import { dialectPrograms } from "../harnesses/hook-command.js"
 import { harnesses } from "../harnesses/registry.js"
 import type { Report } from "./reports.js"
 
@@ -98,21 +99,26 @@ const clockSlackMs = 50
  * directly. Every agent there starts its hook's shell itself, an npm or scoop wrapper
  * around it included. Elsewhere a shell starts at once, so `seq` tells, and the
  * ancestor below the agent may be a long-lived process of its own, as under a wrapper
- * script that doesn't `exec` it. Undefined there, and where the agent's process isn't
- * among them, its child's start isn't told, or the start makes no sense for a hook that
- * started at `seq`.
+ * script that doesn't `exec` it. That ancestor counts only where it is a program of the
+ * shell the harness runs hooks in (`shells`, `dialectPrograms`), not a wrapper's agent
+ * below one carrying the agent's name. Undefined there, and where the agent's process
+ * isn't among them, its child's start isn't told, or the start makes no sense for a hook
+ * that started at `seq`.
  */
 export const firedAtOf = (
   instance: string | null,
   seq: number,
   ancestors: readonly Ancestor[],
+  shells: readonly string[],
   platform: NodeJS.Platform = process.platform,
 ): number | undefined => {
   if (hookShellSlackMs(platform) === 0) return undefined
   const index =
     instance === null ? -1 : ancestors.findIndex((each) => String(each.pid) === instance)
   if (index < 0) return undefined
-  const fired = index === 0 ? seq : ancestors[index - 1]!.startedAt
+  const shell = index === 0 ? undefined : ancestors[index - 1]!
+  if (shell !== undefined && !shells.includes(shell.name)) return undefined
+  const fired = shell === undefined ? seq : shell.startedAt
   if (fired === undefined || fired > seq + clockSlackMs || seq - fired > maxShellMs)
     return undefined
   return Math.min(fired, seq)
@@ -159,7 +165,8 @@ export const relayHook = (
   const named = instanceOf(agent.data, claudePid, ancestors)
   const instance = named !== null && /^\d{1,10}$/.test(named) ? named : null
   const codexThread = text(env.CODEX_THREAD_ID, 128)
-  const firedAt = firedAtOf(instance, seq, ancestors, platform)
+  const shells = dialectPrograms[harnesses[agent.data].hookDialect(platform)]
+  const firedAt = firedAtOf(instance, seq, ancestors, shells, platform)
   const report = {
     agent: agent.data,
     event,

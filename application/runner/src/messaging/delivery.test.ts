@@ -943,6 +943,15 @@ describe("the person's Enter window", () => {
     expect(transition(entered, past, 20_000).byPerson).toBe(false)
   })
 
+  it("takes a hook whose shell's start reads a clock tick before the Enter as after it", () => {
+    const entered = run(drafting, key("enter"))
+    // Windows' process start moves in ticks of about 15.6 ms, coarser than the Enter's.
+    const sameTick = { ...prompted(at + 900, at + 800), firedAt: at - 10 } as const
+    expect(transition(entered, sameTick, 20_000).byPerson).toBe(true)
+    const before = { ...sameTick, firedAt: at - 100 } as const
+    expect(transition(entered, before, 20_000).byPerson).toBe(false)
+  })
+
   it("widens by the shell's slack only where the hook's shell start isn't told", () => {
     const entered = run(drafting, key("enter"))
     const late = prompted(at + 15_100, at + 15_000)

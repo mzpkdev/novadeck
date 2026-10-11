@@ -19,8 +19,8 @@ const terminal = (
     draft?: string
     /** Whether its turn works, or how it says so as each key comes. */
     working?: boolean | (() => boolean)
-    /** Whether the screen shows messages queued behind the turn. */
-    queued?: boolean
+    /** Whether the screen shows messages queued behind the turn, or how it does as it's read. */
+    queued?: boolean | (() => boolean)
     /** Whether the harness has keys that clear its box; they empty it where it `clears`. */
     clear?: boolean
     clears?: boolean
@@ -45,7 +45,8 @@ const terminal = (
     collapsed: ({ text }) => /^\[Pasted text #\d+ \+\d+ lines\]$/.test(text),
     ...(options.clear === false ? {} : { clear: () => CLEAR }),
     shell: { expands: true, starts: false, footer: () => false },
-    queued: () => options.queued === true,
+    queued: () =>
+      typeof options.queued === "function" ? options.queued() : options.queued === true,
     collapses: () => false,
     ...(options.viewport === undefined ? {} : { viewport: () => options.viewport! }),
     room: (rows) => rows - 3,
@@ -185,6 +186,27 @@ describe("interrupts", () => {
     expect(t.typed).toEqual([ESC, ESC])
     expect(pressed[1]! - pressed[0]!).toBeGreaterThanOrEqual(300)
   })
+
+  it("waits for the queued turn, whatever the screen says of the queue", async () => {
+    // The queue leaves the screen at the Escape; its turn shows working only at 2 s, as a
+    // hook held back would: the second Escape waits for it.
+    const pressed: number[] = []
+    const since = () => (pressed.length === 0 ? 0 : Date.now() - pressed[0]!)
+    const queued = {
+      queued: () => pressed.length === 0,
+      prompt: "Hold on",
+      working: () => pressed.length === 0 || since() >= 2_000,
+    }
+    const waits = terminal({
+      ...queued,
+      after: (escapes) => {
+        pressed.push(Date.now())
+        return escapes === 2 ? "Queued beta" : undefined
+      },
+    })
+    expect(await waits.interrupt()).toEqual({ returned: "Queued beta" })
+    expect(pressed[1]! - pressed[0]!).toBeGreaterThanOrEqual(2_000)
+  }, 10_000)
 
   it("returns nothing where the first Escape alone leaves the box empty and nothing is queued", async () => {
     const t = terminal({ prompt: "Say hi" })

@@ -20,6 +20,7 @@ import type {
   TerminalSummary,
   TranscriptChange,
 } from "@novadeck/protocol"
+import { relayPath } from "@novadeck/relay"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import type { SerializeAddon as Serializer } from "@xterm/addon-serialize"
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes"
@@ -265,6 +266,12 @@ export type TerminalOptions = {
    * (see `hookShellSlackMs`); the runner's own when omitted.
    */
   platform?: NodeJS.Platform
+  /**
+   * The runner's own relay, which on Windows reads the registry's PATH and terminals'
+   * process trees; the one `@novadeck/relay` built when omitted. Never the copy installed
+   * for agents, which may be another build's, and waits on the shell files being written.
+   */
+  relay?: string
 }
 
 type Create = {
@@ -535,7 +542,8 @@ const sameProcess = (a: ForegroundProcess | null, b: ForegroundProcess | null): 
  * How long before the hook that bound a session another hook the harness fired with it
  * may have started, in milliseconds: Antigravity fires its status line and a model call's
  * PreInvocation at once, and either may start, and be heard, first. A newly bound
- * session's activity takes facts from then on. On CI (2026-10-11, Windows) the
+ * session's activity takes facts from then on, by the hooks' own starts (`startedAt`), as
+ * each fact is compared by its own. On CI (2026-10-11, Windows) the
  * PreInvocation that started a session's first turn had started 5 µs, and once 1.4 ms,
  * before the status line that bound the session, was heard after it, and was dropped as
  * older than the binding, with every fact after it: the turn never showed.
@@ -545,8 +553,10 @@ const boundTogetherMs = 250
 // How long a closed Windows terminal's programs have to end by themselves once its
 // console closes, as they do on its CTRL_CLOSE_EVENT, saving what they were writing, in
 // milliseconds: within the five seconds Windows gives them. What is left of the terminal's
-// tree then, as a hook's shell in a console of its own, is ended.
+// tree then, as a hook's shell in a console of its own, is ended. Shorter as the runner
+// shuts down, which the app gives five seconds in all (host/src/main/runner.ts).
 const treeGraceMs = 3_000
+const shutdownTreeGraceMs = 1_000
 
 /**
  * Terminals that have drawn. node-pty on Windows queues a kill until then; after, its kill
@@ -659,8 +669,6 @@ export class Terminals {
     items: CompanionItems | undefined
   }
   private readonly integration: Promise<Integration | undefined>
-  /** The shell files as written, whose relay reads Windows' registry for PATH. */
-  private readonly shellFiles: Promise<InstalledShell | undefined>
   /** Windows' process trees, which a closed terminal's programs are ended by. */
   private readonly trees: Trees
   private transcripts: boolean
@@ -724,12 +732,12 @@ export class Terminals {
       hooksTrusted: options.hooksTrusted,
       items: options.items,
       platform: options.platform ?? process.platform,
+      relay: options.relay ?? relayPath,
     }
     // Child programs do not need the runner's network capability, nor the identity of a
     // Novadeck terminal the runner itself was started from.
     for (const name of inherited) delete this.options.env[name]
-    this.shellFiles = (options.shellFiles ?? Promise.resolve(undefined)).catch(() => undefined)
-    this.trees = new Trees(async () => (await this.shellFiles)?.relay)
+    this.trees = new Trees(async () => this.options.relay)
     // Read once now, so the first terminal doesn't wait for it; see `shellEnvironment`.
     // After the deletes, as the relay, or PowerShell, that reads it gets this environment.
     if (this.options.freshPath) void this.shellEnvironment()
@@ -760,7 +768,7 @@ export class Terminals {
     this.prompts = new Prompts(this.promptHost(), this.inputs, options.prompts)
     this.interrupts = new Interrupts(this.interruptHost(), {
       // The queued turn shows working only once its hook comes, which its shell holds back.
-      queuedTurnMs: 3_000 + hookShellSlackMs(this.options.platform),
+      queuedTurnMs: 3_000 + hookShellSlackMs(this.options.platform) / 4,
       ...options.interrupts,
     })
     this.dialogs = new Dialogs(this.dialogsHost(), options.answers)
@@ -2799,7 +2807,7 @@ export class Terminals {
    */
   private async shellEnvironment(): Promise<NodeJS.ProcessEnv> {
     if (!this.options.freshPath) return this.options.env
-    return refreshPath(this.options.env, { relay: (await this.shellFiles)?.relay })
+    return refreshPath(this.options.env, { relay: this.options.relay })
   }
 
   /** The shell's program, a name found on the PATH the new shell gets, as `environment`. */
@@ -2983,7 +2991,10 @@ export class Terminals {
         rows,
         cwd,
         env,
-        // Windows' built-in console host can lose input; node-pty ships a newer one.
+        // Windows' built-in console host can lose input; node-pty ships a newer one. Closing
+        // a terminal relies on it too: with it, node-pty's kill closes the pseudoconsole,
+        // which sends its programs CTRL_CLOSE_EVENT, and ends only the shell (see `kill`);
+        // without it, it ends everything on the console at once.
         useConptyDll: process.platform === "win32",
       })
       return {
@@ -3231,7 +3242,7 @@ export class Terminals {
       if (!same) {
         record.activity = next.binding
           ? fresh(
-              (event.firedAt ?? event.startedAt) - boundTogetherMs,
+              event.startedAt - boundTogetherMs,
               harnesses[next.binding.agent].wakes,
               harnesses[next.binding.agent].records,
             )
@@ -4224,14 +4235,24 @@ export class Terminals {
 
   /**
    * Ends what is left of a closed terminal's process tree once it has had `treeGraceMs`
-   * to end by itself.
+   * to end by itself: the tree read before the close, and what its members started since,
+   * as an agent's hook run as it closes, or left running as they ended, read again from
+   * each by its start.
    */
   private async endLeft(tree: readonly Member[]): Promise<void> {
-    const deadline = Date.now() + treeGraceMs
+    const deadline = Date.now() + (this.stopping ? shutdownTreeGraceMs : treeGraceMs)
     while (anyRunning(tree) && Date.now() < deadline)
       // eslint-disable-next-line no-await-in-loop -- Waits for them to end.
       await sleep(100)
-    if (anyRunning(tree)) await this.trees.end(tree)
+    const again = await Promise.all(tree.map((member) => this.trees.read(member)))
+    const left = new Map(
+      [...tree, ...again.flatMap((each) => each ?? [])].map((member) => [
+        `${member.pid}:${member.startedAt}`,
+        member,
+      ]),
+    )
+    const members = [...left.values()]
+    if (anyRunning(members)) await this.trees.end(members)
   }
 
   /** Ends a Windows process and every one under it now, by taskkill where the relay can't. */

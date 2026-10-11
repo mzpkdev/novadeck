@@ -4,6 +4,7 @@ import { homedir } from "node:os"
 import { delimiter, join } from "node:path"
 
 import type { AgentIntegration, AgentName } from "@novadeck/protocol"
+import { relayPath } from "@novadeck/relay"
 
 import { DomainError } from "../errors.js"
 import type { ShellPaths } from "../shell/scripts.js"
@@ -23,6 +24,12 @@ export type HarnessesOptions = {
   readonly platform?: NodeJS.Platform
   /** How long one of an agent's plugin commands may take, in milliseconds. */
   readonly timeoutMs?: number
+  /**
+   * The runner's own relay, which reads Windows' registry for PATH; the one
+   * `@novadeck/relay` built when omitted. Never the copy installed for agents, which may
+   * be another build's.
+   */
+  readonly relay?: string
 }
 
 const exists = (path: string): Promise<boolean> =>
@@ -84,14 +91,8 @@ const loginShellEnvironment = (env: NodeJS.ProcessEnv) =>
  * desktop menu. Only `echo` and `env` run in that shell, so any shell will do. Windows
  * keeps PATH in the registry instead, read anew there; see `refreshPath`.
  */
-const loginEnvironment = async (
-  env: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform,
-  relay: () => Promise<string | undefined>,
-) =>
-  platform === "win32"
-    ? refreshPath(env, { platform, relay: await relay() })
-    : loginShellEnvironment(env)
+const loginEnvironment = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform, relay: string) =>
+  platform === "win32" ? refreshPath(env, { platform, relay }) : loginShellEnvironment(env)
 
 // The program to run: the one on PATH, or where the harness's installer puts it otherwise.
 const locate = async (program: string, harness: Harness, install: Install): Promise<string> => {
@@ -155,6 +156,7 @@ export const createHarnesses = (
   const base = options.env ?? process.env
   const home = options.home ?? base.HOME ?? homedir()
   const platform = options.platform ?? process.platform
+  const relay = options.relay ?? relayPath
   const timeoutMs = options.timeoutMs ?? 60_000
   // Looked up in the background from the start, and again before each change. Listing
   // and spawning shells never wait for it: until it answers they use the app's own.
@@ -162,7 +164,7 @@ export const createHarnesses = (
   const lookUp = () =>
     (options.login === false
       ? Promise.resolve(base)
-      : loginEnvironment(base, platform, async () => (await paths().catch(() => undefined))?.relay)
+      : loginEnvironment(base, platform, relay)
     ).then((found) => {
       latest = found
       return found

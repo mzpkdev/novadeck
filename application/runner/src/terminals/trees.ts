@@ -8,8 +8,14 @@ export type Member = { readonly pid: number; readonly startedAt: number }
 /** Runs Novadeck's relay with `args`, for its output; rejects where it can't run. */
 export type RunRelay = (relay: string, args: readonly string[]) => Promise<string>
 
+// Each run's bound: closing terminals as the runner shuts down waits on it, within the
+// time the app gives the runner to end (host/src/main/runner.ts).
 const runRelay: RunRelay = async (relay, args) =>
-  (await promisify(execFile)(relay, [...args], { windowsHide: true, timeout: 10_000 })).stdout
+  (await promisify(execFile)(relay, [...args], { windowsHide: true, timeout: 4_000 })).stdout
+
+/** How a tree is named to the relay: a process by its pid, or one read before by its start too. */
+const rootName = (root: number | Member): string =>
+  typeof root === "number" ? String(root) : `${root.pid}:${root.startedAt}`
 
 /** One relay run's worth of asks, made in the same tick. */
 type Batch<Ask, Answer> = { readonly asks: Ask[]; readonly done: Promise<Answer> }
@@ -24,19 +30,26 @@ type Batch<Ask, Answer> = { readonly asks: Ask[]; readonly done: Promise<Answer>
  * shuts down makes them. Undefined, or nothing ended, where the relay can't run.
  */
 export class Trees {
-  private reading: Batch<number, Map<number, readonly Member[]> | undefined> | undefined
+  private reading: Batch<string, Map<string, readonly Member[]> | undefined> | undefined
   private ending: Batch<Member, void> | undefined
+  /** The subcommands whose failure was logged, once each. */
+  private readonly failed = new Set<string>()
 
   constructor(
     private readonly relay: () => Promise<string | undefined>,
     private readonly run: RunRelay = runRelay,
   ) {}
 
-  /** The process `root` and every one under it, root first; undefined where unknown. */
-  async read(root: number): Promise<readonly Member[] | undefined> {
+  /**
+   * The process `root` and every one under it, root first; undefined where unknown. A
+   * root read before, named by its start, is walked from even once it has ended, so what
+   * it started since, or left behind, is found too.
+   */
+  async read(root: number | Member): Promise<readonly Member[] | undefined> {
     const batch = (this.reading ??= this.batch((roots) => this.readAll(roots), "reading"))
-    batch.asks.push(root)
-    return (await batch.done)?.get(root)
+    const name = rootName(root)
+    batch.asks.push(name)
+    return (await batch.done)?.get(name)
   }
 
   /** Ends each of `members` still running as the process it was; done once all are. */
@@ -60,14 +73,14 @@ export class Trees {
   }
 
   private async readAll(
-    roots: readonly number[],
-  ): Promise<Map<number, readonly Member[]> | undefined> {
+    roots: readonly string[],
+  ): Promise<Map<string, readonly Member[]> | undefined> {
     const relay = await this.relay()
     if (relay === undefined) return undefined
     try {
-      const output = await this.run(relay, ["tree", ...new Set(roots).values()].map(String))
-      return trees(output)
-    } catch {
+      return trees(await this.run(relay, ["tree", ...new Set(roots)]))
+    } catch (error) {
+      this.unavailable("tree", error)
       return undefined
     }
   }
@@ -75,19 +88,32 @@ export class Trees {
   private async endAll(members: readonly Member[]): Promise<void> {
     const relay = await this.relay()
     if (relay === undefined) return
-    const named = [...new Set(members.map(({ pid, startedAt }) => `${pid}:${startedAt}`))]
-    await this.run(relay, ["end", ...named]).catch(() => {})
+    const named = [...new Set(members.map(rootName))]
+    await this.run(relay, ["end", ...named]).catch((error: unknown) =>
+      this.unavailable("end", error),
+    )
+  }
+
+  // Each caller falls back where the relay fails, as taskkill; once a subcommand has failed,
+  // it says so, so a stale or blocked relay shows.
+  private unavailable(subcommand: string, error: unknown): void {
+    if (this.failed.has(subcommand)) return
+    this.failed.add(subcommand)
+    console.error(
+      `Novadeck's relay couldn't run "${subcommand}"; Novadeck falls back without it:`,
+      error,
+    )
   }
 }
 
-/** The relay's trees, by root, from its lines; one it couldn't read is left out. */
-export const trees = (output: string): Map<number, readonly Member[]> => {
-  const found = new Map<number, readonly Member[]>()
+/** The relay's trees, by root as it was named, from its lines; one it couldn't read is left out. */
+export const trees = (output: string): Map<string, readonly Member[]> => {
+  const found = new Map<string, readonly Member[]>()
   for (const line of output.split(/\r?\n/)) {
     if (!line.trim()) continue
     try {
       const { root, processes } = JSON.parse(line) as { root?: unknown; processes?: unknown }
-      if (typeof root !== "number" || !Array.isArray(processes)) continue
+      if (typeof root !== "string" || !Array.isArray(processes)) continue
       found.set(
         root,
         processes.filter(

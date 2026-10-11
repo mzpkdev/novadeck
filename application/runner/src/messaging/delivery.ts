@@ -143,6 +143,11 @@ export const maxContinuations = 2
  */
 export const submitWindowMs = 2_000
 
+// How much later than `firedAt` a hook may have fired, as the clocks differ: a process's
+// creation time moves in Windows' clock ticks (about 15.6 ms), the person's Enter in the
+// runner's finer one, so a hook fired within the Enter's tick can read before it.
+const firedClockMs = 50
+
 /**
  * When a hook fired, as its delivery event tells, and the window the person's Enter
  * before it is judged in: by its shell's start where told; otherwise by when its relay
@@ -156,7 +161,7 @@ export const firing = (
 ): { readonly at: number; readonly windowMs: number } =>
   firedAt === undefined
     ? { at, windowMs: submitWindowMs + slackMs }
-    : { at: firedAt, windowMs: submitWindowMs }
+    : { at: firedAt + firedClockMs, windowMs: submitWindowMs + firedClockMs }
 
 /**
  * A key the person sent, as `terminals/keys.ts` tells it: a bare Enter, a harness's queue

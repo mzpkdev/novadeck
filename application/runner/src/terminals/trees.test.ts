@@ -6,14 +6,14 @@ import { describe, expect, it } from "../test.js"
 import { anyRunning, trees, Trees, type RunRelay } from "./trees.js"
 
 // A relay that answers from a table of trees and records how it was run.
-const fake = (known: Record<number, { pid: number; startedAt: number }[]>) => {
+const fake = (known: Record<string, { pid: number; startedAt: number }[]>) => {
   const runs: string[][] = []
   const run: RunRelay = async (_relay, args) => {
     runs.push([...args])
     if (args[0] !== "tree") return ""
     return args
       .slice(1)
-      .map((root) => JSON.stringify({ root: Number(root), processes: known[Number(root)] ?? [] }))
+      .map((root) => JSON.stringify({ root, processes: known[root] ?? [] }))
       .join("\n")
   }
   return { runs, run }
@@ -65,15 +65,45 @@ describe("Windows process trees", () => {
     await failing.end([{ pid: 10, startedAt: 1 }])
   })
 
+  it("are read again from a member by its start, once it may have ended", async () => {
+    const { runs, run } = fake({ "11:200": [{ pid: 14, startedAt: 400 }] })
+    const read = new Trees(async () => "relay.exe", run)
+    expect(await read.read({ pid: 11, startedAt: 200 })).toEqual([{ pid: 14, startedAt: 400 }])
+    expect(runs).toEqual([["tree", "11:200"]])
+  })
+
   it("leave out what isn't a line of the relay's", () => {
     const output = [
-      '{"root":10,"processes":[{"pid":10,"startedAt":1},{"pid":"x","startedAt":2}]}',
+      '{"root":"10","processes":[{"pid":10,"startedAt":1},{"pid":"x","startedAt":2}]}',
       "garbled",
-      '{"root":"20","processes":[]}',
+      '{"root":20,"processes":[]}',
       "",
     ].join("\r\n")
-    expect([...trees(output)]).toEqual([[10, [{ pid: 10, startedAt: 1 }]]])
+    expect([...trees(output)]).toEqual([["10", [{ pid: 10, startedAt: 1 }]]])
   })
+
+  it.runIf(process.platform === "win32")(
+    "find what an ended process left running, read again from it by its start",
+    async () => {
+      // cmd starts a ping, then is ended alone, as a shell is: the ping runs on, orphaned.
+      const shell = spawn("cmd.exe", ["/d", "/c", "ping -n 60 127.0.0.1 >nul"], {
+        stdio: "ignore",
+        windowsHide: true,
+      })
+      const read = new Trees(async () => relayPath)
+      await expect
+        .poll(async () => (await read.read(shell.pid!))?.length ?? 0, { timeout: 10_000 })
+        .toBeGreaterThanOrEqual(3)
+      const root = (await read.read(shell.pid!))![0]!
+      process.kill(shell.pid!)
+      await expect.poll(() => anyRunning([root]), { timeout: 10_000 }).toBe(false)
+      const left = (await read.read(root)) ?? []
+      expect(left.length).toBeGreaterThan(0)
+      expect(left.every(({ pid }) => pid !== root.pid)).toBe(true)
+      await read.end(left)
+      await expect.poll(() => anyRunning(left), { timeout: 10_000 }).toBe(false)
+    },
+  )
 
   it.runIf(process.platform === "win32")(
     "end a tree the relay read, programs it started included",
