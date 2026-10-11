@@ -560,8 +560,8 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
 
   context("as root", () => {
     it("installs for root's own home, with or without a SUDO_UID of 0", () => {
-      for (const sudoUid of [undefined, "0"]) {
-        const result = run({ root: true, sudo: false, sudoUid })
+      for (const extra of [{}, { sudoUid: "0" }]) {
+        const result = run({ root: true, sudo: false, ...extra })
         expect(result.status).toBe(0)
         expect(existsSync(join(result.home, ".local/bin/novadeck"))).toBe(true)
       }

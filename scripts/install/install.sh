@@ -336,7 +336,9 @@ main() {
 
   check_platform "$repository"
 
-  [ -n "${HOME:-}" ] && [ -d "$HOME" ] || fail "HOME is not set to an existing folder."
+  if [ -z "${HOME:-}" ] || [ ! -d "$HOME" ]; then
+    fail "HOME is not set to an existing folder."
+  fi
   # Run through sudo, whether plain (HOME is root's) or with -E (HOME is the user's), this
   # would write everything as root, out of reach of the user's own updates and re-runs, and
   # Electron will not start as root with a sandbox. Real root logins set no SUDO_UID.
