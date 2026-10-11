@@ -455,9 +455,11 @@ for (const setup of setups) {
     }) => {
       const t1 = await start(run, setup)
       const file = (name: string) => join(run.sandbox.project, name)
+      // Once it holds what the command wrote: the shell creates the file before it writes
+      // to it, and on a Windows runner it was read in between, empty.
       const made = (name: string) =>
         t1.poll(
-          () => (existsSync(file(name)) ? readFileSync(file(name), "utf8") : undefined),
+          () => (existsSync(file(name)) && readFileSync(file(name), "utf8").trim()) || undefined,
           `${name} to be made by the shell command`,
           15_000,
         )
