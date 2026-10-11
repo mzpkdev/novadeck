@@ -81,6 +81,11 @@ export type DeckTerminal = {
    */
   readonly press: (keys: string) => void
   /**
+   * Waits until its screen has settled, as `confirm` does before its Enter: for keys that
+   * answer a dialog without Enter, which it may drop while it is still being drawn.
+   */
+  readonly settled: () => Promise<void>
+  /**
    * Presses Escape on its own: sends `keys` (`\x1b` unless given),
    * and resolves only `escapeWindowMs` later. Escapes go one at a time, each waiting for
    * the one before, so two `escape()` calls never reach the TUI as one Esc-Esc, even
@@ -397,8 +402,12 @@ export const terminalsReport = (
 
 /**
  * Counts what the screen shows of `shows`, runs `trigger`, waits until the screen shows it
- * once more, and only then presses Enter: Enter follows only what `trigger` was seen to
- * bring, never what was there before it. Fails after the timeout, with the screen.
+ * once more and has settled, and only then presses Enter: Enter follows only what
+ * `trigger` was seen to bring, never what was there before it. Settled is two reads
+ * `stillMs` apart alike, as Novadeck's own answers wait: Claude Code drops an Enter
+ * pressed as its permission dialog first draws, while its PermissionRequest hook still
+ * runs (seen 2026-10-11, 2.1.287, 25 ms after, on a fast Mac). Fails after the timeout,
+ * with the screen.
  */
 export const enterAfter = async (
   { handle, screen, enter, state, trail, fault }: Screen,
@@ -416,8 +425,41 @@ export const enterAfter = async (
   ).catch(async (error: unknown) => {
     throw await withScreen(error, screen, state, trail)
   })
+  await settle(screen, `${handle}'s screen to settle on ${String(shows)}`, timeoutMs, fault).catch(
+    async (error: unknown) => {
+      throw await withScreen(error, screen, state, trail)
+    },
+  )
   enter()
 }
+
+/**
+ * Waits until two reads of the screen `stillMs` apart are alike, as Novadeck's own answers
+ * wait before their keys; fails after the timeout.
+ */
+const settle = async (
+  screen: () => Promise<string>,
+  what: string,
+  timeoutMs = 30_000,
+  fault?: () => string | undefined,
+): Promise<void> => {
+  let last = await screen()
+  await poll(
+    async () => {
+      await new Promise((resolve) => setTimeout(resolve, stillMs))
+      const now = await screen()
+      const still = now === last
+      last = now
+      return still ? true : undefined
+    },
+    what,
+    timeoutMs,
+    fault,
+  )
+}
+
+/** How far apart two reads of a screen that say it settled are, in milliseconds. */
+const stillMs = 150
 
 /**
  * Polls `read` until it gives a value, and returns it; fails with `what` after the
@@ -701,6 +743,12 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         await enterAfter(entered, text, async () => send(text))
       },
       confirm: (shows, trigger, { timeoutMs } = {}) => enterAfter(view, shows, trigger, timeoutMs),
+      settled: () =>
+        settle(look, `${summary.handle}'s screen to settle`, 30_000, fault).catch(
+          async (error: unknown) => {
+            throw await explain(error)
+          },
+        ),
       press: (keys) => {
         refuseEnter(keys)
         send(keys)
