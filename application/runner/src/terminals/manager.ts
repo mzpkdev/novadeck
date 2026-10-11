@@ -3863,7 +3863,12 @@ export class Terminals {
    * Escape ended, where no Stop came for it and the harness keeps no records that would
    * say how it ended: undefined where there is nothing to read, and the read's undefined
    * where it holds none, can't be read, or the screen doesn't show the turn went on
-   * uninterrupted, as Antigravity may say it stopped under a reply it kept. Only on
+   * uninterrupted, as Antigravity may say it stopped under a reply it kept. The screen is
+   * what tells: an Escape between a response's words and the tool call after them leaves
+   * the words recorded alone as the response, just as a reply that won is recorded, and
+   * Antigravity drew its interruption under them every time (probed 2026-10-11, 1.2.14,
+   * the call streamed 1.5 s after the words); a step's time is no help, as the cut-off
+   * one came 56 to 94 ms after the key, where a reply that just won lands too. Only on
    * Windows, the one place a reply that won the race was seen to fire no Stop (Antigravity
    * 1.2.14): elsewhere its Stop tells.
    */
