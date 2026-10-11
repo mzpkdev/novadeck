@@ -163,7 +163,16 @@ describe("an answer's hold of the person's input", () => {
       { terminalId: terminal.id, data: command({ type: "write", data: "\x1b[?1003h\x1b[?1006h" }) },
       "creator",
     )
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // Until the screen shows it asked, however long a busy machine's child takes: only
+    // then is the wheel's report one the TUI asked for, rather than typed text.
+    const { screen } = (
+      manager as unknown as {
+        records: Map<string, { screen: { modes: { mouseTrackingMode: string } } }>
+      }
+    ).records.get(terminal.id)!
+    await vi.waitFor(() => expect(screen.modes.mouseTrackingMode).toBe("any"), {
+      timeout: 5_000,
+    })
     // An answer's hold, as the queue gives it: its keys deferred until delivered.
     const hold = (
       manager as unknown as {
