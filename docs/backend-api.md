@@ -548,9 +548,11 @@ work with it, and an option without a value would be read as the agent.
      and the kernel on macOS, named by the path each was started by, and on Windows from
      a process snapshot, named by their program without `.exe`, where the walk stops at
      a recorded parent that started after its child, another process given an ended
-     parent's pid. The runner names the agent's process from them, and when the agent
-     fired the hook (`firedAt`): when the ancestor just below the agent started, the
-     shell the hook runs in, which on Windows comes seconds before `seq`.
+     parent's pid. The runner names the agent's process from them, and on Windows, where
+     a hook's shell starts slowly, when the agent fired the hook (`firedAt`): when the
+     ancestor just below the agent started, the shell the hook runs in, seconds before
+     `seq`. Elsewhere `seq` tells, and the ancestor below the agent may be a long-lived
+     process of its own, as under a wrapper script that doesn't `exec` it.
    - `env` holds the variables `relay.json` names, by name, as the hook found them:
      `CLAUDE_PID`, `CURSOR_VERSION` and `CODEX_THREAD_ID`.
    - `payload` is the agent's JSON as text, unread. The runner prunes it.

@@ -698,17 +698,17 @@ describe("reading a relay's hook", () => {
       { pid: 20, name: "pwsh", startedAt: 400 },
       { pid: 30, name: "codex", startedAt: 100 },
     ]
-    expect(relayHook(hook({ ancestors }))?.report.firedAt).toBe(400)
+    expect(relayHook(hook({ ancestors }), "win32")?.report.firedAt).toBe(400)
     // Claude Code, by its own pid.
     const claude = hook({ agent: "claude", ancestors, env: { CLAUDE_PID: "30" } })
-    expect(relayHook(claude)?.report.firedAt).toBe(400)
+    expect(relayHook(claude, "win32")?.report.firedAt).toBe(400)
     // The relay started by the agent itself: its own start.
     const direct = [{ pid: 30, name: "codex", startedAt: 100 }]
-    expect(relayHook(hook({ ancestors: direct }))?.report.firedAt).toBe(1_000)
+    expect(relayHook(hook({ ancestors: direct }), "win32")?.report.firedAt).toBe(1_000)
   })
 
   it("tells no firing where it can't, or where the shell's start makes no sense", () => {
-    const firedAt = (ancestors: object[]) => relayHook(hook({ ancestors }))?.report.firedAt
+    const firedAt = (ancestors: object[]) => relayHook(hook({ ancestors }), "win32")?.report.firedAt
     expect(firedAt(shell())).toBeUndefined()
     // Not the agent's: no firing either.
     expect(firedAt([{ pid: 20, name: "pwsh", startedAt: 400 }])).toBeUndefined()
@@ -717,6 +717,17 @@ describe("reading a relay's hook", () => {
     expect(firedAt(shell(1_200))).toBeUndefined()
     // Longer before it than any shell takes to start.
     expect(firedAt(shell(1_000 - 61_000))).toBeUndefined()
+  })
+
+  it("tells no firing where a shell starts at once, as the hook's own start tells", () => {
+    // Under a wrapper named codex that doesn't exec it, the agent itself is the ancestor
+    // below the one named codex, started long before the hook.
+    const wrapped = [
+      { pid: 20, name: "node", startedAt: 400 },
+      { pid: 30, name: "codex", startedAt: 300 },
+    ]
+    for (const platform of ["linux", "darwin"] as const)
+      expect(relayHook(hook({ ancestors: wrapped }), platform)?.report.firedAt).toBeUndefined()
   })
 
   it("cuts a payload too large to keep harder, and drops one too large even then", async () => {

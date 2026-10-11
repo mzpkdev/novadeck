@@ -137,9 +137,9 @@ export const maxContinuations = 2
 
 /**
  * How soon after the person's bare Enter a root turn's hook must fire for the turn to be
- * their submission, in milliseconds, judged by when its agent fired it: when the hook's
- * shell started (`firedAt`, see shell/hook.ts), before that shell's own start, which on
- * Windows takes seconds on a busy machine.
+ * their submission, in milliseconds, judged by when its agent fired it: on Windows when
+ * the hook's shell started (`firedAt`, see shell/hook.ts), before that shell's own start,
+ * which takes seconds on a busy machine; elsewhere when the hook started.
  */
 export const submitWindowMs = 2_000
 

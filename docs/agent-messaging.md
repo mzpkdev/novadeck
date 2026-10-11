@@ -524,11 +524,12 @@ the opener's, and `describe` names the caller's own terminal (see
   Codex's Tab, its profile's queue key.
 - **The person submits** when their bare Enter is followed by a root turn whose hook
   fired within about 2 s of it, with no other input from them after that Enter and
-  before that hook fired, and the turn's decoder says a prompt started it. A hook fires
-  when its agent starts the shell it runs in, which the relay reads from the processes it
-  runs under (`firedAt`, see backend-api.md, "Relay protocol"): on Windows that shell
+  before that hook fired, and the turn's decoder says a prompt started it. On Windows a
+  hook fires when its agent starts the shell it runs in, which the relay reads from the
+  processes it runs under (`firedAt`, see backend-api.md, "Relay protocol"): that shell
   (PowerShell, or cmd for Antigravity) takes seconds to start on a busy machine, before
-  the hook itself starts. Where the relay can't tell, the hook is judged by when it
+  the hook itself starts. Elsewhere a shell starts at once, and the hook's own start
+  tells. Where the relay can't tell, the hook is judged by when it
   started, and the window grows by how long the platform's hook shells may take to start
   (20 s more on Windows, none elsewhere): a turn the agent starts by itself soon after a
   bare Enter may then pass for the person's. Left, Home

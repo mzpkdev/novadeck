@@ -1,5 +1,6 @@
 import { agentName } from "@novadeck/protocol"
 
+import { hookShellSlackMs } from "../harnesses/harness.js"
 import { harnesses } from "../harnesses/registry.js"
 import type { Report } from "./reports.js"
 
@@ -91,16 +92,23 @@ const maxShellMs = 60_000
 const clockSlackMs = 50
 
 /**
- * When the agent fired the hook: when the process it started for the hook began, the
+ * When the agent fired the hook, where the shell it runs hooks in starts slowly
+ * (`hookShellSlackMs`, Windows): when the process it started for the hook began, the
  * ancestor just below the agent's own, or the relay itself where the agent started it
- * directly. Undefined where the agent's process isn't among them, its child's start
- * isn't told, or the start makes no sense for a hook that started at `seq`.
+ * directly. Every agent there starts its hook's shell itself, an npm or scoop wrapper
+ * around it included. Elsewhere a shell starts at once, so `seq` tells, and the
+ * ancestor below the agent may be a long-lived process of its own, as under a wrapper
+ * script that doesn't `exec` it. Undefined there, and where the agent's process isn't
+ * among them, its child's start isn't told, or the start makes no sense for a hook that
+ * started at `seq`.
  */
 export const firedAtOf = (
   instance: string | null,
   seq: number,
   ancestors: readonly Ancestor[],
+  platform: NodeJS.Platform = process.platform,
 ): number | undefined => {
+  if (hookShellSlackMs(platform) === 0) return undefined
   const index =
     instance === null ? -1 : ancestors.findIndex((each) => String(each.pid) === instance)
   if (index < 0) return undefined
@@ -125,7 +133,10 @@ const instanceOf = (agent: string, claudePid: string | undefined, ancestors: Anc
  * that isn't a hook of a known agent, or whose payload isn't the JSON object agents send,
  * as the hook then reports nothing.
  */
-export const relayHook = (value: Fields): RelayHook | undefined => {
+export const relayHook = (
+  value: Fields,
+  platform: NodeJS.Platform = process.platform,
+): RelayHook | undefined => {
   const agent = agentName.safeParse(value.agent)
   const { seq, payload: sent } = value
   if (!agent.success || typeof seq !== "number" || !Number.isFinite(seq)) return undefined
@@ -148,7 +159,7 @@ export const relayHook = (value: Fields): RelayHook | undefined => {
   const named = instanceOf(agent.data, claudePid, ancestors)
   const instance = named !== null && /^\d{1,10}$/.test(named) ? named : null
   const codexThread = text(env.CODEX_THREAD_ID, 128)
-  const firedAt = firedAtOf(instance, seq, ancestors)
+  const firedAt = firedAtOf(instance, seq, ancestors, platform)
   const report = {
     agent: agent.data,
     event,
