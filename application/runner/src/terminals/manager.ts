@@ -83,7 +83,7 @@ import {
   type Report,
   type Reports,
 } from "../shell/reports.js"
-import { refreshPath } from "../shell/windows-path.js"
+import { pathKey, refreshPath } from "../shell/windows-path.js"
 import type { HintFacts } from "../voice/hint.js"
 import { Answers, type AnswerHost, type AnswerOptions } from "./answers.js"
 import {
@@ -729,6 +729,8 @@ export class Terminals {
       hooksTrusted: options.hooksTrusted,
       items: options.items,
     }
+    // Read once now, so the first terminal doesn't wait for it; see `shellEnvironment`.
+    if (this.options.freshPath) void this.shellEnvironment()
     // Child programs do not need the runner's network capability, nor the identity of a
     // Novadeck terminal the runner itself was started from.
     for (const name of inherited) delete this.options.env[name]
@@ -840,7 +842,7 @@ export class Terminals {
       const origin = await this.directory(input.cwd)
       // A saved directory that is gone falls back to the one asked for.
       const cwd = saved ? await this.directory(saved.cwd).catch(() => origin) : origin
-      const shell = await this.executable(cwd)
+      const shell = await this.executable(cwd, environment)
       const integration = await this.shellIntegration()
       const connected = await this.connected(input.resume)
       const env = await environment
@@ -1699,7 +1701,7 @@ export class Terminals {
       const cwd = await this.directory(record.summary.cwd).catch(() =>
         this.directory(record.origin),
       )
-      const shell = await this.executable(cwd)
+      const shell = await this.executable(cwd, environment)
       const integration = await this.shellIntegration()
       const connected = await this.connected(input.resume)
       const env = await environment
@@ -2794,14 +2796,14 @@ export class Terminals {
       : Promise.resolve(this.options.env)
   }
 
-  private async executable(cwd: string): Promise<string> {
+  /** The shell's program, a name found on the PATH the new shell gets, as `environment`. */
+  private async executable(cwd: string, environment: Promise<NodeJS.ProcessEnv>): Promise<string> {
     const shell = this.options.shell
-    const paths =
-      isAbsolute(shell) || shell.includes("/") || shell.includes("\\")
-        ? [resolvePath(cwd, shell)]
-        : (this.options.env.PATH ?? this.options.env.Path ?? "")
-            .split(delimiter)
-            .map((path) => resolvePath(cwd, path, shell))
+    const named = !(isAbsolute(shell) || shell.includes("/") || shell.includes("\\"))
+    const env = named ? await environment : this.options.env
+    const paths = named
+      ? (env[pathKey(env)] ?? "").split(delimiter).map((path) => resolvePath(cwd, path, shell))
+      : [resolvePath(cwd, shell)]
     const suffixes =
       process.platform === "win32"
         ? ["", ...(this.options.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")]
