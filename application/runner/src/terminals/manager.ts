@@ -729,11 +729,12 @@ export class Terminals {
       hooksTrusted: options.hooksTrusted,
       items: options.items,
     }
-    // Read once now, so the first terminal doesn't wait for it; see `shellEnvironment`.
-    if (this.options.freshPath) void this.shellEnvironment()
     // Child programs do not need the runner's network capability, nor the identity of a
     // Novadeck terminal the runner itself was started from.
     for (const name of inherited) delete this.options.env[name]
+    // Read once now, so the first terminal doesn't wait for it; see `shellEnvironment`.
+    // After the deletes, as the PowerShell that reads it gets this environment.
+    if (this.options.freshPath) void this.shellEnvironment()
     this.transcripts = options.transcripts ?? true
     this.messaging = new Messaging({
       ...(options.mailbox && { records: options.mailbox }),
