@@ -4160,8 +4160,15 @@ export class Terminals {
       // Windows hangs up no group: closing the console ends only what is attached to it,
       // never what a program there started apart from it, as an agent's hooks, which then
       // run on (a PowerShell 7 hook whose Codex was closed as it started stayed there). The
-      // terminal's whole tree is ended first, while it still leads back to its shell.
-      if (process.platform === "win32" && child.pid > 0 && drawnTerminals.has(child))
+      // terminal's whole tree is ended first, while it still leads back to its shell. Not
+      // once the shell has exited, its exit only waiting behind draws: its id may name
+      // another process by now.
+      if (
+        process.platform === "win32" &&
+        child.pid > 0 &&
+        drawnTerminals.has(child) &&
+        !record.exitQueued
+      )
         await endTree(child.pid).catch(() => {})
       try {
         child.kill()
