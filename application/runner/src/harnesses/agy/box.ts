@@ -17,8 +17,9 @@ export const shellFooter = (rows: readonly string[]): boolean => {
  * On Windows its shell mode runs a command in cmd (probed 2026-10-10, 1.2.14), which runs
  * only its first line: the lines are joined with `&`, which runs each after the one before
  * whatever that returned, as sh runs lines. A blank line joins nothing. Undefined for one
- * whose lines can't be joined so and mean the same: a remark (`rem`, `::`) would swallow
- * every line after it, a trailing `^` escape the joining `&`, a block (`if x (` … `)`)
+ * whose lines can't be joined so and mean the same: a remark (`rem`, `@rem`, `rem.`) or a
+ * label (`:x`, `::`) would swallow every line after it, a trailing `^` escape the joining
+ * `&`, a block (`if x (` … `)`) or a line ending or starting in `&`, `&&`, `|` or `||`
  * become a syntax error, and a continued line's indent be lost.
  */
 export const shellCommandOf = (
@@ -31,10 +32,9 @@ export const shellCommandOf = (
   const unjoinable = lines.some((line, at) => {
     const text = line.trim()
     return (
-      /^(rem(\s|$)|::)/i.test(text) ||
-      text.endsWith("^") ||
-      text.endsWith("(") ||
-      text.startsWith(")") ||
+      /^(@?rem(\W|$)|:)/i.test(text) ||
+      /[\^(&|]$/.test(text) ||
+      /^[)&|]/.test(text) ||
       (at > 0 && lines[at - 1]!.trimEnd().endsWith("^"))
     )
   })

@@ -377,6 +377,14 @@ describe("the command Antigravity's shell mode is given", () => {
       "echo a ^\n  continued",
       "if exist a (\necho yes\n)",
       "echo a\n) else (",
+      "echo a\n@rem then b\necho b",
+      "echo a\nrem.then b\necho b",
+      "echo a\nREM/then b\necho b",
+      "echo a\n:label\necho b",
+      "echo a &\necho b",
+      "echo a &&\necho b",
+      "echo a |\nfind a",
+      "echo a\n|| echo b",
     ])
       expect(agyShellCommand(command, "win32"), command).toBeUndefined()
     // A remark alone, or one word that only starts like one, runs as written.
