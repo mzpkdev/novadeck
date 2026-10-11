@@ -52,7 +52,7 @@ export const agy: AgentSetup = {
   },
   // Its login on Windows, through go-keyring's Credential Manager store, as
   // `gemini:antigravity` (seen 2026-10-09, 1.2.14 and 1.3.2).
-  credentials: [/^gemini:/i, /antigravity/i],
+  credentials: [/^gemini:antigravity$/i],
   hosts: [
     "generativelanguage.googleapis.com",
     "cloudcode-pa.googleapis.com",
