@@ -160,12 +160,12 @@ network:
   `NODE_USE_ENV_PROXY=1` so Node's own `fetch` takes it too. It refuses each tunnel and
   each request for another server and records its host, never its path. Only loopback
   is exempt. On its own, that blocks egress only for programs that honour the proxy. In
-  CI the suite also runs in a network namespace whose only interface is loopback
+  CI on Linux the suite also runs in a network namespace whose only interface is loopback
   (`scripts/e2e/isolated/main.ts`), so a program that connects directly has no route out
   either, and the proxy still records the hosts the harnesses tried. The harnesses are
   installed before that, outside the namespace, by `scripts/e2e/install/main.ts`, which
   installs those `NOVADECK_E2E_AGENTS` names into the cache as the suite would; the
-  suite's own install then finds them done. Every CI job runs this way, the nightly one
+  suite's own install then finds them done. Every Linux CI job runs this way, the nightly one
   against `latest` included: with `NOVADECK_E2E_HARNESS=latest` the pre-install records
   the newest version it resolved in the cache, and the run inside the namespace reads it
   there instead of looking it up. To run the suite the same way locally:
@@ -250,8 +250,8 @@ network:
   test end early, its teardown does the same, and fails the test for any process it had
   to end. On Windows, which has no `/proc`, a small lister (`reap-lister.cs`) finds
   them: compiled once by its source into the system's temporary folder with the .NET
-  Framework's `csc.exe`, its hash recorded beside it and checked before each run, so a
-  program there that isn't the one compiled is compiled again. It lists the processes
+  Framework's `csc.exe`, and named by its own hash too, checked before it runs, so a
+  program there that isn't what its name says is compiled again. It lists the processes
   that started at or after the sandbox and reads each one's working folder and
   environment from its process parameters, for a folder inside the sandbox or a HOME or
   USERPROFILE that is its home, printing only pids, names and starts. As it reads other

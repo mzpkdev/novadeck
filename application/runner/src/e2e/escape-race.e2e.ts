@@ -21,11 +21,17 @@ import { own, start } from "./scenarios.js"
 // before the key; Antigravity's reply wins the key let go together with it, the Stop told after.
 
 const attempts = 12
-// How long before the key a turn's end still counts as racing it.
+// How long before the key a turn's end still counts as racing it: Codex's Stop, the
+// earliest of the three, came up to 200 ms ahead of a key its reply beat (probed
+// 2026-10-07), so 300 keeps that with room, where a turn over half a second before the
+// key had plainly ended. It is the test's own measure of a race, not the runner's: how
+// long the runner waits for a verdict (`escapeVerdictMs`) has no part in it.
 const raceMs = 300
 // On Windows the key won every attempt with Linux's leads, and Codex's with leads up to
 // 500 ms, while with a second or more its turn had ended before the key (probed
-// 2026-10-09 and 2026-10-11): longer ones are tried there, Codex's between the two.
+// 2026-10-09 and 2026-10-11): longer ones are tried there, Codex's between the two. A
+// machine where Codex ends its turn far sooner may see every attempt
+// end before the key; the test then fails saying so, with each lead and how it went.
 const leads: { readonly [agent: string]: readonly number[] } =
   process.platform === "win32"
     ? { claude: [20, 200, 500], codex: [550, 650, 750, 850, 950], agy: [0, 200, 500] }

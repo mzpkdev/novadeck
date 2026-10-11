@@ -92,32 +92,35 @@ const linux: Table = {
 // The lister (reap-lister.cs), compiled once by its source into the system's temporary
 // folder, with the C# compiler every Windows has in its .NET Framework: one quick process
 // a listing, where starting PowerShell for each took most of a minute's test on a CI
-// runner. Its hash, recorded beside it once compiled, is checked before it is run: a
-// program there that isn't the one compiled, as a half-written one, is compiled again.
+// runner. Each compiled program is named by its own hash too, checked before it is run:
+// one there that isn't what its name says, as a half-written one, is passed over, and a
+// run that compiles another, as two at once may, never makes one already there wrong.
 const lister = readFileSync(new URL("reap-lister.cs", import.meta.url), "utf8")
-const listerProgram = join(
-  tmpdir(),
-  `novadeck-e2e-reap-${createHash("sha256").update(lister).digest("hex").slice(0, 16)}.exe`,
-)
-const listerHash = `${listerProgram}.sha256`
+const listerName = `novadeck-e2e-reap-${createHash("sha256").update(lister).digest("hex").slice(0, 16)}`
 
 const hashOf = (file: string): string =>
-  createHash("sha256").update(readFileSync(file)).digest("hex")
+  createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 16)
 
-// Whether the program there is the one compiled, as its recorded hash says.
-const intact = (): boolean => {
-  try {
-    return hashOf(listerProgram) === readFileSync(listerHash, "utf8").trim()
-  } catch {
-    return false
+// A program of this source there, as its name says, if any.
+const intact = (): string | undefined => {
+  const named = new RegExp(`^${listerName}-([0-9a-f]{16})\\.exe$`)
+  for (const name of readdirSync(tmpdir())) {
+    const hash = named.exec(name)?.[1]
+    if (!hash) continue
+    try {
+      if (hashOf(join(tmpdir(), name)) === hash) return join(tmpdir(), name)
+    } catch {
+      // Gone meanwhile, or not readable: another.
+    }
   }
+  return undefined
 }
 
 // Why the lister can't be run, with what usually causes it on a developer's machine: a
 // program that reads every process's memory is what an antivirus quarantines.
-const blocked = (cause: unknown): Error =>
+const blocked = (program: string, cause: unknown): Error =>
   new Error(
-    `The e2e suite's process lister (${listerProgram}) could not run: ${
+    `The e2e suite's process lister (${program}) could not run: ${
       cause instanceof Error ? cause.message : String(cause)
     }. Windows Defender or another antivirus may have quarantined it, as it reads other processes' memory; allow it, or exclude ${join(tmpdir(), "novadeck-e2e-reap-*.exe")}, and run again.`,
     { cause },
@@ -126,10 +129,11 @@ const blocked = (cause: unknown): Error =>
 let compiled: Promise<string> | undefined
 const compiledLister = (): Promise<string> =>
   (compiled ??= (async () => {
-    if (intact()) return listerProgram
+    const there = intact()
+    if (there) return there
     const root = process.env.SystemRoot ?? "C:\\Windows"
     const csc = join(root, "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe")
-    const staging = `${listerProgram}.${randomBytes(6).toString("hex")}`
+    const staging = join(tmpdir(), `${listerName}.${randomBytes(6).toString("hex")}`)
     writeFileSync(`${staging}.cs`, lister)
     try {
       await promisify(execFile)(
@@ -137,22 +141,16 @@ const compiledLister = (): Promise<string> =>
         ["/nologo", "/target:exe", "/optimize", `/out:${staging}.exe`, `${staging}.cs`],
         { windowsHide: true, timeout: 120_000 },
       )
-      const hash = hashOf(`${staging}.exe`)
-      // Another run may be using one there meanwhile, the same program, checked: it stays.
-      try {
-        renameSync(`${staging}.exe`, listerProgram)
-        writeFileSync(listerHash, hash)
-      } catch (cause) {
-        if (!intact()) throw cause
-      }
+      const program = join(tmpdir(), `${listerName}-${hashOf(`${staging}.exe`)}.exe`)
+      renameSync(`${staging}.exe`, program)
+      return program
     } catch (cause) {
       compiled = undefined
-      throw blocked(cause)
+      throw blocked(join(tmpdir(), `${listerName}-*.exe`), cause)
     } finally {
       rmSync(`${staging}.cs`, { force: true })
       rmSync(`${staging}.exe`, { force: true })
     }
-    return listerProgram
   })())
 
 const windowsList = async (sandbox: Scope): Promise<readonly Process[]> => {
@@ -166,8 +164,8 @@ const windowsList = async (sandbox: Scope): Promise<readonly Process[]> => {
     ))
   } catch (cause) {
     // One removed or blocked since it was compiled is compiled again next time.
-    if (!intact()) compiled = undefined
-    throw blocked(cause)
+    compiled = undefined
+    throw blocked(program, cause)
   }
   const rows = JSON.parse(stdout) as {
     readonly pid: number

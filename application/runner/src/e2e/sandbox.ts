@@ -54,19 +54,6 @@ const onPath = (program: string): string | undefined =>
     .filter(Boolean)
     .find((folder) => existsSync(join(folder, program)))
 
-/**
- * Git for Windows' bash, which Claude Code on Windows runs its Bash tool in and won't
- * start without: `<Git>\bin\bash.exe`, found above the git on the tests' PATH, whether
- * that is `<Git>\cmd\git.exe`, as an install puts on PATH, `<Git>\bin\git.exe`, or
- * `<Git>\mingw64\bin\git.exe`, first on PATH under Git's own bash, as CI's steps run.
- */
-export const gitBash = (): string | undefined => {
-  const folder = onPath("git.exe")
-  if (!folder) return undefined
-  const above = [folder, dirname(folder), dirname(dirname(folder))]
-  return above.map((root) => join(root, "bin", "bash.exe")).find((path) => existsSync(path))
-}
-
 // What a program prints, or undefined should it fail.
 const asked = (program: string, args: readonly string[]): string | undefined => {
   try {
@@ -81,38 +68,83 @@ const asked = (program: string, args: readonly string[]): string | undefined => 
   }
 }
 
+// Asked once a run (see `toolFolders`).
+let git: { readonly found: string; readonly install: string | undefined } | undefined | null
+let pwsh: string | undefined | null
+
+/**
+ * The git on the tests' PATH: the folder it was found in, and Git for Windows' own
+ * install, `<Git>`, three folders above `git --exec-path`'s `<Git>\mingw64\libexec\git-core`
+ * where `<Git>\cmd\git.exe` is there. An MSYS2 or Cygwin git (`/usr/lib/git-core`) has
+ * none such, its install unknown.
+ */
+const gitOnPath = () => {
+  if (git !== undefined) return git ?? undefined
+  const found = onPath("git.exe")
+  const core = found && asked(join(found, "git.exe"), ["--exec-path"])
+  const install = core && dirname(dirname(dirname(core)))
+  git = found
+    ? {
+        found,
+        install: install && existsSync(join(install, "cmd", "git.exe")) ? install : undefined,
+      }
+    : null
+  return git ?? undefined
+}
+
+/**
+ * Git for Windows' bash, which Claude Code on Windows runs its Bash tool in and won't
+ * start without: `<Git>\bin\bash.exe` of the install the sandbox's PATH has (see
+ * `gitOnPath`). Where that isn't known, it is looked for above the folder the git was
+ * found in, whether `<Git>\cmd`, as an install puts on PATH, `<Git>\bin`, or
+ * `<Git>\mingw64\bin`, first on PATH under Git's own bash, as CI's steps run.
+ */
+export const gitBash = (): string | undefined => {
+  const found = gitOnPath()
+  if (!found) return undefined
+  const above = found.install
+    ? [found.install]
+    : [found.found, dirname(found.found), dirname(dirname(found.found))]
+  return above.map((root) => join(root, "bin", "bash.exe")).find((path) => existsSync(path))
+}
+
+/**
+ * PowerShell 7's own install, `$PSHOME`, which it prints as base64, as a pipe gets the
+ * console's code page, which would lose a folder's name past ASCII (`C:\Users\Łukasz`).
+ */
+const pwshHome = (): string | undefined => {
+  if (pwsh !== undefined) return pwsh ?? undefined
+  const found = onPath("pwsh.exe")
+  const printed =
+    found &&
+    asked(join(found, "pwsh.exe"), [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($PSHOME))",
+    ])
+  const home = printed && Buffer.from(printed, "base64").toString("utf8")
+  pwsh = home && existsSync(join(home, "pwsh.exe")) ? home : found ? found : null
+  return pwsh ?? undefined
+}
+
 /**
  * The folders of git and PowerShell 7 a sandbox on Windows puts on PATH: each one's own
  * install, as it reports it, never the folder the tests found it in, which may be a
  * package manager's (scoop's `shims`, Chocolatey's `bin`) holding a shim of every global
  * tool, a harness or Node among them. Not the programs alone, linked: Git's `cmd\git.exe`
  * finds the rest of Git by its own path, as `pwsh.exe` its libraries, and a shim its
- * `.shim`. Git's is `<Git>\cmd`, above `git --exec-path`'s `<Git>\mingw64\libexec\git-core`;
- * PowerShell's is `$PSHOME`. Asked once a run.
+ * `.shim`. Git's is `<Git>\cmd` (see `gitOnPath`); PowerShell's is `$PSHOME`. Where either
+ * can't be told, as for an MSYS2 git, the folder it was found in stands in, rather than
+ * leaving it off PATH for a harness to fail on later, unclearly.
  */
-let installs: readonly string[] | undefined
-const toolFolders = (): readonly string[] =>
-  (installs ??= [
-    (() => {
-      const found = onPath("git.exe")
-      const core = found && asked(join(found, "git.exe"), ["--exec-path"])
-      const cmd = core && join(dirname(dirname(dirname(core))), "cmd")
-      return cmd && existsSync(join(cmd, "git.exe")) ? cmd : undefined
-    })(),
-    (() => {
-      const found = onPath("pwsh.exe")
-      const home =
-        found &&
-        asked(join(found, "pwsh.exe"), [
-          "-NoLogo",
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          "$PSHOME",
-        ])
-      return home && existsSync(join(home, "pwsh.exe")) ? home : undefined
-    })(),
-  ].filter((folder) => folder !== undefined))
+const toolFolders = (): readonly string[] => {
+  const found = gitOnPath()
+  return [found && (found.install ? join(found.install, "cmd") : found.found), pwshHome()].filter(
+    (folder) => folder !== undefined,
+  )
+}
 
 // Windows' own variables, which its programs need to start and to find the system: the
 // machine's, never the developer's.
