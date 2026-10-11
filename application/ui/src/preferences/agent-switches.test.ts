@@ -12,7 +12,7 @@ const antigravity: AgentSwitch = {
 
 describe("An agent's switch", () => {
   it("says what its own status line keeps from messaging, while it is connected", () => {
-    expect(agentLimit(antigravity)).toMatch(/can't wake it until its first prompt/)
+    expect(agentLimit(antigravity)).toMatch(/can't wake it until you've sent it a prompt/)
     // The switch alone still reads as connected.
     expect(agentNote(antigravity)).toBeUndefined()
   })

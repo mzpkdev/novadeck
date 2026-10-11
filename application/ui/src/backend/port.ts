@@ -1,3 +1,4 @@
+import type { AgentIntegration } from "@novadeck/protocol"
 import type { ComponentType, ReactNode } from "react"
 
 import type { Companions } from "../model/companion"
@@ -248,7 +249,7 @@ export type AgentConnection = {
   // Why the last change did not work, for the person.
   readonly error?: string
   // What keeps its messaging from working whole while connected, as the runner says.
-  readonly limited?: "own-status-line" | undefined
+  readonly limited?: AgentIntegration["limited"]
 }
 
 // What the debug panel may ask of the workspace.

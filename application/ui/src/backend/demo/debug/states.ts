@@ -603,7 +603,7 @@ export const createDemoStates = (): DemoStates => {
         },
         {
           label: "Antigravity limited",
-          hint: "Antigravity shows connected, with a note under its name in Preferences that its own status line keeps messages from waking it before its first prompt",
+          hint: "Antigravity shows connected, with a warning under its name in Preferences: its own status line keeps messages from waking it until it has been sent a prompt",
           run: limitAntigravity,
         },
         { label: "Welcome", hint: "Opens the first-run dialog", run: openWelcome },

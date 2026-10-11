@@ -1,3 +1,4 @@
+import type { AgentConnection } from "../backend/port"
 import { Switch } from "../ui-toolkit/Switch"
 import { settingRowClasses, settingsCardClasses } from "./settings"
 
@@ -8,7 +9,7 @@ export type AgentSwitch = {
   readonly connected: boolean
   readonly busy: boolean
   readonly error?: string
-  readonly limited?: "own-status-line" | undefined
+  readonly limited?: AgentConnection["limited"]
 }
 
 export const agentLabels: Record<AgentSwitch["agent"], string> = {
@@ -32,10 +33,13 @@ export const agentNote = ({
 
 // What a connected agent's limit means for messaging with it, under its name; nothing
 // where none, or while it changes.
-export const agentLimit = ({ connected, busy, limited }: AgentSwitch): string | undefined => {
-  if (!connected || busy || limited === undefined) return undefined
-  return "It runs your own status line, which keeps Novadeck's out on Windows: messages can't wake it until its first prompt"
+const limitNotes: Readonly<Record<NonNullable<AgentSwitch["limited"]>, string>> = {
+  "own-status-line":
+    "It runs your own status line, which keeps Novadeck's out on Windows, so messages can't wake it until you've sent it a prompt. Removing your status line from its settings lifts this.",
 }
+
+export const agentLimit = ({ connected, busy, limited }: AgentSwitch): string | undefined =>
+  !connected || busy || limited === undefined ? undefined : limitNotes[limited]
 
 // One switch per agent: on installs Novadeck's plugin into it, off removes it. An agent
 // that is not installed, or one mid-change, cannot be switched.
