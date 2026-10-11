@@ -38,10 +38,10 @@ const memory = (
   }
 }
 
-describe("whether cmd prints of its own before a command", () => {
-  // A stand-in for cmd, as an AutoRun of `chcp 65001` without `>nul` makes it, and not.
-  const node = (script: string) => ({ program: process.execPath, args: ["-e", script] })
+// A stand-in for cmd, as an AutoRun of `chcp 65001` without `>nul` makes it, and not.
+const node = (script: string) => ({ program: process.execPath, args: ["-e", script] })
 
+describe("whether cmd prints of its own before a command", () => {
   it("is any output at all, a line break included", async () => {
     await expect(cmdPrints(node("process.stdout.write('Active code page: 65001.')"))).resolves.toBe(
       true,

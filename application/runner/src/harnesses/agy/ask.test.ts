@@ -289,18 +289,20 @@ describe("Antigravity's PreToolUse answer", () => {
   it("is left unregistered on Windows where cmd prints first, so Antigravity's policy asks", () => {
     // No answer after an AutoRun's output reads as JSON, which let every tool run unasked
     // (probed 2026-10-11, 1.2.14).
-    const events = (platform: NodeJS.Platform) =>
-      Object.keys(
-        (
-          JSON.parse(
-            agy
-              .files(platform, { mcp: { command: "mcp" } }, { cmdPrints: true })
-              .find(({ path }) => path === "hooks.json")!.content,
-          ) as { novadeck: object }
-        ).novadeck,
-      )
-    expect(events("win32")).toEqual(["PreInvocation", "Stop", "PostToolUse"])
+    expect(eventsWhereCmdPrints("win32")).toEqual(["PreInvocation", "Stop", "PostToolUse"])
     // Elsewhere hooks run in sh, where cmd's AutoRun has no part.
-    expect(events("linux")).toContain("PreToolUse")
+    expect(eventsWhereCmdPrints("linux")).toContain("PreToolUse")
   })
 })
+
+// The events Antigravity's plugin registers where cmd prints before every command.
+const eventsWhereCmdPrints = (platform: NodeJS.Platform) =>
+  Object.keys(
+    (
+      JSON.parse(
+        agy
+          .files(platform, { mcp: { command: "mcp" } }, { cmdPrints: true })
+          .find(({ path }) => path === "hooks.json")!.content,
+      ) as { novadeck: object }
+    ).novadeck,
+  )
