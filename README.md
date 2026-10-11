@@ -17,10 +17,19 @@ canvas. Keep related work together and switch between sessions from the sidebar.
   curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh
   ```
 
-  This installs the `.deb` with apt, the `.rpm` with dnf or zypper, and otherwise puts the
-  AppImage in `~/.local/share/novadeck` with a menu entry and a `novadeck` command in
-  `~/.local/bin`. It checks every download against the release's `SHA256SUMS`, and running
-  it again upgrades.
+  This puts the AppImage in `~/.local/share/novadeck` with a menu entry and a `novadeck`
+  command in `~/.local/bin`. It checks every download against the release's `SHA256SUMS`,
+  and running it again upgrades. The AppImage needs FUSE 3 (the `fuse3` package).
+
+  On systems that block unprivileged user namespaces, as Ubuntu does from 24.04, Electron's
+  sandbox can only start with an AppArmor profile, so the script asks for your password
+  once to write `/etc/apparmor.d/novadeck`. Without it Novadeck still runs, without its
+  sandbox, and says so in the footer. To write the profile later, or for an AppImage
+  installed another way, run the script with `--sandbox`:
+
+  ```sh
+  curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh -s -- --sandbox
+  ```
 
 Every build keeps itself up to date. Those links point to the latest stable release; until
 the first one is promoted, Novadeck's builds are prereleases on the
@@ -637,7 +646,10 @@ given), as a spec does that must act on the screen before the turn ends.
   Escape; "Slow attach" counts terminals attaching over about 3 s; each "Boot
   failure" fails the first attempt as the runner would, so a transient one retries
   on its own and the others wait for Retry (an incompatible runner only for Quit).
-  "Welcome dialog" opens the first-run dialog for connecting agents again.
+  "Welcome dialog" opens the first-run dialog for connecting agents again. "No sandbox"
+  boots as a host running without Electron's sandbox, for the footer's No sandbox chip
+  and its fix command; "No sandbox, no command" as one with no command to offer; and
+  "Sandboxed" back to normal.
 - **Chat:** arm the next send from a chat to fail as the runner turns it away: a draft
   in the agent's box, its shell mode, too tall a message, no box on screen, or no agent
   running (each with Open terminal), a request waiting (answer it first), or a doorbell
@@ -991,18 +1003,17 @@ pnpm package:win
 
 Artifacts go to `application/host/release/`:
 
-- Linux x64: `novadeck-linux-amd64.deb` and `novadeck-linux-x86_64.rpm`, which install to
-  `/opt/novadeck`, and `novadeck-linux-x86_64.AppImage`. Building the rpm needs `rpmbuild`,
-  from the `rpm` package on Debian and Ubuntu. Releases also carry `install.sh`, the
-  installer in [scripts/install](scripts/install) with the repository filled in.
+- Linux x64: `novadeck-linux-x86_64.AppImage`, built on the static type2 runtime so it
+  mounts with FUSE 3. Releases also carry `install.sh`, the installer in
+  [scripts/install](scripts/install) with the repository filled in.
 - macOS universal: `novadeck-mac-universal.dmg`, the disk image to drag the app to
   Applications from, and `novadeck-mac-universal.zip`, which updates install from.
 - Windows x64: `novadeck-win-x64-setup.exe`, a one-click installer that installs for the
   current user without an administrator prompt.
 
 None of the names carries a version, so `releases/latest/download/<name>` is always the
-newest stable build. The ZIP and the AppImage are not advertised: the AppImage is
-`install.sh`'s fallback for other distributions and replaces itself in place.
+newest stable build. The ZIP and the AppImage are not advertised: `install.sh` installs
+the AppImage, which replaces itself in place.
 
 Local builds are unsigned, so Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
 Releases are signed and notarized once the signing credentials are set up; see
@@ -1017,8 +1028,9 @@ from source with the rest of the app.
 
 The [release workflow](.github/workflows/release.yml) publishes immutable GitHub
 prereleases from qualifying changes on `main`, with notes, checksums, and native
-packages. It smoke-tests each packaged application before upload, and installs the Linux
-packages through `install.sh` served from a local copy of the release. The workflow feeds
+packages. It smoke-tests each packaged application before upload, installs the AppImage through
+`install.sh` served from a local copy of the release, and fails when the installed
+AppImage runs without Electron's sandbox. The workflow feeds
 its own repository into the update feed baked into each app and into `install.sh`, so
 moving the repository needs no edit. Conventional
 Commits determine release eligibility; versions are currently limited to patch

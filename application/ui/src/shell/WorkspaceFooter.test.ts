@@ -306,3 +306,80 @@ describe("workspace footer", () => {
     })
   })
 })
+
+const sandboxChip = (page: Rendered) =>
+  [...page.container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.getAttribute("aria-label") === "Running without the security sandbox",
+  )
+const panel = (page: Rendered) => page.container.querySelector("section.update-panel")
+
+describe("the footer without the security sandbox", () => {
+  const sandbox = (fix: string | undefined, hidden = false) =>
+    createElement(WorkspaceFooter, { ...props("ok"), hidden, fix })
+  const open = (fix: string | undefined) => {
+    const page = render(sandbox(fix))
+    mounted.push(page)
+    return page
+  }
+
+  it("shows nothing where the app is sandboxed or the host does not say", () => {
+    const page = open(undefined)
+    expect(sandboxChip(page)).toBeUndefined()
+    expect(panel(page)).toBeNull()
+  })
+
+  it("shows a closed chip, which opens a region saying why, with the command", () => {
+    const page = open("sudo fix")
+    const button = sandboxChip(page)!
+    expect(button.getAttribute("aria-expanded")).toBe("false")
+    expect(panel(page)).toBeNull()
+    act(() => button.click())
+    const region = panel(page)!
+    expect(button.getAttribute("aria-expanded")).toBe("true")
+    expect(document.getElementById(region.getAttribute("aria-labelledby")!)?.textContent).toBe(
+      "Novadeck is running without its security sandbox",
+    )
+    expect(region.textContent).toContain("Run this command, then restart Novadeck.")
+    expect(region.querySelector("code")?.textContent).toBe("sudo fix")
+  })
+
+  it("explains without a command or a copy button where there is no fix", () => {
+    const page = open("")
+    act(() => sandboxChip(page)!.click())
+    const region = panel(page)!
+    expect(region.querySelector("code")).toBeNull()
+    expect(region.querySelector("button")).toBeNull()
+    expect(region.textContent).not.toContain("Run this command")
+  })
+
+  it("copies the command and says so for a moment", async () => {
+    vi.useFakeTimers()
+    const writeText = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
+    vi.stubGlobal("navigator", { clipboard: { writeText } })
+    try {
+      const page = open("sudo fix")
+      act(() => sandboxChip(page)!.click())
+      const copy = panel(page)!.querySelector("button")!
+      expect(copy.textContent).toBe("Copy")
+      await act(async () => copy.click())
+      expect(writeText).toHaveBeenCalledExactlyOnceWith("sudo fix")
+      expect(copy.textContent).toBe("Copied")
+      act(() => vi.advanceTimersByTime(2_000))
+      expect(copy.textContent).toBe("Copy")
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it("closes on Escape and when the footer hides", () => {
+    const page = open("sudo fix")
+    act(() => sandboxChip(page)!.click())
+    act(() =>
+      panel(page)!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    )
+    expect(panel(page)).toBeNull()
+    act(() => sandboxChip(page)!.click())
+    page.rerender(sandbox("sudo fix", true))
+    expect(panel(page)).toBeNull()
+  })
+})

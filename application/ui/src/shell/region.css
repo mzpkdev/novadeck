@@ -288,6 +288,24 @@
   margin-top: 4px;
 }
 
+/* The sandbox notice (FooterSandbox.tsx) reuses the update's panel: a sentence, and the
+   fix command in the mono face, wrapping at any character so none of it is cut off. */
+.sandbox-text {
+  margin: 0;
+}
+.sandbox-command {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  background-color: var(--color-soft);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .sidebar-tools {
   --_bg: var(--region-rail-bg, var(--color-shell));
   --_fg: var(--region-rail-fg, var(--color-ink));

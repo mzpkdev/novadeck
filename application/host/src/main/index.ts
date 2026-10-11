@@ -40,11 +40,11 @@ import {
 import { dataFolderName } from "./data-folder.js"
 import { linuxMenu } from "./menu.js"
 import { notificationText, registerNoticeIpc, showNotices } from "./notices.js"
-import { verifiedDebUpdater } from "./package-updaters.js"
 import { attachPage, guardPage, lockPagesSession, pagesPartition, webAddress } from "./pages.js"
 import { limitPermissions, ownPage } from "./permissions.js"
 import { quitOnShutdown, saveBeforeClose, saveOnSessionEnd, savePages } from "./quit.js"
 import { startRunner, type RunnerHost } from "./runner.js"
+import { registerSandboxIpc, sandboxState } from "./sandbox.js"
 import { releaseDownloadsUrl, releasePageUrl, releaseRepositoryOf } from "./update-release.js"
 import { keepUpdateState } from "./update-state.js"
 import {
@@ -224,13 +224,6 @@ const checksSignature = (): boolean =>
   app.getVersion() !== "0.0.0" &&
   process.env.NOVADECK_UPDATES !== "off"
 
-/** What `resources/package-type` of a Linux package says, `deb` or `rpm`; undefined without it. */
-const packageType = (): Promise<string | undefined> =>
-  readFile(join(process.resourcesPath, "package-type"), "utf8").then(
-    (text) => text.trim(),
-    () => undefined,
-  )
-
 /** Whether the folder holding the AppImage file can be written to, as replacing it takes. */
 const appImageWritable = (): Promise<boolean> => {
   const file = process.env.APPIMAGE
@@ -254,10 +247,6 @@ const loadUpdater = async (kind: UpdaterKind): Promise<NonNullable<typeof update
       return new electronUpdater.MacUpdater()
     case "appimage":
       return new electronUpdater.AppImageUpdater()
-    case "deb":
-      return verifiedDebUpdater(electronUpdater.DebUpdater, () => offers.current()?.version)
-    case "rpm":
-      return new electronUpdater.RpmUpdater()
   }
 }
 
@@ -274,7 +263,6 @@ const startUpdates = async (): Promise<void> => {
     // The AppImage mounts under TMPDIR, which may reach it through a symlink; the
     // executable's path is the real one.
     env: { ...process.env, APPDIR: appDir && (await realpath(appDir).catch(() => appDir)) },
-    packageType: linux ? await packageType() : undefined,
     // Asked only where it matters: codesign takes a moment.
     signed: checksSignature() && (await bundleSigned()),
     appImageWritable: linux && (await appImageWritable()),
@@ -526,6 +514,16 @@ const launch = async (): Promise<void> => {
         console.warn("The update channel was not kept.", error)
       }
     },
+  })
+  // The page learns whether Electron's sandbox is on, and how to turn it on if not.
+  registerSandboxIpc(ipcMain, {
+    window: appWindow,
+    state: async () =>
+      sandboxState(
+        app.commandLine.hasSwitch("no-sandbox"),
+        process.platform,
+        await releaseRepository(),
+      ),
   })
   ipcMain.handle(directoryPickerChannel, async (event) => {
     const window = appWindow(event)

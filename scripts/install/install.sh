@@ -3,26 +3,38 @@
 #
 #   curl -fsSL https://github.com/@REPOSITORY@/releases/latest/download/install.sh | sh
 #
-# It installs the .deb with apt, the .rpm with dnf or zypper, and otherwise puts the
-# AppImage in ~/.local/share/novadeck with a menu entry and a `novadeck` command. Every
-# download is checked against the release's SHA256SUMS first. Running it again upgrades or
-# repairs the install; installed apps update themselves after that.
+# It puts the AppImage in ~/.local/share/novadeck with a menu entry and a `novadeck`
+# command. Every download is checked against the release's SHA256SUMS first. Running it
+# again upgrades or repairs the install; installed apps update themselves after that.
 #
-# The release workflow replaces @REPOSITORY@ with the repository it publishes from. On
-# image-based systems, where a package would need a reboot or a layered image, it installs
-# the AppImage whatever package manager is there. These environment variables change it:
+# Ubuntu 24.04 and later stop unprivileged programs from creating the user namespaces
+# Electron's sandbox needs, and the AppImage then runs without a sandbox. On such a system
+# the install writes an AppArmor profile to /etc/apparmor.d/novadeck with sudo, which asks
+# for a password once. If that fails, the install still finishes and says how to retry:
+#
+#   curl -fsSL https://github.com/@REPOSITORY@/releases/latest/download/install.sh | sh -s -- --sandbox
+#
+# --sandbox does only that step, for an existing install, such as one Homebrew made.
+#
+# The release workflow replaces @REPOSITORY@ with the repository it publishes from. These
+# environment variables change it:
 #
 #   NOVADECK_INSTALL_BASE_URL         The folder to download from, for a mirror or a test.
-#   NOVADECK_INSTALL_PACKAGE_MANAGER  apt, dnf, zypper or appimage, to skip detection.
-#   XDG_DATA_HOME                     Where the AppImage install puts its files, as usual;
-#                                     the default is ~/.local/share.
+#   XDG_DATA_HOME                     Where the install puts its files, as usual; the default
+#                                     is ~/.local/share. The profile covers that path too.
 #
 # Test hooks, not for use otherwise:
 #
-#   NOVADECK_INSTALL_OSTREE_MARKER    The file whose presence means an ostree system, in
-#                                     place of /run/ostree-booted.
-#   NOVADECK_INSTALL_SBIN_DIRS        The folders searched, after the PATH, for ldconfig and
-#                                     transactional-update, in place of "/sbin /usr/sbin".
+#   NOVADECK_INSTALL_SBIN_DIRS        The folders searched, after the PATH, for
+#                                     apparmor_parser and fusermount3, in place of
+#                                     "/sbin /usr/sbin".
+#   NOVADECK_INSTALL_USERNS_SYSCTL    The file that says whether unprivileged user
+#                                     namespaces are restricted, in place of
+#                                     /proc/sys/kernel/apparmor_restrict_unprivileged_userns.
+#   NOVADECK_INSTALL_APPARMOR_DIR     The folder the profile goes to, in place of
+#                                     /etc/apparmor.d.
+#   NOVADECK_INSTALL_FUSE_DEVICE      The device AppImages mount through, in place of
+#                                     /dev/fuse.
 #
 # Every definition comes before the one call on the last line, so a download that is cut
 # short runs nothing.
@@ -74,29 +86,6 @@ find_tool() {
   done
 }
 
-# Fedora Silverblue, Kinoite and Bazzite (ostree), and openSUSE Aeon and MicroOS
-# (transactional-update), keep the system read-only; a home folder install suits them.
-is_immutable() {
-  [ -e "${NOVADECK_INSTALL_OSTREE_MARKER:-/run/ostree-booted}" ] || [ -n "$(find_tool transactional-update)" ]
-}
-
-# Which way to install: the first package manager found, or the AppImage.
-detect_method() {
-  if [ -n "${NOVADECK_INSTALL_PACKAGE_MANAGER:-}" ]; then
-    printf '%s\n' "$NOVADECK_INSTALL_PACKAGE_MANAGER"
-  elif is_immutable; then
-    say appimage
-  elif has apt-get; then
-    say apt
-  elif has dnf; then
-    say dnf
-  elif has zypper; then
-    say zypper
-  else
-    say appimage
-  fi
-}
-
 download() {
   curl -fsSL --retry 3 --retry-connrefused -o "$2" "$1" || fail "could not download $1"
 }
@@ -118,62 +107,33 @@ fetch() {
   verify "$name"
 }
 
-# Runs a command as root, through sudo unless this already is root.
+# Runs a command as root, through sudo unless this already is root. It fails, quietly, when
+# there is no way to become root, and when sudo is declined.
 as_root() {
   if [ "$(id -u)" = 0 ]; then
     "$@"
   elif has sudo; then
     sudo "$@"
   else
-    fail "installing a package needs root, and sudo is not installed. Run this as root."
+    return 1
   fi
 }
 
-# The version of the installed novadeck package, or nothing when none is installed.
-installed_deb_version() {
-  has dpkg-query || return 0
-  # shellcheck disable=SC2016
-  status="$(dpkg-query -W -f='${db:Status-Status} ${Version}' novadeck 2> /dev/null || true)"
-  case "$status" in
-    "installed "*) printf '%s\n' "${status#installed }" ;;
-  esac
-}
-
-install_apt() {
-  fetch "$1" novadeck-linux-amd64.deb
-  installed="$(installed_deb_version)"
-  if [ -n "$installed" ] && has dpkg; then
-    available="$(dpkg-deb -f novadeck-linux-amd64.deb Version)"
-    # Apt refuses a downgrade, and an early channel build is newer than the stable one.
-    if dpkg --compare-versions "$installed" gt "$available"; then
-      say "Novadeck $installed is already installed, and it is newer than the stable release, $available. Nothing to do."
+# An AppImage mounts itself through FUSE 3's fusermount3 (or fusermount) and /dev/fuse.
+check_fuse() {
+  if [ -n "$(find_tool fusermount3)" ] || [ -n "$(find_tool fusermount)" ]; then
+    if [ -e "${NOVADECK_INSTALL_FUSE_DEVICE:-/dev/fuse}" ]; then
       return 0
     fi
   fi
-  as_root apt-get install -y ./novadeck-linux-amd64.deb
+  say "Novadeck's AppImage needs FUSE 3, which this computer seems to lack."
+  say "Install your distribution's fuse3 package, or start Novadeck with"
+  say "--appimage-extract-and-run."
 }
 
-install_dnf() {
-  fetch "$1" novadeck-linux-x86_64.rpm
-  as_root dnf install -y ./novadeck-linux-x86_64.rpm
-}
-
-install_zypper() {
-  fetch "$1" novadeck-linux-x86_64.rpm
-  as_root zypper --non-interactive install --allow-unsigned-rpm ./novadeck-linux-x86_64.rpm
-}
-
-# An AppImage mounts itself through libfuse 2, which newer distributions no longer include.
-check_fuse() {
-  # Without ldconfig there is nothing to check, and no warning is better than a wrong one.
-  ldconfig="$(find_tool ldconfig)"
-  [ -n "$ldconfig" ] || return 0
-  if "$ldconfig" -p 2> /dev/null | grep -q 'libfuse\.so\.2'; then
-    return 0
-  fi
-  say "Novadeck's AppImage needs FUSE 2, which this computer seems to lack."
-  say "Install your distribution's libfuse2 package (libfuse2t64 on Ubuntu 24.04 and later,"
-  say "fuse-libs on Fedora), or start Novadeck with --appimage-extract-and-run."
+# Where the AppImage lives; the sandbox profile names this path.
+image_path() {
+  printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/novadeck/novadeck.AppImage"
 }
 
 install_appimage() {
@@ -181,7 +141,7 @@ install_appimage() {
   data="${XDG_DATA_HOME:-$HOME/.local/share}"
   bin="$HOME/.local/bin"
   folder="$data/novadeck"
-  image="$folder/novadeck.AppImage"
+  image="$(image_path)"
 
   fetch "$base" novadeck-linux-x86_64.AppImage
   chmod +x novadeck-linux-x86_64.AppImage
@@ -222,38 +182,106 @@ EOF
     *) say "Add $bin to your PATH to start it as \`novadeck\`: export PATH=\"$bin:\$PATH\"" ;;
   esac
   check_fuse
+  setup_sandbox "$base"
+}
+
+# One profile block: it lets the program at an attached path create user namespaces, and
+# leaves everything else about it unconfined.
+profile_block() {
+  printf 'profile %s %s flags=(unconfined) {\n  userns,\n  include if exists <local/%s>\n}\n' "$1" "$2" "$1"
+}
+
+# The AppArmor profile for the AppImage in the default folder, where Homebrew's cask puts
+# it, and wherever XDG_DATA_HOME moved this install. The abi line is for AppArmor 4 and
+# later; older versions are written without it.
+write_profile() {
+  printf 'abi <abi/4.0>,\ninclude <tunables/global>\n\n'
+  profile_block novadeck '@{HOME}/{.local/share/novadeck,Applications}/novadeck.AppImage'
+  if [ "$1" != "$HOME/.local/share/novadeck/novadeck.AppImage" ]; then
+    printf '\n'
+    profile_block novadeck-custom "\"$1\""
+  fi
+}
+
+sandbox_warning() {
+  say "Warning: Novadeck will run without its sandbox: $1"
+  say "To set it up later, run:"
+  say "  curl -fsSL $2/install.sh | sh -s -- --sandbox"
+}
+
+# True when AppArmor stops unprivileged programs from creating user namespaces, which is
+# what Electron's sandbox needs; Ubuntu 24.04 and later do. Without that sysctl there is
+# nothing to fix.
+userns_restricted() {
+  [ "$(cat "${NOVADECK_INSTALL_USERNS_SYSCTL:-/proc/sys/kernel/apparmor_restrict_unprivileged_userns}" 2> /dev/null || true)" = 1 ]
+}
+
+# Lets the AppImage create user namespaces by loading an AppArmor profile. A failure here
+# only costs the sandbox, so it warns and returns instead of failing the install.
+setup_sandbox() {
+  base="$1"
+  userns_restricted || return 0
+  parser="$(find_tool apparmor_parser)"
+  [ -n "$parser" ] || return 0
+
+  target="${NOVADECK_INSTALL_APPARMOR_DIR:-/etc/apparmor.d}/novadeck"
+  location="$(image_path)"
+  case "$location" in
+    *[\"{}\[\]*?^,\\]* | *[![:print:]]*)
+      sandbox_warning "the install path $location has characters AppArmor profiles cannot name." "$base"
+      return 0
+      ;;
+  esac
+  write_profile "$location" > profile
+  # The check electron-builder's deb does too, as an AppArmor without the abi line fails it.
+  if ! "$parser" --skip-kernel-load --debug profile > /dev/null 2>&1; then
+    sandbox_warning "this system's AppArmor rejected the profile." "$base"
+    return 0
+  fi
+  say "Writing an AppArmor profile so Novadeck's sandbox works on this system."
+  if as_root cp profile "$target" && as_root "$parser" --replace "$target" > /dev/null; then
+    say "Novadeck's sandbox is set up."
+  else
+    sandbox_warning "the profile could not be written and loaded as root." "$base"
+  fi
+}
+
+usage() {
+  printf 'usage: install.sh [--sandbox]\n' >&2
+  exit 2
 }
 
 main() {
   set -eu
+  sandbox_only=false
+  for arg in "$@"; do
+    case "$arg" in
+      --sandbox) sandbox_only=true ;;
+      *) usage ;;
+    esac
+  done
   repository='@REPOSITORY@'
   base="${NOVADECK_INSTALL_BASE_URL:-https://github.com/$repository/releases/latest/download}"
   base="${base%/}"
 
   check_platform "$repository"
-  has curl || fail "curl is required."
-  has sha256sum || fail "sha256sum is required."
-
-  method="$(detect_method)"
-  case "$method" in
-    apt | dnf | zypper | appimage) ;;
-    *) fail "unknown package manager: $method" ;;
-  esac
 
   work="$(mktemp -d)" || fail "could not create a temporary folder."
-  # Readable by apt's unprivileged downloader, which would otherwise warn about the folder.
-  chmod 755 "$work"
   trap 'rm -rf "$work"' EXIT
   cd "$work" || fail "could not enter $work."
 
-  say "Installing Novadeck with $method"
+  if [ "$sandbox_only" = true ]; then
+    userns_restricted || say "This system does not restrict user namespaces, so Novadeck's sandbox needs no setup."
+    setup_sandbox "$base"
+    return 0
+  fi
+
+  has curl || fail "curl is required."
+  has sha256sum || fail "sha256sum is required."
+
+  say "Installing Novadeck"
   download "$base/SHA256SUMS" SHA256SUMS
-  case "$method" in
-    apt) install_apt "$base" ;;
-    dnf) install_dnf "$base" ;;
-    zypper) install_zypper "$base" ;;
-    appimage) install_appimage "$base" ;;
-  esac
+  install_appimage "$base"
   say "Done. Novadeck updates itself from here."
 }
 

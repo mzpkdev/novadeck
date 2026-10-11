@@ -32,6 +32,7 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   const crashes = useUiState((state) => state.crashLoop)
   const offer = useUiState((state) => state.update)
   const updateOpen = useUiState((state) => state.updateOpen)
+  const sandbox = useUiState((state) => state.sandbox)
   // A dialog, the switcher or a question holds the notice back until it is answered.
   const asking = useUiState(
     (state) =>
@@ -111,6 +112,7 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
             }
           : undefined
       }
+      fix={sandbox && !sandbox.sandboxed ? sandbox.fix : undefined}
       usage={<SubscriptionUsage accounts={accounts} onMove={move} />}
     />
   )
