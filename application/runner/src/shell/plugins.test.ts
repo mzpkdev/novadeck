@@ -94,13 +94,13 @@ describe("agent plugin hook commands", () => {
       `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy PreInvocation; else echo '{}'; fi`,
     )
     expect(harnesses.claude.hook("win32", "SessionStart")).toBe(
-      "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK claude SessionStart }",
+      "if ($env:NOVADECK_HOOK -and (Test-Path -LiteralPath $env:NOVADECK_HOOK)) { & $env:NOVADECK_HOOK claude SessionStart }",
     )
     expect(harnesses.codex.hook("win32", "SessionStart")).toBe(
-      "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK codex SessionStart }",
+      "if ($env:NOVADECK_HOOK -and (Test-Path -LiteralPath $env:NOVADECK_HOOK)) { & $env:NOVADECK_HOOK codex SessionStart }",
     )
     expect(harnesses.agy.hook("win32", "PreInvocation")).toBe(
-      "if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy PreInvocation) else (echo {})",
+      "if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy PreInvocation) else (echo {})) else (echo {})",
     )
   })
 
@@ -114,6 +114,21 @@ describe("agent plugin hook commands", () => {
         expect(timedOut(result)).toBe(false)
         expect(result.status).toBe(0)
         // Antigravity reads a hook's answer as JSON.
+        expect(result.stdout.trim()).toBe(agent === "agy" ? "{}" : "")
+        expect(plugins.recorded()).toBeUndefined()
+      },
+      hookMs + 5_000,
+    )
+
+    it(
+      `do nothing where the launcher is set but gone for ${agent}, as one that outlived its Novadeck`,
+      ({ plugins }) => {
+        const gone = windows
+          ? "C:/nowhere/novadeck-hook.exe".replaceAll("/", "\\")
+          : "/nowhere/hook"
+        const result = runHook(agent, events[agent], gone, "{}")
+        expect(timedOut(result)).toBe(false)
+        expect(result.status).toBe(0)
         expect(result.stdout.trim()).toBe(agent === "agy" ? "{}" : "")
         expect(plugins.recorded()).toBeUndefined()
       },

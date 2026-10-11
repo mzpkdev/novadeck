@@ -40,7 +40,7 @@ const hook = (platform: NodeJS.Platform, event: string): string => {
   if (platform === "win32")
     return pre
       ? `cmd /d /c if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy ${event})) & exit /b 0`
-      : `if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy ${event}) else (echo {})`
+      : `if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy ${event}) else (echo {})) else (echo {})`
   return pre
     ? `if [ -x "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '${ask}'; fi`
     : `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '{}'; fi`

@@ -216,7 +216,7 @@ describe("Antigravity's PreToolUse answer", () => {
       "cmd /d /c if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy PreToolUse)) & exit /b 0",
     )
     expect(agy.hook("win32", "Stop")).toBe(
-      "if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy Stop) else (echo {})",
+      "if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy Stop) else (echo {})) else (echo {})",
     )
     for (const event of ["PreToolUse", "PreInvocation", "Stop", "PostToolUse"])
       expect(agy.hook("win32", event)).not.toContain('"')
