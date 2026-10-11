@@ -18,7 +18,7 @@ import type { ScreenText } from "./screen.js"
 const profileOf = (
   expands: boolean,
   starts = false,
-  command?: (command: string) => string,
+  command?: (command: string) => string | undefined,
 ): BoxProfile => ({
   read: (screen: ScreenText): InputBox | undefined => {
     const first = screen.rows.findLastIndex((row) => row.startsWith("> ") || row.startsWith("!"))
@@ -80,7 +80,7 @@ const terminal = (
     /** Whether a shell command starts the session (the box profile's `shell.starts`). */
     startsOnShell?: boolean
     /** The command its shell mode is given for one as written (the box profile's `shell.command`). */
-    command?: (command: string) => string
+    command?: (command: string) => string | undefined
     /** The nonce of a ring under way, which `ringEnds` ms from the first look ends. */
     ringing?: string
     ringEnds?: number
@@ -706,6 +706,14 @@ describe("shell commands", () => {
     })
     await new Prompts(host, host.queue, fast).prompt("t", "!echo a\necho b")
     expect(written).toEqual(["!", `${bang}echo a & echo b${end}`, "\r"])
+  })
+
+  it("refuse a command the harness's shell mode can't run as written, typing nothing", async () => {
+    const { host, written } = terminal({ shell: true, takes: "box", command: () => undefined })
+    expect(await refusal(new Prompts(host, host.queue, fast).prompt("t", "!echo a\nrem b"))).toBe(
+      "PROMPT_REFUSED",
+    )
+    expect(written).toEqual([])
   })
 
   it("press Enter for a command a TUI collapsed to a placeholder", async () => {

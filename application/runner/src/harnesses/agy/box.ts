@@ -16,19 +16,30 @@ export const shellFooter = (rows: readonly string[]): boolean => {
 /**
  * On Windows its shell mode runs a command in cmd (probed 2026-10-10, 1.2.14), which runs
  * only its first line: the lines are joined with `&`, which runs each after the one before
- * whatever that returned, as sh runs lines. A blank line joins nothing.
+ * whatever that returned, as sh runs lines. A blank line joins nothing. Undefined for one
+ * whose lines can't be joined so and mean the same: a remark (`rem`, `::`) would swallow
+ * every line after it, a trailing `^` escape the joining `&`, a block (`if x (` … `)`)
+ * become a syntax error, and a continued line's indent be lost.
  */
 export const shellCommandOf = (
   command: string,
   platform: NodeJS.Platform = process.platform,
-): string =>
-  platform === "win32"
-    ? command
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .join(" & ")
-    : command
+): string | undefined => {
+  if (platform !== "win32") return command
+  const lines = command.split("\n").filter((line) => line.trim() !== "")
+  if (lines.length < 2) return command.trim()
+  const unjoinable = lines.some((line, at) => {
+    const text = line.trim()
+    return (
+      /^(rem(\s|$)|::)/i.test(text) ||
+      text.endsWith("^") ||
+      text.endsWith("(") ||
+      text.startsWith(")") ||
+      (at > 0 && lines[at - 1]!.trimEnd().endsWith("^"))
+    )
+  })
+  return unjoinable ? undefined : lines.map((line) => line.trim()).join(" & ")
+}
 
 // Its word under a turn the person's Escape stopped (probed 2026-10-02, 1.2.14), white
 // space aside, as a narrow screen wraps it.

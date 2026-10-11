@@ -369,6 +369,20 @@ describe("the command Antigravity's shell mode is given", () => {
     )
     expect(agyShellCommand("dir", "win32")).toBe("dir")
   })
+
+  it("is none on Windows for lines that joined would mean something else", () => {
+    for (const command of [
+      "echo a\nrem then b\necho b",
+      "echo a\n:: then b\necho b",
+      "echo a ^\n  continued",
+      "if exist a (\necho yes\n)",
+      "echo a\n) else (",
+    ])
+      expect(agyShellCommand(command, "win32"), command).toBeUndefined()
+    // A remark alone, or one word that only starts like one, runs as written.
+    expect(agyShellCommand("rem nothing", "win32")).toBe("rem nothing")
+    expect(agyShellCommand("echo a\nremove-it.cmd", "win32")).toBe("echo a & remove-it.cmd")
+  })
 })
 
 describe("Antigravity's word that an Escape stopped the turn", () => {

@@ -153,8 +153,15 @@ export class Prompts {
   ): Promise<void> {
     await this.ringDone(terminalId)
     const profile = this.host.admit(terminalId)
-    // A command as its harness's shell mode runs it the way sh runs what was written.
-    const typed = (shell && profile.shell.command?.(text)) || text
+    // A command as its harness's shell mode runs it the way sh runs what was written; one
+    // its shell can't run as written means is refused before any key.
+    const given = shell && profile.shell.command ? profile.shell.command(text) : text
+    if (given === undefined)
+      throw new DomainError(
+        "PROMPT_REFUSED",
+        "The agent's shell runs only a command's first line, and these lines can't be joined to run as written: a remark (rem, ::), a line ending in ^ or (, or one starting with ). Send it as one line, or run it in the terminal.",
+      )
+    const typed = given || text
     // The first prompt of an agent shown before its session binds starts that session, as a
     // shell command does only where its harness starts one for it.
     const starts = !this.host.bound(terminalId) && (!shell || profile.shell.starts)

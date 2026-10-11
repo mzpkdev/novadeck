@@ -67,9 +67,10 @@ export type BoxProfile = {
     readonly footer: (rows: readonly string[]) => boolean
     /**
      * The command to give the shell mode for `command` as written, where its shell runs
-     * one otherwise than sh (Antigravity's cmd on Windows); as written where omitted.
+     * one otherwise than sh (Antigravity's cmd on Windows); as written where omitted, and
+     * undefined for one that can't run there as written means.
      */
-    readonly command?: (command: string, platform?: NodeJS.Platform) => string
+    readonly command?: (command: string, platform?: NodeJS.Platform) => string | undefined
   }
   /**
    * Whether the screen shows, just above the box, the harness's word that the person's
