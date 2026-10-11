@@ -81,8 +81,8 @@ export type DeckTerminal = {
    */
   readonly press: (keys: string) => void
   /**
-   * Waits until its screen has settled, as `confirm` does before its Enter: for keys that
-   * answer a dialog without Enter, which it may drop while it is still being drawn.
+   * Waits until its screen has settled, as `confirm` does before its Enter (see `calm`):
+   * for keys that answer a dialog without Enter, which it may drop while still drawing.
    */
   readonly settled: () => Promise<void>
   /**
@@ -402,7 +402,7 @@ export const terminalsReport = (
 
 /**
  * Counts what the screen shows of `shows`, runs `trigger`, waits until the screen shows it
- * once more and has settled, and only then presses Enter: Enter follows only what
+ * once more and has settled (see `calm`), and only then presses Enter: Enter follows only what
  * `trigger` was seen to bring, never what was there before it. Settled is two reads
  * `stillMs` apart alike, as Novadeck's own answers wait: Claude Code drops an Enter
  * pressed as its permission dialog first draws, while its PermissionRequest hook still
@@ -425,38 +425,30 @@ export const enterAfter = async (
   ).catch(async (error: unknown) => {
     throw await withScreen(error, screen, state, trail)
   })
-  await settle(screen, `${handle}'s screen to settle on ${String(shows)}`, timeoutMs, fault).catch(
-    async (error: unknown) => {
-      throw await withScreen(error, screen, state, trail)
-    },
-  )
+  await calm(screen)
   enter()
 }
 
 /**
  * Waits until two reads of the screen `stillMs` apart are alike, as Novadeck's own answers
- * wait before their keys; fails after the timeout.
+ * wait before their keys, or `calmMs` has passed: a dialog drawn whole goes still at once,
+ * while a working agent's screen may never, and its keys then go anyway.
  */
-const settle = async (
-  screen: () => Promise<string>,
-  what: string,
-  timeoutMs = 30_000,
-  fault?: () => string | undefined,
-): Promise<void> => {
+const calm = async (screen: () => Promise<string>): Promise<void> => {
+  const deadline = Date.now() + calmMs
   let last = await screen()
-  await poll(
-    async () => {
-      await new Promise((resolve) => setTimeout(resolve, stillMs))
-      const now = await screen()
-      const still = now === last
-      last = now
-      return still ? true : undefined
-    },
-    what,
-    timeoutMs,
-    fault,
-  )
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop -- Reads again after the pause.
+    await new Promise((resolve) => setTimeout(resolve, stillMs))
+    // eslint-disable-next-line no-await-in-loop -- As above.
+    const now = await screen()
+    if (now === last) return
+    last = now
+  }
 }
+
+/** The longest `calm` waits for a screen to go still, in milliseconds. */
+const calmMs = 1_000
 
 /** How far apart two reads of a screen that say it settled are, in milliseconds. */
 const stillMs = 150
@@ -743,12 +735,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         await enterAfter(entered, text, async () => send(text))
       },
       confirm: (shows, trigger, { timeoutMs } = {}) => enterAfter(view, shows, trigger, timeoutMs),
-      settled: () =>
-        settle(look, `${summary.handle}'s screen to settle`, 30_000, fault).catch(
-          async (error: unknown) => {
-            throw await explain(error)
-          },
-        ),
+      settled: () => calm(look),
       press: (keys) => {
         refuseEnter(keys)
         send(keys)
