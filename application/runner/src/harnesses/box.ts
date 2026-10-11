@@ -76,7 +76,7 @@ export type BoxProfile = {
    * Escape stopped the turn, where it may say so of a turn whose reply it kept and fired
    * no Stop for (Antigravity); omitted where its hooks or records tell.
    */
-  readonly interrupted?: (screen: ScreenText) => boolean
+  readonly interrupted?: (screen: ScreenText) => boolean | undefined
   /**
    * Whether the screen shows messages the person queued behind the running turn, which
    * the harness holds until the turn ends (or, for Codex, steers the turn with).

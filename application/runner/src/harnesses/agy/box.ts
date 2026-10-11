@@ -30,22 +30,31 @@ export const shellCommandOf = (
         .join(" & ")
     : command
 
-// Its word under a turn the person's Escape stopped (probed 2026-10-02, 1.2.14).
-const interruption = /^⎿\s+Interrupted · What should Antigravity CLI do instead\?$/
+// Its word under a turn the person's Escape stopped (probed 2026-10-02, 1.2.14), white
+// space aside, as a narrow screen wraps it.
+const interruption = "⎿Interrupted·WhatshouldAntigravityCLIdoinstead?"
 
 /**
- * Whether the row last above its box's top rule, blank rows aside, is its word that the
- * person's Escape stopped the turn, which it draws under a reply it kept as well: on
+ * Whether the rows last above its box's top rule, blank rows aside, end in its word that
+ * the person's Escape stopped the turn, which it draws under a reply it kept as well: on
  * Windows a reply let go 2 to 5 ms after the key showed with it, the transcript and the
  * next model call holding the reply as where it showed alone, and no Stop came for
- * either (probed 2026-10-10, 1.2.14).
+ * either (probed 2026-10-10, 1.2.14). The word may wrap over a few rows. Undefined where
+ * no box is found to read above, as mid-redraw or under a dialog: no telling then.
  */
-export const interruptedShown = (screen: ScreenText): boolean => {
+export const interruptedShown = (screen: ScreenText): boolean | undefined => {
   const box = ruledBox(screen, markers)
-  if (!box) return false
+  if (!box) return undefined
   const top = screen.rows.slice(0, box.first).findLastIndex(rule)
-  const above = screen.rows.slice(0, Math.max(top, 0)).findLast((row) => row.trim() !== "")
-  return interruption.test(above?.trim() ?? "")
+  if (top < 0) return undefined
+  const above = screen.rows.slice(0, top)
+  const last = above.findLastIndex((row) => row.trim() !== "")
+  // The rows the word may span, without the white space a wrap leaves.
+  const tail = above
+    .slice(Math.max(0, last - 3), last + 1)
+    .join("")
+    .replaceAll(/\s+/g, "")
+  return tail.endsWith(interruption)
 }
 
 /**

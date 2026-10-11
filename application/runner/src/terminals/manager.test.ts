@@ -14,6 +14,7 @@ import type { ActivityEvent } from "../harnesses/events.js"
 import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
+import { screen as screenWith } from "../testing/screens.js"
 import { WorkspaceStore } from "../workspaces/store.js"
 import { InputQueue, type HoldBudget } from "./input-queue.js"
 import { forceKill, Terminals } from "./manager.js"
@@ -1644,7 +1645,7 @@ describe("a turn the person's Escape ended", () => {
     }
   })
 
-  it("reads completed with no Stop where the transcript of a harness without records holds the reply", async ({
+  it("reads completed with no Stop, on Windows, where Antigravity's transcript holds the reply and its screen shows no interruption", async ({
     terminals,
   }) => {
     const manager = terminals.manager(ptyOptions)
@@ -1652,7 +1653,7 @@ describe("a turn the person's Escape ended", () => {
       { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
       "creator",
     )
-    const inside = manager as unknown as Inside
+    const inside = manager as unknown as Inside & { screenOf: (id: string) => Promise<unknown> }
     const record = inside.records.get(terminal.id)! as {
       transcript: string | null
     } & (typeof inside.records extends Map<string, infer R> ? R : never)
@@ -1669,13 +1670,43 @@ describe("a turn the person's Escape ended", () => {
       type: "PLANNER_RESPONSE",
       content: "Too late.",
     })
+    // Antigravity's screen after the turn: its reply, maybe its word that the Escape
+    // stopped it, then its box; or no box at all, as mid-redraw.
+    const rule = "─".repeat(60)
+    const shown = (word: boolean) => {
+      const rows = [
+        "> Hold on",
+        "",
+        "  Too late.",
+        ...(word ? ["", "  ⎿  Interrupted · What should Antigravity CLI do instead?"] : []),
+        rule,
+        "> ",
+        rule,
+      ]
+      return screenWith({ rows, cursor: { row: rows.length - 2, column: 2 } })
+    }
+    const windows = process.platform === "win32"
+    const cases = [
+      [
+        "the reply, shown alone",
+        [asked, answered],
+        shown(false),
+        windows ? "completed" : "interrupted",
+      ],
+      ["the reply, with the interruption", [asked, answered], shown(true), "interrupted"],
+      [
+        "the reply, with no box to read",
+        [asked, answered],
+        screenWith({ rows: ["$ "] }),
+        "interrupted",
+      ],
+      ["no reply since the prompt", [answered, asked], shown(false), "interrupted"],
+    ] as const
     try {
-      for (const [lines, outcome] of [
-        [[asked, answered], { outcome: "completed", reply: "Too late." }],
-        [[answered, asked], { outcome: "interrupted", reply: null }],
-      ] as const) {
-        record.transcript = join(directory, `${outcome.outcome}.jsonl`)
+      for (const [what, lines, screen, outcome] of cases) {
+        record.transcript = join(directory, `${randomUUID()}.jsonl`)
         writeFileSync(record.transcript, `${lines.join("\n")}\n`)
+        inside.screenOf = () => Promise.resolve(screen)
         record.activity = fresh(0, true, false)
         inside.applyFact(record, {
           ...binding,
@@ -1688,11 +1719,9 @@ describe("a turn the person's Escape ended", () => {
         // eslint-disable-next-line no-await-in-loop -- Each case waits for its own verdict.
         await vi.waitFor(
           () => expect(record.activity?.lastTurn?.escaped?.settled ?? true).toBe(true),
-          {
-            timeout: escapeVerdictMs + 2000,
-          },
+          { timeout: escapeVerdictMs + 2000 },
         )
-        expect(record.activity?.lastTurn).toMatchObject(outcome)
+        expect(record.activity?.lastTurn?.outcome, what).toBe(outcome)
       }
     } finally {
       rmSync(directory, { recursive: true, force: true })

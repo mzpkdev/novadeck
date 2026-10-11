@@ -391,6 +391,18 @@ describe("Antigravity's word that an Escape stopped the turn", () => {
       shown(["  ⎿  Interrupted · What should Antigravity CLI do instead?", "> Next", "  Done."]),
     ).toBe(false)
   })
+
+  it("is read wrapped over rows, as on a tile narrower than its line", () => {
+    expect(
+      shown(["  Too late.", "", "  ⎿  Interrupted · What should Ant", "igravity CLI do instead?"]),
+    ).toBe(true)
+    expect(shown(["  ⎿  Interrupted · What", " should Antigravity CLI ", "do instead?"])).toBe(true)
+  })
+
+  it("can't tell where no box is found to read above, as mid-redraw or under a dialog", () => {
+    const word = "  ⎿  Interrupted · What should Antigravity CLI do instead?"
+    expect(agy.interrupted!(screen(["  Too late.", word, "Run this command?"], 2))).toBeUndefined()
+  })
 })
 
 describe("the viewport of Claude Code's input box", () => {

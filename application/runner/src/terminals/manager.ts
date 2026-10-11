@@ -3848,13 +3848,16 @@ export class Terminals {
    * The read of the reply the transcript holds since the person's prompt of the turn their
    * Escape ended, where no Stop came for it and the harness keeps no records that would
    * say how it ended: undefined where there is nothing to read, and the read's undefined
-   * where it holds none, can't be read, or the screen says the Escape stopped the turn all
-   * the same, as Antigravity may under a reply it kept.
+   * where it holds none, can't be read, or the screen doesn't show the turn went on
+   * uninterrupted, as Antigravity may say it stopped under a reply it kept. Only on
+   * Windows, the one place a reply that won the race was seen to fire no Stop (Antigravity
+   * 1.2.14): elsewhere its Stop tells.
    */
   private unstoppedReply(
     record: Record,
     agent: AgentName,
   ): Promise<string | undefined> | undefined {
+    if (process.platform !== "win32") return undefined
     const escaped = record.activity?.lastTurn?.escaped
     const items = harnesses[agent].transcripts?.items
     if (harnesses[agent].records || !escaped || escaped.held || escaped.settled) return undefined
@@ -3864,7 +3867,8 @@ export class Terminals {
       .then(async (reply) => {
         if (reply === undefined || !interrupted) return reply
         const screen = await this.screenOf(record.summary.id)
-        return !screen || interrupted(screen) ? undefined : reply
+        // A screen that can't tell, as one mid-redraw, keeps the Escape's word.
+        return screen && interrupted(screen) === false ? reply : undefined
       })
       .catch(() => undefined)
   }
