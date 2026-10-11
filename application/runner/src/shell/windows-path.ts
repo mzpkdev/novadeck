@@ -135,6 +135,8 @@ const readRegistry = (env: NodeJS.ProcessEnv, timeoutMs: number) =>
 // terminal, as a workspace restored with many.
 let last: { readonly at: number; readonly folders: readonly string[] } | undefined
 let failedUntil: number | undefined
+// Reads in a row that ran long, each waited out twice as long as the one before.
+let timeouts = 0
 let reading: Promise<readonly string[] | undefined> | undefined
 
 type Timing = {
@@ -156,10 +158,13 @@ const folders = (
   if (failedUntil !== undefined && now <= failedUntil) return Promise.resolve(last?.folders)
   reading ??= read(env, timeoutMs).then((found) => {
     if (Array.isArray(found)) last = { at: now, folders: found }
-    // A read that only ran long, as the first after a cold boot, is tried again soon.
+    // A read that only ran long, as the first after a cold boot, is tried again soon; where
+    // PowerShell is always that slow, each time later, up to `retryMs`.
+    timeouts = found === "timeout" ? timeouts + 1 : 0
     failedUntil = Array.isArray(found)
       ? undefined
-      : Date.now() + (found === "timeout" ? timeoutRetryMs : retryMs)
+      : Date.now() +
+        (found === "timeout" ? Math.min(timeoutRetryMs * 2 ** (timeouts - 1), retryMs) : retryMs)
     reading = undefined
     return Array.isArray(found) ? found : last?.folders
   })
@@ -174,8 +179,9 @@ const folders = (
  * past that, the registry is read again, at most `timeoutMs`, and every caller meanwhile
  * waits on that one read: a terminal opened after an install finds what it installed.
  * After a read that failed, none is tried again for `retryMs`, or `timeoutRetryMs` after
- * one that only ran past `timeoutMs`. Elsewhere, and when the registry can't be read,
- * `env` stays as it is, or gains what was read last.
+ * one that only ran past `timeoutMs`, doubled for each such read in a row up to `retryMs`.
+ * Elsewhere, and when the registry can't be read, `env` stays as it is, or gains what
+ * was read last.
  */
 export const refreshPath = async (
   env: NodeJS.ProcessEnv,
@@ -206,5 +212,6 @@ export const refreshPath = async (
 export const forgetPath = (): void => {
   last = undefined
   failedUntil = undefined
+  timeouts = 0
   reading = undefined
 }

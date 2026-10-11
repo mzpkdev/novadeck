@@ -84,6 +84,9 @@ describe("the registry's PATH folders", () => {
   })
 })
 
+// Waits `ms` of real time.
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
 describe("refreshing PATH", () => {
   it("leaves the environment as it is off Windows", async () => {
     const env = { PATH: "/usr/bin" }
@@ -172,6 +175,30 @@ describe("refreshing PATH", () => {
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect((await refreshPath(env, options)).Path).toBe("C:\\Here;C:\\Installed")
     expect(reads).toBe(2)
+    forgetPath()
+  })
+
+  it("waits twice as long after each read in a row that ran long", async () => {
+    forgetPath()
+    let reads = 0
+    const read = () => {
+      reads += 1
+      return Promise.resolve("timeout" as const)
+    }
+    const options = { platform: "win32" as const, retryMs: 60_000, timeoutRetryMs: 40, read }
+    const env = { Path: "C:\\Here" }
+    await refreshPath(env, options)
+    await pause(50)
+    // Past the first wait of 40 ms: read again, and timed out again.
+    await refreshPath(env, options)
+    expect(reads).toBe(2)
+    await pause(50)
+    // Within the second wait, of 80 ms: no read.
+    await refreshPath(env, options)
+    expect(reads).toBe(2)
+    await pause(50)
+    await refreshPath(env, options)
+    expect(reads).toBe(3)
     forgetPath()
   })
 
