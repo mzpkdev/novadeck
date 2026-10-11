@@ -50,8 +50,33 @@ describe("whether cmd prints of its own before a command", () => {
     await expect(cmdPrints(node(""))).resolves.toBe(false)
   })
 
-  it("is no for a cmd that doesn't run, as it runs no hook either", async () => {
+  it("is no only for a cmd that doesn't start, as it runs no hook either", async () => {
     await expect(cmdPrints({ program: join(tmpdir(), "no-such-cmd.exe") })).resolves.toBe(false)
+  })
+
+  it("fails safe: a cmd that failed after printing, or ran too long, prints", async () => {
+    // As `chcp 65001 & cd /d D:\gone`: output, then an error level `rem` leaves.
+    await expect(
+      cmdPrints(node("process.stdout.write('Active code page: 65001.'); process.exit(1)")),
+    ).resolves.toBe(true)
+    // An error level with nothing printed leaves the hook's answer alone.
+    await expect(cmdPrints(node("process.exit(1)"))).resolves.toBe(false)
+    // A slow AutoRun may print anything, after the probe gave up on it.
+    await expect(
+      cmdPrints({ ...node("setTimeout(() => {}, 10_000)"), timeoutMs: 200 }),
+    ).resolves.toBe(true)
+  })
+
+  it("keeps the runner's own variables from the person's AutoRun", async ({ resources }) => {
+    const before = process.env.NOVADECK_TOKEN
+    resources.defer(() => {
+      if (before === undefined) delete process.env.NOVADECK_TOKEN
+      else process.env.NOVADECK_TOKEN = before
+    })
+    process.env.NOVADECK_TOKEN = "secret"
+    await expect(
+      cmdPrints(node("if (process.env.NOVADECK_TOKEN) process.stdout.write('leaked')")),
+    ).resolves.toBe(false)
   })
 
   it.runIf(process.platform === "win32")(

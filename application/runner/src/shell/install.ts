@@ -5,6 +5,7 @@ import { promisify } from "node:util"
 
 import { relayPath } from "@novadeck/relay"
 
+import { withoutInherited } from "./inherited.js"
 import { shellFiles, shellPaths, staleShellFiles, type ShellPaths } from "./scripts.js"
 
 /**
@@ -50,7 +51,7 @@ export const installShellFiles = async (
   const prints = process.platform === "win32" && (await cmdPrints())
   if (prints)
     console.error(
-      "Novadeck: cmd prints something of its own before every command, as an AutoRun (HKCU\\Software\\Microsoft\\Command Processor\\AutoRun) that doesn't send its output to nul does. Antigravity can read none of its hooks' answers then, so Novadeck registers no PreToolUse hook for it, and its own policy asks before each tool; messaging with it won't work until that output goes.",
+      "Novadeck: cmd prints something of its own before every command, as an AutoRun (HKLM or HKCU\\Software\\Microsoft\\Command Processor\\AutoRun) that doesn't send its output to nul does. Antigravity can read none of its hooks' answers then, so Novadeck registers no PreToolUse hook for it, and installs its plugin again where it is connected; its own policy asks before each tool, and messaging with it won't work until that output goes.",
     )
   for (const file of shellFiles(paths, process.platform, undefined, { cmdPrints: prints })) {
     // eslint-disable-next-line no-await-in-loop -- A few small files, one after another.
@@ -149,22 +150,36 @@ const settled = async (move: () => Promise<void>, tries = 5): Promise<void> => {
 /**
  * Whether cmd prints something of its own before a command, as it runs a hook: `rem`,
  * which prints nothing, run without `/d`, as an agent runs it, so the machine's and the
- * person's AutoRun runs first. Any output at all is theirs. `program` and `args` are for
- * tests.
+ * person's AutoRun runs first. Any output at all is theirs. It fails safe: a cmd that ran
+ * but failed, as an AutoRun that leaves an error level, still printed what it printed, and
+ * one that ran past `timeoutMs` may have printed anything, so it counts as printing; only
+ * a cmd that didn't start, which runs no hook either, doesn't. It gets the runner's
+ * environment without what children never inherit, as the AutoRun is the person's own
+ * code. `program` and `args` are for tests.
  */
 export const cmdPrints = async ({
   program = process.env.COMSPEC || "cmd.exe",
   args = ["/c", "rem"],
-}: { readonly program?: string; readonly args?: readonly string[] } = {}): Promise<boolean> => {
+  timeoutMs = 5_000,
+}: {
+  readonly program?: string
+  readonly args?: readonly string[]
+  readonly timeoutMs?: number
+} = {}): Promise<boolean> => {
   try {
     const { stdout } = await promisify(execFile)(program, args, {
+      env: withoutInherited(process.env),
       windowsHide: true,
-      timeout: 5_000,
+      timeout: timeoutMs,
     })
     return stdout.length > 0
-  } catch {
-    // A cmd that doesn't run runs no hook either.
-    return false
+  } catch (error) {
+    const { code, killed, stdout } = error as NodeJS.ErrnoException & {
+      readonly killed?: boolean
+      readonly stdout?: string
+    }
+    if (code === "ENOENT") return false
+    return killed === true || (stdout ?? "").length > 0
   }
 }
 

@@ -67,6 +67,15 @@ export type Harness = {
     machine?: Machine,
   ) => readonly File[]
   /**
+   * Where the agent keeps a copy of the plugin it installed, and the files of it that must
+   * match Novadeck's, for a harness that copies its plugin as it installs it: where they
+   * differ, as once a Novadeck renders them otherwise, the plugin is installed again.
+   */
+  readonly installed?: {
+    readonly directory: (install: Install) => string
+    readonly files: readonly string[]
+  }
+  /**
    * Changes its own settings once connected, and puts them back before disconnecting, for
    * what it offers no way to set per launch, as Antigravity's status line.
    */
@@ -293,10 +302,10 @@ export type Launchers = { readonly mcp: Start }
 /** What the machine does to a hook before the hook's own command runs. */
 export type Machine = {
   /**
-   * Whether cmd prints something of its own before any command it runs, as an AutoRun
-   * (`HKCU\Software\Microsoft\Command Processor\AutoRun`) of `chcp 65001` without `>nul`
-   * does, for a harness that runs its hooks in cmd without `/d`: ahead of the hook's
-   * answer, which a harness that reads it as JSON then can't.
+   * Whether cmd prints something of its own before any command it runs, as an AutoRun (the
+   * machine's or the user's, `HKLM` or `HKCU\Software\Microsoft\Command Processor\AutoRun`)
+   * of `chcp 65001` without `>nul` does, for a harness that runs its hooks in cmd without
+   * `/d`: ahead of the hook's answer, which a harness that reads it as JSON then can't.
    */
   readonly cmdPrints?: boolean
 }

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { access } from "node:fs/promises"
+import { access, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { delimiter, join } from "node:path"
 
@@ -177,7 +177,7 @@ export const createHarnesses = (
   }
   // One change at a time: an agent's plugin commands edit its configuration.
   let queue = Promise.resolve()
-  return {
+  const api = {
     /** Where the agent lives on this machine, once the shell files say where its plugin is. */
     install: async (agent: AgentName): Promise<Install | undefined> => (await installs())?.(agent),
     /** Whether Novadeck's plugin is installed into the agent. */
@@ -256,7 +256,46 @@ export const createHarnesses = (
       )
       return change
     },
+    /**
+     * Installs the plugin again into each connected agent that keeps a copy of it whose
+     * files differ from Novadeck's (`Harness.installed`), as a connect would: a hook that
+     * renders otherwise now, as where cmd prints first, reaches it no other way. Resolves to
+     * the agents it installed into; one that fails is logged, and the rest go on.
+     */
+    refresh: async (): Promise<AgentName[]> => {
+      const install = await installs()
+      if (!install) return []
+      const refreshed: AgentName[] = []
+      for (const agent of agents) {
+        const { installed } = harnesses[agent]
+        const where = install(agent)
+        // eslint-disable-next-line no-await-in-loop -- One agent at a time, as `set` runs them.
+        if (!installed || !(await harnesses[agent].connected(where))) continue
+        // eslint-disable-next-line no-await-in-loop -- As above.
+        const differs = await Promise.all(
+          installed.files.map(async (name) => {
+            const read = (folder: string) =>
+              readFile(join(folder, name), "utf8").catch(() => undefined)
+            const [ours, theirs] = await Promise.all([
+              read(where.plugin),
+              read(installed.directory(where)),
+            ])
+            return ours !== undefined && ours !== theirs
+          }),
+        )
+        if (!differs.includes(true)) continue
+        try {
+          // eslint-disable-next-line no-await-in-loop -- As above.
+          await api.set(agent, true)
+          refreshed.push(agent)
+        } catch (error) {
+          console.error(`Novadeck could not install its changed plugin into ${agent}:`, error)
+        }
+      }
+      return refreshed
+    },
   }
+  return api
 }
 
 export type Harnesses = ReturnType<typeof createHarnesses>

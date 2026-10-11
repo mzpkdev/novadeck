@@ -70,6 +70,7 @@ import {
   type SendAnswer,
 } from "../messaging/messaging.js"
 import type { MailboxRecords } from "../messaging/records.js"
+import { inherited } from "../shell/inherited.js"
 import type { InstalledShell } from "../shell/install.js"
 import { shellLaunch, startsCommands, type ShellLaunch } from "../shell/integration.js"
 import { osc7Directory, osc9Directory } from "../shell/osc.js"
@@ -485,35 +486,6 @@ const resumeGroup = (group: number): void => {
     // Gone.
   }
 }
-
-// Variables of Novadeck's own shells and of agent sessions, which a runner started from
-// inside one must not pass on.
-const inherited = [
-  "NOVADECK_TOKEN",
-  "NOVADECK_TERMINAL_ID",
-  "NOVADECK_REPORT",
-  "NOVADECK_REPORT_TOKEN",
-  "NOVADECK_HOOK",
-  "NOVADECK_MCP",
-  "NOVADECK_BIN",
-  "NOVADECK_ZDOTDIR",
-  "NOVADECK_RESUME",
-  "NOVADECK_SHIMS",
-  // An agent's own session markers, when Novadeck was started from inside one: an agent
-  // in Novadeck's shells would take itself for that session's child. Claude Code, for
-  // one, then stops saving its transcript.
-  "CLAUDECODE",
-  "CLAUDE_CODE_CHILD_SESSION",
-  "CLAUDE_CODE_SESSION_ID",
-  "CLAUDE_CODE_ENTRYPOINT",
-  "CLAUDE_CODE_EXECPATH",
-  "CLAUDE_CODE_MESSAGING_SOCKET",
-  "CLAUDE_CODE_SESSION_ATTENDED",
-  "CLAUDE_PID",
-  "CLAUDE_PROJECT_DIR",
-  "CODEX_THREAD_ID",
-  "ANTIGRAVITY_CONVERSATION_ID",
-]
 
 // Why a request for a new terminal went unanswered.
 const unopened = {

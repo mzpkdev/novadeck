@@ -40,9 +40,14 @@ if (agent === "codex") {
   if (command === "remove novadeck@novadeck") write(file, "")
 }
 if (agent === "agy") {
-  const file = path.join(home, ".gemini", "config", "plugins", "novadeck", "plugin.json")
-  if (command === "install") write(file, "{}")
-  if (command === "uninstall novadeck") fs.rmSync(file, { force: true })
+  // It copies the plugin folder it installs, as the real one does.
+  const folder = path.join(home, ".gemini", "config", "plugins", "novadeck")
+  if (command === "install") {
+    write(path.join(folder, "plugin.json"), "{}")
+    const hooks = path.join(args.at(-1), "hooks.json")
+    if (fs.existsSync(hooks)) write(path.join(folder, "hooks.json"), fs.readFileSync(hooks, "utf8"))
+  }
+  if (command === "uninstall novadeck") fs.rmSync(folder, { recursive: true, force: true })
 }
 `
 
@@ -175,6 +180,34 @@ describe("agents Novadeck can connect", () => {
     await agents.set("agy", false)
     expect((await agents.list())[2]).toMatchObject({ connected: false })
     expect(statusLine()).toBeUndefined()
+  })
+
+  it("install the plugin again where an agent's own copy of it differs from Novadeck's", async ({
+    fixture,
+  }) => {
+    installed(fixture.home, "agy", "codex")
+    const agents = fixture.agents()
+    // Not connected yet: nothing to refresh.
+    expect(await agents.refresh()).toEqual([])
+    await agents.set("agy", true)
+    const copy = join(fixture.home, ".gemini", "config", "plugins", "novadeck", "hooks.json")
+    const ours = join(fixture.paths.plugins.agy, "hooks.json")
+    expect(readFileSync(copy, "utf8")).toBe(readFileSync(ours, "utf8"))
+    // Its copy matches: no command runs.
+    const before = fixture.calls().length
+    expect(await agents.refresh()).toEqual([])
+    expect(fixture.calls()).toHaveLength(before)
+    // Novadeck renders its hooks otherwise now, as where cmd prints first.
+    writeFileSync(ours, '{"novadeck":{}}')
+    expect(await agents.refresh()).toEqual(["agy"])
+    expect(fixture.calls().slice(before)).toContainEqual([
+      "agy",
+      "plugin",
+      "install",
+      fixture.paths.plugins.agy,
+    ])
+    expect(readFileSync(copy, "utf8")).toBe('{"novadeck":{}}')
+    expect(await agents.refresh()).toEqual([])
   })
 
   it.skipIf(windows)(

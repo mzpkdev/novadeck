@@ -19,6 +19,8 @@ import { transcripts, typedEntry } from "./transcripts.js"
 // Antigravity keeps its own state beside other Google tools in ~/.gemini.
 const gemini = (home: string) => join(home, ".gemini")
 const cli = ({ home: user }: Install) => join(gemini(user), "antigravity-cli")
+// Where it keeps the copy of Novadeck's plugin it installed.
+const installedPlugin = ({ home }: Install) => join(gemini(home), "config", "plugins", "novadeck")
 
 // Antigravity reads every hook's answer as JSON, even outside Novadeck's shells. It denies
 // a tool whose PreToolUse answer gives no decision, `{}` included (probed 2026-10-06 on
@@ -83,11 +85,14 @@ export const agy = {
   // Antigravity installs a plugin folder, which its name must match.
   plugin: join("agy", "novadeck"),
   home: cli,
-  connected: ({ home }) =>
-    access(join(gemini(home), "config", "plugins", "novadeck", "plugin.json")).then(
+  connected: (install) =>
+    access(join(installedPlugin(install), "plugin.json")).then(
       () => true,
       () => false,
     ),
+  // It copies the plugin folder as it installs it (seen 2026-10-11, 1.2.14), so a hook
+  // Novadeck renders otherwise, as where cmd prints first, reaches it only installed again.
+  installed: { directory: installedPlugin, files: ["hooks.json"] },
   connect: ({ plugin: directory }) => [
     { argv: ["agy", "plugin", "uninstall", "novadeck"], optional: true },
     { argv: ["agy", "plugin", "install", directory] },
