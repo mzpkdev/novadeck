@@ -74,10 +74,12 @@ export const registryFolders = (
 ): readonly string[] | undefined => {
   const machines: Record<string, string> = {}
   const users: Record<string, string> = {}
-  const lines = answer.split(/\r?\n/).filter((line) => line.trim() !== "")
+  const lines = answer.split(/\r?\n/).filter((line) => line !== "")
   if (lines.length === 0) return undefined
   for (const line of lines) {
-    const [scope, name, value, ...more] = line.trim().split(" ")
+    // An empty name or value is empty in base64 too, as a key's default value or a
+    // variable set to nothing: the line keeps its spaces.
+    const [scope, name, value, ...more] = line.split(" ")
     if (scope !== "machine" && scope !== "user") return undefined
     if (name === undefined || value === undefined || more.length > 0) return undefined
     if (!base64.test(name) || !base64.test(value)) return undefined
@@ -117,35 +119,43 @@ const readRegistry = (env: NodeJS.ProcessEnv, timeoutMs: number) =>
     )
   })
 
-// The registry's folders last read, for every caller, and the read under way, if any:
-// one PowerShell at a time, not one per terminal, as a workspace restored with many.
+// The registry's folders last read, for every caller; when a read last failed; and the
+// read under way, if any: one PowerShell at a time, not one per terminal, as a workspace
+// restored with many.
 let last: { readonly at: number; readonly folders: readonly string[] } | undefined
+let failed: number | undefined
 let reading: Promise<readonly string[] | undefined> | undefined
+
+type Timing = { readonly timeoutMs: number; readonly maxAgeMs: number; readonly retryMs: number }
 
 const folders = (
   env: NodeJS.ProcessEnv,
-  timeoutMs: number,
-  maxAgeMs: number,
+  { timeoutMs, maxAgeMs, retryMs }: Timing,
   read: typeof readRegistry,
 ): Promise<readonly string[] | undefined> => {
   const now = Date.now()
-  if (!reading && (!last || now - last.at > maxAgeMs))
-    reading = read(env, timeoutMs).then((found) => {
-      if (found) last = { at: now, folders: found }
-      reading = undefined
-      return found
-    })
-  // The last answer serves at once, however old, while a newer one is read behind it.
-  return last ? Promise.resolve(last.folders) : reading!
+  if (last && now - last.at <= maxAgeMs) return Promise.resolve(last.folders)
+  // Where the registry can't be read, as where PowerShell may not run, no caller waits on
+  // it again for a while: each gets the last answer, however old, or none.
+  if (failed !== undefined && now - failed <= retryMs) return Promise.resolve(last?.folders)
+  reading ??= read(env, timeoutMs).then((found) => {
+    if (found) last = { at: now, folders: found }
+    failed = found ? undefined : Date.now()
+    reading = undefined
+    return found ?? last?.folders
+  })
+  return reading
 }
 
 /**
  * `env` with PATH as a new Windows terminal would have it. A Windows program keeps the
  * environment it started with, and passes it on: an app opened from a browser that has
  * run since before an install never sees that install's folder on PATH. The registry
- * has it, as Explorer and new consoles do. Read once, then again in the background once
- * the last read is `maxAgeMs` old, each caller served the last answer meanwhile, so only
- * the first waits. Elsewhere, and when the registry can't be read, `env` stays as it is.
+ * has it, as Explorer and new consoles do. An answer up to `maxAgeMs` old serves at once;
+ * past that, the registry is read again, at most `timeoutMs`, and every caller meanwhile
+ * waits on that one read: a terminal opened after an install finds what it installed.
+ * After a read that failed, none is tried again for `retryMs`. Elsewhere, and when the
+ * registry can't be read, `env` stays as it is, or gains what was read last.
  */
 export const refreshPath = async (
   env: NodeJS.ProcessEnv,
@@ -153,16 +163,18 @@ export const refreshPath = async (
     platform = process.platform,
     timeoutMs = 5_000,
     maxAgeMs = 30_000,
+    retryMs = 300_000,
     read = readRegistry,
   }: {
     readonly platform?: NodeJS.Platform
     readonly timeoutMs?: number
     readonly maxAgeMs?: number
+    readonly retryMs?: number
     readonly read?: typeof readRegistry
   } = {},
 ): Promise<NodeJS.ProcessEnv> => {
   if (platform !== "win32") return env
-  const found = await folders(env, timeoutMs, maxAgeMs, read)
+  const found = await folders(env, { timeoutMs, maxAgeMs, retryMs }, read)
   if (!found) return env
   const key = pathKey(env)
   return { ...env, [key]: mergePath(env[key] ?? "", found) }
@@ -171,5 +183,6 @@ export const refreshPath = async (
 /** Forgets what was read, as a test that reads afresh needs. */
 export const forgetPath = (): void => {
   last = undefined
+  failed = undefined
   reading = undefined
 }

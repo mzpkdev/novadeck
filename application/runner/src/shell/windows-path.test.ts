@@ -65,6 +65,17 @@ describe("the registry's PATH folders", () => {
     ])
   })
 
+  it("take a value set to nothing, and a key's unnamed default value", () => {
+    // As the lookup prints them: an empty name or value is empty in base64 too.
+    const printed = [
+      `machine ${b64("Path")} ${b64("C:\\Windows")}`,
+      `machine  ${b64("default")}`,
+      `user ${b64("EMPTY")} `,
+      `user ${b64("Path")} ${b64("C:\\Tools;%EMPTY%x")}`,
+    ].join("\r\n")
+    expect(registryFolders(printed)).toEqual(["C:\\Windows", "C:\\Tools", "x"])
+  })
+
   it("are unknown for an answer that isn't the lookup's", () => {
     expect(registryFolders("")).toBeUndefined()
     expect(registryFolders("not the lookup's")).toBeUndefined()
@@ -84,7 +95,7 @@ describe("refreshing PATH", () => {
     expect(pathKey({})).toBe("PATH")
   })
 
-  it("reads the registry once at a time, serving the last answer while it reads again", async () => {
+  it("reads the registry once at a time, and again once its answer is old", async () => {
     forgetPath()
     let reads = 0
     let answering = ["C:\\First"]
@@ -101,13 +112,39 @@ describe("refreshing PATH", () => {
     // Fresh enough: no read at all.
     await refreshPath(env, options)
     expect(reads).toBe(1)
-    // Once old, the last answer serves at once, and a new one is read behind it.
+    // Once old, as after an install, the very next terminal waits for the new answer.
     answering = ["C:\\Second"]
     await new Promise((resolve) => setTimeout(resolve, 60))
+    const after = await Promise.all([refreshPath(env, options), refreshPath(env, options)])
+    expect(after.map((one) => one.Path)).toEqual(["C:\\Here;C:\\Second", "C:\\Here;C:\\Second"])
+    expect(reads).toBe(2)
+    forgetPath()
+  })
+
+  it("tries no read for a while after one failed, keeping what it read before", async () => {
+    forgetPath()
+    let reads = 0
+    let answering: readonly string[] | undefined = ["C:\\First"]
+    const read = () => {
+      reads += 1
+      return Promise.resolve(answering)
+    }
+    const options = { platform: "win32" as const, maxAgeMs: 0, retryMs: 60_000, read }
+    const env = { Path: "C:\\Here" }
+    expect((await refreshPath(env, options)).Path).toBe("C:\\Here;C:\\First")
+    // As where PowerShell is blocked: the read fails, and the last answer still serves.
+    answering = undefined
+    await new Promise((resolve) => setTimeout(resolve, 5))
     expect((await refreshPath(env, options)).Path).toBe("C:\\Here;C:\\First")
     expect(reads).toBe(2)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect((await refreshPath(env, options)).Path).toBe("C:\\Here;C:\\Second")
+    // Nobody waits on another read until `retryMs` has passed.
+    expect((await refreshPath(env, options)).Path).toBe("C:\\Here;C:\\First")
+    expect(reads).toBe(2)
+    // Where none ever succeeded, the environment stays as it is, again without a read.
+    forgetPath()
+    expect(await refreshPath(env, options)).toBe(env)
+    expect(await refreshPath(env, options)).toBe(env)
+    expect(reads).toBe(3)
     forgetPath()
   })
 
