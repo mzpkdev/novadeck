@@ -73,6 +73,7 @@ jobs:
 
           load() { sudo apparmor_parser --replace "$RUNNER_TEMP/profiles/$1"; }
           unload() {
+            local name
             for name in home mount; do sudo apparmor_parser --remove "$RUNNER_TEMP/profiles/$name" 2> /dev/null || true; done
           }
 
@@ -95,7 +96,10 @@ jobs:
               ns="$(sudo readlink "/proc/$pid/ns/user" 2> /dev/null)"
               local type
               type="$(grep -oE -- '--type=[a-z-]+' <<< "$args" | head -1)"
-              echo "$pid ${type:-browser} label=[$label] userns=$ns exe=$(sudo readlink /proc/$pid/exe)" >> "$log.processes"
+              local seccomp flags
+              seccomp="$(sudo awk '/^Seccomp:/ { print $2 }' "/proc/$pid/status" 2> /dev/null)"
+              flags="$(grep -oE -- '--[a-z-]*sandbox[a-z-]*' <<< "$args" | sort -u | paste -sd ' ')"
+              echo "$pid ${type:-browser} label=[$label] userns=$ns seccomp=$seccomp flags=[$flags] exe=$(sudo readlink "/proc/$pid/exe")" >> "$log.processes"
               case "$type" in
                 "") [[ "$args" == *"/tmp/.mount_"* ]] && browser_ns="$ns" ;;
                 --type=renderer) renderer_ns+=("$ns") ;;
@@ -113,7 +117,7 @@ jobs:
             kill -KILL -- "-$leader" 2> /dev/null
             pkill -KILL -f -- "--user-data-dir=$data" 2> /dev/null
             sleep 2
-            echo "::group::$name log"; tail -n 40 "$log"; cat "$log.processes" 2> /dev/null; echo "::endgroup::"
+            echo "::group::$name log"; grep -v dbus "$log" | tail -n 40; cat "$log.processes" 2> /dev/null; echo "::endgroup::"
           }
 
           share=~/.local/share/novadeck/novadeck-linux-x86_64.AppImage
