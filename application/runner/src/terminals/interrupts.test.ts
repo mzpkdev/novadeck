@@ -231,6 +231,43 @@ describe("interrupts", () => {
     expect(t.written).toEqual([])
   })
 
+  it("presses the second Escape once the cap passes with no queued turn and an empty box", async () => {
+    const pressed: number[] = []
+    const t = terminal({
+      queued: true,
+      prompt: "Hold on",
+      working: () => pressed.length === 0,
+      after: () => {
+        pressed.push(Date.now())
+        return undefined
+      },
+    })
+    expect(await t.interrupt()).toEqual({ returned: null })
+    expect(t.typed).toEqual([ESC, ESC])
+    // The stub's cap is 1 s.
+    expect(pressed[1]! - pressed[0]!).toBeGreaterThanOrEqual(1_000)
+  })
+
+  it("returns the person's text with the queued one where the queued turn came after they typed", async () => {
+    const pressed: number[] = []
+    const t = terminal({
+      queued: true,
+      prompt: "Hold on",
+      working: () => pressed.length === 0 || Date.now() - pressed[0]! >= 600,
+      // The second Escape stops the queued turn, which puts its message after theirs.
+      after: (escapes) => {
+        pressed.push(Date.now())
+        return escapes === 2 ? "mine\nQueued beta" : undefined
+      },
+    })
+    const stopping = t.interrupt()
+    // Past the box settling after the first Escape, before the queued turn comes.
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    t.personTypes("mine")
+    expect(await stopping).toEqual({ returned: "mine\nQueued beta" })
+    expect(t.typed).toEqual([ESC, ESC])
+  })
+
   it("returns nothing where the first Escape alone leaves the box empty and nothing is queued", async () => {
     const t = terminal({ prompt: "Say hi" })
     expect(await t.interrupt()).toEqual({ returned: null })

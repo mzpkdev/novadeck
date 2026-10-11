@@ -41,6 +41,7 @@ import { DomainError } from "../errors.js"
 import {
   apply,
   escapeVerdictMs,
+  boundSince,
   started as fresh,
   summary as activitySummary,
   type Activity,
@@ -538,22 +539,6 @@ const sameProcess = (a: ForegroundProcess | null, b: ForegroundProcess | null): 
     a.argv?.length === b.argv?.length &&
     (a.argv ?? []).every((arg, index) => arg === b.argv?.[index]))
 
-/**
- * How long before the hook that bound a session another hook the harness fired with it
- * may have started, in milliseconds: Antigravity fires its status line and a model call's
- * PreInvocation at once, and either may start, and be heard, first. A newly bound
- * session's activity takes facts from that long before the binding's hook fired (its
- * `firedAt`, on Windows its shell's start): each fact is compared by its relay's start,
- * never earlier than its own firing, so one fired with the binding is kept, however long
- * its own shell took to start. The relays' starts alone can't tell: two hooks fired
- * together start their own cmd or PowerShell, and under load their relays start well over
- * 250 ms apart. On CI (2026-10-11, Windows) the
- * PreInvocation that started a session's first turn had started 5 µs, and once 1.4 ms,
- * before the status line that bound the session, was heard after it, and was dropped as
- * older than the binding, with every fact after it: the turn never showed.
- */
-const boundTogetherMs = 250
-
 // How long a closed Windows terminal's programs have to end by themselves once its
 // console closes, as they do on its CTRL_CLOSE_EVENT, saving what they were writing, in
 // milliseconds: within the five seconds Windows gives them. What is left of the terminal's
@@ -564,8 +549,9 @@ const shutdownTreeGraceMs = 1_000
 
 // How long ending terminals' trees may take in all as the runner shuts down, in
 // milliseconds: every relay run, taskkill and grace then takes its time from this, within
-// the five seconds the app gives the runner.
-const shutdownTreesMs = 4_000
+// the five seconds the app gives the runner, with room for a shell's exit (its own 1 s wait)
+// and for closing the rest of the runner after.
+const shutdownTreesMs = 3_000
 
 /**
  * Terminals that have drawn. node-pty on Windows queues a kill until then; after, its kill
@@ -3254,7 +3240,7 @@ export class Terminals {
       if (!same) {
         record.activity = next.binding
           ? fresh(
-              (event.firedAt ?? event.startedAt) - boundTogetherMs,
+              boundSince(event),
               harnesses[next.binding.agent].wakes,
               harnesses[next.binding.agent].records,
             )
@@ -4274,18 +4260,16 @@ export class Terminals {
     const members = [...left.values()]
     if (!anyRunning(members)) return
     await this.trees.end(members, this.runMs(relayMs))
-    // One the relay didn't end, as where it ran out of time or was refused, still runs a
-    // moment later: it is said, and ended with taskkill, by the pid it ran under just now.
+    // A pid that still answers a moment later is said, so a process the relay didn't end,
+    // as where it ran out of time, shows. Nothing more is ended by pid alone: another
+    // process may have taken one meanwhile, which the relay rightly refused.
     await sleep(200)
-    const survivors = members.filter((member) => anyRunning([member]))
-    if (survivors.length === 0) return
-    console.error(
-      "Novadeck: a closed terminal's processes outlived ending them; taskkill ends them:",
-      survivors.map(({ pid }) => pid).join(", "),
-    )
-    await Promise.all(
-      survivors.map(({ pid }) => taskkillTree(pid, this.runMs(5_000)).catch(() => {})),
-    )
+    const answering = members.filter((member) => anyRunning([member]))
+    if (answering.length > 0)
+      console.error(
+        "Novadeck: after ending a closed terminal's processes, these pids still answer, each that process or one given its pid since:",
+        answering.map(({ pid, startedAt }) => `${pid} (started ${startedAt})`).join(", "),
+      )
   }
 
   /**
