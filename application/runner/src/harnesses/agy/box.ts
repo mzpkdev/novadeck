@@ -17,10 +17,13 @@ export const shellFooter = (rows: readonly string[]): boolean => {
  * On Windows its shell mode runs a command in cmd (probed 2026-10-10, 1.2.14), which runs
  * only its first line: the lines are joined with `&`, which runs each after the one before
  * whatever that returned, as sh runs lines. A blank line joins nothing. Undefined for one
- * whose lines can't be joined so and mean the same: a remark (`rem`, `@rem`, `rem.`) or a
- * label (`:x`, `::`) would swallow every line after it, a trailing `^` escape the joining
- * `&`, a block (`if x (` … `)`) or a line ending or starting in `&`, `&&`, `|` or `||`
- * become a syntax error, and a continued line's indent be lost.
+ * whose lines can't be joined so and mean the same: a remark (`rem`, `@rem`, `rem.`, one
+ * after an `&` mid-line, or behind the `;`, `,`, `=` and spaces cmd skips) or a label
+ * (`:x`, `::`) would swallow every line after it, a `%` be expanded across the whole
+ * joined line before any of it runs (`set N=1` then `echo %N%`, `%ERRORLEVEL%`), a
+ * trailing `^` escape the joining `&`, a block (`if x (` … `)`) or a line ending or
+ * starting in `&`, `&&`, `|` or `||` become a syntax error, and a continued line's indent
+ * be lost.
  */
 export const shellCommandOf = (
   command: string,
@@ -32,7 +35,9 @@ export const shellCommandOf = (
   const unjoinable = lines.some((line, at) => {
     const text = line.trim()
     return (
-      /^(@?rem(\W|$)|:)/i.test(text) ||
+      /(^|[&|(])[\s;,=@]*(rem(\W|$))/i.test(text) ||
+      /^[\s;,=@]*:/.test(text) ||
+      text.includes("%") ||
       /[\^(&|]$/.test(text) ||
       /^[)&|]/.test(text) ||
       (at > 0 && lines[at - 1]!.trimEnd().endsWith("^"))
