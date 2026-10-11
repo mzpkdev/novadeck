@@ -51,11 +51,16 @@ type Inside = {
 // What the trace reads of a terminal's record: its agent's activity as clients see it.
 type Traced = {
   readonly summary: { readonly id: string }
+  readonly binding: Bound | null
   readonly activity: {
     readonly state: string
     readonly lastTurn: { readonly outcome: string } | null
   } | null
 }
+// Whose a binding or a fact is: the session, by its id's start, and the agent's instance.
+type Bound = { readonly sessionId?: string; readonly instance?: string | number | null }
+const whose = ({ sessionId, instance }: Bound): string =>
+  `${sessionId?.slice(0, 8) ?? "?"}/${instance ?? "-"}`
 type Runner = {
   queue: <T>(terminalId: string, work: () => Promise<T>, fallback: T) => Promise<T>
   report: (report: Report, deadline?: number) => Promise<unknown>
@@ -174,9 +179,14 @@ export const startTrace = (name: string, model: FakeModel) => {
   runner.appliedFact = function (record, fact) {
     const before = activityOf(record.activity)
     const applied = appliedFact.call(this, record, fact)
+    // One that changed nothing names the binding it was weighed against, and its own.
     if (fact.type !== "telemetry-observed")
       add(
-        `activity ${named(record.summary.id)} ${fact.type}: ${before} → ${activityOf(record.activity)}${applied ? "" : " (no change)"}`,
+        `activity ${named(record.summary.id)} ${fact.type}: ${before} → ${activityOf(record.activity)}${
+          applied
+            ? ""
+            : ` (no change; bound to ${record.binding ? whose(record.binding) : "none"}, the fact ${whose(fact as Bound)})`
+        }`,
       )
     return applied
   }
