@@ -65,7 +65,7 @@ jobs:
 
       - name: Probe
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           results="$RUNNER_TEMP/results.md"
           logs="$RUNNER_TEMP/logs"
           mkdir -p "$logs"
