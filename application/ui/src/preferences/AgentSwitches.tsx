@@ -1,4 +1,3 @@
-import type { AgentConnection } from "../backend/port"
 import { Switch } from "../ui-toolkit/Switch"
 import { settingRowClasses, settingsCardClasses } from "./settings"
 
@@ -9,7 +8,7 @@ export type AgentSwitch = {
   readonly connected: boolean
   readonly busy: boolean
   readonly error?: string
-  readonly limited?: AgentConnection["limited"]
+  readonly limited?: "own-status-line" | undefined
 }
 
 export const agentLabels: Record<AgentSwitch["agent"], string> = {
