@@ -261,7 +261,7 @@ profile_loaded() {
 # The numeric owner of the home folder.
 home_owner() {
   # shellcheck disable=SC2012
-  ls -nd "$HOME" | awk '{ print $3 }'
+  ls -ndL "$HOME" | awk '{ print $3 }'
 }
 
 # Lets the AppImage create user namespaces by loading an AppArmor profile. A failure here
@@ -275,13 +275,7 @@ setup_sandbox() {
     return 0
   fi
 
-  # As root for somebody else's home folder (sudo -E), the profile would be uid 0's and
-  # name that user's paths, where it may clash with the user's own.
   uid="$(id -u)"
-  if [ "$uid" = 0 ] && [ "$(home_owner)" != 0 ]; then
-    sandbox_warning "this ran as root for a home folder that is not root's. Run it as the user who runs Novadeck." "$base"
-    return 0
-  fi
 
   # One file per user, named for the uid, so one user's install never replaces another's,
   # and apart from the novadeck name the .deb's own profile uses.
@@ -316,7 +310,9 @@ setup_sandbox() {
   elif as_root cp profile "$target"; then
     say "Novadeck's sandbox is set up."
   else
-    sandbox_warning "the profile loaded but could not be saved, so it will be gone after a restart." "$base"
+    say "Novadeck's sandbox works until the next restart, as the profile could not be saved."
+    say "After a restart, run this again:"
+    say "  curl -fsSL $base/install.sh | sh -s -- --sandbox"
   fi
 }
 
@@ -339,6 +335,14 @@ main() {
   base="${base%/}"
 
   check_platform "$repository"
+
+  [ -n "${HOME:-}" ] && [ -d "$HOME" ] || fail "HOME is not set to an existing folder."
+  # Run through sudo, whether plain (HOME is root's) or with -E (HOME is the user's), this
+  # would write everything as root, out of reach of the user's own updates and re-runs, and
+  # Electron will not start as root with a sandbox. Real root logins set no SUDO_UID.
+  if [ "$(id -u)" = 0 ] && { [ "${SUDO_UID:-0}" != 0 ] || [ "$(home_owner)" != 0 ]; }; then
+    fail "this is running as root for another user's account. Run install.sh as the user who runs Novadeck, without sudo."
+  fi
 
   work="$(mktemp -d)" || fail "could not create a temporary folder."
   trap 'rm -rf "$work"' EXIT

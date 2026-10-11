@@ -68,7 +68,7 @@ type Scenario = {
   uname?: { system?: string; machine?: string }
   root?: boolean
   /** Whether sudo exists, or "denied" when it does but refuses to run anything. */
-  sudo?: boolean | "denied"
+  sudo?: boolean | "denied" | "no-copy"
   /** Replaces the content a download is checked against, to fake a corrupt file. */
   tamper?: string
   script?: string
@@ -86,6 +86,10 @@ type Scenario = {
   homeOwner?: number
   /** A profile file already installed, which a failed load must leave alone. */
   existing?: string
+  /** The SUDO_UID sudo leaves in the environment. */
+  sudoUid?: string
+  /** Leaves HOME unset, or points it at a folder that is not there. */
+  home?: "unset" | "missing"
   /** A relative XDG_DATA_HOME, which counts as unset. */
   relativeXdg?: string
   /** Tools present on the PATH, such as fusermount3. */
@@ -152,6 +156,7 @@ cp "${served}/\${url##*/}" "$out"`,
   )
   const sudo = scenario.sudo ?? true
   if (sudo === "denied") shim(bin, "sudo", `echo "sudo denied" >> "${log}"; exit 1`)
+  else if (sudo === "no-copy") shim(bin, "sudo", `[ "$1" = cp ] && exit 1\nSUDO=sudo "$@"`)
   else if (sudo) shim(bin, "sudo", `SUDO=sudo "$@"`)
 
   // The system folders the script searches are the test's own, so the host's tools never leak in.
@@ -201,7 +206,8 @@ esac`,
     spawnSync("/bin/sh", [entry, ...(scenario.args ?? [])], {
       env: {
         PATH: bin,
-        HOME: home,
+        ...(scenario.home === "unset" ? {} : { HOME: scenario.home ? join(root, "gone") : home }),
+        ...(scenario.sudoUid ? { SUDO_UID: scenario.sudoUid } : {}),
         NOVADECK_INSTALL_SBIN_DIRS: sbin,
         NOVADECK_INSTALL_USERNS_SYSCTL: sysctl,
         NOVADECK_INSTALL_APPARMOR_DIR: apparmor,
@@ -408,12 +414,14 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       expect(result.stdout).toContain("without its sandbox")
     })
 
-    it("skips the sandbox as root for a home folder that is someone else's", () => {
-      const result = run({ ...restricted, root: true, sudo: false, homeOwner: 1000 })
+    it("says the sandbox lasts until a restart when the loaded profile cannot be saved", () => {
+      const result = run({ ...restricted, sudo: "no-copy" })
       expect(result.status).toBe(0)
-      expect(result.commands).toEqual([])
       expect(result.profile).toBeUndefined()
-      expect(result.stdout).toContain("Run it as the user who runs Novadeck")
+      expect(result.commands[1]).toBe("sudo apparmor_parser --replace profile")
+      expect(result.stdout).toContain("works until the next restart")
+      expect(result.stdout).toContain("--sandbox")
+      expect(result.stdout).not.toContain("without its sandbox")
     })
 
     it("leaves the install working and says how to retry when sudo refuses", () => {
@@ -525,6 +533,47 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       const result = run({ args: ["--sandbox"], restrict: "1", parser: "valid", sudo: "denied" })
       expect(result.status).toBe(0)
       expect(result.stdout).toContain("--sandbox")
+    })
+  })
+
+  context("as root for another user's account", () => {
+    const modes = [
+      ["no arguments", []],
+      ["--sandbox", ["--sandbox"]],
+    ] as const
+
+    it.each(modes)("installs nothing with %s when the home folder is the user's", (_, args) => {
+      const result = run({ root: true, sudo: false, homeOwner: 1000, args: [...args] })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("without sudo")
+      expect(result.lines).toEqual([])
+      expect(existsSync(join(result.home, ".local"))).toBe(false)
+    })
+
+    it.each(modes)("installs nothing with %s when run through plain sudo", (_, args) => {
+      const result = run({ root: true, sudo: false, sudoUid: "1000", args: [...args] })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("without sudo")
+      expect(result.lines).toEqual([])
+    })
+  })
+
+  context("as root", () => {
+    it("installs for root's own home, with or without a SUDO_UID of 0", () => {
+      for (const sudoUid of [undefined, "0"]) {
+        const result = run({ root: true, sudo: false, sudoUid })
+        expect(result.status).toBe(0)
+        expect(existsSync(join(result.home, ".local/bin/novadeck"))).toBe(true)
+      }
+    })
+  })
+
+  context("when HOME is not an existing folder", () => {
+    it.each(["unset", "missing"] as const)("fails when it is %s", (home) => {
+      const result = run({ root: true, sudo: false, home })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("HOME is not set to an existing folder")
+      expect(result.lines).toEqual([])
     })
   })
 

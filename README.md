@@ -17,9 +17,10 @@ canvas. Keep related work together and switch between sessions from the sidebar.
   curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh
   ```
 
-  This puts the AppImage in `~/.local/share/novadeck` with a menu entry and a `novadeck`
-  command in `~/.local/bin`. It checks every download against the release's `SHA256SUMS`,
-  and running it again upgrades. The AppImage needs FUSE 3 (the `fuse3` package).
+  Run it as yourself, not with `sudo`. It puts the AppImage in `~/.local/share/novadeck`
+  with a menu entry and a `novadeck` command in `~/.local/bin`, checks every download
+  against the release's `SHA256SUMS`, and upgrades when run again. The AppImage needs
+  FUSE 3 (the `fuse3` package).
 
   On systems that block unprivileged user namespaces, as Ubuntu does from 24.04, Electron's
   sandbox starts only with an AppArmor profile, so the script asks for your password once
