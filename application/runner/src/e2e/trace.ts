@@ -48,12 +48,25 @@ type Inside = {
   keys: Messaging["keys"]
   ask: Messaging["ask"]
 }
+// What the trace reads of a terminal's record: its agent's activity as clients see it.
+type Traced = {
+  readonly summary: { readonly id: string }
+  readonly activity: {
+    readonly state: string
+    readonly lastTurn: { readonly outcome: string } | null
+  } | null
+}
 type Runner = {
   queue: <T>(terminalId: string, work: () => Promise<T>, fallback: T) => Promise<T>
   report: (report: Report, deadline?: number) => Promise<unknown>
   connected: (agent: string | undefined) => Promise<boolean>
   persisting: (work: () => void) => boolean
+  appliedFact: (record: Traced, fact: { readonly type: string }) => boolean
 }
+
+// An activity in a word or two: its state, and how its last turn ended.
+const activityOf = (activity: Traced["activity"]): string =>
+  activity ? `${activity.state}${activity.lastTurn ? `/${activity.lastTurn.outcome}` : ""}` : "none"
 
 /**
  * What the runner heard and did during one test, for reading a failure afterwards where
@@ -153,8 +166,20 @@ export const startTrace = (name: string, model: FakeModel) => {
     "report",
     "connected",
     "persisting",
+    "appliedFact",
   ])
-  const { queue, report: handle, connected, persisting } = runner
+  const { queue, report: handle, connected, persisting, appliedFact } = runner
+  // Each fact told the agent's activity, and what it made of it: a turn's end, an Escape,
+  // an idle, as clients read the activity. A change between two of them is a new binding's.
+  runner.appliedFact = function (record, fact) {
+    const before = activityOf(record.activity)
+    const applied = appliedFact.call(this, record, fact)
+    if (fact.type !== "telemetry-observed")
+      add(
+        `activity ${named(record.summary.id)} ${fact.type}: ${before} → ${activityOf(record.activity)}${applied ? "" : " (no change)"}`,
+      )
+    return applied
+  }
   // Saving a terminal blocks the process until its store has written it.
   runner.persisting = function (work) {
     const began = performance.now()
@@ -203,7 +228,7 @@ export const startTrace = (name: string, model: FakeModel) => {
     /** Puts the runner back as it was. */
     stop: () => {
       clearInterval(calls)
-      Object.assign(runner, { queue, report: handle, connected, persisting })
+      Object.assign(runner, { queue, report: handle, connected, persisting, appliedFact })
       for (const [agent, decode] of decoders)
         (harnesses[agent as keyof typeof harnesses] as { decode: Harness["decode"] }).decode =
           decode
