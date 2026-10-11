@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { vi } from "vitest"
 
 import { describe, expect, it } from "../test.js"
-import { installRelay, installShellFiles } from "./install.js"
+import { cmdPrints, installRelay, installShellFiles } from "./install.js"
 
 const missing = () => Object.assign(new Error("missing"), { code: "ENOENT" })
 
@@ -37,6 +37,30 @@ const memory = (
     },
   }
 }
+
+describe("whether cmd prints of its own before a command", () => {
+  // A stand-in for cmd, as an AutoRun of `chcp 65001` without `>nul` makes it, and not.
+  const node = (script: string) => ({ program: process.execPath, args: ["-e", script] })
+
+  it("is any output at all, a line break included", async () => {
+    await expect(cmdPrints(node("process.stdout.write('Active code page: 65001.')"))).resolves.toBe(
+      true,
+    )
+    await expect(cmdPrints(node("process.stdout.write('\\r\\n')"))).resolves.toBe(true)
+    await expect(cmdPrints(node(""))).resolves.toBe(false)
+  })
+
+  it("is no for a cmd that doesn't run, as it runs no hook either", async () => {
+    await expect(cmdPrints({ program: join(tmpdir(), "no-such-cmd.exe") })).resolves.toBe(false)
+  })
+
+  it.runIf(process.platform === "win32")(
+    "is no for this machine's cmd, which has no AutoRun",
+    async () => {
+      await expect(cmdPrints()).resolves.toBe(false)
+    },
+  )
+})
 
 describe("installing the relay", () => {
   it("puts the running copy back on Windows when the new one can't take its place", async () => {

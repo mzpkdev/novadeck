@@ -8,7 +8,7 @@ import { describe, expect, it } from "../../test.js"
 import { loadProbe } from "../../testing/probes.js"
 import { apply, started } from "../activity.js"
 import type { ActivityEvent, HarnessEvent } from "../events.js"
-import { silentFor, type Launchers } from "../harness.js"
+import { silentFor, type Launchers, type Machine } from "../harness.js"
 import { decode } from "./decode.js"
 import { agy } from "./index.js"
 
@@ -259,10 +259,11 @@ describe("Antigravity's PreToolUse answer", () => {
 
   it("is registered for every tool, with PostToolUse for the two that matter", () => {
     const launchers: Launchers = { mcp: { command: "/data/shell/mcp" } }
-    const hooks = (platform: NodeJS.Platform) =>
+    const hooks = (platform: NodeJS.Platform, machine?: Machine) =>
       (
         JSON.parse(
-          agy.files(platform, launchers).find(({ path }) => path === "hooks.json")!.content,
+          agy.files(platform, launchers, machine).find(({ path }) => path === "hooks.json")!
+            .content,
         ) as {
           novadeck: { [event: string]: { matcher?: string; hooks: { command: string }[] }[] }
         }
@@ -283,5 +284,23 @@ describe("Antigravity's PreToolUse answer", () => {
         "ask_question",
       ])
     }
+  })
+
+  it("is left unregistered on Windows where cmd prints first, so Antigravity's policy asks", () => {
+    // No answer after an AutoRun's output reads as JSON, which let every tool run unasked
+    // (probed 2026-10-11, 1.2.14).
+    const events = (platform: NodeJS.Platform) =>
+      Object.keys(
+        (
+          JSON.parse(
+            agy
+              .files(platform, { mcp: { command: "mcp" } }, { cmdPrints: true })
+              .find(({ path }) => path === "hooks.json")!.content,
+          ) as { novadeck: object }
+        ).novadeck,
+      )
+    expect(events("win32")).toEqual(["PreInvocation", "Stop", "PostToolUse"])
+    // Elsewhere hooks run in sh, where cmd's AutoRun has no part.
+    expect(events("linux")).toContain("PreToolUse")
   })
 })

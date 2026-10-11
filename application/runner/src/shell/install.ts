@@ -46,7 +46,13 @@ export const installShellFiles = async (
     },
   )
   await Promise.all(staleShellFiles(directory).map((stale) => rm(stale, { force: true })))
-  for (const file of shellFiles(paths, process.platform)) {
+  // An agent that runs its hooks in cmd reads nothing they answer after cmd's own output.
+  const prints = process.platform === "win32" && (await cmdPrints())
+  if (prints)
+    console.error(
+      "Novadeck: cmd prints something of its own before every command, as an AutoRun (HKCU\\Software\\Microsoft\\Command Processor\\AutoRun) that doesn't send its output to nul does. Antigravity can read none of its hooks' answers then, so Novadeck registers no PreToolUse hook for it, and its own policy asks before each tool; messaging with it won't work until that output goes.",
+    )
+  for (const file of shellFiles(paths, process.platform, undefined, { cmdPrints: prints })) {
     // eslint-disable-next-line no-await-in-loop -- A few small files, one after another.
     await mkdir(dirname(file.path), { recursive: true, mode: 0o700 })
     // eslint-disable-next-line no-await-in-loop -- Unchanged files are left alone.
@@ -137,6 +143,28 @@ const settled = async (move: () => Promise<void>, tries = 5): Promise<void> => {
     if (tries <= 1 || !["EPERM", "EBUSY", "EACCES"].includes(code ?? "")) throw error
     await new Promise((resolve) => setTimeout(resolve, 100))
     await settled(move, tries - 1)
+  }
+}
+
+/**
+ * Whether cmd prints something of its own before a command, as it runs a hook: `rem`,
+ * which prints nothing, run without `/d`, as an agent runs it, so the machine's and the
+ * person's AutoRun runs first. Any output at all is theirs. `program` and `args` are for
+ * tests.
+ */
+export const cmdPrints = async ({
+  program = process.env.COMSPEC || "cmd.exe",
+  args = ["/c", "rem"],
+}: { readonly program?: string; readonly args?: readonly string[] } = {}): Promise<boolean> => {
+  try {
+    const { stdout } = await promisify(execFile)(program, args, {
+      windowsHide: true,
+      timeout: 5_000,
+    })
+    return stdout.length > 0
+  } catch {
+    // A cmd that doesn't run runs no hook either.
+    return false
   }
 }
 

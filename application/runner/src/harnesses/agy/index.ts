@@ -99,8 +99,11 @@ export const agy = {
   // and PostToolUse after the tools that matter here. PreToolUse is answered "ask" at
   // once (never held: a waiting hook hides a confirmation's dialog), so the person's own
   // policy still decides every call; it reports ask_question, which shows a dialog no
-  // status line tells, and the call a confirmation is about.
-  files: (platform, launchers) => [
+  // status line tells, and the call a confirmation is about. Where cmd prints something
+  // of its own first (`Machine.cmdPrints`), no answer can be read as JSON, and every tool
+  // would run unasked, so PreToolUse goes unregistered: Antigravity's own policy asks, as
+  // it does without Novadeck (probed 2026-10-11, 1.2.14, ahead of an "ask" too).
+  files: (platform, launchers, machine = {}) => [
     { path: "plugin.json", content: json({ name: plugin.name }) },
     // Its MCP server, which Antigravity takes from the plugin and starts with the
     // terminal's environment.
@@ -116,7 +119,9 @@ export const agy = {
           Stop: [handler(platform, "Stop")],
           // Tool events take matcher groups: after a tool, the one that writes artifacts,
           // which names a plan, and the one that asks the person; before every tool.
-          PreToolUse: [{ matcher: "*", hooks: [handler(platform, "PreToolUse")] }],
+          ...(!(platform === "win32" && machine.cmdPrints) && {
+            PreToolUse: [{ matcher: "*", hooks: [handler(platform, "PreToolUse")] }],
+          }),
           PostToolUse: [
             { matcher: "write_to_file", hooks: [handler(platform, "PostToolUse")] },
             { matcher: "ask_question", hooks: [handler(platform, "PostToolUse")] },

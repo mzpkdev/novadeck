@@ -58,9 +58,14 @@ export type Harness = {
   readonly hook: (platform: NodeJS.Platform, event: string) => string
   /**
    * Its plugin's manifests, hook registrations and MCP server, relative to its plugin
-   * directory. The MCP server starts as `mcpServer` says.
+   * directory. The MCP server starts as `mcpServer` says, and the hooks as `machine` lets
+   * them.
    */
-  readonly files: (platform: NodeJS.Platform, launchers: Launchers) => readonly File[]
+  readonly files: (
+    platform: NodeJS.Platform,
+    launchers: Launchers,
+    machine?: Machine,
+  ) => readonly File[]
   /**
    * Changes its own settings once connected, and puts them back before disconnecting, for
    * what it offers no way to set per launch, as Antigravity's status line.
@@ -284,6 +289,17 @@ export type Start = { readonly command: string; readonly args?: readonly string[
  * without a shell that could expand a variable.
  */
 export type Launchers = { readonly mcp: Start }
+
+/** What the machine does to a hook before the hook's own command runs. */
+export type Machine = {
+  /**
+   * Whether cmd prints something of its own before any command it runs, as an AutoRun
+   * (`HKCU\Software\Microsoft\Command Processor\AutoRun`) of `chcp 65001` without `>nul`
+   * does, for a harness that runs its hooks in cmd without `/d`: ahead of the hook's
+   * answer, which a harness that reads it as JSON then can't.
+   */
+  readonly cmdPrints?: boolean
+}
 
 /** How an agent starts Novadeck's MCP server, as its plugin names it. */
 export const mcpServer = (launchers: Launchers): Start => launchers.mcp
