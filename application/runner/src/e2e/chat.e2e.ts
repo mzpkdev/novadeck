@@ -7,7 +7,7 @@ import type { TranscriptItem } from "@novadeck/protocol"
 
 import { harnesses } from "../harnesses/registry.js"
 import { setups } from "./agents/index.js"
-import type { DeckTerminal } from "./deck.js"
+import { occurrences, type DeckTerminal } from "./deck.js"
 import { describe, e2e, expect, supported } from "./fixture.js"
 import { losesAstral } from "./known-gaps.js"
 import { asked, gate, latest } from "./model/script.js"
@@ -564,11 +564,14 @@ for (const setup of setups) {
         run.model.use(own((call) => (asked(call, words) ? { text: "Got the words." } : undefined)))
         const t1 = await start(run, setup)
         const calls = run.model.mark()
+        // What the screen shows of them already, as a greeting may ("Whoa, fancy meeting
+        // you here!", one of Codex's).
+        const shown = occurrences(await t1.screen(), words.slice(0, 6))
 
         await expect(t1.prompt(words)).rejects.toMatchObject({ code: "PROMPT_REFUSED" })
         await sleep(1000)
         // Nothing was typed, so no command ran and no file was picked, and nothing was sent.
-        expect(await t1.screen()).not.toContain(words.slice(0, 6))
+        expect(occurrences(await t1.screen(), words.slice(0, 6))).toBe(shown)
         expect(run.model.calls.slice(calls)).toEqual([])
       })
     }
