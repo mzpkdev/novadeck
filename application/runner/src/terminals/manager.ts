@@ -2881,9 +2881,11 @@ export class Terminals {
     }).finally(() => {
       record.pendingReads -= 1
       record.pendingOutput -= drawn
-      // The program running now, which a restart's output may have paused in a batch the
-      // one before began.
-      if (record.pendingReads === 0 && !record.exitQueued) record.process.resume()
+      // Each program of the batch that still runs, as a restart's shell may have been
+      // paused in a batch the one before began.
+      if (record.pendingReads === 0 && !record.exitQueued)
+        for (const one of new Set(batch.map((each) => each.child)))
+          if (one === record.process) one.resume()
     })
     record.unread = batch
   }

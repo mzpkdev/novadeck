@@ -91,7 +91,7 @@ describe("agent plugin hook commands", () => {
       '[ -n "$NOVADECK_HOOK" ] && "$NOVADECK_HOOK" codex SessionStart || true',
     )
     expect(harnesses.agy.hook("linux", "PreInvocation")).toBe(
-      `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy PreInvocation; else echo '{}'; fi`,
+      `if [ -x "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy PreInvocation; else echo '{}'; fi`,
     )
     expect(harnesses.claude.hook("win32", "SessionStart")).toBe(
       "if ($env:NOVADECK_HOOK -and (Test-Path -LiteralPath $env:NOVADECK_HOOK)) { & $env:NOVADECK_HOOK claude SessionStart }",

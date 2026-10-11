@@ -25,7 +25,7 @@ const cli = ({ home: user }: Install) => join(gemini(user), "antigravity-cli")
 // one's answer is "ask", which leaves the call to the person's own policy, here as in
 // Novadeck's shells.
 const ask = '{"decision":"ask"}'
-// PreToolUse also falls back where the launcher is set but missing or not runnable, as a
+// Each event also falls back where the launcher is set but missing or not runnable, as a
 // variable that outlives its Novadeck (a plugin is global; tmux carries variables on).
 // On Windows Antigravity runs each command as `cmd /c "<command>"`, its double quotes
 // escaped as `\"`, which cmd keeps. There a PreToolUse answer that isn't JSON (an `echo`
@@ -43,7 +43,7 @@ const hook = (platform: NodeJS.Platform, event: string): string => {
       : `if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy ${event}) else (echo {})) else (echo {})`
   return pre
     ? `if [ -x "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '${ask}'; fi`
-    : `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '{}'; fi`
+    : `if [ -x "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '{}'; fi`
 }
 
 // A Stop continued with a reason gets it as a lasting system step. A message injected at
