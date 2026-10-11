@@ -392,8 +392,16 @@ describe("the command Antigravity's shell mode is given", () => {
       "echo a\n;:label\necho b",
       "set N=foo\necho %N%",
       "cd sub\necho %CD%",
+      "echo a & :: then b\necho b",
+      "echo a & :label\necho b",
+      "if exist x rem n\necho b",
+      "for %%f in (*) do rem x\necho b",
+      "if exist x (echo y) else rem n\necho b",
+      'echo "a\necho b',
     ])
       expect(agyShellCommand(command, "win32"), command).toBeUndefined()
+    // Quotes in pairs join as written.
+    expect(agyShellCommand('echo "a b"\necho c', "win32")).toBe('echo "a b" & echo c')
     // A remark alone, or one word that only starts like one, runs as written.
     expect(agyShellCommand("rem nothing", "win32")).toBe("rem nothing")
     expect(agyShellCommand("echo a\nremove-it.cmd", "win32")).toBe("echo a & remove-it.cmd")

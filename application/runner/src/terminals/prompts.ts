@@ -159,7 +159,7 @@ export class Prompts {
     if (given === undefined)
       throw new DomainError(
         "PROMPT_REFUSED",
-        "The agent's shell runs only a command's first line, and these lines can't be joined to run as written: a remark or label (rem, ::, :label), a % variable, which cmd would expand for every line at once, a line ending in ^, (, & or |, or one starting with ), & or |. Send it as one line, or run it in the terminal.",
+        "The agent's shell runs only a command's first line, and these lines can't be joined to run as written: a remark or label (rem, ::, :label), a % variable, which cmd would expand for every line at once, an unpaired double quote, a line ending in ^, (, & or |, or one starting with ), & or |. Send it as one line, or run it in the terminal.",
       )
     const typed = given || text
     // The first prompt of an agent shown before its session binds starts that session, as a
