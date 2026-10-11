@@ -4272,7 +4272,20 @@ export class Terminals {
       ]),
     )
     const members = [...left.values()]
-    if (anyRunning(members)) await this.trees.end(members, this.runMs(relayMs))
+    if (!anyRunning(members)) return
+    await this.trees.end(members, this.runMs(relayMs))
+    // One the relay didn't end, as where it ran out of time or was refused, still runs a
+    // moment later: it is said, and ended with taskkill, by the pid it ran under just now.
+    await sleep(200)
+    const survivors = members.filter((member) => anyRunning([member]))
+    if (survivors.length === 0) return
+    console.error(
+      "Novadeck: a closed terminal's processes outlived ending them; taskkill ends them:",
+      survivors.map(({ pid }) => pid).join(", "),
+    )
+    await Promise.all(
+      survivors.map(({ pid }) => taskkillTree(pid, this.runMs(5_000)).catch(() => {})),
+    )
   }
 
   /**
