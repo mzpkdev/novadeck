@@ -71,8 +71,9 @@ or that was cancelled uploads the traces its failed tests wrote, as the
 
 A `… (Windows quirks)` job per harness covers what those green Windows jobs can't, as
 people's machines differ from the runner's. It changes the runner's own machine, which
-no test may do on a developer's: a PowerShell profile for every user that prints (Claude
-Code's and Codex's hooks run in PowerShell), a folder the user's PATH in the registry
+no test may do on a developer's: a PowerShell profile for every user that prints, checked
+to print in a new PowerShell (Claude Code's hooks run in PowerShell, and Codex's, which it
+starts with `-NoProfile`), a folder the user's PATH in the registry
 gains after the runner started, holding `novadeck-registry-marker.cmd`, and, last, in
 Antigravity's job, a cmd AutoRun that prints. With `NOVADECK_E2E_SPACED=1` its sandbox,
 and so the home and Novadeck's launcher, is named with a space, which cmd reads by its
@@ -80,8 +81,9 @@ short name. It runs `messaging`, `requests` and `lifecycle` for its harness;
 `windows-quirks.e2e.ts` (Claude Code's job) opens a terminal whose PATH is read from the
 registry, as the app's are, and runs the marker; and with the AutoRun set, a test in
 `harnesses/service.test.ts` (`NOVADECK_TEST_CMD_AUTORUN=1`) checks that Antigravity's
-PreToolUse goes unregistered and leaves a connected copy that still has it. These tests
-skip anywhere else.
+PreToolUse goes unregistered, and that a connected copy that still has it is installed
+again without it. These tests skip anywhere else. Its traces upload as
+`e2e-traces-<harness>-Windows-quirks`.
 
 ## What is pinned
 

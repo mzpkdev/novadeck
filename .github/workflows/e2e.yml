@@ -6,7 +6,9 @@ on:
     paths:
       - .github/workflows/e2e.yml
       - application/protocol/**
+      - application/relay/**
       - application/runner/**
+      - scripts/e2e/**
       - package.json
       - pnpm-lock.yaml
   schedule:
@@ -203,8 +205,8 @@ jobs:
           key: ${{ steps.agy.outputs.cache-primary-key }}
 
   # What a green Windows job above can't catch, as people's machines differ from the
-  # runner's: a PowerShell profile that prints (Claude Code's and Codex's hooks run in
-  # PowerShell), a home and Novadeck's launcher in a folder named with a space (cmd reads
+  # runner's: a PowerShell profile that prints (Claude Code's hooks run in PowerShell, and
+  # Codex's, which it starts with -NoProfile, so its job shows that holds), a home and Novadeck's launcher in a folder named with a space (cmd reads
   # Antigravity's launcher by its short name), a folder the registry's PATH gained after
   # the app started (a new terminal's PATH is read from the registry), and a cmd AutoRun
   # that prints (Antigravity's PreToolUse guard and plugin refresh). Each changes this
@@ -280,6 +282,9 @@ jobs:
         shell: pwsh
         run: |
           Set-Content -LiteralPath (Join-Path $PSHOME 'profile.ps1') -Value 'Write-Output "novadeck-ci: a profile printed this"'
+          # The profile prints in a new PowerShell, or this quirk would test nothing.
+          $printed = pwsh -NoLogo -Command 'exit 0'
+          if (-not ($printed -match 'a profile printed this')) { throw "A new PowerShell printed no profile line: $printed" }
           $folder = Join-Path $env:RUNNER_TEMP 'novadeck registry folder'
           New-Item -ItemType Directory -Force $folder | Out-Null
           Set-Content -LiteralPath (Join-Path $folder 'novadeck-registry-marker.cmd') -Value '@echo registry marker ran'
