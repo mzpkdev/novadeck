@@ -15,6 +15,9 @@ import type { FakeModel } from "./model/server.js"
  */
 const folder = process.env.NOVADECK_E2E_TRACES
 
+/** Whether tests are traced at all: only where their traces go (`NOVADECK_E2E_TRACES`). */
+export const tracing = Boolean(folder)
+
 /** Whether every test writes its trace, passed or not (`NOVADECK_E2E_TRACE_ALL=1`). */
 export const tracesAll = process.env.NOVADECK_E2E_TRACE_ALL === "1"
 
@@ -22,6 +25,17 @@ export const tracesAll = process.env.NOVADECK_E2E_TRACE_ALL === "1"
 const brief = (value: unknown, most = 160): string => {
   const text = JSON.stringify(value) ?? String(value)
   return text.length > most ? `${text.slice(0, most)}…` : text
+}
+
+/**
+ * `owner`, its `names` checked to be methods it has: a renamed one fails the trace at once,
+ * rather than leaving it to record nothing of it.
+ */
+const methods = <T extends object>(owner: T, label: string, names: readonly string[]): T => {
+  for (const name of names)
+    if (typeof (owner as Record<string, unknown>)[name] !== "function")
+      throw new TypeError(`The e2e trace wraps ${label}.${name}, which is no longer a method.`)
+  return owner
 }
 
 type Live = {
@@ -81,7 +95,7 @@ export const startTrace = (name: string, model: FakeModel) => {
 
   const decoders = new Map<string, Harness["decode"]>()
   for (const agent of agents) {
-    const harness = harnesses[agent] as { decode: Harness["decode"] }
+    const harness = methods(harnesses[agent] as { decode: Harness["decode"] }, agent, ["decode"])
     const { decode } = harness
     decoders.set(agent, decode)
     harness.decode = (report) => {
@@ -103,7 +117,11 @@ export const startTrace = (name: string, model: FakeModel) => {
     }
   }
 
-  const inside = Messaging.prototype as unknown as Inside
+  const inside = methods(Messaging.prototype as unknown as Inside, "Messaging", [
+    "step",
+    "keys",
+    "ask",
+  ])
   const { step, keys, ask } = inside
   inside.step = function (live, event) {
     handles.set(live.terminalId, live.handle)
@@ -130,7 +148,12 @@ export const startTrace = (name: string, model: FakeModel) => {
   }
 
   // When a report came, began after the terminal's earlier ones, and was done.
-  const runner = Terminals.prototype as unknown as Runner
+  const runner = methods(Terminals.prototype as unknown as Runner, "Terminals", [
+    "queue",
+    "report",
+    "connected",
+    "persisting",
+  ])
   const { queue, report: handle, connected, persisting } = runner
   // Saving a terminal blocks the process until its store has written it.
   runner.persisting = function (work) {

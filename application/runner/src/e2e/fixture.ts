@@ -13,7 +13,7 @@ import { installHarness } from "./install.js"
 import { startFakeModel, type FakeModel } from "./model/server.js"
 import { reap } from "./reap.js"
 import { createSandbox, type Sandbox } from "./sandbox.js"
-import { startTrace, tracesAll } from "./trace.js"
+import { startTrace, tracesAll, tracing } from "./trace.js"
 import { tripwire } from "./tripwire.js"
 
 export { describe, expect } from "../test.js"
@@ -21,9 +21,11 @@ export { describe, expect } from "../test.js"
 /**
  * Whether the suite can run here: Linux and Windows. On macOS the sandbox's dead D-Bus
  * address doesn't keep a harness from the developer's keyring, as the Keychain needs no
- * bus. On Windows the sandbox moves the user's folders too (see `createSandbox`), each
- * harness keeps its credentials in a file there, and the leftover-process check asks the
- * system rather than /proc. A scenario file can skip on it (`describe.skipIf(!supported)`);
+ * bus. On Windows the sandbox moves the user's folders too (see `createSandbox`), where
+ * Claude Code and Codex keep their credentials in files; Antigravity keeps its login in
+ * the Credential Manager, which no sandbox hides, so a test refuses to start while that
+ * login is there (see `harnessLogins`). The leftover-process check asks the system
+ * rather than /proc. A scenario file can skip on it (`describe.skipIf(!supported)`);
  * a test that runs anyway fails, saying why.
  */
 export const supported = process.platform === "linux" || process.platform === "win32"
@@ -78,11 +80,14 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
         )
       const model = await startFakeModel({ dialects: setups.map((setup) => setup.dialect) })
       resources.defer(() => model.close())
-      // What the runner heard and did, written where CI keeps it should the test fail.
-      const trace = startTrace(task.fullName, model)
-      resources.defer(() => trace.stop())
-      onTestFailed(() => trace.write())
-      if (tracesAll) resources.defer(() => trace.write())
+      // What the runner heard and did, written where CI keeps it should the test fail;
+      // nothing is wrapped where no trace is asked for.
+      if (tracing) {
+        const trace = startTrace(task.fullName, model)
+        resources.defer(() => trace.stop())
+        onTestFailed(() => trace.write())
+        if (tracesAll) resources.defer(() => trace.write())
+      }
       // Installed before the file's tests: these are the same installs, already done.
       const installs = await Promise.all(setups.map((setup) => installHarness(setup.agent)))
       const sandbox = createSandbox({ proxy: model.proxy, bins: installs.map((one) => one.bin) })

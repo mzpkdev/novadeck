@@ -137,9 +137,10 @@ jobs:
           fi
 
       # A failed test leaves its trace: each hook's report and when its hook started, the
-      # person's keys, each delivery change and each answer, with the model's calls.
+      # person's keys, each delivery change and each answer, with the model's calls. A
+      # cancelled run keeps the traces its failed tests wrote before it was cut short.
       - name: Upload E2E Traces
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-traces-${{ matrix.setup.name }}-${{ runner.os }}
