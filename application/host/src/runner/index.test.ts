@@ -137,7 +137,7 @@ describe("compiled desktop runner", () => {
         )
       } finally {
         await runner.close()
-        await rm(directory, { recursive: true, force: true })
+        await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
       }
     }, 30_000)
 
@@ -175,7 +175,7 @@ describe("compiled desktop runner", () => {
         await client.close()
       } finally {
         await runner.close()
-        await rm(directory, { recursive: true, force: true })
+        await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
       }
     }, 60_000)
 
@@ -197,7 +197,8 @@ describe("compiled desktop runner", () => {
         await again.close()
         await second.close()
       } finally {
-        await rm(directory, { recursive: true, force: true })
+        // A runner's copy of the relay may still run, or be held a moment after it ran.
+        await rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 })
       }
     }, 20_000)
   })
