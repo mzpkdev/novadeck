@@ -276,12 +276,35 @@ export type UserEntry = {
 }
 
 /**
- * How long a harness lets one of Novadeck's hooks run, in seconds; one slower is dropped
- * silently. Well above the hook's own limit, so the hook always ends by itself. On Windows
- * the shell the hook runs in counts too: PowerShell takes most of 15 s to start cold on a
- * busy CI runner, where a Codex hook dropped so carried none of the messages waiting.
+ * How much later than elsewhere a hook may reach the runner on `platform`, for the shell
+ * it runs in, in milliseconds: on Windows the hook starts in PowerShell (Claude Code,
+ * Codex) or cmd (Antigravity), which takes most of 15 s to start cold on a busy CI runner,
+ * where a Codex hook dropped for it carried none of the messages waiting; elsewhere a
+ * shell starts at once. Every wait on a hook's arrival grows by it.
  */
-export const hookSeconds = (platform: NodeJS.Platform): number => (platform === "win32" ? 30 : 10)
+export const hookShellSlackMs = (platform: NodeJS.Platform): number =>
+  platform === "win32" ? 20_000 : 0
+
+/**
+ * How long a harness lets one of Novadeck's hooks run, in seconds; one slower is dropped
+ * silently. Well above the hook's own limit, so the hook always ends by itself, and more by
+ * the time its shell may take to start.
+ */
+export const hookSeconds = (platform: NodeJS.Platform): number =>
+  10 + hookShellSlackMs(platform) / 1000
+
+/**
+ * What a hook's report decoded to, each fact its hook told (started at its `seq`, not
+ * read from a transcript) with when the agent fired that hook (`Report.firedAt`), where
+ * the relay could tell.
+ */
+export const firedFacts = <Fact extends { readonly startedAt: number }>(
+  facts: readonly Fact[],
+  { seq, firedAt }: Pick<Report, "seq" | "firedAt">,
+): readonly Fact[] =>
+  firedAt === undefined
+    ? facts
+    : facts.map((fact) => (fact.startedAt === seq ? { ...fact, firedAt } : fact))
 
 export const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
 

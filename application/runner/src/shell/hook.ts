@@ -7,8 +7,8 @@ import type { Report } from "./reports.js"
  * An agent hook, as the runner takes it from Novadeck's relay (see application/relay).
  * A connected agent's Novadeck plugin runs the hook launcher, which starts the relay; the
  * relay sends what the hook knows, unread: the event its agent reported, the agent's
- * payload as it came, when the hook started, the processes it runs under, and what of
- * its environment tells agents apart. The runner reads it here into a report, which the
+ * payload as it came, when the hook started, the processes it runs under and when each
+ * started, and what of its environment tells agents apart. The runner reads it here into a report, which the
  * agent's harness decodes (see `harnesses/<id>/decode.ts`). A Stop, prompt-time or tool-call
  * hook asks instead, with a deadline: the runner answers what to print, which may deliver
  * agents' messages (see docs/agent-messaging.md). Claude Code's status line runs through
@@ -63,8 +63,11 @@ export const prune = (value: unknown, depth: number, limit: number): unknown => 
 // The most a report may hold once pruned: enough for any decoder, as hooks always sent.
 const maxReport = 60_000
 
-/** A process the hook runs under, nearest first, where the platform tells. */
-type Ancestor = { readonly pid: number; readonly name: string }
+/**
+ * A process the hook runs under, nearest first, where the platform tells: its pid, name,
+ * and when it started, in epoch milliseconds, where the relay could read it.
+ */
+type Ancestor = { readonly pid: number; readonly name: string; readonly startedAt?: number }
 
 const ancestorsOf = (value: unknown): Ancestor[] =>
   (Array.isArray(value) ? value : [])
@@ -74,8 +77,38 @@ const ancestorsOf = (value: unknown): Ancestor[] =>
         object(each) &&
         Number.isSafeInteger(each.pid) &&
         (each.pid as number) > 0 &&
-        typeof each.name === "string",
+        typeof each.name === "string" &&
+        (each.startedAt === undefined ||
+          (typeof each.startedAt === "number" && Number.isFinite(each.startedAt))),
     )
+
+// The longest a hook's shell may take to start its relay, past which a start read as its
+// own is someone else's: well past any cold start.
+const maxShellMs = 60_000
+
+// How far after the relay's own start a shell's may read, from clocks read apart: a few
+// ticks of Linux's, which counts in hundredths of a second.
+const clockSlackMs = 50
+
+/**
+ * When the agent fired the hook: when the process it started for the hook began, the
+ * ancestor just below the agent's own, or the relay itself where the agent started it
+ * directly. Undefined where the agent's process isn't among them, its child's start
+ * isn't told, or the start makes no sense for a hook that started at `seq`.
+ */
+export const firedAtOf = (
+  instance: string | null,
+  seq: number,
+  ancestors: readonly Ancestor[],
+): number | undefined => {
+  const index =
+    instance === null ? -1 : ancestors.findIndex((each) => String(each.pid) === instance)
+  if (index < 0) return undefined
+  const fired = index === 0 ? seq : ancestors[index - 1]!.startedAt
+  if (fired === undefined || fired > seq + clockSlackMs || seq - fired > maxShellMs)
+    return undefined
+  return Math.min(fired, seq)
+}
 
 /**
  * The agent process that ran the hook: Claude Code names itself; the others are the
@@ -111,13 +144,17 @@ export const relayHook = (value: Fields): RelayHook | undefined => {
       ? payload.hook_event_name
       : "")
   const claudePid = text(env.CLAUDE_PID, 10)
-  const instance = instanceOf(agent.data, claudePid, ancestorsOf(value.ancestors))
+  const ancestors = ancestorsOf(value.ancestors)
+  const named = instanceOf(agent.data, claudePid, ancestors)
+  const instance = named !== null && /^\d{1,10}$/.test(named) ? named : null
   const codexThread = text(env.CODEX_THREAD_ID, 128)
+  const firedAt = firedAtOf(instance, seq, ancestors)
   const report = {
     agent: agent.data,
     event,
     seq,
-    instance: instance !== null && /^\d{1,10}$/.test(instance) ? instance : null,
+    ...(firedAt !== undefined && { firedAt }),
+    instance,
     // Only what tells nested agents apart; nothing else of the environment is kept.
     env: {
       cursor: text(env.CURSOR_VERSION, 128) !== undefined,

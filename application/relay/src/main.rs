@@ -3,12 +3,19 @@
 //! runner's answers back, and answers by itself outside Novadeck's terminals. The runner
 //! reads everything; the relay only carries it, so it stays small and starts at once,
 //! for as long as an agent runs and for every hook it runs.
+//!
+//! On Windows it also reads for the runner what it would otherwise start PowerShell or
+//! taskkill for: the registry's environment, and a terminal's process tree, which it ends.
 
 mod ancestors;
 mod endpoint;
 mod hook;
 mod idle;
 mod mcp;
+#[cfg(windows)]
+mod processes;
+#[cfg(windows)]
+mod registry;
 mod status_line;
 
 use std::collections::HashMap;
@@ -21,7 +28,10 @@ pub const PROTOCOL: u32 = 2;
 
 const USAGE: &str = "usage: novadeck-relay mcp <server-version> <protocol-version>...
        novadeck-relay hook [--config <relay.json>] [--<option> <value>]... <agent> [event]
-       novadeck-relay --version";
+       novadeck-relay --version
+       novadeck-relay environment                    (Windows)
+       novadeck-relay tree <pid>...                  (Windows)
+       novadeck-relay end <pid>:<started-ms>...      (Windows)";
 
 /// The leading `--name value` options, and the arguments after them. Every option takes a
 /// value, so one this relay doesn't know, from a newer runner's launcher, is passed over
@@ -69,11 +79,57 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
-        _ => {
-            eprintln!("{USAGE}");
-            ExitCode::from(2)
+        #[cfg(windows)]
+        Some((mode, _)) if mode == "environment" => {
+            registry::print();
+            ExitCode::SUCCESS
         }
+        #[cfg(windows)]
+        Some((mode, rest)) if mode == "tree" => match pids(rest) {
+            Some(roots) => {
+                processes::print_trees(&roots);
+                ExitCode::SUCCESS
+            }
+            None => usage(),
+        },
+        #[cfg(windows)]
+        Some((mode, rest)) if mode == "end" => match members(rest) {
+            Some(members) => {
+                processes::end(&members);
+                ExitCode::SUCCESS
+            }
+            None => usage(),
+        },
+        _ => usage(),
     }
+}
+
+fn usage() -> ExitCode {
+    eprintln!("{USAGE}");
+    ExitCode::from(2)
+}
+
+/// Process ids, one or more; None where any isn't one.
+#[cfg(any(windows, test))]
+fn pids(args: &[String]) -> Option<Vec<u32>> {
+    let found: Option<Vec<u32>> = args.iter().map(|arg| arg.parse().ok()).collect();
+    found.filter(|pids| !pids.is_empty())
+}
+
+/// Processes as `<pid>:<started-ms>`, one or more; None where any isn't one.
+#[cfg(windows)]
+fn members(args: &[String]) -> Option<Vec<processes::Member>> {
+    let found: Option<Vec<processes::Member>> = args
+        .iter()
+        .map(|arg| {
+            let (pid, started) = arg.split_once(':')?;
+            Some(processes::Member {
+                pid: pid.parse().ok()?,
+                started: started.parse().ok()?,
+            })
+        })
+        .collect();
+    found.filter(|members| !members.is_empty())
 }
 
 #[cfg(test)]
@@ -92,5 +148,12 @@ mod tests {
         assert_eq!(rest, args(&["agy", "Stop"]));
         let plain = args(&["claude", "Stop"]);
         assert_eq!(options(&plain).1, plain);
+    }
+
+    #[test]
+    fn reads_process_ids_and_refuses_anything_else() {
+        assert_eq!(pids(&args(&["12", "34"])), Some(vec![12, 34]));
+        assert_eq!(pids(&args(&[])), None);
+        assert_eq!(pids(&args(&["12", "x"])), None);
     }
 }

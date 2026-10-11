@@ -67,7 +67,10 @@ type Fixture = {
 const it = base.extend<{ fixture: Fixture }>({
   fixture: async ({ resources }, use) => {
     const root = mkdtempSync(join(tmpdir(), "novadeck-agents-"))
-    resources.defer(() => rmSync(root, { recursive: true, force: true }))
+    // The relay copied in may still be reading the registry for a background lookup.
+    resources.defer(() =>
+      rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }),
+    )
     const home = join(root, "home")
     const bin = join(root, "bin")
     mkdirSync(home)

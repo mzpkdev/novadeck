@@ -84,8 +84,14 @@ const loginShellEnvironment = (env: NodeJS.ProcessEnv) =>
  * desktop menu. Only `echo` and `env` run in that shell, so any shell will do. Windows
  * keeps PATH in the registry instead, read anew there; see `refreshPath`.
  */
-const loginEnvironment = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
-  platform === "win32" ? refreshPath(env, { platform }) : loginShellEnvironment(env)
+const loginEnvironment = async (
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  relay: () => Promise<string | undefined>,
+) =>
+  platform === "win32"
+    ? refreshPath(env, { platform, relay: await relay() })
+    : loginShellEnvironment(env)
 
 // The program to run: the one on PATH, or where the harness's installer puts it otherwise.
 const locate = async (program: string, harness: Harness, install: Install): Promise<string> => {
@@ -154,12 +160,13 @@ export const createHarnesses = (
   // and spawning shells never wait for it: until it answers they use the app's own.
   let latest: NodeJS.ProcessEnv | undefined
   const lookUp = () =>
-    (options.login === false ? Promise.resolve(base) : loginEnvironment(base, platform)).then(
-      (found) => {
-        latest = found
-        return found
-      },
-    )
+    (options.login === false
+      ? Promise.resolve(base)
+      : loginEnvironment(base, platform, async () => (await paths().catch(() => undefined))?.relay)
+    ).then((found) => {
+      latest = found
+      return found
+    })
   void lookUp()
   const state = async (harness: Harness, install: Install): Promise<AgentIntegration> => ({
     agent: harness.id,

@@ -260,8 +260,11 @@ network:
   processes' memory, an antivirus may quarantine it; reap then fails saying so, naming
   the program to allow. Windows has no signal to ask with, so one still running after
   its three seconds is ended (TerminateProcess), then, two seconds later, ended with
-  what it started (`taskkill /T /F`, awaited), each once the process is checked by its
-  start to be the same one. What it started taskkill finds by parent pid, unchecked.
+  what it started, awaited, each once the process is checked by its start to be the
+  same one. What it started is the tree Novadeck's relay reads (`novadeck-relay tree`,
+  see backend-api.md), which counts a process as a child only if it started no earlier
+  than its recorded parent, and ends each only as the process it was, as the runner
+  ends a closed terminal's programs.
 - **Enter only on text seen to land.** A deck terminal's `submit` types the text, waits
   until the screen shows it once more than it did before, and only then presses Enter.
   `press` refuses anything holding a carriage return or line feed, the keypad's Enter
