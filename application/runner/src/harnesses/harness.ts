@@ -5,6 +5,7 @@ import {
   agentSessionId,
   replyPreviewLength,
   type AgentCoverage,
+  type AgentIntegration,
   type AgentName,
   type TranscriptItem,
 } from "@novadeck/protocol"
@@ -81,6 +82,11 @@ export type Harness = {
     readonly directory: (install: Install) => string
     readonly files: readonly string[]
   }
+  /**
+   * What keeps its messaging from working whole once connected, where something does, as
+   * Antigravity's own status line on Windows (`AgentIntegration.limited`).
+   */
+  readonly limited?: (install: Install) => Promise<AgentIntegration["limited"]>
   /**
    * Changes its own settings once connected, and puts them back before disconnecting, for
    * what it offers no way to set per launch, as Antigravity's status line.

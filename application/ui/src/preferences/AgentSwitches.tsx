@@ -8,6 +8,7 @@ export type AgentSwitch = {
   readonly connected: boolean
   readonly busy: boolean
   readonly error?: string
+  readonly limited?: "own-status-line" | undefined
 }
 
 export const agentLabels: Record<AgentSwitch["agent"], string> = {
@@ -29,6 +30,13 @@ export const agentNote = ({
   return undefined
 }
 
+// What a connected agent's limit means for messaging with it, under its name; nothing
+// where none, or while it changes.
+export const agentLimit = ({ connected, busy, limited }: AgentSwitch): string | undefined => {
+  if (!connected || busy || limited === undefined) return undefined
+  return "It runs your own status line, which keeps Novadeck's out on Windows: messages can't wake it until its first prompt"
+}
+
 // One switch per agent: on installs Novadeck's plugin into it, off removes it. An agent
 // that is not installed, or one mid-change, cannot be switched.
 export const AgentSwitches = ({
@@ -42,10 +50,20 @@ export const AgentSwitches = ({
     {agents.map((item) => {
       const label = agentLabels[item.agent]
       const note = agentNote(item)
+      const limit = agentLimit(item)
       return (
         <li key={item.agent} className={settingRowClasses}>
           <div className="flex min-w-0 flex-col gap-1">
             <span id={`agent-${item.agent}`}>{label}</span>
+            {limit && (
+              <span
+                id={`agent-${item.agent}-limit`}
+                className="settings-note text-control leading-relaxed"
+                data-tone="warning"
+              >
+                {limit}
+              </span>
+            )}
             {note && item.error && (
               <span
                 id={`agent-${item.agent}-note`}
@@ -68,7 +86,16 @@ export const AgentSwitches = ({
               checked={item.connected}
               onChange={(connected) => onChange(item.agent, connected)}
               labelledBy={`agent-${item.agent}`}
-              {...(note ? { describedBy: `agent-${item.agent}-note` } : {})}
+              {...(note || limit
+                ? {
+                    describedBy: [
+                      note && `agent-${item.agent}-note`,
+                      limit && `agent-${item.agent}-limit`,
+                    ]
+                      .filter(Boolean)
+                      .join(" "),
+                  }
+                : {})}
               disabled={!item.available || item.busy}
               busy={item.busy}
             />

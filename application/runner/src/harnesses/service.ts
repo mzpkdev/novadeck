@@ -168,11 +168,16 @@ export const createHarnesses = (
       return found
     })
   void lookUp()
-  const state = async (harness: Harness, install: Install): Promise<AgentIntegration> => ({
-    agent: harness.id,
-    available: await exists(harness.home(install)),
-    connected: await harness.connected(install),
-  })
+  const state = async (harness: Harness, install: Install): Promise<AgentIntegration> => {
+    const connected = await harness.connected(install)
+    const limited = connected ? await harness.limited?.(install).catch(() => undefined) : undefined
+    return {
+      agent: harness.id,
+      available: await exists(harness.home(install)),
+      connected,
+      ...(limited !== undefined && { limited }),
+    }
+  }
   // Where each harness lives, once the shell files say where its plugin is.
   const installs = async (fresh = false) => {
     const shell = await paths()

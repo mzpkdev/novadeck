@@ -14,7 +14,7 @@ import { hookCommand, type Dialect } from "../hook-command.js"
 import { box } from "./box.js"
 import { decode, shown } from "./decode.js"
 import { dialogs } from "./dialogs.js"
-import { statusLineSettings, trustsFolder } from "./settings.js"
+import { statusLineLimit, statusLineSettings, trustsFolder } from "./settings.js"
 import { transcripts, typedEntry } from "./transcripts.js"
 
 // Antigravity keeps its own state beside other Google tools in ~/.gemini.
@@ -139,6 +139,7 @@ export const agy = {
   // Its status line tells what no hook does: working or idle, a confirmation waiting on
   // the person, and its context and quotas.
   settings: statusLineSettings(cli),
+  limited: statusLineLimit(cli),
   resume: (session) => ["agy", "--conversation", session],
   transcripts,
   // Its hooks name no subagents; its status line counts them; see docs/harness-coverage.md.
