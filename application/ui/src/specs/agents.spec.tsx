@@ -1,6 +1,7 @@
 import { describe as context, describe, expect, it, onTestFinished } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
+import { settled } from "./support/canvas"
 import { escapeFrom, expectFocusWithin, preferencesDialog } from "./support/keyboard"
 import { workspaceSwitcher } from "./support/sessions"
 import {
@@ -592,7 +593,9 @@ describe("A pinned project", () => {
     // Drags a project's row out of the open menu and lets it go at a point on the screen:
     // by default on the bar under the header, past its pins and the menu.
     const dragOut = async (name: string, to?: { x: number; y: number }): Promise<void> => {
-      const from = switcherRow(name).element().getBoundingClientRect()
+      // Once the menu has opened in full: a drag begun while it still slides in starts
+      // off the row, and the drag never takes (seen once on a macOS runner).
+      const from = await settled(() => switcherRow(name).element().getBoundingClientRect())
       const header = workspaceSwitcher().element().closest("header")!.getBoundingClientRect()
       await userEvent.dragAndDrop(switcherRow(name), page.elementLocator(document.body), {
         sourcePosition: { x: 40, y: from.height / 2 },
