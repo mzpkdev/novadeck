@@ -1,14 +1,6 @@
 import { execFile } from "node:child_process"
 import { createHash, randomBytes } from "node:crypto"
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs"
+import { readdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
@@ -38,7 +30,7 @@ type Table = {
   /** Those of them still the same processes of the sandbox, as they are now. */
   readonly current: (scope: Scope, found: readonly Process[]) => Promise<readonly Process[]>
   /** Asks the process to end, or with `forcibly` ends it and, where it can, what it started. */
-  readonly end: (one: Process, forcibly: boolean) => void
+  readonly end: (one: Process, forcibly: boolean) => Promise<void>
 }
 
 /**
@@ -88,7 +80,7 @@ const linux: Table = {
       const now = member(sandbox, one.pid)
       return now?.start === one.start ? [now] : []
     }),
-  end: (one, forcibly) => {
+  end: async (one, forcibly) => {
     try {
       process.kill(one.pid, forcibly ? "SIGKILL" : "SIGTERM")
     } catch {
@@ -97,113 +89,44 @@ const linux: Table = {
   },
 }
 
-// Lists the processes of a sandbox on Windows, as Linux's /proc gives them: those that
-// started at or after the sandbox, other than this one and the lister, whose working
-// folder is inside the sandbox or whose HOME or USERPROFILE is its home, read from their
-// parameters (the offsets are a 64-bit PEB's and its RTL_USER_PROCESS_PARAMETERS'), as
-// JSON: their pids, names and starts in milliseconds since the epoch. A process it may not
-// read, another user's or the system's, never counts, as a sandbox's is always this user's.
-// Its arguments: the sandbox's start, root and home, and the caller's pid.
-const lister = `
-using System;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text;
-public static class NovadeckReap {
-  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int access, bool inherit, int pid);
-  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
-  [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr handle, IntPtr address, byte[] buffer, IntPtr size, out IntPtr read);
-  [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr handle, int kind, IntPtr[] info, int length, out int written);
-  static byte[] Read(IntPtr handle, IntPtr address, int size) {
-    var buffer = new byte[size];
-    IntPtr read;
-    return ReadProcessMemory(handle, address, buffer, (IntPtr)size, out read) ? buffer : null;
-  }
-  static IntPtr Pointer(IntPtr handle, IntPtr address) {
-    var bytes = Read(handle, address, 8);
-    return bytes == null ? IntPtr.Zero : (IntPtr)BitConverter.ToInt64(bytes, 0);
-  }
-  static string[] Of(int pid) {
-    IntPtr handle = OpenProcess(0x0410, false, pid);
-    if (handle == IntPtr.Zero) return null;
-    try {
-      var info = new IntPtr[6];
-      int written;
-      if (NtQueryInformationProcess(handle, 0, info, IntPtr.Size * 6, out written) != 0) return null;
-      IntPtr parameters = Pointer(handle, info[1] + 0x20);
-      if (parameters == IntPtr.Zero) return null;
-      string cwd = "";
-      var folder = Read(handle, parameters + 0x38, 16);
-      if (folder != null) {
-        var name = Read(handle, (IntPtr)BitConverter.ToInt64(folder, 8), BitConverter.ToUInt16(folder, 0));
-        if (name != null) cwd = Encoding.Unicode.GetString(name);
-      }
-      IntPtr block = Pointer(handle, parameters + 0x80);
-      var sized = Read(handle, parameters + 0x3F0, 8);
-      long size = sized == null ? 0 : BitConverter.ToInt64(sized, 0);
-      if (size <= 0 || size > (1 << 20)) size = 32768;
-      var environment = Read(handle, block, (int)size);
-      return new[] { cwd, environment == null ? "" : Encoding.Unicode.GetString(environment) };
-    } finally {
-      CloseHandle(handle);
-    }
-  }
-  static string Quoted(string text) {
-    return "\\"" + text.Replace("\\\\", "\\\\\\\\").Replace("\\"", "\\\\\\"") + "\\"";
-  }
-  public static int Main(string[] args) {
-    var since = DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(args[0])).UtcDateTime;
-    string root = args[1], home = args[2];
-    int caller = int.Parse(args[3]), self = Process.GetCurrentProcess().Id;
-    var found = new StringBuilder("[");
-    foreach (var process in Process.GetProcesses()) {
-      try {
-        if (process.Id == self || process.Id == caller) continue;
-        DateTime created;
-        try { created = process.StartTime.ToUniversalTime(); } catch { continue; }
-        if (created < since) continue;
-        var read = Of(process.Id);
-        if (read == null) continue;
-        string cwd = read[0].TrimEnd('\\\\');
-        bool inside = string.Equals(cwd, root, StringComparison.OrdinalIgnoreCase) ||
-          cwd.StartsWith(root + "\\\\", StringComparison.OrdinalIgnoreCase);
-        if (!inside) {
-          bool own = false;
-          foreach (var variable in read[1].Split('\\0'))
-            if (string.Equals(variable, "HOME=" + home, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(variable, "USERPROFILE=" + home, StringComparison.OrdinalIgnoreCase)) {
-              own = true;
-              break;
-            }
-          if (!own) continue;
-        }
-        long start = new DateTimeOffset(DateTime.SpecifyKind(created, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
-        if (found.Length > 1) found.Append(",");
-        found.Append("{\\"pid\\":").Append(process.Id)
-          .Append(",\\"comm\\":").Append(Quoted(process.ProcessName + ".exe"))
-          .Append(",\\"start\\":").Append(start).Append("}");
-      } catch {
-        // Gone meanwhile.
-      }
-    }
-    Console.Out.Write(found.Append("]").ToString());
-    return 0;
-  }
-}
-`
-
-// The lister, compiled once by its source into the system's temporary folder, with the C#
-// compiler every Windows has in its .NET Framework: one quick process a listing, where
-// starting PowerShell for each took most of a minute's test on a CI runner.
+// The lister (reap-lister.cs), compiled once by its source into the system's temporary
+// folder, with the C# compiler every Windows has in its .NET Framework: one quick process
+// a listing, where starting PowerShell for each took most of a minute's test on a CI
+// runner. Its hash, recorded beside it once compiled, is checked before it is run: a
+// program there that isn't the one compiled, as a half-written one, is compiled again.
+const lister = readFileSync(new URL("reap-lister.cs", import.meta.url), "utf8")
 const listerProgram = join(
   tmpdir(),
   `novadeck-e2e-reap-${createHash("sha256").update(lister).digest("hex").slice(0, 16)}.exe`,
 )
+const listerHash = `${listerProgram}.sha256`
+
+const hashOf = (file: string): string =>
+  createHash("sha256").update(readFileSync(file)).digest("hex")
+
+// Whether the program there is the one compiled, as its recorded hash says.
+const intact = (): boolean => {
+  try {
+    return hashOf(listerProgram) === readFileSync(listerHash, "utf8").trim()
+  } catch {
+    return false
+  }
+}
+
+// Why the lister can't be run, with what usually causes it on a developer's machine: a
+// program that reads every process's memory is what an antivirus quarantines.
+const blocked = (cause: unknown): Error =>
+  new Error(
+    `The e2e suite's process lister (${listerProgram}) could not run: ${
+      cause instanceof Error ? cause.message : String(cause)
+    }. Windows Defender or another antivirus may have quarantined it, as it reads other processes' memory; allow it, or exclude ${join(tmpdir(), "novadeck-e2e-reap-*.exe")}, and run again.`,
+    { cause },
+  )
 
 let compiled: Promise<string> | undefined
 const compiledLister = (): Promise<string> =>
   (compiled ??= (async () => {
-    if (existsSync(listerProgram)) return listerProgram
+    if (intact()) return listerProgram
     const root = process.env.SystemRoot ?? "C:\\Windows"
     const csc = join(root, "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe")
     const staging = `${listerProgram}.${randomBytes(6).toString("hex")}`
@@ -214,12 +137,17 @@ const compiledLister = (): Promise<string> =>
         ["/nologo", "/target:exe", "/optimize", `/out:${staging}.exe`, `${staging}.cs`],
         { windowsHide: true, timeout: 120_000 },
       )
-      // Another run may have put its own there meanwhile, the same program.
+      const hash = hashOf(`${staging}.exe`)
+      // Another run may be using one there meanwhile, the same program, checked: it stays.
       try {
         renameSync(`${staging}.exe`, listerProgram)
-      } catch {
-        if (!existsSync(listerProgram)) throw new Error(`${listerProgram} could not be made`)
+        writeFileSync(listerHash, hash)
+      } catch (cause) {
+        if (!intact()) throw cause
       }
+    } catch (cause) {
+      compiled = undefined
+      throw blocked(cause)
     } finally {
       rmSync(`${staging}.cs`, { force: true })
       rmSync(`${staging}.exe`, { force: true })
@@ -228,11 +156,19 @@ const compiledLister = (): Promise<string> =>
   })())
 
 const windowsList = async (sandbox: Scope): Promise<readonly Process[]> => {
-  const { stdout } = await promisify(execFile)(
-    await compiledLister(),
-    [String(sandbox.started), sandbox.root, sandbox.home, String(process.pid)],
-    { windowsHide: true, timeout: 60_000, maxBuffer: 16 * 1024 * 1024 },
-  )
+  const program = await compiledLister()
+  let stdout: string
+  try {
+    ;({ stdout } = await promisify(execFile)(
+      program,
+      [String(sandbox.started), sandbox.root, sandbox.home, String(process.pid)],
+      { windowsHide: true, timeout: 60_000, maxBuffer: 16 * 1024 * 1024 },
+    ))
+  } catch (cause) {
+    // One removed or blocked since it was compiled is compiled again next time.
+    if (!intact()) compiled = undefined
+    throw blocked(cause)
+  }
   const rows = JSON.parse(stdout) as {
     readonly pid: number
     readonly comm: string
@@ -258,11 +194,16 @@ const windows: Table = {
     return found.filter((one) => now.some((it) => it.pid === one.pid && it.start === one.start))
   },
   // Windows has no signal to ask with: ending one is TerminateProcess, and forcibly
-  // `taskkill /T` ends what it started too.
-  end: (one, forcibly) => {
+  // `taskkill /T` ends what it started too, waited for, so nothing of it holds the
+  // sandbox's files once `reap` returns. Only the process itself is checked to be the one
+  // found; taskkill finds what it started by parent pid, as the runner's own tree kill.
+  end: async (one, forcibly) => {
     try {
       if (forcibly)
-        execFile("taskkill", ["/PID", String(one.pid), "/T", "/F"], { windowsHide: true })
+        await promisify(execFile)("taskkill", ["/PID", String(one.pid), "/T", "/F"], {
+          windowsHide: true,
+          timeout: 30_000,
+        })
       else process.kill(one.pid)
     } catch {
       // Gone meanwhile.
@@ -271,6 +212,11 @@ const windows: Table = {
 }
 
 const table = process.platform === "win32" ? windows : linux
+
+/** The sandbox's processes now, as `reap` finds them, by pid and command name; none ended. */
+export const sandboxProcesses = async (
+  sandbox: Scope,
+): Promise<readonly { readonly pid: number; readonly comm: string }[]> => table.list(sandbox)
 
 // Waits until none of them is still running or the time is up.
 const ended = async (sandbox: Scope, found: readonly Process[], ms: number): Promise<void> => {
@@ -309,11 +255,14 @@ export const reap = async (sandbox: Scope): Promise<string[]> => {
     // Each as it is now, so one stopped while it was waited for is named stopped.
     // eslint-disable-next-line no-await-in-loop -- As above.
     const leftover = await table.current(sandbox, found)
-    for (const one of leftover) table.end(one, false)
+    // eslint-disable-next-line no-await-in-loop -- As above.
+    await Promise.all(leftover.map((one) => table.end(one, false)))
     // eslint-disable-next-line no-await-in-loop -- As above.
     await ended(sandbox, leftover, 2000)
     // eslint-disable-next-line no-await-in-loop -- As above.
-    for (const one of await table.current(sandbox, leftover)) table.end(one, true)
+    const holding = await table.current(sandbox, leftover)
+    // eslint-disable-next-line no-await-in-loop -- As above.
+    await Promise.all(holding.map((one) => table.end(one, true)))
     leftovers.push(...leftover.map(named))
   }
   return leftovers
