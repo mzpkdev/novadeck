@@ -222,6 +222,8 @@ export type DeckOptions = {
   readonly model?: {
     readonly rejection: () => string | undefined
     readonly trail: () => string
+    /** Runs `work`, a close of the deck, during which a harness may hang up mid-request. */
+    readonly ending?: (work: () => Promise<void>) => Promise<void>
   }
 }
 
@@ -490,14 +492,17 @@ type Runner = {
 }
 
 // Closes the runner, once: ends every watch of it, saves and ends its terminals.
-const stop = async (runner: Runner): Promise<void> => {
+const stop = async (runner: Runner, model?: DeckOptions["model"]): Promise<void> => {
   if (runner.closing.signal.aborted) return
   runner.closing.abort()
-  try {
-    await runner.terminals.shutdown()
-  } finally {
-    runner.store.close()
+  const end = async () => {
+    try {
+      await runner.terminals.shutdown()
+    } finally {
+      runner.store.close()
+    }
   }
+  await (model?.ending ? model.ending(end) : end())
 }
 
 /**
@@ -825,7 +830,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       return { next: requests.next }
     },
     restart: async () => {
-      await stop(runner)
+      await stop(runner, options.model)
       const left = (await options.leftovers?.()) ?? []
       if (left.length > 0)
         throw new Error(
@@ -851,6 +856,6 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         ),
       )
     },
-    close: () => stop(runner),
+    close: () => stop(runner, options.model),
   }
 }
