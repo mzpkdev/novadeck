@@ -58,6 +58,7 @@ import type {
 import {
   doorbellLine,
   firedFacts,
+  hookShellSlackMs,
   quotedLine,
   silentFor,
   type Install,
@@ -757,7 +758,11 @@ export class Terminals {
       if (record) this.lapsed(record)
     })
     this.prompts = new Prompts(this.promptHost(), this.inputs, options.prompts)
-    this.interrupts = new Interrupts(this.interruptHost(), options.interrupts)
+    this.interrupts = new Interrupts(this.interruptHost(), {
+      // The queued turn shows working only once its hook comes, which its shell holds back.
+      queuedTurnMs: 3_000 + hookShellSlackMs(this.options.platform),
+      ...options.interrupts,
+    })
     this.dialogs = new Dialogs(this.dialogsHost(), options.answers)
     this.answers = new Answers(this.answerHost(), this.inputs, options.answers)
     const doorbell = this.doorbell

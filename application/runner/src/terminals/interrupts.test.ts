@@ -17,7 +17,8 @@ const terminal = (
     prompt?: string
     /** What the box holds before the Escape. */
     draft?: string
-    working?: boolean
+    /** Whether its turn works, or how it says so as each key comes. */
+    working?: boolean | (() => boolean)
     /** Whether the screen shows messages queued behind the turn. */
     queued?: boolean
     /** Whether the harness has keys that clear its box; they empty it where it `clears`. */
@@ -51,7 +52,8 @@ const terminal = (
   }
   const host: InterruptHost = {
     admit: () => undefined,
-    working: () => options.working !== false,
+    working: () =>
+      typeof options.working === "function" ? options.working() : options.working !== false,
     alive: () => true,
     profile: () => profile,
     prompt: () => options.prompt,
@@ -164,6 +166,24 @@ describe("interrupts", () => {
     expect(await t.interrupt()).toEqual({ returned: "Queued beta\nQueued gamma" })
     expect(t.typed).toEqual([ESC, ESC])
     expect(t.written).toEqual([CLEAR])
+  })
+
+  it("presses the second Escape for queued messages only once their turn works", async () => {
+    // The stopped turn ends, and the harness starts the queued one 300 ms after the Escape,
+    // as a busy machine may, past when the box has settled.
+    const pressed: number[] = []
+    const t = terminal({
+      queued: true,
+      prompt: "Hold on",
+      working: () => pressed.length === 0 || Date.now() - pressed[0]! >= 300,
+      after: (escapes) => {
+        pressed.push(Date.now())
+        return escapes === 2 ? "Queued beta" : undefined
+      },
+    })
+    expect(await t.interrupt()).toEqual({ returned: "Queued beta" })
+    expect(t.typed).toEqual([ESC, ESC])
+    expect(pressed[1]! - pressed[0]!).toBeGreaterThanOrEqual(300)
   })
 
   it("returns nothing where the first Escape alone leaves the box empty and nothing is queued", async () => {
