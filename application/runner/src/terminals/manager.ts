@@ -530,6 +530,17 @@ const sameProcess = (a: ForegroundProcess | null, b: ForegroundProcess | null): 
     a.argv?.length === b.argv?.length &&
     (a.argv ?? []).every((arg, index) => arg === b.argv?.[index]))
 
+/**
+ * How long before the hook that bound a session another hook the harness fired with it
+ * may have started, in milliseconds: Antigravity fires its status line and a model call's
+ * PreInvocation at once, and either may start, and be heard, first. A newly bound
+ * session's activity takes facts from then on. On CI (2026-10-11, Windows) the
+ * PreInvocation that started a session's first turn had started 5 µs, and once 1.4 ms,
+ * before the status line that bound the session, was heard after it, and was dropped as
+ * older than the binding, with every fact after it: the turn never showed.
+ */
+const boundTogetherMs = 250
+
 // How long a closed Windows terminal's programs have to end by themselves once its
 // console closes, as they do on its CTRL_CLOSE_EVENT, saving what they were writing, in
 // milliseconds: within the five seconds Windows gives them. What is left of the terminal's
@@ -3205,6 +3216,8 @@ export class Terminals {
       }
       changed = true
       // A newly bound session waits for its first prompt; one still bound keeps its activity.
+      // What its hooks told from before it bound is past, but for one fired with the hook
+      // that bound it (see `boundTogetherMs`).
       const same =
         before !== null &&
         next.binding !== null &&
@@ -3213,7 +3226,7 @@ export class Terminals {
       if (!same) {
         record.activity = next.binding
           ? fresh(
-              event.startedAt,
+              (event.firedAt ?? event.startedAt) - boundTogetherMs,
               harnesses[next.binding.agent].wakes,
               harnesses[next.binding.agent].records,
             )
