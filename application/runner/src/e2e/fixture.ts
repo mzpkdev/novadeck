@@ -23,9 +23,14 @@ export { describe, expect } from "../test.js"
 const refusal = unsupported(process.platform)
 
 /**
- * Whether the suite can run here: Linux, Windows and macOS (see `unsupported`). A
- * scenario file can skip on it
- * (`describe.skipIf(!supported)`); a test that runs anyway fails, saying why.
+ * Whether the suite can run here: Linux, Windows and macOS (see `unsupported`). On
+ * Windows the sandbox moves the user's folders too (see `createSandbox`), where Claude
+ * Code and Codex keep their credentials in files; on macOS Claude Code names its Keychain
+ * items after the sandbox's folder and Codex keeps its login in a file. Antigravity keeps
+ * its login in the Credential Manager or the Keychain under a fixed name, which no sandbox
+ * hides, so a test refuses to start while that login is there (see `harnessLogins`). The
+ * leftover-process check asks the system rather than /proc. A scenario file can skip on
+ * it (`describe.skipIf(!supported)`); a test that runs anyway fails, saying why.
  */
 export const supported = refusal === undefined
 
