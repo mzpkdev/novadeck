@@ -46,14 +46,16 @@ pub fn of_this_process() -> Vec<Value> {
     found
 }
 
-/// A program's file name without its `.exe`.
+/// A program's file name without its `.exe`, in lower case, as Windows names files in
+/// any case and the agents' names are lower case.
 #[cfg(any(windows, test))]
 fn program(file: &str) -> String {
     let cut = file.len().saturating_sub(4);
-    match file.get(cut..) {
-        Some(end) if end.eq_ignore_ascii_case(".exe") => file[..cut].to_owned(),
-        _ => file.to_owned(),
-    }
+    let name = match file.get(cut..) {
+        Some(end) if end.eq_ignore_ascii_case(".exe") => &file[..cut],
+        _ => file,
+    };
+    name.to_lowercase()
 }
 
 #[cfg(windows)]
@@ -258,7 +260,7 @@ mod tests {
     #[test]
     fn names_a_windows_program_without_its_exe() {
         assert_eq!(program("agy.exe"), "agy");
-        assert_eq!(program("Codex.EXE"), "Codex");
+        assert_eq!(program("Codex.EXE"), "codex");
         assert_eq!(program("exe"), "exe");
         assert_eq!(program("codex"), "codex");
     }
