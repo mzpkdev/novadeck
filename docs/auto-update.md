@@ -158,15 +158,15 @@ only from the main frame of the app's own page.
 Every release uploads these assets, and each `latest*.yml` entry's `url` must name an
 uploaded asset exactly:
 
-| Asset                                              | Used by                                         |
-| -------------------------------------------------- | ----------------------------------------------- |
-| `novadeck-mac-universal.dmg`                       | Downloads from the website                      |
-| `novadeck-mac-universal.zip`                       | macOS updates (Squirrel.Mac)                    |
-| `novadeck-win-x64-setup.exe`                       | The Windows installer and its updates           |
-| `novadeck-linux-x86_64.AppImage`                   | The AppImage and its updates                    |
-| `latest.yml`, `latest-mac.yml`, `latest-linux.yml` | Update metadata, with each package's SHA-512    |
-| `*.blockmap`                                       | Differential downloads of the installer and zip |
-| `install.sh`                                       | The Linux install script                        |
+| Asset                                              | Used by                                           |
+| -------------------------------------------------- | ------------------------------------------------- |
+| `novadeck-mac-universal.dmg`                       | Downloads from the website                        |
+| `novadeck-mac-universal.zip`                       | `install.sh` on macOS, and updates (Squirrel.Mac) |
+| `novadeck-win-x64-setup.exe`                       | The Windows installer and its updates             |
+| `novadeck-linux-x86_64.AppImage`                   | The AppImage and its updates                      |
+| `latest.yml`, `latest-mac.yml`, `latest-linux.yml` | Update metadata, with each package's SHA-512      |
+| `*.blockmap`                                       | Differential downloads of the installer and zip   |
+| `install.sh`                                       | The Linux and macOS install script                |
 
 `latest-linux.yml` must list the AppImage. The AppImage is built on the static type2
 runtime (`toolsets.appimage` in `electron-builder.yml`), so it needs FUSE 3's

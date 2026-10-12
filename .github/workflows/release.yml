@@ -470,7 +470,7 @@ jobs:
 
       # Each package runs for ten seconds as people get it: the AppImage as it is and as
       # install.sh installs it from a local copy of the release, then the app from the macOS
-      # ZIP and disk image and from the Windows installer. The AppImage mounts itself through
+      # ZIP, disk image and install.sh, and from the Windows installer. The AppImage mounts itself through
       # FUSE 3, with no extraction flag.
       - name: Smoke Test Linux Packages
         if: matrix.target == 'linux'
@@ -590,19 +590,25 @@ jobs:
 
       - name: Smoke Test macOS Packages
         if: matrix.target == 'mac'
-        timeout-minutes: 3
+        timeout-minutes: 4
         shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
         run: |
           release=application/host/release
-          launch() {
-            local what="$1" bundles bundle executable_name executable pid
+          # The one app bundle at the top of a folder.
+          bundle_in() {
+            local bundles
             shopt -s nullglob
             bundles=("$2"/*.app)
             if [[ "${#bundles[@]}" -ne 1 || ! -d "${bundles[0]}" ]]; then
-              echo "::error::Expected exactly one top-level app bundle in the $what."
+              echo "::error::Expected exactly one top-level app bundle in the $1." >&2
               exit 1
             fi
-            bundle="${bundles[0]}"
+            printf '%s\n' "${bundles[0]}"
+          }
+          launch() {
+            local what="$1" bundle="$2" executable_name executable pid
             executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist")"
             executable="$bundle/Contents/MacOS/$executable_name"
             if [[ -z "$executable_name" || ! -x "$executable" || -d "$executable" ]]; then
@@ -640,7 +646,8 @@ jobs:
           mkdir -p "$archive"
           echo "Extracting macOS package"
           ditto -x -k "$(find "$release" -maxdepth 1 -name '*.zip' -print -quit)" "$archive"
-          launch ZIP "$archive"
+          bundle="$(bundle_in ZIP "$archive")"
+          launch ZIP "$bundle"
 
           image="$RUNNER_TEMP/novadeck-smoke-image"
           hdiutil attach -nobrowse -readonly -mountpoint "$image" "$(find "$release" -maxdepth 1 -name '*.dmg' -print -quit)" > /dev/null
@@ -648,8 +655,40 @@ jobs:
             echo "::error::The disk image has no Applications shortcut to drag the app to."
             exit 1
           fi
-          launch "disk image" "$image"
+          bundle="$(bundle_in "disk image" "$image")"
+          launch "disk image" "$bundle"
           hdiutil detach -force "$image" > /dev/null
+
+          # install.sh runs as released, against a local copy of the release's ZIP and its
+          # checksum, and installs where it would for this account.
+          serve="$RUNNER_TEMP/novadeck-release"
+          mkdir -p "$serve"
+          cp "$release"/novadeck-mac-universal.zip "$serve"
+          (cd "$serve" && shasum -a 256 -- * > SHA256SUMS)
+          sed "s|@REPOSITORY@|$REPOSITORY|g" scripts/install/install.sh > "$RUNNER_TEMP/install.sh"
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$serve" > /dev/null 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+          for _ in {1..30}; do
+            if curl -fs -o /dev/null http://127.0.0.1:8765/SHA256SUMS; then break; fi
+            sleep 1
+          done
+          curl -fs -o /dev/null http://127.0.0.1:8765/SHA256SUMS
+
+          NOVADECK_INSTALL_BASE_URL=http://127.0.0.1:8765 sh "$RUNNER_TEMP/install.sh"
+          installed=""
+          for folder in /Applications "$HOME/Applications"; do
+            if [[ -d "$folder/novadeck.app" ]]; then installed="$folder/novadeck.app"; fi
+          done
+          if [[ -z "$installed" ]]; then
+            echo "::error::install.sh left no novadeck.app in /Applications or ~/Applications."
+            exit 1
+          fi
+          if xattr -p com.apple.quarantine "$installed" > /dev/null 2>&1; then
+            echo "::error::install.sh left the app quarantined, so Gatekeeper would block an unsigned build."
+            exit 1
+          fi
+          launch "app installed by install.sh" "$installed"
 
       - name: Smoke Test Windows Packages
         if: matrix.target == 'win'

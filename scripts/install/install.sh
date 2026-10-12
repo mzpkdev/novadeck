@@ -1,11 +1,14 @@
 #!/bin/sh
-# Installs the latest stable Novadeck on x86_64 Linux:
+# Installs the latest stable Novadeck on x86_64 Linux and on macOS:
 #
 #   curl -fsSL https://github.com/@REPOSITORY@/releases/latest/download/install.sh | sh
 #
-# It puts the AppImage in ~/.local/share/novadeck with a menu entry and a `novadeck`
-# command. Every download is checked against the release's SHA256SUMS first. Running it
-# again upgrades or repairs the install; installed apps update themselves after that.
+# On Linux it puts the AppImage in ~/.local/share/novadeck with a menu entry and a
+# `novadeck` command. On macOS it puts the app in /Applications, or in ~/Applications when
+# this account cannot write to /Applications, and replaces a copy already in either.
+# Every download is checked against the release's SHA256SUMS first. Running it again
+# upgrades or repairs the install; installed apps update themselves after that, except an
+# unsigned macOS build, which only tells of new versions.
 #
 # Ubuntu 24.04 and later stop unprivileged programs from creating the user namespaces
 # Electron's sandbox needs, and the AppImage then runs without a sandbox. On such a system
@@ -14,7 +17,8 @@
 #
 #   curl -fsSL https://github.com/@REPOSITORY@/releases/latest/download/install.sh | sh -s -- --sandbox
 #
-# --sandbox does only that step, for an existing install, such as one Homebrew made.
+# --sandbox does only that step, for an existing install, such as one Homebrew made. macOS
+# needs no such step.
 #
 # The release workflow replaces @REPOSITORY@ with the repository it publishes from. These
 # environment variables change it:
@@ -38,6 +42,8 @@
 #                                     /sys/kernel/security/apparmor/policy/profiles.
 #   NOVADECK_INSTALL_FUSE_DEVICE      The device AppImages mount through, in place of
 #                                     /dev/fuse.
+#   NOVADECK_INSTALL_APPLICATIONS_DIR The system-wide Applications folder on macOS, in
+#                                     place of /Applications.
 #
 # Every definition comes before the one call on the last line, so a download that is cut
 # short runs nothing.
@@ -55,22 +61,25 @@ has() {
   command -v "$1" > /dev/null 2>&1
 }
 
-# Linux on x86_64 only; macOS and Windows have their own installers.
+# Linux on x86_64, and macOS on either architecture, as its app is universal; Windows has
+# its own installer. Prints linux or mac.
 check_platform() {
   repository="$1"
   case "$(uname -s)" in
     Linux) ;;
     Darwin)
-      fail "this installer is for Linux. On macOS, download https://github.com/$repository/releases/latest/download/novadeck-mac-universal.dmg and drag the app to Applications."
+      printf 'mac\n'
+      return 0
       ;;
     *)
-      fail "this installer is for Linux. On Windows, download https://github.com/$repository/releases/latest/download/novadeck-win-x64-setup.exe."
+      fail "this installer is for Linux and macOS. On Windows, download https://github.com/$repository/releases/latest/download/novadeck-win-x64-setup.exe."
       ;;
   esac
   case "$(uname -m)" in
     x86_64 | amd64) ;;
-    *) fail "Novadeck is built for x86_64 only, and this computer is $(uname -m)." ;;
+    *) fail "Novadeck is built for x86_64 only on Linux, and this computer is $(uname -m)." ;;
   esac
+  printf 'linux\n'
 }
 
 # The path of a tool on the PATH or in the system folders a user's PATH often lacks, or
@@ -93,12 +102,21 @@ download() {
   curl -fsSL --retry 3 --retry-connrefused -o "$2" "$1" || fail "could not download $1"
 }
 
+# A file's SHA-256, through sha256sum on Linux and shasum on macOS, which may lack it.
+checksum() {
+  if has sha256sum; then
+    sha256sum "$1"
+  else
+    shasum -a 256 "$1"
+  fi | awk '{ print $1 }'
+}
+
 # Succeeds only when the file's SHA-256 is the one SHA256SUMS lists for its name.
 verify() {
   name="$1"
   expected="$(awk -v name="$name" '$2 == name || $2 == "*" name { print $1; exit }' SHA256SUMS)"
   [ -n "$expected" ] || fail "SHA256SUMS lists no $name."
-  actual="$(sha256sum "$name" | awk '{ print $1 }')"
+  actual="$(checksum "$name")"
   [ "$expected" = "$actual" ] || fail "$name does not match its checksum in SHA256SUMS; try again, and report it if it persists."
 }
 
@@ -316,6 +334,69 @@ setup_sandbox() {
   fi
 }
 
+# The folder the macOS app goes to: the one that already holds it, else /Applications when
+# this account may write to it, as an administrator's may, else ~/Applications. macOS
+# updates an app only where it is, so it must stay where this account can replace it.
+mac_folder() {
+  system="${NOVADECK_INSTALL_APPLICATIONS_DIR:-/Applications}"
+  user="$HOME/Applications"
+  if [ -e "$system/novadeck.app" ]; then
+    if [ -w "$system" ] && [ -w "$system/novadeck.app" ]; then
+      printf '%s\n' "$system"
+    else
+      fail "Novadeck in $system is not this account's to replace. Run this as the account that installed it, or remove that copy and run this again."
+    fi
+  elif [ -e "$user/novadeck.app" ] || [ ! -w "$system" ]; then
+    printf '%s\n' "$user"
+  else
+    printf '%s\n' "$system"
+  fi
+}
+
+# Whether `codesign` finds a Developer ID signature on the app, which macOS needs before
+# it installs an update.
+developer_id_signed() {
+  codesign --display --verbose=2 "$1" 2>&1 | grep -q '^Authority=Developer ID Application: '
+}
+
+install_mac() {
+  base="$1"
+  folder="$(mac_folder)" || exit 1
+  app="$folder/novadeck.app"
+
+  fetch "$base" novadeck-mac-universal.zip
+
+  # Replacing the app under a running copy would leave it starting helpers of another
+  # version.
+  if has pgrep && pgrep -f "$app/Contents/MacOS/" > /dev/null 2>&1; then
+    fail "Novadeck is running from $app. Quit it and run this again."
+  fi
+
+  # Unpacked next to the app, so it moves into place in one rename. ditto keeps the
+  # bundle's symlinks and signature intact, and curl leaves the download unquarantined.
+  mkdir -p "$folder"
+  staging="$folder/.novadeck-install"
+  rm -rf "$staging"
+  ditto -x -k novadeck-mac-universal.zip "$staging" || fail "could not unpack novadeck-mac-universal.zip."
+  [ -d "$staging/novadeck.app" ] || fail "novadeck-mac-universal.zip holds no novadeck.app."
+  if [ -e "$app" ]; then
+    mv "$app" "$staging/previous.app" || fail "could not replace $app."
+  fi
+  if ! mv "$staging/novadeck.app" "$app"; then
+    [ -e "$staging/previous.app" ] && mv "$staging/previous.app" "$app"
+    fail "could not move Novadeck into $folder."
+  fi
+  rm -rf "$staging"
+
+  say "Installed Novadeck to $app"
+  if developer_id_signed "$app"; then
+    say "Done. Novadeck updates itself from here."
+  else
+    say "Done. This build is not signed, so Novadeck tells you of new versions rather than"
+    say "installing them; run this again to install one."
+  fi
+}
+
 usage() {
   printf 'usage: install.sh [--sandbox]\n' >&2
   exit 2
@@ -334,7 +415,7 @@ main() {
   base="${NOVADECK_INSTALL_BASE_URL:-https://github.com/$repository/releases/latest/download}"
   base="${base%/}"
 
-  check_platform "$repository"
+  platform="$(check_platform "$repository")" || exit 1
 
   if [ -z "${HOME:-}" ] || [ ! -d "$HOME" ]; then
     fail "HOME is not set to an existing folder."
@@ -347,9 +428,14 @@ main() {
   fi
 
   work="$(mktemp -d)" || fail "could not create a temporary folder."
-  trap 'rm -rf "$work"' EXIT
+  staging=""
+  trap 'rm -rf "$work" ${staging:+"$staging"}' EXIT
   cd "$work" || fail "could not enter $work."
 
+  if [ "$sandbox_only" = true ] && [ "$platform" = mac ]; then
+    say "Novadeck's sandbox needs no setup on macOS."
+    return 0
+  fi
   if [ "$sandbox_only" = true ]; then
     userns_restricted || say "This system does not restrict user namespaces, so Novadeck's sandbox needs no setup."
     setup_sandbox "$base"
@@ -357,12 +443,16 @@ main() {
   fi
 
   has curl || fail "curl is required."
-  has sha256sum || fail "sha256sum is required."
+  has sha256sum || has shasum || fail "sha256sum is required."
 
   say "Installing Novadeck"
   download "$base/SHA256SUMS" SHA256SUMS
-  install_appimage "$base"
-  say "Done. Novadeck updates itself from here."
+  if [ "$platform" = mac ]; then
+    install_mac "$base"
+  else
+    install_appimage "$base"
+    say "Done. Novadeck updates itself from here."
+  fi
 }
 
 main "$@"

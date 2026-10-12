@@ -7,8 +7,19 @@ canvas. Keep related work together and switch between sessions from the sidebar.
 
 ## Install
 
-- **macOS:** download [`novadeck-mac-universal.dmg`](https://github.com/mzpkdev/novadeck/releases/latest/download/novadeck-mac-universal.dmg)
+- **macOS:**
+
+  ```sh
+  curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh
+  ```
+
+  Run it as yourself, not with `sudo`. It puts the app in `/Applications`, or in
+  `~/Applications` when your account cannot write to `/Applications`, replaces a copy
+  already in either, checks the download against the release's `SHA256SUMS`, and upgrades
+  when run again. Quit Novadeck first. You can also download
+  [`novadeck-mac-universal.dmg`](https://github.com/mzpkdev/novadeck/releases/latest/download/novadeck-mac-universal.dmg)
   and drag the app to Applications.
+
 - **Windows:** run [`novadeck-win-x64-setup.exe`](https://github.com/mzpkdev/novadeck/releases/latest/download/novadeck-win-x64-setup.exe).
   It installs for the current user without an administrator prompt.
 - **Linux (x86_64):**
@@ -1015,7 +1026,7 @@ Artifacts go to `application/host/release/`:
 
 None of the names carries a version, so `releases/latest/download/<name>` is always the
 newest stable build. The ZIP and the AppImage are not advertised: `install.sh` installs
-the AppImage, which replaces itself in place.
+the AppImage, which replaces itself in place, and the app from the ZIP.
 
 Local builds are unsigned, so Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
 Releases are signed and notarized once the signing credentials are set up; see
@@ -1030,9 +1041,9 @@ from source with the rest of the app.
 
 The [release workflow](.github/workflows/release.yml) publishes immutable GitHub
 prereleases from qualifying changes on `main`, with notes, checksums, and native
-packages. It smoke-tests each packaged application before upload, installs the AppImage through
-`install.sh` served from a local copy of the release, and fails when the installed
-AppImage runs without Electron's sandbox. The workflow feeds
+packages. It smoke-tests each packaged application before upload, installs the AppImage and
+the macOS app through `install.sh` served from a local copy of the release, and fails when
+the installed AppImage runs without Electron's sandbox. The workflow feeds
 its own repository into the update feed baked into each app and into `install.sh`, so
 moving the repository needs no edit. Conventional
 Commits determine release eligibility; versions are currently limited to patch

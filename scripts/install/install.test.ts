@@ -6,6 +6,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -45,6 +46,14 @@ const tools = [
 
 const download = "novadeck-linux-x86_64.AppImage"
 const image = "novadeck.AppImage"
+const macDownload = "novadeck-mac-universal.zip"
+const archive = "zip of novadeck.app"
+
+// Where the host keeps a real tool.
+const real = (tool: string) => ["/usr/bin", "/bin"].map((d) => join(d, tool)).find(existsSync)!
+
+// The executable of the app installed in an Applications folder.
+const executable = (folder: string) => join(folder, "novadeck.app/Contents/MacOS/novadeck")
 
 const sha256 = (content: string) => createHash("sha256").update(content).digest("hex")
 
@@ -100,6 +109,23 @@ type Scenario = {
   fuseDevice?: boolean
   /** Leaves the download folder unset, so the script builds it from its repository. */
   rendered?: boolean
+  /** The macOS side of the fake computer; uname then says Darwin. */
+  mac?: {
+    /** Whether codesign finds a Developer ID signature on the installed app. */
+    signed?: boolean
+    /** Whether pgrep finds the app running. */
+    running?: boolean
+    /** Whether this account may write to /Applications; it may when unset. */
+    systemWritable?: boolean
+    /** An app already installed in /Applications ("system") or ~/Applications ("user"). */
+    existing?: "system" | "user"
+    /** Whether that app in /Applications is this account's to replace; it is when unset. */
+    existingWritable?: boolean
+    /** Makes the archive unpack to nothing. */
+    empty?: boolean
+    /** Whether sha256sum exists; macOS has only shasum before 15. */
+    sha256sum?: boolean
+  }
 }
 
 // How the kernel lists a loaded profile: a folder named for it, with its name inside.
@@ -111,8 +137,16 @@ const load = (folder: string, ...names: string[]) => {
 }
 
 const folders: string[] = []
+// Folders a test made read-only, given their write access back so they can be removed.
+const locked: string[] = []
+
+const lock = (folder: string) => {
+  chmodSync(folder, 0o555)
+  locked.push(folder)
+}
 
 afterEach(() => {
+  for (const folder of locked.splice(0)) chmodSync(folder, 0o755)
   for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true })
 })
 
@@ -127,7 +161,8 @@ const run = (scenario: Scenario = {}) => {
   for (const folder of [bin, served, home, apparmor]) mkdirSync(folder)
   writeFileSync(log, "")
 
-  const files: Record<string, string> = { [download]: appImage }
+  const mac = scenario.mac
+  const files: Record<string, string> = mac ? { [macDownload]: archive } : { [download]: appImage }
   for (const [name, content] of Object.entries(files)) writeFileSync(join(served, name), content)
   writeFileSync(
     join(served, "SHA256SUMS"),
@@ -137,9 +172,44 @@ const run = (scenario: Scenario = {}) => {
   )
 
   for (const tool of tools) {
-    symlinkSync(["/usr/bin", "/bin"].map((d) => join(d, tool)).find(existsSync)!, join(bin, tool))
+    if (tool === "sha256sum" && mac && mac.sha256sum === false) continue
+    symlinkSync(real(tool), join(bin, tool))
   }
-  const { system = "Linux", machine = "x86_64" } = scenario.uname ?? {}
+  const applications = join(root, "Applications")
+  if (mac) {
+    // ditto unpacks the archive into a bundle whose executable holds the archive's text.
+    shim(
+      bin,
+      "ditto",
+      `echo "ditto $*" >> "${log}"
+[ "$1" = -x ] || exit 1
+${mac.empty ? 'mkdir -p "$4"' : `mkdir -p "$4/novadeck.app/Contents/MacOS" && cp "$3" "$4/novadeck.app/Contents/MacOS/novadeck"`}`,
+    )
+    shim(
+      bin,
+      "codesign",
+      mac.signed
+        ? `echo "Authority=Developer ID Application: Acme (TEAM)" >&2`
+        : `echo "$3: code object is not signed at all" >&2; exit 1`,
+    )
+    shim(bin, "pgrep", `echo "pgrep $*" >> "${log}"; exit ${mac.running ? 0 : 1}`)
+    shim(bin, "shasum", `[ "$1" = -a ] && shift 2; exec ${real("sha256sum")} "$@"`)
+    mkdirSync(applications)
+    const existing =
+      mac.existing === "system"
+        ? applications
+        : mac.existing === "user"
+          ? join(home, "Applications")
+          : undefined
+    if (existing) {
+      mkdirSync(join(existing, "novadeck.app/Contents/MacOS"), { recursive: true })
+      writeFileSync(join(existing, "novadeck.app/Contents/MacOS/novadeck"), "old")
+      if (mac.existingWritable === false) lock(join(existing, "novadeck.app"))
+    }
+    if (mac.systemWritable === false) lock(applications)
+  }
+  const { system = mac ? "Darwin" : "Linux", machine = mac ? "arm64" : "x86_64" } =
+    scenario.uname ?? {}
   shim(bin, "uname", `[ "$1" = -s ] && echo ${system} || echo ${machine}`)
   shim(bin, "id", `echo ${scenario.root ? 0 : 1000}`)
   shim(
@@ -185,10 +255,10 @@ esac`,
   const entry = join(root, "install.sh")
   writeFileSync(entry, text)
   const data = scenario.xdg ? join(root, scenario.xdg) : undefined
-  const real = join(root, "real-data")
+  const realData = join(root, "real-data")
   if (data && scenario.linked) {
-    mkdirSync(real)
-    symlinkSync(real, data)
+    mkdirSync(realData)
+    symlinkSync(realData, data)
   }
   const profiles = join(root, "profiles")
   mkdirSync(profiles)
@@ -213,6 +283,7 @@ esac`,
         NOVADECK_INSTALL_APPARMOR_DIR: apparmor,
         NOVADECK_INSTALL_FUSE_DEVICE: device,
         NOVADECK_INSTALL_PROFILES: profiles,
+        NOVADECK_INSTALL_APPLICATIONS_DIR: applications,
         ...(data ? { XDG_DATA_HOME: data } : {}),
         ...(scenario.relativeXdg ? { XDG_DATA_HOME: scenario.relativeXdg } : {}),
         ...(scenario.rendered ? {} : { NOVADECK_INSTALL_BASE_URL: `http://mirror.test/dl/` }),
@@ -225,7 +296,8 @@ esac`,
   return {
     ...result,
     home,
-    data: scenario.linked ? real : (data ?? join(home, ".local/share")),
+    applications,
+    data: scenario.linked ? realData : (data ?? join(home, ".local/share")),
     lines,
     commands: lines.filter((line) => !line.startsWith("curl")),
     profile: existsSync(profile) ? readFileSync(profile, "utf8") : undefined,
@@ -596,17 +668,124 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
     })
   })
 
+  context("on macOS", () => {
+    it("installs the app to /Applications after checking its checksum", () => {
+      const result = run({ mac: {} })
+      expect(result.status).toBe(0)
+      expect(result.lines).toContain("curl http://mirror.test/dl/SHA256SUMS")
+      expect(result.lines).toContain(`curl http://mirror.test/dl/${macDownload}`)
+      expect(readFileSync(executable(result.applications), "utf8")).toBe(archive)
+      expect(result.stdout).toContain(`Installed Novadeck to ${result.applications}/novadeck.app`)
+      expect(readdirSync(result.applications)).toEqual(["novadeck.app"])
+      expect(existsSync(join(result.home, "Applications"))).toBe(false)
+      expect(existsSync(join(result.home, ".local"))).toBe(false)
+    })
+
+    it("runs on Intel Macs too, as the app is universal", () => {
+      expect(run({ mac: {}, uname: { system: "Darwin", machine: "x86_64" } }).status).toBe(0)
+    })
+
+    it("checks the download with shasum where there is no sha256sum", () => {
+      expect(run({ mac: { sha256sum: false } }).status).toBe(0)
+      const result = run({ mac: { sha256sum: false }, tamper: "something else" })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("does not match its checksum")
+    })
+
+    it("installs to ~/Applications when this account cannot write to /Applications", () => {
+      const result = run({ mac: { systemWritable: false } })
+      expect(result.status).toBe(0)
+      expect(readFileSync(executable(join(result.home, "Applications")), "utf8")).toBe(archive)
+    })
+
+    it("replaces a copy in /Applications", () => {
+      const result = run({ mac: { existing: "system" } })
+      expect(result.status).toBe(0)
+      expect(readFileSync(executable(result.applications), "utf8")).toBe(archive)
+      expect(readdirSync(result.applications)).toEqual(["novadeck.app"])
+    })
+
+    it("replaces a copy in ~/Applications rather than adding another", () => {
+      const result = run({ mac: { existing: "user" } })
+      expect(result.status).toBe(0)
+      expect(readFileSync(executable(join(result.home, "Applications")), "utf8")).toBe(archive)
+      expect(readdirSync(result.applications)).toEqual([])
+    })
+
+    it("replaces the app when run again", () => {
+      const result = run({ mac: {} })
+      writeFileSync(executable(result.applications), "old")
+      expect(result.again().status).toBe(0)
+      expect(readFileSync(executable(result.applications), "utf8")).toBe(archive)
+    })
+
+    it.skipIf(process.getuid?.() === 0)(
+      "leaves a copy in /Applications that is not this account's to replace",
+      () => {
+        const result = run({ mac: { existing: "system", existingWritable: false } })
+        expect(result.status).toBe(1)
+        expect(result.stderr).toContain("not this account's to replace")
+        expect(result.lines).not.toContain(`curl http://mirror.test/dl/${macDownload}`)
+        expect(readFileSync(executable(result.applications), "utf8")).toBe("old")
+        expect(existsSync(join(result.home, "Applications"))).toBe(false)
+      },
+    )
+
+    it("leaves a running copy alone", () => {
+      const result = run({ mac: { existing: "system", running: true } })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("Quit it and run this again")
+      expect(result.lines).toContain(`pgrep -f ${result.applications}/novadeck.app/Contents/MacOS/`)
+      expect(readFileSync(executable(result.applications), "utf8")).toBe("old")
+    })
+
+    it("keeps the installed copy when the archive holds no app", () => {
+      const result = run({ mac: { existing: "system", empty: true } })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("holds no novadeck.app")
+      expect(readFileSync(executable(result.applications), "utf8")).toBe("old")
+      expect(readdirSync(result.applications)).toEqual(["novadeck.app"])
+    })
+
+    it("says a signed build updates itself", () => {
+      const result = run({ mac: { signed: true } })
+      expect(result.stdout).toContain("Novadeck updates itself from here.")
+    })
+
+    it("says an unsigned build only tells of new versions", () => {
+      const result = run({ mac: { signed: false } })
+      expect(result.status).toBe(0)
+      expect(result.stdout).not.toContain("updates itself")
+      expect(result.stdout).toContain("tells you of new versions")
+    })
+
+    it("needs no sandbox setup", () => {
+      const result = run({ mac: {}, args: ["--sandbox"], restrict: "1", parser: "valid" })
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("needs no setup on macOS")
+      expect(result.lines).toEqual([])
+      expect(existsSync(executable(result.applications))).toBe(false)
+    })
+
+    it("refuses to run through sudo", () => {
+      const result = run({ mac: {}, root: true, sudo: false, sudoUid: "501" })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("without sudo")
+      expect(result.lines).toEqual([])
+    })
+  })
+
   context("on another platform", () => {
-    it("points macOS to the disk image and downloads nothing", () => {
-      const result = run({ uname: { system: "Darwin" } })
+    it("points Windows to its installer and downloads nothing", () => {
+      const result = run({ uname: { system: "MINGW64_NT-10.0" } })
       expect(result.status).toBe(1)
       expect(result.stderr).toContain(
-        "acme/novadeck/releases/latest/download/novadeck-mac-universal.dmg",
+        "acme/novadeck/releases/latest/download/novadeck-win-x64-setup.exe",
       )
       expect(result.lines).toEqual([])
     })
 
-    it("refuses other architectures", () => {
+    it("refuses other architectures on Linux", () => {
       const result = run({ uname: { machine: "aarch64" } })
       expect(result.status).toBe(1)
       expect(result.stderr).toContain("x86_64 only")
