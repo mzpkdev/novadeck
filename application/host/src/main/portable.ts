@@ -100,7 +100,7 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
       return {
         kind: "failed",
         reason:
-          "The installed Novadeck could not be checked, so it was left as it is. Reinstall it with install.sh, or remove it, and try again.",
+          "The installed copy could not be checked, so it was left as it is. Try again, or reinstall Novadeck with install.sh.",
       }
     }
     if (host.stopping()) return quitting
@@ -277,8 +277,9 @@ const shells = ["/bin/bash", "/usr/bin/bash"]
  * `--no-sandbox` for a system this copy ran on. Electron's own `relaunch` would not do on
  * Linux: its child inherits no-new-privileges, and the AppImage runtime then cannot mount
  * itself. The child starts through bash, which closes the descriptors it inherited and
- * becomes the app, or directly, logged, when there is no bash at /bin or /usr/bin. The lock on the data folder is let
- * go first so the child can take it; this process has shut down by now. Resolves true
+ * becomes the app, or directly, logged, when there is no bash at /bin or /usr/bin. The
+ * lock on the data folder is let go first so the child can take it; this process has
+ * shut down by now. Resolves true
  * after `exit`, or false, having logged why, when the child could not be started, as with
  * a missing file or exec bit: `runnable` says whether a path can be executed, as bash
  * would only report that after the fact.

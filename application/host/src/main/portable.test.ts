@@ -213,14 +213,19 @@ describe("installing from a portable copy", () => {
 
   context("when the installed copy could not be looked at", () => {
     it("is left as it is, whether or not it would be newer", async () => {
-      const { host, calls } = hosting({ find: async () => [copy(undefined, true)] })
+      const logs: unknown[][] = []
+      const { host, calls } = hosting({
+        find: async () => [copy(undefined, true)],
+        log: (...entry) => void logs.push(entry),
+      })
       const result = await portableInstaller(host).install()
       expect(result).toMatchObject({
         kind: "failed",
         reason: expect.stringContaining("install.sh"),
       })
       await settle()
-      expect(calls.filter((call) => !call.startsWith("log "))).toEqual([])
+      expect(calls).toEqual([])
+      expect(logs).toEqual([["The installed copy could not be checked.", "/n/novadeck.AppImage"]])
     })
   })
 
