@@ -91,7 +91,7 @@ and so the home and Novadeck's launcher, is named with a space, which cmd reads 
 short name. It runs `messaging`, `requests` and `lifecycle` for its harness;
 `windows-quirks.e2e.ts` (Claude Code's job) opens a terminal whose PATH is read from the
 registry, as the app's are, and runs the marker; and with the AutoRun set, a test in
-`harnesses/service.test.ts` (`NOVADECK_TEST_CMD_AUTORUN=1`) checks that Antigravity's
+`application/runner/src/harnesses/service.test.ts` (`NOVADECK_TEST_CMD_AUTORUN=1`) checks that Antigravity's
 PreToolUse goes unregistered, and that a connected copy that still has it is installed
 again without it. These tests skip anywhere else. Its traces upload as
 `e2e-traces-<harness>-Windows-quirks`.
@@ -850,7 +850,11 @@ probe output, and keep their own loader.
    whose `setups` lists them in the protocol's order. That one list drives the
    messaging scenarios and the tripwire, so every scenario runs for it and its home is
    watched. A gap it shows goes in `known-gaps.ts`, with the test that pins it.
-5. Add it to the CI matrix in `.github/workflows/e2e.yml`, with its display name.
+5. Add it to `.github/workflows/e2e.yml`: a row of the `e2e` matrix with its display name
+   and one of the Windows `quirks` matrix with its files, its id in the Mixed row's
+   `agents`, its id in both Hash Pins steps' list, and its own Restore and Save cache
+   steps beside the others'. Nothing fails where one is missed: the Mixed job leaves it
+   out, and its install is never cached.
 
 ## Claude Code against the fake model
 

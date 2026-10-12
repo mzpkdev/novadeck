@@ -13,7 +13,7 @@ type Rule = {
 }
 type Override = {
   readonly files: readonly string[]
-  readonly rules?: { readonly "no-restricted-imports"?: readonly [string, Rule] }
+  readonly rules?: { readonly "no-restricted-imports"?: readonly [string, Rule?] }
 }
 
 const root = join(import.meta.dirname, "..", "..")
@@ -24,10 +24,12 @@ const adapters = readdirSync(join(root, "harnesses")).filter(
   (name) => name !== "core" && existsSync(join(root, "harnesses", name, "package.json")),
 )
 
-/** Every import the fence of a package forbids, by name or pattern. */
+/** Every import the fence of a package forbids, by name or pattern; none where it's off. */
 const banned = (folder: string): readonly string[] => {
-  const rule = config.overrides.find((each) => each.files.includes(`harnesses/${folder}/**`))
-    ?.rules?.["no-restricted-imports"]?.[1]
+  const [severity, rule] = config.overrides.find((each) =>
+    each.files.includes(`harnesses/${folder}/**`),
+  )?.rules?.["no-restricted-imports"] ?? ["off"]
+  if (severity !== "error") return []
   return [
     ...(rule?.paths ?? []).map(({ name }) => name),
     ...(rule?.patterns ?? []).flatMap(({ group }) => group),

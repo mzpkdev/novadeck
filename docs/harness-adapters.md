@@ -146,7 +146,7 @@ Adding a harness:
    then).
 5. Its end-to-end setup, pin and CI rows (see `docs/e2e-testing.md`, "Adding a harness").
 6. What stays by hand: its icon in the UI's welcome dialog (a type error until then) and
-   its process profile (`terminals/processes/profiles.ts`), its coverage in
+   its process profile (`application/ui/src/terminals/processes/profiles.ts`), its coverage in
    `docs/harness-coverage.md`, and any variable of its hooks' environment the runner's
    `shell/hook.ts` tells nested agents apart by.
 
