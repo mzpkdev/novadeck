@@ -687,6 +687,8 @@ export class Murmur {
     clearTimeout(watch.noteRetry)
     watch.noteRetry = setTimeout(() => {
       watch.noteRetry = undefined
+      // Unusable meanwhile: what is owed stays, for the catch-up once murmur is usable.
+      if (!this.usable) return
       const at = watch.gistOwed ? watch.gist : null
       watch.gistOwed = false
       if (at !== null) {

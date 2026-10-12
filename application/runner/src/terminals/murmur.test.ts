@@ -2077,6 +2077,27 @@ describe("murmur's headlines and gists", () => {
       expect(gisted).toEqual(["Gist 1"])
     })
 
+    it("keeps a gist that did not run for the catch-up when murmur is unusable as it is due", async () => {
+      const transcript = written("assistant:text:Done.")
+      const { murmur, describer, gisted } = create(
+        { activity: ended(20), transcript },
+        new FakeDescriber({
+          note: (_digest, call) =>
+            call === 1 ? undefined : { kind: "gist", text: "Did it", asks: false },
+        }),
+        { retryMs: 150 },
+      )
+      murmur.replied("a", 20)
+      await real()
+      describer.setUsable(false)
+      // Its retry comes and goes while murmur can't run.
+      await real(500)
+      expect(gisted).toEqual([])
+      describer.setUsable(true)
+      await real()
+      expect(gisted).toEqual(["Did it"])
+    })
+
     it("asks again after a job that did not run, and not after a refusal", async () => {
       const transcript = written("assistant:text:Done.")
       const skipped = create(
