@@ -19,7 +19,7 @@ is a blocker to raise with the person, not an exception to record and move past.
 
 Every state a feature adds to the UI MUST be reachable on the demo backend, so it can be
 seen and checked in isolation without a runner: through normal use, a `?demo=` variant,
-or the demo's debug panel (`pnpm dev:previews`, the bug handle at the bottom middle).
+or the demo's debug panel (`pnpm dev:previews`, the Debug handle in the footer's middle).
 When the demo can't produce a new state yet — a dialog, an error, a badge, a tab or
 window phase, a backend field it never sets — add it in the same change:
 

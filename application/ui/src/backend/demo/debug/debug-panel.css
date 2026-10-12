@@ -1,7 +1,7 @@
 /* The debug-panel recipe: the demo's debug panel is `.debug-drawer`, kept below the
    page's bottom edge at its middle until opened (data-open). Its `.debug-handle`, a small
-   tab that stays above the edge, opens and closes it, see-through until hovered, focused
-   or open (aria-expanded). Under the handle is `.debug-panel`, the card that slides up.
+   tab that stays above the edge with its `.debug-handle-chevron`, opens and closes it,
+   see-through until hovered, focused or open (aria-expanded). Under the handle is `.debug-panel`, the card that slides up.
    The card has a `.debug-panel-header` with its `.debug-panel-mark`, `.debug-chip`s (a
    chip may take data-tone), a `.debug-label` beside the demo switch and a `.debug-search`
    field with its `.debug-search-clear`. Its body has `.debug-section` headings over
@@ -18,14 +18,14 @@
    --debug-action-hover-bg (soft): an action while hovered.
    --debug-handle-bg (paper), --debug-handle-fg (muted), --debug-handle-border-color
    (line), --debug-handle-rest-fill (30%, of the background, at rest),
-   --debug-handle-rest-opacity (0.7), --debug-handle-active-fg (ink): the handle, and
+   --debug-handle-rest-opacity (0.85), --debug-handle-active-fg (ink): the handle, and
    while hovered or open. */
 
 @layer components {
   /* The drawer: closed, it sits below the bottom edge but for its handle. Its height is
      the panel's, so the slide needs no measure of it. */
   .debug-drawer {
-    --_handle-height: calc(var(--spacing) * 5);
+    --_handle-height: calc(var(--spacing) * 6);
     translate: 0 calc(100% - var(--_handle-height));
     transition: translate var(--motion-layout) var(--ease-interface);
   }
@@ -138,9 +138,10 @@
     color: var(--debug-panel-fg, var(--color-ink));
   }
 
-  /* The handle: a tab on the drawer's top edge. At rest it is glass, the page showing
-     through a thin fill under a faint icon. Hovered or focused it turns solid; open, it
-     takes the card's colours and covers the card's top border, so the two read as one. */
+  /* The handle: a tab on the drawer's top edge, short enough to sit in the footer's
+     empty middle. At rest it is glass, the page showing through a thin fill under faint
+     words. Hovered or focused it turns solid; open, it takes the card's colours and covers
+     the card's top border, so the two read as one. */
   .debug-handle {
     --_border-color: var(--debug-handle-border-color, var(--color-line));
     margin-bottom: calc(var(--border-width) * -1);
@@ -154,7 +155,7 @@
     );
     backdrop-filter: blur(6px);
     color: var(--debug-handle-fg, var(--color-muted));
-    opacity: var(--debug-handle-rest-opacity, 0.7);
+    opacity: var(--debug-handle-rest-opacity, 0.85);
     transition:
       opacity var(--motion-state) var(--ease-interface),
       color var(--motion-state) var(--ease-interface),
@@ -165,6 +166,9 @@
     background-color: var(--debug-handle-bg, var(--color-paper));
     color: var(--debug-handle-active-fg, var(--color-ink));
     opacity: 1;
+  }
+  .debug-handle-chevron {
+    opacity: 0.7;
   }
   .debug-handle[aria-expanded="true"] {
     --_border-color: var(--debug-panel-border-color, var(--color-line));

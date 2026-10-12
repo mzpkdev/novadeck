@@ -4,7 +4,7 @@
 // their sections, folded until opened; a search finds an action by its words. See README
 // "Debug panel".
 import "./debug-panel.css"
-import { Bug, ChevronDown, ChevronRight, RotateCcw, Search, X } from "lucide-react"
+import { Bug, ChevronDown, ChevronRight, ChevronUp, RotateCcw, Search, X } from "lucide-react"
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 
 import type { Workspace } from "../../../model/types"
@@ -163,7 +163,7 @@ export const createDebugPanel = ({
             aria-expanded={open}
             aria-controls="debug-panel"
             aria-label={open ? "Close the debug panel" : "Open the debug panel"}
-            className="debug-handle pointer-events-auto relative z-1 flex h-5 w-12 items-center justify-center"
+            className="debug-handle pointer-events-auto relative z-1 flex h-6 items-center gap-1.5 px-3 text-caption font-medium"
             data-own-keys
             onKeyDown={closeOnEscape}
             onClick={() => {
@@ -171,7 +171,13 @@ export const createDebugPanel = ({
               setOpen((value) => !value)
             }}
           >
-            {open ? <ChevronDown size={14} aria-hidden /> : <Bug size={13} aria-hidden />}
+            <Bug size={14} aria-hidden />
+            Debug
+            {open ? (
+              <ChevronDown size={12} aria-hidden className="debug-handle-chevron" />
+            ) : (
+              <ChevronUp size={12} aria-hidden className="debug-handle-chevron" />
+            )}
           </button>
           {/* After its handle, so Tab goes on from the handle into the panel. */}
           <aside

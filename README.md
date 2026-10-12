@@ -649,7 +649,7 @@ Normal development and packaged builds keep their runner behavior.
 
 The content-preview demo has a panel for reaching every state of the app on demand,
 including the ones that need a runner to go wrong. Run `pnpm dev:previews`, open
-http://127.0.0.1:5181 and click the small bug handle at the bottom middle of the page to slide
+http://127.0.0.1:5181 and click the Debug handle in the middle of the footer to slide
 it up or back down; Escape closes it too. The runner has no panel. Its header shows the
 connection state, the crash-loop count and the terminal count, over the demo switcher.
 
