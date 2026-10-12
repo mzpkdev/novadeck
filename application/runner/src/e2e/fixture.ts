@@ -149,7 +149,8 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
         try {
           return await check()
         } catch (error) {
-          unchecked.push(`${what} couldn't be checked: ${(error as Error).message}`)
+          const why = error instanceof Error ? error.message : String(error)
+          unchecked.push(`${what} couldn't be checked: ${why}`)
           return none
         }
       }
