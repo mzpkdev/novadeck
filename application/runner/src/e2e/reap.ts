@@ -246,7 +246,8 @@ const windows: Table = {
  * Parses `ps -o pid=,ppid=,pgid=,stat=,lstart=,comm=` in the C locale: each process's pid,
  * its parent's and its process group's, state, start (`Thu Oct  9 11:03:47 2026`, local
  * time, to the second) and its command's path, which may hold spaces, named by its last
- * part as Linux's `comm` is.
+ * part as Linux's `comm` is. Local time has no zone: in the hour the clocks go back,
+ * one started in its second pass reads an hour early, so may not count as the sandbox's.
  */
 export const parseDarwinProcesses = (
   output: string,
@@ -277,7 +278,12 @@ export const parseDarwinProcesses = (
     ]
   })
 
-const run = async (program: string, args: readonly string[]): Promise<string> => {
+/**
+ * What the program printed. A failure throws, so the reaper fails closed, as Windows'
+ * lister does, but for `partial`: `lsof` and `ps` asked about pids exit 1 when one of them
+ * has gone, still printing the rest.
+ */
+const run = async (program: string, args: readonly string[], partial = false): Promise<string> => {
   try {
     const { stdout } = await promisify(execFile)(program, [...args], {
       env: { ...process.env, LC_ALL: "C" },
@@ -286,8 +292,9 @@ const run = async (program: string, args: readonly string[]): Promise<string> =>
     })
     return stdout
   } catch (error) {
-    // lsof and ps exit 1 when a pid they were given is gone, still printing the rest.
-    return (error as { stdout?: string }).stdout ?? ""
+    const { code, stdout } = error as { code?: unknown; stdout?: string }
+    if (partial && code === 1 && stdout !== undefined) return stdout
+    throw new Error(`reap: ${program} ${args.join(" ")} failed`, { cause: error })
   }
 }
 
@@ -317,17 +324,17 @@ export const parseDarwinFolders = (output: string): ReadonlyMap<number, string> 
  */
 const darwinList = async (sandbox: Scope): Promise<readonly Process[]> => {
   const since = Math.floor(sandbox.started / 1000) * 1000
-  const listed = parseDarwinProcesses(
-    await run("ps", ["-axww", "-o", "pid=,ppid=,pgid=,stat=,lstart=,comm="]),
-  )
+  const listed = await everyProcess()
+  // Found in every listing that worked: one without it worked only in part.
   const ownGroup = listed.find((one) => one.pid === process.pid)?.pgid
+  if (ownGroup === undefined) throw new Error("reap: ps listed no process of the tests'")
   const recent = listed.filter(
     (one) => one.pid !== process.pid && !one.zombie && one.start >= since,
   )
   if (recent.length === 0) return []
   const pids = recent.map(({ pid }) => String(pid)).join(",")
   const folders = parseDarwinFolders(
-    await run("/usr/sbin/lsof", ["-a", "-d", "cwd", "-Fn", "-p", pids]),
+    await run("/usr/sbin/lsof", ["-a", "-d", "cwd", "-Fn", "-p", pids], true),
   )
   const inside = (folder: string | undefined) =>
     folder !== undefined && (folder === sandbox.root || folder.startsWith(`${sandbox.root}/`))
@@ -336,16 +343,17 @@ const darwinList = async (sandbox: Scope): Promise<readonly Process[]> => {
     recent.filter((one) => inside(folders.get(one.pid))).map(({ pid }) => pid),
   )
   if (outside.length > 0) {
-    const environments = await run("ps", [
-      "-Eww",
-      "-o",
-      "pid=,command=",
-      "-p",
-      outside.map(({ pid }) => String(pid)).join(","),
-    ])
+    const environments = await run(
+      "ps",
+      ["-Eww", "-o", "pid=,command=", "-p", outside.map(({ pid }) => String(pid)).join(",")],
+      true,
+    )
+    // Its own variable, which a home with a space in its path still is: the next starts
+    // after a space, or the line ends.
+    const homed = ` HOME=${sandbox.home}`
     for (const line of environments.split("\n")) {
       const match = /^\s*(\d+)\s(.*)$/.exec(line)
-      if (match && match[2]!.split(" ").includes(`HOME=${sandbox.home}`))
+      if (match && (match[2]!.includes(`${homed} `) || match[2]!.endsWith(homed)))
         members.add(Number(match[1]))
     }
   }
@@ -382,13 +390,23 @@ export const sandboxed = (
   return members
 }
 
+/** Every process now, as `ps -ax` lists them; throws should it fail. */
+const everyProcess = async () =>
+  parseDarwinProcesses(await run("ps", ["-axww", "-o", "pid=,ppid=,pgid=,stat=,lstart=,comm="]))
+
 const darwin: Table = {
   list: darwinList,
   // A pid alone, between listings, as on Windows; `current` checks its start.
   alive: windows.alive,
-  current: async (sandbox, found) => {
-    const now = await darwinList(sandbox)
-    return now.filter((it) => found.some((one) => one.pid === it.pid && one.start === it.start))
+  // The same processes, each by its pid and start, as they are now: never found again
+  // from scratch, as one found through its parent no longer is once that parent has gone.
+  current: async (_sandbox, found) => {
+    const now = await everyProcess()
+    return now
+      .filter(
+        (it) => !it.zombie && found.some((one) => one.pid === it.pid && one.start === it.start),
+      )
+      .map(({ pid, comm, start, stopped }) => ({ pid, comm, start, stopped }))
   },
   end: linux.end,
 }

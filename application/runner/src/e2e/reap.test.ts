@@ -165,6 +165,39 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
     ])
     expect(await reap(sandbox)).toEqual([])
   }, 30_000)
+
+  it("ends one found through its parent though that parent has gone since, and it ignores SIGTERM", async ({
+    resources,
+  }) => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-")))
+    const elsewhere = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-other-")))
+    resources.defer(() => rmSync(root, { recursive: true, force: true }))
+    resources.defer(() => rmSync(elsewhere, { recursive: true, force: true }))
+    const sandbox = { root, home: join(root, "home"), started: Date.now() }
+    // A shell of the sandbox's starts sleep elsewhere, deaf to SIGTERM, and leaves within
+    // the reaper's grace: sleep is the sandbox's only through the shell, found before it went.
+    const shell = spawn(
+      "/bin/sh",
+      ["-c", `(trap '' TERM; cd '${elsewhere}' && exec /bin/sleep 60) & /bin/sleep 1`],
+      { cwd: root, env: {}, stdio: "ignore", detached: true },
+    )
+    resources.defer(() => {
+      try {
+        process.kill(-shell.pid!, "SIGKILL")
+      } catch {
+        // Ended by the reaping, as it should be.
+      }
+    })
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    const leftovers = await reap(sandbox)
+
+    const sleeping = leftovers.filter((one) => one.startsWith("sleep ("))
+    expect(sleeping).toHaveLength(1)
+    const pid = Number(/\((\d+)/.exec(sleeping[0]!)![1])
+    expect(() => process.kill(pid, 0)).toThrow()
+    expect(await reap(sandbox)).toEqual([])
+  }, 30_000)
 })
 
 describe("macOS's process listing", () => {
