@@ -147,8 +147,8 @@ const voiceEngine = async (): Promise<{ engine: string; source: string }> => {
     // NOVADECK_VOICE_SOURCE points a build at another folder or address, as a local or
     // pull request build needs: it has no release of its own to download from.
     source:
-      process.env.NOVADECK_VOICE_SOURCE ??
-      (repository && releaseDownloadsUrl(repository, app.getVersion())) ??
+      process.env.NOVADECK_VOICE_SOURCE ||
+      (repository && releaseDownloadsUrl(repository, app.getVersion())) ||
       "",
   }
 }
@@ -169,8 +169,8 @@ const murmurEngine = async (): Promise<{ murmurEngine: string; murmurSource: str
     // NOVADECK_MURMUR_SOURCE points a build at another folder or address, as a local or
     // pull request build needs: it has no release of its own to download from.
     murmurSource:
-      process.env.NOVADECK_MURMUR_SOURCE ??
-      (repository && releaseDownloadsUrl(repository, app.getVersion())) ??
+      process.env.NOVADECK_MURMUR_SOURCE ||
+      (repository && releaseDownloadsUrl(repository, app.getVersion())) ||
       "",
   }
 }

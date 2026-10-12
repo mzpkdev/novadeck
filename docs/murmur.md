@@ -126,8 +126,8 @@ succeeds or when murmur is turned on. The check is kept in those cases.
   murmur on, forget all of it.
 - A job stopped because murmur was turned off is not a failure.
 - Turning murmur off, or uninstalling it, clears the titles it wrote (`watchCleared` in the
-  describer, consumed by the terminals), also from the store's files on disk, as anything else
-  it forgets. A failed check, a lost GPU or the runner closing do not.
+  describer, consumed by the terminals), also from the store's files on disk, as the store does with
+  anything it forgets. A failed check, a lost GPU or the runner closing do not.
 - It runs on battery.
 
 ## Configuration
