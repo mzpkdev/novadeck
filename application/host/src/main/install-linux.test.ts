@@ -144,6 +144,20 @@ const failing =
   () =>
     Promise.reject(failure)
 
+// The first 11 bytes of an AppImage: ELF magic, then the type 2 marker at bytes 8 to 10.
+const appImageHeader = "\x7fELF\0\0\0\0AI\x02"
+
+// A file with `text` after `header` in the test folder, and its path.
+const imageFile = async (
+  text = "",
+  header = appImageHeader,
+  name = "x.AppImage",
+): Promise<string> => {
+  const file = join(root, name)
+  await writeFile(file, header + text)
+  return file
+}
+
 describe("reading an AppImage's version", () => {
   it("extracts its menu entry and reads it, leaving nothing behind", async () => {
     let folder = ""
@@ -151,59 +165,75 @@ describe("reading an AppImage's version", () => {
       folder = into
       return extractFrom(appImage("0.0.71"))(image, pattern, into)
     }
-    expect(await readImageVersion("/x.AppImage", extract)).toEqual({
+    expect(await readImageVersion(await imageFile(), extract)).toEqual({
       version: "0.0.71",
       unchecked: false,
     })
     await expect(stat(folder)).rejects.toThrow()
   })
 
-  it("has no version when the AppImage runs but names none", async () => {
+  it("has no version when the runtime ran but the image names none", async () => {
     const none = { version: undefined, unchecked: false }
-    expect(await readImageVersion("/x.AppImage", extractFrom({}))).toEqual(none)
+    const file = await imageFile()
+    expect(await readImageVersion(file, extractFrom({}))).toEqual(none)
+    expect(await readImageVersion(file, extractFrom({ "n.desktop": "[Desktop Entry]\n" }))).toEqual(
+      none,
+    )
     expect(
-      await readImageVersion("/x.AppImage", extractFrom({ "n.desktop": "[Desktop Entry]\n" })),
-    ).toEqual(none)
-    expect(
-      await readImageVersion(
-        "/x.AppImage",
-        extractFrom({ "n.desktop": "X-AppImage-Version=latest\n" }),
-      ),
+      await readImageVersion(file, extractFrom({ "n.desktop": "X-AppImage-Version=latest\n" })),
     ).toEqual(none)
   })
 
-  it("has no version when the file runs and exits with a status, or is no program", async () => {
+  it("has no version when the file is no AppImage, by its first bytes, or the system says it is no program", async () => {
     const none = { version: undefined, unchecked: false }
-    expect(
-      await readImageVersion(
-        "/x.AppImage",
-        failing(Object.assign(new Error("exit 2"), { code: 2 })),
+    let ran = false
+    const extract: Extract = () => {
+      ran = true
+      return Promise.resolve()
+    }
+    const headers = ["", "#!/bin/sh\n", "\x7fELF\0\0\0\0AI\x01", "\x7fELF", "garbage!!!!"]
+    const found = await Promise.all(
+      headers.map(async (header, index) =>
+        readImageVersion(await imageFile("", header, `${index}.AppImage`), extract),
       ),
-    ).toEqual(none)
-    expect(await readImageVersion("/x.AppImage", failing(error("ENOEXEC")))).toEqual(none)
+    )
+    expect(found).toEqual(headers.map(() => none))
+    expect(ran).toBe(false)
+    expect(await readImageVersion(await imageFile(), failing(error("ENOEXEC")))).toEqual(none)
   })
 
   it("could not be checked when the look itself failed, whatever the file is", async () => {
     const unchecked = { version: undefined, unchecked: true }
-    // A missing exec bit, a missing file, a timeout (the child is killed: no status), and
-    // anything else unknown.
+    // A status (the runtime printing "mkdir_p error: Permission denied" and exiting 1 in a
+    // temporary folder it cannot use), a missing exec bit, a timeout (the child is killed:
+    // no status), and anything else unknown.
     const failures = [
+      Object.assign(new Error("exit 1"), { code: 1 }),
       error("EACCES"),
       error("ENOENT"),
       Object.assign(new Error("timed out"), { killed: true, code: null, signal: "SIGTERM" }),
       new Error("odd"),
     ]
+    const file = await imageFile()
     const found = await Promise.all(
-      failures.map((failure) => readImageVersion("/x.AppImage", failing(failure))),
+      failures.map((failure) => readImageVersion(file, failing(failure))),
     )
     expect(found).toEqual(failures.map(() => unchecked))
   })
 
+  it("could not be checked when the file cannot be read", async () => {
+    expect(await readImageVersion(join(root, "missing"), extractFrom(appImage("1.0.0")))).toEqual({
+      version: undefined,
+      unchecked: true,
+    })
+  })
+
   it("could not be checked when there is no temporary folder", async () => {
+    const file = await imageFile()
     const before = process.env.TMPDIR
     process.env.TMPDIR = join(root, "missing")
     try {
-      expect(await readImageVersion("/x.AppImage", extractFrom(appImage("1.0.0")))).toEqual({
+      expect(await readImageVersion(file, extractFrom(appImage("1.0.0")))).toEqual({
         version: undefined,
         unchecked: true,
       })
@@ -221,12 +251,12 @@ describe("the AppImages already installed", () => {
   it("are those of the installer and of Homebrew that exist, with their versions", async () => {
     const { image } = layout()
     await mkdir(join(image, ".."), { recursive: true })
-    await writeFile(image, "one")
+    await writeFile(image, `${appImageHeader}one`)
     await mkdir(join(root, "Applications"), { recursive: true })
-    await writeFile(join(root, "Applications", "novadeck.AppImage"), "two")
+    await writeFile(join(root, "Applications", "novadeck.AppImage"), `${appImageHeader}two`)
     const versions = new Map([
-      ["one", "0.0.5"],
-      ["two", "0.0.9"],
+      [`${appImageHeader}one`, "0.0.5"],
+      [`${appImageHeader}two`, "0.0.9"],
     ])
     const extract: Extract = async (path, pattern, into) =>
       extractFrom(appImage(versions.get(await readFile(path, "utf8"))!))(path, pattern, into)
@@ -244,7 +274,7 @@ describe("the AppImages already installed", () => {
     expect(await findInstalled({ env, home: root }, extractFrom(appImage("1.0.0")))).toEqual([])
     const { image } = layout()
     await mkdir(join(image, ".."), { recursive: true })
-    await writeFile(image, "one")
+    await writeFile(image, `${appImageHeader}one`)
     await mkdir(join(root, "Applications"), { recursive: true })
     await symlink(image, join(root, "Applications", "novadeck.AppImage"))
     expect(await findInstalled({ env, home: root }, extractFrom(appImage("1.0.0")))).toEqual([

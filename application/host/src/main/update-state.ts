@@ -96,6 +96,10 @@ export const keepUpdateState = (file: string) => {
      * time kept for that version, else `now`, which is then kept. Another version's
      * mark is replaced, so a copy that is updated starts over.
      */
+    /** Forgets the mark, as a check found no newer release: the next one starts afresh. */
+    clearOutdated: (): void => {
+      if (read().outdated !== undefined) change({ outdated: undefined })
+    },
     outdatedSince: (version: string, now: Date): string => {
       const kept = read().outdated
       if (kept?.version === version) return kept.since

@@ -151,6 +151,21 @@ describe("what the host remembers about updating", () => {
         expect(updateStateOf(JSON.stringify({ outdated })).outdated).toBeUndefined()
     })
 
+    it("is forgotten when a check finds no newer release, so the next release starts a fresh clock", () => {
+      const state = keepUpdateState(file)
+      state.setChannel("early")
+      state.outdatedSince("0.4.2", first)
+      state.clearOutdated()
+      expect(state.read().outdated).toBeUndefined()
+      expect(state.read().channel).toBe("early")
+      expect(state.outdatedSince("0.4.2", later)).toBe("2026-10-20T09:30:00.000Z")
+    })
+
+    it("is not rewritten when there is nothing to forget", () => {
+      keepUpdateState(file).clearOutdated()
+      expect(() => readFileSync(file, "utf8")).toThrow()
+    })
+
     it("fails loudly when it cannot be written", () => {
       const state = keepUpdateState(join(folder, "missing", "update.json"))
       expect(() => state.outdatedSince("0.4.2", first)).toThrow()

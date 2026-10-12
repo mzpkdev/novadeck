@@ -525,6 +525,7 @@ describe("checking for updates", () => {
       mode?: UpdateMode
       channel?: UpdateChannel
       native?: EventEmitter
+      upToDate?: () => void
       failedVersion?: string
     } = {},
   ) => {
@@ -537,12 +538,22 @@ describe("checking for updates", () => {
       channel: options.channel ?? "stable",
       failedVersion: options.failedVersion,
       native: options.native,
+      upToDate: options.upToDate,
       offer: (kind, version, notes) => void offered.push([kind, version, notes]),
       installFailed: (version) => void failed.push(version),
       log: (message) => void logged.push(message),
     })
     return { updater, offered, failed, logged, ...checks }
   }
+
+  it("tells when a check finds no newer release", () => {
+    let told = 0
+    const { updater } = checking({ mode: "tell", upToDate: () => void (told += 1) })
+    updater.emit("update-not-available", { version: "1.0.0" })
+    expect(told).toBe(1)
+    // Not every build asks.
+    expect(() => checking().updater.emit("update-not-available", {})).not.toThrow()
+  })
 
   it("installs on quitting in install mode, and asks for each download itself", () => {
     const { updater } = checking()

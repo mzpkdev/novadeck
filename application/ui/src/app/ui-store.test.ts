@@ -2,12 +2,13 @@ import { afterEach, beforeEach, vi } from "vitest"
 
 import { createWorkspaceStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
-import type { UpdateOffer } from "../model/update"
+import { updateKey, type UpdateOffer } from "../model/update"
 import { context, describe, expect, it } from "../test"
 import { appearance, workspaceFixture } from "../test/fixtures"
 import {
   createUiStore,
   initialUi,
+  noteUpdateShown,
   persist,
   trackRecent,
   watchFinishes,
@@ -561,42 +562,44 @@ describe("a portable copy", () => {
     watchUpdates(updates, ui)
     report(stale())
     expect(ui.getSnapshot().updateOpen).toBe(true)
+    // Shown, then answered with Later.
+    noteUpdateShown(updateKey(stale()))
     ui.update((state) => ({ ...state, updateOpen: false }))
     report(stale())
     expect(ui.getSnapshot().updateOpen).toBe(false)
   })
 
-  it("does not raise a stale release's notice again in a store made anew within the run", async () => {
+  context("in a store made anew within the run, as a page reload does", () => {
     const seen = "available:0.0.80"
     const host = {
       state: () => Promise.resolve(here),
       install: () => Promise.resolve({ kind: "installing" as const }),
       openInstalled: () => {},
     }
-    const first = updateHost()
-    const before = createUiStore(initial(seen))
-    watchUpdates(first.updates, before)
-    watchPortable(host, before)
-    await vi.waitFor(() => expect(before.getSnapshot().portable).toEqual(here))
-    first.report(stale())
-    expect(before.getSnapshot().updateOpen).toBe(true)
-    // A page reload, or the backend attempted again: the store starts over, the run goes on.
-    const second = updateHost()
-    const after = createUiStore(initial(seen))
-    watchUpdates(second.updates, after)
-    watchPortable(host, after)
-    await vi.waitFor(() => expect(after.getSnapshot().portable).toEqual(here))
-    second.report(stale())
-    expect(after.getSnapshot().updateOpen).toBe(false)
-    // A relaunch is a new run.
-    sessionStorage.clear()
-    const third = updateHost()
-    const relaunched = createUiStore(initial(seen))
-    watchUpdates(third.updates, relaunched)
-    watchPortable(host, relaunched)
-    await vi.waitFor(() => expect(relaunched.getSnapshot().portable).toEqual(here))
-    third.report(stale())
-    expect(relaunched.getSnapshot().updateOpen).toBe(true)
+    // A store as a launch makes one, hearing a stale release once the host has said.
+    const launch = async (): Promise<boolean> => {
+      const { updates, report } = updateHost()
+      const ui = createUiStore(initial(seen))
+      watchUpdates(updates, ui)
+      watchPortable(host, ui)
+      await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual(here))
+      report(stale())
+      return ui.getSnapshot().updateOpen
+    }
+
+    it("raises the notice again when it was raised but never shown", async () => {
+      expect(await launch()).toBe(true)
+      expect(await launch()).toBe(true)
+    })
+
+    it("does not raise it again once shown, until a relaunch", async () => {
+      expect(await launch()).toBe(true)
+      // The footer shows the notice, as the command `updateShown` records.
+      noteUpdateShown(updateKey(stale()))
+      expect(await launch()).toBe(false)
+      sessionStorage.clear()
+      expect(await launch()).toBe(true)
+    })
   })
 
   it("leaves the notice of an installed copy to once per version", () => {

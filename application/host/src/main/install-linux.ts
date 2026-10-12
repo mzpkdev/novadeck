@@ -4,6 +4,7 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  open,
   readdir,
   readFile,
   realpath,
@@ -150,21 +151,41 @@ const inTemporaryFolder = async <T>(work: (folder: string) => Promise<T>): Promi
   }
 }
 
-// Whether `error` from running an AppImage says the file is no program: the runtime ran
-// and exited with a status, or the system found the file not to be one it can execute.
-// A timeout, a signal, a missing exec bit and any other failure says nothing of the file.
-const isNoProgram = (error: unknown): boolean => {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code as unknown
-  return typeof code === "number" || code === "ENOEXEC"
+// Whether the first bytes of a file are those of an AppImage: an ELF program, and at
+// bytes 8 to 10 the type 2 AppImage marker "AI\x02".
+const isAppImageHeader = (header: Buffer): boolean =>
+  header.length >= 11 &&
+  header.subarray(0, 4).equals(Buffer.from("\x7fELF", "latin1")) &&
+  header.subarray(8, 11).equals(Buffer.from("AI\x02", "latin1"))
+
+// The first bytes of `file`, or undefined when it cannot be read.
+const readHeader = async (file: string): Promise<Buffer | undefined> => {
+  try {
+    const handle = await open(file, "r")
+    try {
+      const { bytesRead, buffer } = await handle.read(Buffer.alloc(11), 0, 11, 0)
+      return buffer.subarray(0, bytesRead)
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    return undefined
+  }
 }
 
 /**
  * The version of the AppImage at `image`, read from the menu entry inside it. This runs
  * the file's own AppImage runtime with `--appimage-extract`, which unpacks the entry
- * without starting the app. A file that ran but names no version, or is no program, has
- * none; one that could not be looked at is `unchecked`.
+ * without starting the app. A file that is no AppImage by its first bytes, or the system
+ * finds is no program, or whose runtime ran and found no menu entry or version, has none.
+ * Anything else that goes wrong is the environment's doing, whatever the runtime then
+ * exits with, say for a temporary folder it cannot write: the file is `unchecked`, and
+ * may well be a good copy.
  */
 export const readImageVersion = async (image: string, extract: Extract): Promise<ImageVersion> => {
+  const header = await readHeader(image)
+  if (header === undefined) return { version: undefined, unchecked: true }
+  if (!isAppImageHeader(header)) return { version: undefined, unchecked: false }
   let folder: string
   try {
     folder = await mkdtemp(join(tmpdir(), "novadeck-"))
@@ -186,7 +207,8 @@ export const readImageVersion = async (image: string, extract: Extract): Promise
       unchecked: false,
     }
   } catch (error) {
-    return { version: undefined, unchecked: !isNoProgram(error) }
+    const code = (error as NodeJS.ErrnoException | undefined)?.code
+    return { version: undefined, unchecked: code !== "ENOEXEC" }
   } finally {
     await rm(folder, { recursive: true, force: true })
   }

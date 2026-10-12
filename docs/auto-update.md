@@ -140,7 +140,9 @@ builds are not told apart yet and keep their rules above.
 A portable build still looks for releases, in `tell` mode, so it learns that a newer one
 exists. Its offer carries `outdatedSince`, when this copy first learned that a newer release
 exists. The host keeps it in `update.json` for the running version and starts over when that
-version changes, so a newer release does not reset it. electron-updater's `releaseDate` is
+version changes, so a newer release does not reset it. A check that finds no newer release
+(`update-not-available`) clears the mark, so a copy that was behind on `early` and is current on
+`stable` starts a fresh clock when `stable` later moves. electron-updater's `releaseDate` is
 the build time, which `promote.yml` does not rewrite, so it is not used. The page raises the
 update notice at every launch once that is 14 days ago. `DesktopBridge.portable` tells the
 page whether the copy is portable, and `installApp` installs from it (`portable.ts`,
@@ -158,24 +160,44 @@ page whether the copy is portable, and `installApp` installs from it (`portable.
 - It then shuts down as an update does, so pages save and the runner ends its shells, lets go
   of the single-instance lock, and starts the installed AppImage as a detached child process
   (`child_process.spawn`, then `unref`) with no arguments of its own, since the portable's may
-  carry `--no-sandbox`, and without `APPIMAGE`, `APPDIR`, `OWD` and `ARGV0`, which are the
-  portable's. Electron's `app.relaunch` is not used on Linux: the process it starts inherits
-  no-new-privileges, so the AppImage runtime's setuid `fusermount` cannot mount the image and
-  the child dies at once. macOS's move to Applications still relaunches. If the child cannot be
-  spawned, such as for a missing exec bit, the shells are already gone, so a dialog names the
-  path ("The installed Novadeck did not start") and the app quits; it also quits if it is
-  somehow still running ten seconds after the installed copy started.
+  carry `--no-sandbox`. Electron's `app.relaunch` is not used on Linux: the process it starts
+  inherits no-new-privileges, so the AppImage runtime's setuid `fusermount` cannot mount the
+  image and the child dies at once. macOS's move to Applications still relaunches.
+  - The child starts through `/bin/bash -c`, which closes every descriptor above 2 and then
+    `exec`s the image. Chromium leaves about seventy open to a child, files inside the
+    portable's FUSE mount among them, which would keep that mount and its `/tmp/.mount_*`
+    alive for as long as the installed app runs. Bash is needed, as dash cannot name
+    descriptors above 9; without `/bin/bash` the image is spawned directly.
+  - Its environment lacks `APPIMAGE`, `APPDIR`, `OWD` and `ARGV0`, which are the portable's,
+    and every entry of `PATH`, `LD_LIBRARY_PATH`, `XDG_DATA_DIRS` and `GSETTINGS_SCHEMA_DIR`
+    that is or lies under the portable's mount (`APPDIR`, as named and as resolved), which
+    AppRun prefixed. Otherwise something planted at that path after the mount goes away would
+    be searched first. A list left empty is dropped.
+  - A file that is missing or lacks the exec bit is refused before anything is released; a
+    failed spawn is caught too. Either way the shells are already gone, so a dialog names the
+    path ("The installed Novadeck did not start") and the app quits. It also quits if it is
+    somehow still running ten seconds after the installed copy started, or if the person quit
+    while the copy was being made (then the installed copy is not started and the answer is
+    `failed`, "Novadeck is quitting.").
 - An installed copy newer than the portable one is never overwritten. The answer is `newer`,
   and `openInstalled` starts that copy after the same shutdown. An installed copy's version is
   read from `X-AppImage-Version` in the menu entry electron-builder writes into the AppImage.
   This does execute the installed file's own AppImage runtime, as `install-linux.ts` runs
   `<file> --appimage-extract '*.desktop'` in a temporary folder with a 20 second limit; that
-  unpacks the entry and starts no app. The result has three cases. The version is read. The
-  file runs but names no readable version, or exits with a status or is no program: it counts
-  as not newer and is replaced. Or it could not be checked, because of a missing temporary
-  folder, a timeout, a missing exec bit or another failure unrelated to the file's contents:
-  it is never overwritten, and the install answers `failed` with a short reason. At launch an
-  unchecked copy is ignored; the runner's `WORKSPACE_TOO_NEW` refusal is the fallback.
+  unpacks the entry and starts no app. The result has three cases:
+  - The version is read.
+  - The file has no version, and is replaced: its first bytes are not an ELF header with the
+    AppImage marker `AI\x02` at bytes 8 to 10 (the host reads them itself), the system says
+    it is no program (`ENOEXEC`), or the runtime ran (exit 0) and found no menu entry or
+    version.
+  - It could not be checked, and is never overwritten: the install answers `failed` with a
+    short reason. This covers a non-zero exit of the runtime, which is the environment's
+    doing (for instance `mkdir_p error: Permission denied` in an unwritable or full temporary
+    folder), a missing temporary folder, a timeout, a missing exec bit, an unreadable file,
+    and any other failure.
+  - At launch an unchecked copy is ignored, so a non-executable installed file, which cannot
+    be version-checked, lets the launch carry on; the runner's `WORKSPACE_TOO_NEW` refusal is
+    the fallback if that copy had upgraded the data.
 - A failure, such as a full disk or a folder that cannot be written, is returned with a short
   reason, as is a request while the app is already quitting ("Novadeck is quitting.").
 

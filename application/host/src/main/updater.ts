@@ -331,6 +331,7 @@ export type Updater = {
       readonly releaseNotes?: unknown
     }) => void,
   ): unknown
+  on(event: "update-not-available", listener: () => void): unknown
   on(event: "error", listener: (error: Error) => void): unknown
   checkForUpdates(): Promise<unknown>
   downloadUpdate(): Promise<unknown>
@@ -385,6 +386,7 @@ export const checkForUpdates = (
     failedVersion,
     native,
     offer,
+    upToDate,
     installFailed,
     log,
   }: {
@@ -394,6 +396,8 @@ export const checkForUpdates = (
     readonly failedVersion?: string | undefined
     readonly native?: NativeUpdater | undefined
     readonly offer: (kind: UpdateOffer["kind"], version: string, notes: readonly string[]) => void
+    /** Told whenever a check finds no newer release. */
+    readonly upToDate?: (() => void) | undefined
     readonly installFailed: (version: string) => void
     readonly log: (message: string, error: unknown) => void
   },
@@ -436,6 +440,7 @@ export const checkForUpdates = (
     installFailed(downloaded.version)
     offer("available", downloaded.version, downloaded.notes)
   })
+  updater.on("update-not-available", () => upToDate?.())
   updater.on("update-available", (info) => {
     if (mode === "tell") return offer("available", info.version, updateNotesLines(info))
     // An update is downloaded, so the schedule has ended: a late check must not replace

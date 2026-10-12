@@ -167,6 +167,17 @@ describe("a portable copy with a release waiting", () => {
     await expect.element(offered()).toBeVisible()
   })
 
+  it("raises the stale notice once per launch, not again after a page reload", async () => {
+    localStorage.setItem(seenKey, "available:0.0.80")
+    await openWorkspace("/?portable=on&update=available&outdated=old")
+    await expect.element(offered()).toBeVisible()
+    await later(offered()).click()
+    await cleanup()
+    await openWorkspace("/?portable=on&update=available&outdated=old")
+    await expect.element(update()).toBeVisible()
+    await expectStaysAbsent(offered())
+  })
+
   it("treats a release with no date as not stale", async () => {
     localStorage.setItem(seenKey, "available:0.0.80")
     await openWorkspace("/?portable=on&update=available")
@@ -181,6 +192,8 @@ describe("a portable copy with a release waiting", () => {
     const installing = page.getByRole("button", { name: "Installing…", exact: true })
     await expect.element(installing).toHaveAttribute("aria-disabled", "true")
     await expect.element(installing).toHaveTextContent("Installing…")
+    // It looks disabled too: dimmed, and not a pointer.
+    await expect.element(installing).toHaveStyle({ opacity: "0.7", cursor: "default" })
   })
 })
 

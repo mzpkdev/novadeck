@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process"
-import { existsSync, readFileSync, realpathSync } from "node:fs"
+import { accessSync, existsSync, readFileSync, realpathSync } from "node:fs"
 import { access, constants, readFile, realpath } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
@@ -325,6 +325,15 @@ const outdatedSince = (): string | undefined => {
   }
 }
 
+// Forgets when this copy fell behind, as a check found it current.
+const clearOutdated = (): void => {
+  try {
+    updateState.clearOutdated()
+  } catch (error) {
+    console.warn("The date this copy fell behind was not cleared.", error)
+  }
+}
+
 // Starts checking for updates in a build that looks for them; see ./updater.ts.
 const startUpdates = async (): Promise<void> => {
   const state = updateState.read()
@@ -339,6 +348,8 @@ const startUpdates = async (): Promise<void> => {
     native: process.platform === "darwin" ? nativeUpdater : undefined,
     offer: (kind, version, notes) =>
       offers.offer(kind, version, notes, plan.portable ? outdatedSince : undefined),
+    // A portable that is current again starts a fresh clock when a release comes after.
+    upToDate: plan.portable ? clearOutdated : undefined,
     // Synchronous: a failed install on quit is reported as the app exits.
     installFailed: (version) => {
       try {
@@ -497,13 +508,27 @@ const moveToApplications = async (): Promise<boolean> => {
   })
 }
 
+// The folder this copy's AppImage is mounted at, as the runtime names it and as it resolves.
+const appImageMounts = (): string[] => {
+  const mount = process.env.APPDIR
+  return mount ? [mount, realpathOrUndefined(mount) ?? mount] : []
+}
+
 // Starts the AppImage at `image` in place of this process; see `startAppImage`.
 const startInstalled = (image: string): Promise<boolean> =>
   startAppImage({
     image,
     env: process.env,
+    mounts: appImageMounts(),
     spawn,
-    exists: existsSync,
+    runnable: (path) => {
+      try {
+        accessSync(path, constants.X_OK)
+        return true
+      } catch {
+        return false
+      }
+    },
     releaseLock: () => app.releaseSingleInstanceLock(),
     exit: () => app.exit(0),
     log: (message, error) => console.warn(message, error),

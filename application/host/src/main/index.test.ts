@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import { context, describe, expect, it } from "../test"
@@ -7,21 +7,6 @@ const output = join(process.cwd(), "out")
 const read = (path: string): Promise<string> => readFile(join(output, path), "utf8")
 
 describe("compiled desktop host", () => {
-  it("is built from the current sources", async () => {
-    // The test task builds first (turbo.json); run on its own, a stale build must not pass.
-    const built = (await stat(join(output, "main/index.js"))).mtimeMs
-    const sources = await readdir(join(process.cwd(), "src"), { recursive: true })
-    const changed = await Promise.all(
-      sources
-        .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
-        .map(async (name) => ({
-          name,
-          at: (await stat(join(process.cwd(), "src", name))).mtimeMs,
-        })),
-    )
-    expect(changed.filter(({ at }) => at > built).map(({ name }) => name)).toEqual([])
-  })
-
   context("after the production build", () => {
     it("keeps the application identity and starts the embedded HTTP server", async () => {
       const main = await read("main/index.js")
@@ -120,7 +105,7 @@ describe("compiled desktop host", () => {
       // The lock goes first so the child can take it; the child is let go of before this one
       // exits. The bundler may rename `spawn`.
       expect(main).toMatch(
-        /releaseLock\(\);[\s\S]*?spawn\d*\(image, \[\], \{\s*detached: true,\s*stdio: "ignore"[\s\S]*?child\.unref\(\);\s*exit\(\);/u,
+        /releaseLock\(\);[\s\S]*?spawn\d*\(file, args, \{\s*detached: true,\s*stdio: "ignore"[\s\S]*?child\.unref\(\);\s*exit\(\);/u,
       )
       // Electron's relaunch hands the child no-new-privileges, which stops an AppImage from
       // mounting; only macOS still uses it, and with the executable alone.

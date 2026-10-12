@@ -332,7 +332,7 @@ export const FooterUpdate = ({
           <button
             ref={chip}
             type="button"
-            className="footer-action footer-update cursor-pointer font-bold"
+            className={`footer-action footer-update font-bold ${installing ? "" : "cursor-pointer"}`}
             aria-label={
               waiting
                 ? "Installing…"

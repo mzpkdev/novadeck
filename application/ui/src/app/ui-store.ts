@@ -268,8 +268,9 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
 // The update the backend offers, kept for the footer; a later offer replaces the last.
 // One for a version not yet shown opens its notice, which waits while the footer is
 // hidden; so does a stale one for a portable copy (`noticeRaised`).
-// What counts as already raised is kept for the run of the app, not the page's life
-// (`readUpdateRaised`), so a reload or a new attempt at the backend does not raise it again.
+// What counts as already raised is what the person was shown in this run of the app, kept
+// beyond the page's life (`readUpdateRaised`, written as the notice shows), so a reload or
+// a new attempt at the backend does not raise it again, while a notice held back does.
 export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => void) =>
   updates?.onOffer((update) => {
     const state = ui.getSnapshot()
@@ -279,9 +280,11 @@ export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => v
       known: raisedThisRun(update),
       now: Date.now(),
     })
-    if (raise) writeUpdateRaised(updateKey(update))
     ui.update((current) => ({ ...current, update, updateOpen: current.updateOpen || raise }))
   }) ?? (() => {})
+
+// Notes that the notice of the offer with this `updateKey` showed, for the rest of the run.
+export const noteUpdateShown = writeUpdateRaised
 
 const raisedThisRun = (offer: UpdateOffer): boolean => readUpdateRaised() === updateKey(offer)
 
@@ -299,7 +302,6 @@ export const watchPortable = (portable: Backend["portable"], ui: UiStore): (() =
         update !== null &&
         portableNagged(update, Date.now()) &&
         !raisedThisRun(update)
-      if (raise) writeUpdateRaised(updateKey(update))
       ui.update((state) => ({
         ...state,
         portable: portableState,
