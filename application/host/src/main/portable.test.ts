@@ -548,7 +548,8 @@ describe("starting the installed copy", () => {
   })
 })
 
-describe("the descriptors of the installed copy", () => {
+// Linux only: it lists descriptors from /proc, as the closer does, and AppImages are Linux's.
+describe.skipIf(process.platform !== "linux")("the descriptors of the installed copy", () => {
   let folder: string
   beforeEach(async () => {
     folder = await mkdtemp(join(tmpdir(), "novadeck-start-test-"))

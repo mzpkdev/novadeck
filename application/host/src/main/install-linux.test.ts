@@ -55,7 +55,10 @@ const shellQuote = (path: string): string => {
   }).replace(/\n$/u, "")
 }
 
-describe("the quoted path of a menu entry", () => {
+// What runs sh, sets file modes or links files: the Linux install, which Windows never runs.
+const posix = describe.skipIf(process.platform === "win32")
+
+posix("the quoted path of a menu entry", () => {
   it("escapes quotes, backticks, dollars, backslashes and percent signs as the install script does", () => {
     expect(execQuote("/home/me/plain")).toBe("/home/me/plain")
     expect(execQuote('a"b')).toBe('a\\\\"b')
@@ -158,7 +161,7 @@ const imageFile = async (
   return file
 }
 
-describe("reading an AppImage's version", () => {
+posix("reading an AppImage's version", () => {
   it("extracts its menu entry and reads it, leaving nothing behind", async () => {
     let folder = ""
     const extract: Extract = (image, pattern, into) => {
@@ -244,7 +247,7 @@ describe("reading an AppImage's version", () => {
   })
 })
 
-describe("the AppImages already installed", () => {
+posix("the AppImages already installed", () => {
   const env = {}
   const layout = (): ReturnType<typeof installLayout> => installLayout({ env, home: root })
 
@@ -303,7 +306,7 @@ describe("the installed copy that is newer", () => {
   })
 })
 
-describe("installing an AppImage", () => {
+posix("installing an AppImage", () => {
   const layout = (): ReturnType<typeof installLayout> => installLayout({ env: {}, home: root })
   const source = (): string => join(root, "Downloads", "novadeck.AppImage")
   const write = async (): Promise<void> => {
