@@ -117,8 +117,10 @@ runner's own modules.
 
 `@novadeck/harness-core` builds to `dist`, which builds, packaging and `tsc` use. Its
 exports also name its sources under the `development` condition, which vitest, the
-runner's `pnpm dev` (`tsx --conditions=development`) and the host's `pnpm dev`
-(`electron.vite.config.ts`) resolve, so an edit to it reaches them without a build.
+runner's `pnpm dev` (`tsx --conditions=development`) and the host's `pnpm dev` (Vite's
+own `development` condition in electron-vite's dev build) resolve, so an edit to it
+reaches them without a build. `tsc` and the editor still read its built types: rebuild
+it (`pnpm --filter @novadeck/harness-core build`) after changing its contract.
 
 Split a harness into more files (a transcript reader, say) only when its
 `index.ts` gets hard to read. `shell/` keeps shell-specific
