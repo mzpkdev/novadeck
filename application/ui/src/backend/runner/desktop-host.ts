@@ -2,10 +2,15 @@ import {
   noticeBodyLength,
   noticeIdPattern,
   noticeTitleLength,
+  updateChannels,
+  updateNoteLength,
+  updateNotesLength,
   updateVersionPattern,
   type DesktopHost,
+  type UpdateOffer,
 } from "@novadeck/protocol/bridge"
 
+import { maxFixLength, type SandboxState } from "../../model/sandbox"
 import type { Backend, Notice } from "../port"
 
 // What the desktop host's preload script offers the page; absent in a browser.
@@ -54,17 +59,73 @@ export const desktopNotices = (host: DesktopHost | undefined): Backend["notices"
   }
 }
 
-// The host's self-updates, where it has them: a version crosses the bridge checked, so
-// the page shows only what looks like a release's.
-export const desktopUpdates = (host: DesktopHost | undefined): Backend["updates"] => {
-  const listen = host?.onUpdateReady
-  const install = host?.installUpdate
-  if (!listen || !install) return undefined
+// An offer as the page takes it, or undefined for one that isn't a release's: a kind it
+// knows, a version that looks like a release's, and the notes cut to what the page
+// shows, without control characters.
+export const hostOffer = (offer: unknown): UpdateOffer | undefined => {
+  if (typeof offer !== "object" || offer === null) return undefined
+  const { kind, version, notes } = offer as Record<string, unknown>
+  if (kind !== "ready" && kind !== "available") return undefined
+  if (typeof version !== "string" || !updateVersionPattern.test(version)) return undefined
+  const lines = Array.isArray(notes) ? (notes as unknown[]) : []
   return {
-    onReady: (listener) =>
-      listen((version) => {
-        if (typeof version === "string" && updateVersionPattern.test(version)) listener(version)
+    kind,
+    version,
+    notes: lines
+      .filter((line): line is string => typeof line === "string")
+      .map((line) => noticeText(line, updateNoteLength))
+      .filter(Boolean)
+      .slice(0, updateNotesLength),
+  }
+}
+
+// The host's self-updates, where it has them: what crosses the bridge is checked, so the
+// page shows only what looks like a release's, and the channel only as one it knows.
+export const desktopUpdates = (host: DesktopHost | undefined): Backend["updates"] => {
+  const listen = host?.onUpdate
+  const install = host?.installUpdate
+  const openPage = host?.openUpdatePage
+  if (!listen || !install || !openPage) return undefined
+  const get = host.updateChannel
+  const set = host.setUpdateChannel
+  return {
+    onOffer: (listener) =>
+      listen((offer) => {
+        const checked = hostOffer(offer)
+        if (checked) listener(checked)
       }),
     install: () => install(),
+    openPage: () => openPage(),
+    ...(get && set
+      ? {
+          channel: {
+            get: async () => {
+              const channel = await get()
+              if (!updateChannels.includes(channel)) throw new Error("Unknown update channel")
+              return channel
+            },
+            set: (channel) => set(channel),
+          },
+        }
+      : {}),
   }
+}
+
+// The host's account of its sandbox, where it gives one: what crosses the bridge is
+// checked, and a fix that is not a single plain line, which the person would paste into a
+// terminal, is dropped, leaving the notice without a command.
+export const hostSandbox = (state: unknown): SandboxState => {
+  if (typeof state !== "object" || state === null) throw new Error("Unknown sandbox state")
+  const { sandboxed, fix } = state as Record<string, unknown>
+  if (sandboxed === true) return { sandboxed: true }
+  if (sandboxed !== false) throw new Error("Unknown sandbox state")
+  const command = typeof fix === "string" ? fix.trim() : ""
+  const plain = command.length <= maxFixLength && command.replace(controls, "") === command
+  return { sandboxed: false, fix: plain ? command : "" }
+}
+
+export const desktopSandbox = (host: DesktopHost | undefined): Backend["sandbox"] => {
+  const ask = host?.sandbox
+  if (!ask) return undefined
+  return async () => hostSandbox(await ask())
 }

@@ -14,6 +14,7 @@ import type {
 } from "../../model/types"
 import {
   moveProject as arrangeMove,
+  pinAt,
   stepProject as arrangeStep,
   togglePin,
   type ProjectArrangement,
@@ -61,6 +62,10 @@ export type WorkspaceCommands = ShellCommands &
     readonly stepProject: (id: string, by: -1 | 1) => void
     // Pins a project, or unpins it if pinned; no more than the limit can be pinned.
     readonly toggleProjectPin: (id: string) => void
+    // Pins a project at this place among the pinned ones, or moves it there if pinned.
+    readonly pinProjectAt: (id: string, index: number) => void
+    // Puts back an arrangement read before, as a canceled drag does.
+    readonly restoreProjectArrangement: (arrangement: ProjectArrangement) => void
     // Selects a terminal and brings it into view, optionally fitting Canvas around it.
     readonly select: (id: string, fit?: boolean) => void
     readonly setSelected: (terminal: string) => void
@@ -90,6 +95,13 @@ export type WorkspaceCommands = ShellCommands &
     // next crash loop.
     readonly retryAfterCrashLoop: () => void
     readonly dismissCrashLoop: () => void
+    // Opens or closes the update's notice, which the footer's chip reopens after Later.
+    readonly setUpdateOpen: (open: boolean) => void
+    // Opens or closes the sandbox notice; opening it closes the update's, which shares its place.
+    readonly setSandboxOpen: (open: boolean) => void
+    // Notes that the notice came up for this offer (`updateKey`), so a relaunch
+    // doesn't raise it again.
+    readonly updateShown: (key: string) => void
   }
 
 // The terminal created last stays highlighted this long.
@@ -279,6 +291,9 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       arrange((projects, current) => arrangeMove(projects, current, id, index)),
     stepProject: (id, by) => arrange((projects, current) => arrangeStep(projects, current, id, by)),
     toggleProjectPin: (id) => arrange((projects, current) => togglePin(projects, current, id)),
+    pinProjectAt: (id, index) =>
+      arrange((projects, current) => pinAt(projects, current, id, index)),
+    restoreProjectArrangement: (arrangement) => arrange(() => arrangement),
     updatePreferences: (next) => {
       const snapshot = workspace.getSnapshot()
       const { view } = currentState(snapshot)
@@ -482,5 +497,19 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       crashLoop?.retry()
     },
     dismissCrashLoop: () => ui.update((state) => ({ ...state, crashLoopDismissed: true })),
+    setUpdateOpen: (updateOpen) =>
+      ui.update((state) =>
+        state.updateOpen === updateOpen && !(updateOpen && state.sandboxOpen)
+          ? state
+          : { ...state, updateOpen, sandboxOpen: updateOpen ? false : state.sandboxOpen },
+      ),
+    setSandboxOpen: (sandboxOpen) =>
+      ui.update((state) =>
+        state.sandboxOpen === sandboxOpen && !(sandboxOpen && state.updateOpen)
+          ? state
+          : { ...state, sandboxOpen, updateOpen: sandboxOpen ? false : state.updateOpen },
+      ),
+    updateShown: (updateSeen) =>
+      ui.update((state) => (state.updateSeen === updateSeen ? state : { ...state, updateSeen })),
   }
 }

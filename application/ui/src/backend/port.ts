@@ -4,10 +4,12 @@ import type { Companions } from "../model/companion"
 import type { Conversations } from "../model/conversation"
 import type { Messages } from "../model/messages"
 import type { Murmur } from "../model/murmur"
+import type { SandboxState } from "../model/sandbox"
 import type { WorkspaceSeed } from "../model/seed"
 import type { WorkspaceAction } from "../model/state"
 import type { Store } from "../model/store"
 import type { TerminalKey, TerminalMetadata, Workspace, WorkspaceTarget } from "../model/types"
+import type { UpdateChannel, UpdateOffer } from "../model/update"
 import type { Voice } from "../model/voice"
 
 // The UI-owned contract every terminal backend implements. Only app/ talks to it.
@@ -201,14 +203,26 @@ export type Backend = {
     readonly show: (notice: Notice) => void
     readonly onClick: (listener: (terminalId: string) => void) => () => void
   }
-  // Optional. An update the desktop app has downloaded and installs when it next quits:
-  // `onReady` hears its version, at once when one already waits and again for each newer
-  // one, and returns the stop; `install` restarts the app into it once the pages have
-  // saved. Absent where the app does not update itself, as in a browser.
+  // Optional. The desktop app's self-updates: `onOffer` hears each update the app learns
+  // of, at once when one already waits and again for each newer one, and returns the
+  // stop. A `ready` offer is downloaded: `install` restarts the app into it once the
+  // pages have saved. An `available` one the app can't install itself, so the person
+  // gets it from its release page, which `openPage` opens. `channel`, where the app
+  // lets the person choose, reads which releases it follows and switches them. Absent
+  // where the app does not update itself, as in a browser.
   readonly updates?: {
-    readonly onReady: (listener: (version: string) => void) => () => void
+    readonly onOffer: (listener: (offer: UpdateOffer) => void) => () => void
     readonly install: () => void
+    readonly openPage: () => void
+    readonly channel?: {
+      readonly get: () => Promise<UpdateChannel>
+      readonly set: (channel: UpdateChannel) => void
+    }
   }
+  // Optional. Whether the desktop app runs in Electron's security sandbox, asked once at
+  // startup since the answer holds for the whole run. Absent in a browser and in a host
+  // that does not say.
+  readonly sandbox?: () => Promise<SandboxState>
   // Optional. The debug panel, where this launch offers it: it triggers the states
   // the backend can be in. See README "Debug panel".
   readonly DebugPanel?: ComponentType<DebugPanelProps>
@@ -242,6 +256,8 @@ export type AgentConnection = {
   readonly busy: boolean
   // Why the last change did not work, for the person.
   readonly error?: string
+  // What keeps its messaging from working whole while connected, as the runner says.
+  readonly limited?: "own-status-line" | undefined
 }
 
 // What the debug panel may ask of the workspace.

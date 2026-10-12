@@ -23,6 +23,7 @@ const nowhere: KeyTarget = {
   terminalTab: false,
   switcherClose: false,
   zenDock: false,
+  notice: false,
   companion: false,
   chat: false,
 }
@@ -266,6 +267,7 @@ describe("keymap", () => {
           const cases: [Press, Situation][] = [
             [{ key: "Escape" }, { state: { dialog: true } }],
             [{ key: "Escape", target: { zenDock: true } }, {}],
+            [{ key: "Escape", target: { notice: true } }, {}],
             [{ key: "Escape", target: { companion: true } }, {}],
             [{ key: "Escape", target: { editing: true } }, {}],
             [{ key: "Escape", target: terminalInput }, {}],
@@ -416,7 +418,7 @@ describe("keymap", () => {
       })
 
       context("when matching chords", () => {
-        it("uses Shift for new sessions, Zen and sidebars and matches sidebar digits by code", () => {
+        it("uses Shift for new sessions, Zen and sidebars", () => {
           const modifier = platform === "mac" ? { metaKey: true } : { ctrlKey: true }
           expect(keydown(platform, { ...modifier, shiftKey: true, key: "N" })).toEqual([
             "session.new",
@@ -424,12 +426,12 @@ describe("keymap", () => {
           expect(keydown(platform, { ...modifier, shiftKey: true, key: "Z" })).toEqual([
             "zen.toggle",
           ])
-          expect(
-            keydown(platform, { ...modifier, shiftKey: true, key: "!", code: "Digit1" }),
-          ).toEqual(["sidebar.terminals"])
-          expect(
-            keydown(platform, { ...modifier, shiftKey: true, key: "@", code: "Digit2" }),
-          ).toEqual(["sidebar.sessions"])
+          expect(keydown(platform, { ...modifier, shiftKey: true, key: "E" })).toEqual([
+            "sidebar.terminals",
+          ])
+          expect(keydown(platform, { ...modifier, shiftKey: true, key: "S" })).toEqual([
+            "sidebar.sessions",
+          ])
         })
 
         it("requires exact modifiers and rejects Alt", () => {
@@ -444,6 +446,7 @@ describe("keymap", () => {
       context("when switching to a pinned project", () => {
         const digit = (n: number, extra: Press = {}): Press => ({
           ctrlKey: platform !== "mac",
+          shiftKey: platform !== "mac",
           metaKey: platform === "mac",
           key: String(n),
           code: `Digit${n}`,
@@ -459,14 +462,13 @@ describe("keymap", () => {
           }
         })
 
-        it("matches by code on any layout and leaves the sidebar chords alone", () => {
+        it("matches by code on any layout, Shift's symbols included, and needs its own modifiers", () => {
           expect(keydown(platform, digit(1, { key: "&" }))).toEqual(["project.pinned 0"])
+          expect(keydown(platform, digit(2, { key: "@" }))).toEqual(["project.pinned 1"])
           expect(keydown(platform, digit(0))).toEqual([])
-          const sidebar = digit(1, { shiftKey: true, key: "!" })
-          expect(keydown(platform, sidebar)).toEqual(["sidebar.terminals"])
-          expect(keydown(platform, digit(2, { shiftKey: true, key: "@" }))).toEqual([
-            "sidebar.sessions",
-          ])
+          // Ctrl and a bare digit is the terminal's (Ctrl+3 is its Esc); ⌘ takes no Shift.
+          const unshifted = digit(3, { shiftKey: platform === "mac" })
+          expect(keydown(platform, unshifted)).not.toContain("project.pinned 2")
           expect(keydown(platform, digit(3, { altKey: true }))).toEqual([])
           expect(keydown(platform, { key: "3", code: "Digit3" })).not.toContain("project.pinned 2")
         })
@@ -486,6 +488,14 @@ describe("keymap", () => {
           expect(route(platform, "capture", digit(2, { target: terminalInput }))).toEqual([
             "project.pinned 1",
           ])
+        })
+
+        it("waits while a modal dialog is open that hasn't taken focus yet", () => {
+          // A confirmation opened from a menu's button, which still holds focus.
+          const opening = { environment: { modalOpen: () => true } }
+          expect(
+            route(platform, "capture", digit(2, { target: { editing: true } }), opening),
+          ).toEqual([])
         })
 
         it("waits while a dialog is open and swallows repeats", () => {
@@ -610,13 +620,13 @@ describe("keymap", () => {
           "Toggle Zen mode: Ctrl Shift Z",
           "New terminal: Ctrl Shift T",
           "New session: Ctrl Shift N",
-          "Toggle terminal sidebar: Ctrl Shift 1",
-          "Toggle session sidebar: Ctrl Shift 2",
+          "Toggle terminal sidebar: Ctrl Shift E",
+          "Toggle session sidebar: Ctrl Shift S",
           "Open preferences: Ctrl ,",
           "Navigate the workspace: Shift Esc",
           "Hold to dictate: Ctrl Shift M",
           "Terminal in that direction: Ctrl Shift ↑ ↓ ← →",
-          "Switch to pinned project: Ctrl 1–9",
+          "Switch to pinned project: Ctrl Shift 1–9",
         ],
       ])
       expect(rows("mac")).toEqual([
@@ -630,8 +640,8 @@ describe("keymap", () => {
           "Toggle Zen mode: ⌘ Shift Z",
           "New terminal: ⌘ T",
           "New session: ⌘ Shift N",
-          "Toggle terminal sidebar: ⌘ Shift 1",
-          "Toggle session sidebar: ⌘ Shift 2",
+          "Toggle terminal sidebar: ⌘ Shift E",
+          "Toggle session sidebar: ⌘ Shift S",
           "Open preferences: ⌘ ,",
           "Navigate the workspace: Shift Esc",
           "Hold to dictate: Ctrl Shift M",

@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises"
 
-import { doorbellLine } from "../harnesses/harness.js"
+import { doorbellLine, hookShellSlackMs } from "../harnesses/harness.js"
 import { coalesced } from "./coalesce.js"
 import type { InputEntry, InputQueue } from "./input-queue.js"
 import { bracketedPaste, calmMs, checkPaste, freshNonce, gate } from "./ring.js"
@@ -31,6 +31,11 @@ export type DoorbellHost = {
   readonly resizedAt: (terminalId: string) => number
   /** Writes to the terminal's shell; false once it is gone. */
   readonly write: (terminalId: string, data: string) => boolean
+  /**
+   * On Windows, whether the agent's input box shows on the screen, empty and taking a
+   * prompt (see `GateFacts.inputBox`); undefined where a bracketed paste can't press keys.
+   */
+  readonly inputBox?: (terminalId: string, screen: ScreenText) => boolean | undefined
 }
 
 export type DoorbellOptions = {
@@ -49,7 +54,17 @@ export type DoorbellOptions = {
   readonly pasteMs?: number
   /** How long after its Enter a ring waits for its doorbell prompt, in milliseconds. */
   readonly confirmMs?: number
+  /** The platform the harnesses' hooks run on, which sets `confirmMs` by default. */
+  readonly platform?: NodeJS.Platform
 }
+
+/**
+ * How long after its Enter a ring waits by default for the doorbell prompt that confirms
+ * it, in milliseconds: the hook that tells it starts in the harness's shell first, which
+ * may take long on some platforms (see `hookShellSlackMs`), as on Windows, where a ring
+ * failed before its Codex hook came, and the message waited for the turn's Stop.
+ */
+export const confirmMs = (platform: NodeJS.Platform): number => 5_000 + hookShellSlackMs(platform)
 
 // The longest a ring holds the person's input, in milliseconds: a safety cap, well beyond
 // its test paste.
@@ -100,7 +115,7 @@ export class Doorbell {
     this.now = options.now ?? Date.now
     this.pollMs = options.pollMs ?? 50
     this.pasteMs = options.pasteMs ?? 1_500
-    this.confirmMs = options.confirmMs ?? 5_000
+    this.confirmMs = options.confirmMs ?? confirmMs(options.platform ?? process.platform)
     this.calmMs = options.calmMs ?? calmMs
     this.settleMs = options.settleMs ?? 6_000
   }
@@ -186,12 +201,14 @@ export class Doorbell {
       return undefined
     }
     const foreground = await this.host.foreground(terminalId)
+    const inputBox = this.host.inputBox?.(terminalId, screen)
     const verdict = gate(
       {
         ringable: this.host.ringable(terminalId),
         calmMs: calm,
         bracketedPaste: screen.bracketedPaste,
         foreground,
+        ...(inputBox !== undefined && { inputBox }),
       },
       this.calmMs,
     )

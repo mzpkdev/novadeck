@@ -10,36 +10,46 @@ import {
   type Harness,
   type Install,
 } from "../harness.js"
+import { hookCommand, type Dialect } from "../hook-command.js"
 import { box } from "./box.js"
 import { decode, shown } from "./decode.js"
 import { dialogs } from "./dialogs.js"
-import { statusLineSettings, trustsFolder } from "./settings.js"
+import { statusLineLimit, statusLineSettings, trustsFolder } from "./settings.js"
 import { transcripts, typedEntry } from "./transcripts.js"
 
 // Antigravity keeps its own state beside other Google tools in ~/.gemini.
 const gemini = (home: string) => join(home, ".gemini")
 const cli = ({ home: user }: Install) => join(gemini(user), "antigravity-cli")
+// Where it keeps the copy of Novadeck's plugin it installed.
+const installedPlugin = ({ home }: Install) => join(gemini(home), "config", "plugins", "novadeck")
 
-// Antigravity reads every hook's answer as JSON, even outside Novadeck's shells. It
-// denies a tool whose PreToolUse answer says nothing (`{}` too), so that one's answer is
-// "ask", which leaves the call to the person's own policy, here as in Novadeck's shells;
-// cmd passes it on intact.
+// Antigravity reads every hook's answer as JSON, even outside Novadeck's shells. It denies
+// a tool whose PreToolUse answer gives no decision, `{}` included (probed 2026-10-06 on
+// Linux, 1.2.14), so that one's answer is "ask", which leaves the call to the person's
+// own policy, here as in Novadeck's shells.
 const ask = '{"decision":"ask"}'
-// PreToolUse also falls back where the launcher is set but missing or not runnable, as a
-// variable that outlives its Novadeck (a plugin is global; tmux carries variables on).
-// cmd's commands hold no double quote, as the agents' own spawning escapes one as `\"`,
-// which cmd doesn't read (Node's does, and the plugin tests run them so): like Codex's,
-// they therefore take a launcher path without spaces only; Windows is unprobed.
-const hook = (platform: NodeJS.Platform, event: string): string => {
-  const pre = event === "PreToolUse"
-  if (platform === "win32")
-    return pre
-      ? `if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy ${event}) else (echo ${ask})) else (echo ${ask})`
-      : `if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy ${event}) else (echo {})`
-  return pre
-    ? `if [ -x "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '${ask}'; fi`
-    : `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy ${event}; else echo '{}'; fi`
+// It runs its hooks in cmd on Windows, as `cmd /c "<command>"` (see `hook-command.ts`).
+const hookDialect = (platform: NodeJS.Platform): Dialect => (platform === "win32" ? "cmd" : "sh")
+
+// Each event's answer where the launcher is unset, or set but missing or not runnable: one
+// Antigravity reads as JSON. On Windows PreToolUse's is none at all: there an answer that
+// isn't JSON (an `echo` of "ask" printed it with cmd's escapes kept), or a hook that exits
+// non-zero, let the tool run unasked, where no answer, exiting 0, left it to the person's
+// policy (probed 2026-10-11, 1.2.14); cmd's command without a fallback gives that. A
+// launcher whose path holds `&`, as a profile folder may, breaks every event's line there:
+// PreToolUse's still prints nothing and exits 0, so tools still ask, but the other events'
+// reports are lost.
+const hookFallback = (platform: NodeJS.Platform, event: string): string | undefined => {
+  if (event !== "PreToolUse") return "{}"
+  return platform === "win32" ? undefined : ask
 }
+
+const hook = (platform: NodeJS.Platform, event: string): string =>
+  hookCommand(hookDialect(platform), {
+    agent: "agy",
+    event,
+    fallback: hookFallback(platform, event),
+  })
 
 // A Stop continued with a reason gets it as a lasting system step. A message injected at
 // a model call lasts only for that call, so a turn's delivery is injected again on each
@@ -67,7 +77,7 @@ const messaging: MessagingProfile = {
 const handler = (platform: NodeJS.Platform, event: string) => ({
   type: "command",
   command: hook(platform, event),
-  timeout: hookSeconds,
+  timeout: hookSeconds(platform),
 })
 
 export const agy = {
@@ -75,24 +85,31 @@ export const agy = {
   // Antigravity installs a plugin folder, which its name must match.
   plugin: join("agy", "novadeck"),
   home: cli,
-  connected: ({ home }) =>
-    access(join(gemini(home), "config", "plugins", "novadeck", "plugin.json")).then(
+  connected: (install) =>
+    access(join(installedPlugin(install), "plugin.json")).then(
       () => true,
       () => false,
     ),
+  // It copies the plugin folder as it installs it (seen 2026-10-11, 1.2.14), so a hook
+  // Novadeck renders otherwise, as where cmd prints first, reaches it only installed again.
+  installed: { directory: installedPlugin, files: ["hooks.json"] },
   connect: ({ plugin: directory }) => [
     { argv: ["agy", "plugin", "uninstall", "novadeck"], optional: true },
     { argv: ["agy", "plugin", "install", directory] },
   ],
   disconnect: [{ argv: ["agy", "plugin", "uninstall", "novadeck"], optional: true }],
+  hookDialect,
   hook,
   // Antigravity runs PreInvocation hooks before each model call, the first time with the
   // conversation's first message, Stop once the turn ends, PreToolUse before every tool,
   // and PostToolUse after the tools that matter here. PreToolUse is answered "ask" at
   // once (never held: a waiting hook hides a confirmation's dialog), so the person's own
   // policy still decides every call; it reports ask_question, which shows a dialog no
-  // status line tells, and the call a confirmation is about.
-  files: (platform, launchers) => [
+  // status line tells, and the call a confirmation is about. Where cmd prints something
+  // of its own first (`Machine.cmdPrints`), no answer can be read as JSON, and every tool
+  // would run unasked, so PreToolUse goes unregistered: Antigravity's own policy asks, as
+  // it does without Novadeck (probed 2026-10-11, 1.2.14, ahead of an "ask" too).
+  files: (platform, launchers, machine = {}) => [
     { path: "plugin.json", content: json({ name: plugin.name }) },
     // Its MCP server, which Antigravity takes from the plugin and starts with the
     // terminal's environment.
@@ -107,19 +124,13 @@ export const agy = {
           PreInvocation: [handler(platform, "PreInvocation")],
           Stop: [handler(platform, "Stop")],
           // Tool events take matcher groups: after a tool, the one that writes artifacts,
-          // which names a plan. Where PreToolUse is registered (everywhere but Windows),
-          // it runs before every tool, and the one that asks the person gets a
-          // PostToolUse. Windows is unprobed: a hook that printed nothing there would
-          // deny every tool, so until a probe shows that command works, ask_question
-          // isn't detected there.
-          ...(platform !== "win32" && {
+          // which names a plan, and the one that asks the person; before every tool.
+          ...(!(platform === "win32" && machine.cmdPrints) && {
             PreToolUse: [{ matcher: "*", hooks: [handler(platform, "PreToolUse")] }],
           }),
           PostToolUse: [
             { matcher: "write_to_file", hooks: [handler(platform, "PostToolUse")] },
-            ...(platform !== "win32"
-              ? [{ matcher: "ask_question", hooks: [handler(platform, "PostToolUse")] }]
-              : []),
+            { matcher: "ask_question", hooks: [handler(platform, "PostToolUse")] },
           ],
         },
       }),
@@ -128,6 +139,7 @@ export const agy = {
   // Its status line tells what no hook does: working or idle, a confirmation waiting on
   // the person, and its context and quotas.
   settings: statusLineSettings(cli),
+  limited: statusLineLimit(cli),
   resume: (session) => ["agy", "--conversation", session],
   transcripts,
   // Its hooks name no subagents; its status line counts them; see docs/harness-coverage.md.

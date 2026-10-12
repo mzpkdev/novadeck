@@ -81,6 +81,11 @@ export type DeckTerminal = {
    */
   readonly press: (keys: string) => void
   /**
+   * Waits until its screen has settled, as `confirm` does before its Enter (see `quiet`):
+   * for keys that answer a dialog without Enter, which it may drop while still drawing.
+   */
+  readonly settled: () => Promise<void>
+  /**
    * Presses Escape on its own: sends `keys` (`\x1b` unless given),
    * and resolves only `escapeWindowMs` later. Escapes go one at a time, each waiting for
    * the one before, so two `escape()` calls never reach the TUI as one Esc-Esc, even
@@ -210,6 +215,11 @@ export type DeckOptions = {
   /** The whole environment of every process the deck starts. */
   readonly env: Readonly<Record<string, string>>
   /**
+   * Whether each terminal's PATH also gains what the registry's has now, as the app's do on
+   * Windows (`TerminalOptions.freshPath`). Off by default: it would reach past the sandbox.
+   */
+  readonly freshPath?: boolean
+  /**
    * Ends what a closed runner left running, and names each process it had to end; a
    * restart fails on any. Without it, a restart looks for nothing.
    */
@@ -222,6 +232,8 @@ export type DeckOptions = {
   readonly model?: {
     readonly rejection: () => string | undefined
     readonly trail: () => string
+    /** Runs `work`, a close of the deck, during which a harness may hang up mid-request. */
+    readonly ending?: (work: () => Promise<void>) => Promise<void>
   }
 }
 
@@ -390,8 +402,12 @@ export const terminalsReport = (
 
 /**
  * Counts what the screen shows of `shows`, runs `trigger`, waits until the screen shows it
- * once more, and only then presses Enter: Enter follows only what `trigger` was seen to
- * bring, never what was there before it. Fails after the timeout, with the screen.
+ * once more and has gone quiet (see `quiet`), and only then presses Enter: Enter follows
+ * only what `trigger` was seen to bring, never what was there before it. Claude Code drops
+ * an Enter pressed as its permission dialog first draws, while its PermissionRequest hook
+ * still runs (seen 2026-10-11, 2.1.287, 25 ms after, on a fast Mac). The deck can't see
+ * that hook end, so a quiet screen makes the race rare rather than ruling it out. Fails
+ * after the timeout, with the screen.
  */
 export const enterAfter = async (
   { handle, screen, enter, state, trail, fault }: Screen,
@@ -409,8 +425,34 @@ export const enterAfter = async (
   ).catch(async (error: unknown) => {
     throw await withScreen(error, screen, state, trail)
   })
+  await quiet(screen)
   enter()
 }
+
+/**
+ * Waits until two reads of the screen `stillMs` apart are alike, or `quietLongestMs` has passed:
+ * a dialog drawn whole goes still at once, while a working agent's screen may never, and
+ * its keys then go anyway. Unlike `calm` in `requests.e2e.ts`, which fails, it carries on.
+ * Novadeck's own answers wait alike, two reads 100 ms apart (`answers.ts`).
+ */
+const quiet = async (screen: () => Promise<string>): Promise<void> => {
+  const deadline = Date.now() + quietLongestMs
+  let last = await screen()
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop -- Reads again after the pause.
+    await new Promise((resolve) => setTimeout(resolve, stillMs))
+    // eslint-disable-next-line no-await-in-loop -- As above.
+    const now = await screen()
+    if (now === last) return
+    last = now
+  }
+}
+
+/** The longest `quiet` waits for a screen to go still, in milliseconds. */
+const quietLongestMs = 1_000
+
+/** How far apart two reads of a screen that say it settled are, in milliseconds. */
+const stillMs = 150
 
 /**
  * Polls `read` until it gives a value, and returns it; fails with `what` after the
@@ -490,14 +532,17 @@ type Runner = {
 }
 
 // Closes the runner, once: ends every watch of it, saves and ends its terminals.
-const stop = async (runner: Runner): Promise<void> => {
+const stop = async (runner: Runner, model?: DeckOptions["model"]): Promise<void> => {
   if (runner.closing.signal.aborted) return
   runner.closing.abort()
-  try {
-    await runner.terminals.shutdown()
-  } finally {
-    runner.store.close()
+  const end = async () => {
+    try {
+      await runner.terminals.shutdown()
+    } finally {
+      runner.store.close()
+    }
   }
+  await (model?.ending ? model.ending(end) : end())
 }
 
 /**
@@ -557,7 +602,12 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       // startup files, even the system's own in /etc/profile, could put another PATH
       // before the pinned harnesses.
       agents: { env: options.env, home: options.env.HOME!, login: false },
-      terminals: { shell: "/bin/bash", baseEnv: options.env },
+      // bash, or on Windows cmd, whose integration reports its prompts as bash's does.
+      terminals: {
+        shell: process.platform === "win32" ? (options.env.ComSpec ?? "cmd.exe") : "/bin/bash",
+        baseEnv: options.env,
+        freshPath: options.freshPath ?? false,
+      },
     })
     // The runner carries on without its shell files; a test can't, as no agent would report.
     if ((await shellFiles) === undefined) {
@@ -686,6 +736,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         await enterAfter(entered, text, async () => send(text))
       },
       confirm: (shows, trigger, { timeoutMs } = {}) => enterAfter(view, shows, trigger, timeoutMs),
+      settled: () => quiet(look),
       press: (keys) => {
         refuseEnter(keys)
         send(keys)
@@ -821,7 +872,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
       return { next: requests.next }
     },
     restart: async () => {
-      await stop(runner)
+      await stop(runner, options.model)
       const left = (await options.leftovers?.()) ?? []
       if (left.length > 0)
         throw new Error(
@@ -847,6 +898,6 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         ),
       )
     },
-    close: () => stop(runner),
+    close: () => stop(runner, options.model),
   }
 }

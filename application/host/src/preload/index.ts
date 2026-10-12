@@ -1,8 +1,13 @@
 import {
   runnerPortMessage,
+  updateChannels,
+  updateNoteLength,
+  updateNotesLength,
   updateVersionPattern,
   type DesktopBridge,
   type DesktopHost,
+  type SandboxState,
+  type UpdateOffer,
 } from "@novadeck/protocol/bridge"
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 
@@ -13,9 +18,13 @@ import {
   installUpdateChannel,
   noticeChannel,
   noticeClickChannel,
+  openUpdatePageChannel,
   runnerPortChannel,
+  sandboxChannel,
   saveBeforeQuitChannel,
-  updateReadyChannel,
+  setUpdateChannelChannel,
+  updateChannelChannel,
+  updateOfferChannel,
   updateRequestChannel,
 } from "../bridge.js"
 
@@ -39,6 +48,51 @@ ipcRenderer.on(saveBeforeQuitChannel, () => {
     .catch(() => {})
     .finally(() => ipcRenderer.send(saveBeforeQuitChannel))
 })
+
+// Control and format characters, which include the marks that reorder text, and the line
+// and paragraph separators.
+const unwanted = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u
+
+// The offer when it is one the contract allows, or undefined. The host builds offers
+// that obey it; this holds the page's side to it should the host be wrong or tricked.
+// A note the page may not have is dropped rather than shortened.
+const offerOf = (value: unknown): UpdateOffer | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const { kind, version, notes } = value as Record<string, unknown>
+  if (kind !== "ready" && kind !== "available") return undefined
+  if (typeof version !== "string" || !updateVersionPattern.test(version)) return undefined
+  const lines = Array.isArray(notes) ? (notes as unknown[]) : []
+  return {
+    kind,
+    version,
+    notes: lines
+      .filter(
+        (line): line is string =>
+          typeof line === "string" &&
+          line !== "" &&
+          Array.from(line).length <= updateNoteLength &&
+          !unwanted.test(line),
+      )
+      .slice(0, updateNotesLength),
+  }
+}
+
+// The longest fix command the page is given: one line, as the host builds it from a
+// repository name.
+const sandboxFixLength = 300
+
+// The sandbox state when it is one the contract allows. Anything else counts as sandboxed,
+// so a broken answer never raises a warning the page cannot back.
+const sandboxOf = (value: unknown): SandboxState => {
+  if (typeof value !== "object" || value === null) return { sandboxed: true }
+  const { sandboxed, fix } = value as Record<string, unknown>
+  if (sandboxed !== false) return { sandboxed: true }
+  return {
+    sandboxed: false,
+    fix:
+      typeof fix === "string" && fix.length <= sandboxFixLength && !unwanted.test(fix) ? fix : "",
+  }
+}
 
 const bridge = {
   requestRunner: (id) => {
@@ -72,21 +126,34 @@ const bridge = {
       ipcRenderer.removeListener(noticeClickChannel, relay)
     }
   },
-  // Only a release's version comes back; the request makes the host answer with an update
-  // that is already waiting, as the page may have started listening after it arrived.
-  onUpdateReady: (listener) => {
-    const relay = (_event: unknown, version: unknown): void => {
-      if (typeof version === "string" && updateVersionPattern.test(version)) listener(version)
+  // Only a valid offer comes back; the request makes the host answer with the last one,
+  // as the page may have started listening after it arrived.
+  onUpdate: (listener) => {
+    const relay = (_event: unknown, value: unknown): void => {
+      const offer = offerOf(value)
+      if (offer) listener(offer)
     }
-    ipcRenderer.on(updateReadyChannel, relay)
+    ipcRenderer.on(updateOfferChannel, relay)
     ipcRenderer.send(updateRequestChannel)
     return () => {
-      ipcRenderer.removeListener(updateReadyChannel, relay)
+      ipcRenderer.removeListener(updateOfferChannel, relay)
     }
   },
   installUpdate: () => {
     ipcRenderer.send(installUpdateChannel)
   },
+  openUpdatePage: () => {
+    ipcRenderer.send(openUpdatePageChannel)
+  },
+  updateChannel: async () => {
+    const channel: unknown = await ipcRenderer.invoke(updateChannelChannel)
+    return updateChannels.find((known) => known === channel) ?? "stable"
+  },
+  // Only a known channel crosses; the main process checks it again.
+  setUpdateChannel: (channel) => {
+    if (updateChannels.includes(channel)) ipcRenderer.send(setUpdateChannelChannel, channel)
+  },
+  sandbox: async () => sandboxOf(await ipcRenderer.invoke(sandboxChannel)),
   pathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file)

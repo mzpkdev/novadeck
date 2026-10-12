@@ -117,6 +117,8 @@ export type KeyState = {
 export type KeyEnvironment = {
   readonly overlayOpen: () => boolean
   readonly tabInteraction: () => boolean
+  /** Whether a modal dialog is open, wherever focus is; none when omitted. */
+  readonly modalOpen?: () => boolean
 }
 
 const phaseLayers: Record<KeyPhase, readonly KeyLayer[]> = {
@@ -173,6 +175,7 @@ const gates: Record<
     !state.switcher &&
     !input.target.editing &&
     !input.target.zenDock &&
+    !input.target.notice &&
     !input.target.companion &&
     !environment.overlayOpen() &&
     !environment.tabInteraction(),
@@ -201,12 +204,15 @@ const gates: Record<
   // Dictation's chord works where the jumps do, and in a chat's box too, which it fills.
   "voice-chord": (input, state) =>
     !state.dialog && !state.switcher && (!input.target.editing || input.target.terminalInput),
-  // Ctrl or ⌘ and a digit, which a terminal would read as its own input, so it runs in
+  // Ctrl+Shift or ⌘ and a digit, which a terminal would read as its own input, so it runs in
   // capture; with no such pin the command lets the key on. It leaves text fields, a tab's
-  // rename among them, their keys, and a modal dialog its question, but works from menus,
-  // popovers and the switchers.
-  "pinned-project": (input, state) =>
-    !state.dialog && !input.target.modal && (!input.target.textEntry || input.target.terminalInput),
+  // rename among them, their keys, and a modal dialog its question, even one that hasn't
+  // taken focus yet, but works from menus, popovers and the switchers.
+  "pinned-project": (input, state, environment) =>
+    !state.dialog &&
+    !input.target.modal &&
+    !environment.modalOpen?.() &&
+    (!input.target.textEntry || input.target.terminalInput),
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,
@@ -324,7 +330,8 @@ export const keymapFor = (platform: Platform): readonly KeyBinding[] => {
       args,
       repeat: "run",
     })),
-    // Ctrl+1 to 9 (⌘ on Apple platforms): the Nth pinned project, from terminal input too.
+    // Ctrl+Shift+1 to 9 (⌘1 to 9 on Apple platforms): the Nth pinned project, from terminal
+    // input too.
     ...Array.from({ length: 9 }, (_, args): KeyBinding => ({
       layer: "pinned-project",
       keys: { shortcut: pinnedProjectShortcut(args, platform) },
@@ -438,7 +445,7 @@ export const shortcutGroups = (platform: Platform): readonly ShortcutGroup[] => 
       },
       {
         label: pinnedProjectShortcut(0, platform).label,
-        display: [platform === "mac" ? "⌘" : "Ctrl", "1–9"],
+        display: platform === "mac" ? ["⌘", "1–9"] : ["Ctrl", "Shift", "1–9"],
       },
     ],
   },

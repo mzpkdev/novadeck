@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 
 import type { HarnessEvent } from "./events.js"
 import { tailLines } from "./follow.js"
-import { doorbellNonce, promptStart, type UserEntry } from "./harness.js"
+import { doorbellNonce, firedFacts, promptStart, type UserEntry } from "./harness.js"
 import { rootedIn, type Root } from "./roots.js"
 
 /**
@@ -64,6 +64,15 @@ const fresh = (
 }
 
 /**
+ * How long a prompt-time hook waits for the transcript to record what was typed, while a
+ * ring or the person's Enter waits on it: on Windows a busy machine may write it late, and
+ * a ring unconfirmed for that fails, its turn's messages waiting for its Stop; elsewhere
+ * it is there by the time the hook comes.
+ */
+export const transcriptWaitMs = (platform: NodeJS.Platform): number =>
+  platform === "win32" ? 2_000 : 300
+
+/**
  * The facts with a root turn's prompt told, where a harness's hooks name none (as
  * Antigravity's, whose every turn decodes as harness-started): when its transcript holds
  * a new typed entry, the root's harness-started turn becomes `promptStart` of its text, so
@@ -75,14 +84,19 @@ export const typedPromptStart = async (
   events: readonly HarnessEvent[],
   { root, typedEntry, transcript, seen, enteredAt, ringing, startedWith }: TypedPrompts,
   read: typeof lastUserInput = lastUserInput,
+  {
+    waitMs = transcriptWaitMs(process.platform),
+    gapMs = 150,
+  }: { readonly waitMs?: number; readonly gapMs?: number } = {},
 ): Promise<{ readonly events: readonly HarnessEvent[]; readonly seen: number | undefined }> => {
   const index = events.findIndex(
     (event) => event.type === "turn-started" && event.cause === "harness" && rootedIn(root, event),
   )
   if (index < 0) return { events, seen }
-  // Its transcript may record the input just after the hook runs: a few looks, briefly,
-  // while a ring or the person's Enter waits on it; one otherwise, to know what is new.
-  const looks = ringing !== undefined || enteredAt !== undefined ? 2 : 0
+  // Its transcript may record the input just after the hook runs: looks for up to
+  // `waitMs` while a ring or the person's Enter waits on it (see `transcriptWaitMs`); one
+  // otherwise, to know what is new.
+  const looks = ringing !== undefined || enteredAt !== undefined ? Math.ceil(waitMs / gapMs) : 0
   for (let look = 0; ; look += 1) {
     // eslint-disable-next-line no-await-in-loop -- Each look waits for the last.
     const entry = await read(transcript, typedEntry)
@@ -92,14 +106,18 @@ export const typedPromptStart = async (
       if (!typed || !entry) return { events, seen: known }
       const started = events[index]!
       const { agent, sessionId, instance, startedAt } = started
+      const firedAt = "firedAt" in started ? started.firedAt : undefined
+      // The turn's start keeps when its hook fired, which the person's Enter is judged by.
+      const [typedStart] = firedFacts(
+        [promptStart({ agent, sessionId, instance, startedAt }, entry.text)],
+        { seq: startedAt, firedAt },
+      )
       return {
-        events: events.map((event, at) =>
-          at === index ? promptStart({ agent, sessionId, instance, startedAt }, entry.text) : event,
-        ),
+        events: events.map((event, at) => (at === index ? typedStart! : event)),
         seen: known,
       }
     }
     // eslint-disable-next-line no-await-in-loop -- As above.
-    await sleep(150)
+    await sleep(gapMs)
   }
 }

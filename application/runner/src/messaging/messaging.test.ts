@@ -8,14 +8,14 @@ import {
   type Activity,
 } from "../harnesses/activity.js"
 import type { Binding } from "../harnesses/bindings.js"
-import type { HarnessEvent } from "../harnesses/events.js"
+import type { ActivityEvent, HarnessEvent } from "../harnesses/events.js"
 import { doorbellLine } from "../harnesses/harness.js"
 import { harnesses } from "../harnesses/registry.js"
 import { followRoot, type Root } from "../harnesses/roots.js"
 import { typedPromptStart } from "../harnesses/typed-prompts.js"
 import { keysOf } from "../terminals/keys.js"
 import { describe, expect, it } from "../test.js"
-import { running } from "./delivery.js"
+import { running, submitWindowMs } from "./delivery.js"
 import { clock, retentionMs, threadMs } from "./mailbox.js"
 import {
   Messaging,
@@ -46,7 +46,7 @@ const asHeard = -1
 const started = (
   bound: Binding,
   cause: "prompt" | "harness" | "call" = "prompt",
-): HarnessEvent => ({ type: "turn-started", ...fact(bound), startedAt: asHeard, cause })
+): ActivityEvent => ({ type: "turn-started", ...fact(bound), startedAt: asHeard, cause })
 
 const stopped = (bound: Binding, background = false): HarnessEvent => ({
   type: "turn-ended",
@@ -123,6 +123,8 @@ const create = (
     now: () => time.now,
     sweepMs: 0,
     restoreMs: 0,
+    // Hooks' shells start at once, on whatever platform the tests run.
+    platform: "linux",
     ...options,
   })
   messaging.subscribe((change) => {
@@ -1847,16 +1849,46 @@ describe("the person's submissions", () => {
     messaging.keys("B", ["content"], false)
     messaging.keys("B", ["enter"], false)
     const entered = time.now
-    // Heard 2.6 s after the Enter, its hook having started at 1.5 s.
-    time.now += 2_600
-    expect(messaging.pendingSubmission("B", entered + 1_500)).toBe(entered)
-    expect(messaging.pendingSubmission("B", entered + 2_100)).toBeUndefined()
-    ask("B", codex, "UserPromptSubmit", [{ ...started(codex), startedAt: entered + 1_500 }])
+    // Heard past the window after the Enter, its hook having started just inside it.
+    time.now += submitWindowMs + 600
+    expect(messaging.pendingSubmission("B", entered + submitWindowMs - 500)).toBe(entered)
+    expect(messaging.pendingSubmission("B", entered + submitWindowMs + 100)).toBeUndefined()
+    ask("B", codex, "UserPromptSubmit", [
+      { ...started(codex), startedAt: entered + submitWindowMs - 500 },
+    ])
     stop("B", codex)
     expect(messaging.delivery("B")?.state).toBe("settled")
   })
 
-  it("are their Enter followed by a root prompt within about two seconds", () => {
+  it("are judged by when the hook's shell started on Windows, where the relay tells it", () => {
+    const {
+      messaging,
+      ask,
+      stop,
+      codex,
+      clock: time,
+    } = create(undefined, undefined, {
+      platform: "win32",
+    })
+    messaging.keys("B", ["content"], false)
+    messaging.keys("B", ["enter"], false)
+    const entered = time.now
+    // Its relay started 15 s after the Enter, behind a cold PowerShell.
+    time.now += 15_100
+    const relayed = entered + 15_000
+    // Told when its shell started, it is judged by that, in the 2 s window.
+    expect(messaging.pendingSubmission("B", relayed, entered + 1_000)).toBe(entered)
+    expect(messaging.pendingSubmission("B", relayed, entered + submitWindowMs + 1)).toBeUndefined()
+    // Untold, by when the relay started, in a window wider by the shell's slack.
+    expect(messaging.pendingSubmission("B", relayed)).toBe(entered)
+    ask("B", codex, "UserPromptSubmit", [
+      { ...started(codex), startedAt: relayed, firedAt: entered + 1_000 },
+    ])
+    stop("B", codex)
+    expect(messaging.delivery("B")?.state).toBe("settled")
+  })
+
+  it("are their Enter followed by a root prompt within the submission window", () => {
     for (const agent of ["claude", "codex"] as const) {
       const { messaging, follow, prompt, stop, clock: time } = create()
       const bound = binding(agent, `s-${agent}`, "7")
@@ -1873,14 +1905,14 @@ describe("the person's submissions", () => {
       expect(messaging.delivery("C")?.state).toBe("drafting")
       // Their Enter, then the turn: what they drafted went with it.
       messaging.keys("C", ["enter"], false)
-      time.now += 2_000
+      time.now += submitWindowMs
       prompt("C", bound, "prompt")
       stop("C", bound)
       expect(messaging.delivery("C")?.state).toBe("settled")
       // An Enter too long before is not the turn's.
       messaging.keys("C", ["content"], false)
       messaging.keys("C", ["enter"], false)
-      time.now += 2_001
+      time.now += submitWindowMs + 1
       prompt("C", bound, "prompt")
       stop("C", bound)
       expect(messaging.delivery("C")?.state).toBe("drafting")
@@ -2633,6 +2665,7 @@ describe("Antigravity's prompts, told from its transcript", () => {
         startedWith: given.startedWith,
       },
       () => Promise.resolve({ text, at: null, id }),
+      { waitMs: 2, gapMs: 1 },
     )
 
   // Resumed in a terminal the runner restored: Ready at the conversation its status line

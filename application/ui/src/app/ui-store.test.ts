@@ -2,6 +2,7 @@ import { afterEach, beforeEach, vi } from "vitest"
 
 import { createWorkspaceStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
+import type { UpdateOffer } from "../model/update"
 import { context, describe, expect, it } from "../test"
 import { appearance, workspaceFixture } from "../test/fixtures"
 import {
@@ -11,14 +12,16 @@ import {
   trackRecent,
   watchFinishes,
   watchPresentation,
+  watchSandbox,
   watchSwitcher,
   watchUpdates,
   type FinishNotify,
   type UiState,
 } from "./ui-store"
 
-const initial = (): UiState =>
+const initial = (updateSeen: string | null = null): UiState =>
   initialUi({
+    updateSeen,
     location: {
       route: {
         projectId: "project",
@@ -382,36 +385,96 @@ describe("finish watch", () => {
 })
 
 const updateHost = () => {
-  let report: ((version: string) => void) | undefined
+  let report: ((offer: UpdateOffer) => void) | undefined
   const updates = {
-    onReady: (listener: (version: string) => void) => {
+    onOffer: (listener: (offer: UpdateOffer) => void) => {
       report = listener
       return () => {
         report = undefined
       }
     },
     install: () => {},
+    openPage: () => {},
   }
-  return { updates, report: (version: string) => report?.(version), listening: () => !!report }
+  return {
+    updates,
+    report: (offer: UpdateOffer) => report?.(offer),
+    listening: () => !!report,
+  }
 }
 
+const offered = (version: string, kind: UpdateOffer["kind"] = "ready"): UpdateOffer => ({
+  kind,
+  version,
+  notes: [],
+})
+
 describe("a waiting update", () => {
-  it("is kept as the version the backend reports, a newer one replacing it", () => {
+  it("is kept as the offer the backend reports, a newer one replacing it", () => {
     const { updates, report, listening } = updateHost()
     const ui = createUiStore(initial())
     const stop = watchUpdates(updates, ui)
-    expect(ui.getSnapshot().updateReady).toBeNull()
-    report("0.0.80")
-    expect(ui.getSnapshot().updateReady).toBe("0.0.80")
-    report("0.0.81")
-    expect(ui.getSnapshot().updateReady).toBe("0.0.81")
+    expect(ui.getSnapshot().update).toBeNull()
+    report(offered("0.0.80"))
+    expect(ui.getSnapshot().update).toEqual(offered("0.0.80"))
+    report(offered("0.0.81", "available"))
+    expect(ui.getSnapshot().update).toEqual(offered("0.0.81", "available"))
     stop()
     expect(listening()).toBe(false)
+  })
+
+  it("opens its notice for a version not shown yet, and again for a newer one", () => {
+    const { updates, report } = updateHost()
+    const ui = createUiStore(initial("ready:0.0.80"))
+    watchUpdates(updates, ui)
+    report(offered("0.0.80"))
+    expect(ui.getSnapshot().updateOpen).toBe(false)
+    report(offered("0.0.81"))
+    expect(ui.getSnapshot().updateOpen).toBe(true)
+  })
+
+  it("opens its notice again when the version already shown turns from ready to available", () => {
+    const { updates, report } = updateHost()
+    const ui = createUiStore(initial("ready:0.0.80"))
+    watchUpdates(updates, ui)
+    report(offered("0.0.80", "available"))
+    expect(ui.getSnapshot().updateOpen).toBe(true)
   })
 
   it("is never there where the backend has no updates", () => {
     const ui = createUiStore(initial())
     watchUpdates(undefined, ui)()
-    expect(ui.getSnapshot().updateReady).toBeNull()
+    expect(ui.getSnapshot().update).toBeNull()
+  })
+})
+
+describe("the sandbox", () => {
+  it("is kept as the backend says it, once", async () => {
+    const ui = createUiStore(initial())
+    let asked = 0
+    watchSandbox(() => {
+      asked += 1
+      return Promise.resolve({ sandboxed: false, fix: "sudo fix" })
+    }, ui)
+    expect(ui.getSnapshot().sandbox).toBeNull()
+    await vi.waitFor(() =>
+      expect(ui.getSnapshot().sandbox).toEqual({ sandboxed: false, fix: "sudo fix" }),
+    )
+    expect(asked).toBe(1)
+  })
+
+  it("is never there where the backend does not say, or fails to", async () => {
+    const ui = createUiStore(initial())
+    watchSandbox(undefined, ui)()
+    watchSandbox(() => Promise.reject(new Error("no")), ui)
+    await Promise.resolve()
+    expect(ui.getSnapshot().sandbox).toBeNull()
+  })
+
+  it("is not kept once the watch is stopped", async () => {
+    const ui = createUiStore(initial())
+    watchSandbox(() => Promise.resolve({ sandboxed: true }), ui)()
+    await Promise.resolve()
+    expect(ui.getSnapshot().sandbox).toBeNull()
   })
 })

@@ -12,6 +12,7 @@ import {
   type Harness,
   type Install,
 } from "../harness.js"
+import { hookCommand, type Dialect } from "../hook-command.js"
 import { box } from "./box.js"
 import { decode, transcriptPlans } from "./decode.js"
 import { dialogs } from "./dialogs.js"
@@ -40,10 +41,13 @@ const events = [
   "PostToolUseFailure",
 ]
 
+// Its hooks run in PowerShell on Windows, where its handlers say so (`shell` below).
+const hookDialect = (platform: NodeJS.Platform): Dialect =>
+  platform === "win32" ? "powershell" : "sh"
+
+// Without Novadeck it needs nothing printed.
 const hook = (platform: NodeJS.Platform, event: string): string =>
-  platform === "win32"
-    ? `if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK claude ${event} }`
-    : `[ -n "$NOVADECK_HOOK" ] && "$NOVADECK_HOOK" claude ${event} || true`
+  hookCommand(hookDialect(platform), { agent: "claude", event })
 
 // A Stop's reason continues the turn, and reaches the model as the Stop hook's feedback;
 // a prompt's context is an attachment beside the prompt, never the prompt itself; a tool
@@ -100,6 +104,7 @@ export const claude = {
     { argv: ["claude", "plugin", "uninstall", id], optional: true },
     { argv: ["claude", "plugin", "marketplace", "remove", "novadeck"], optional: true },
   ],
+  hookDialect,
   hook,
   files: (platform, launchers) => [
     { path: join(".claude-plugin", "marketplace.json"), content: marketplace },
@@ -122,7 +127,7 @@ export const claude = {
                   {
                     type: "command",
                     command: hook(platform, event),
-                    timeout: hookSeconds,
+                    timeout: hookSeconds(platform),
                     ...(platform === "win32" && { shell: "powershell" }),
                   },
                 ],

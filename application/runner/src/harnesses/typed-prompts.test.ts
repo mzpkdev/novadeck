@@ -47,6 +47,7 @@ const told = (entry: UserEntry | null, given: Partial<TypedPrompts> = {}) =>
     [started],
     { root, typedEntry, transcript: "/t.jsonl", seen: 9, enteredAt, ringing: undefined, ...given },
     () => Promise.resolve(entry),
+    { waitMs: 2, gapMs: 1 },
   )
 
 const entry = (text: string, id: number, at = Date.parse("2026-10-01T12:00:06Z")) => ({
@@ -56,6 +57,17 @@ const entry = (text: string, id: number, at = Date.parse("2026-10-01T12:00:06Z")
 })
 
 describe("a typed prompt where hooks name none", () => {
+  it("keeps when the turn's hook fired, as the person's Enter is judged by it", async () => {
+    const fired = { ...started, firedAt: 0.5 } as HarnessEvent
+    const { events } = await typedPromptStart(
+      [fired],
+      { root, typedEntry, transcript: "/t.jsonl", seen: 9, enteredAt, ringing: undefined },
+      () => Promise.resolve(entry("Review a.ts", 10)),
+      { waitMs: 2, gapMs: 1 },
+    )
+    expect(events[0]).toMatchObject({ type: "turn-started", cause: "prompt", firedAt: 0.5 })
+  })
+
   it("is a new typed entry's, told as Claude Code's and Codex's prompts are", async () => {
     await expect(told(entry("fix the build", 12))).resolves.toEqual({
       events: [{ ...started, cause: "prompt", prompt: "fix the build" }],
@@ -179,7 +191,10 @@ describe("a typed prompt where hooks name none", () => {
       })
       // The same entry, read again at a turn nobody typed for, is nothing new.
       // eslint-disable-next-line no-await-in-loop -- As above.
-      const again = await typedPromptStart([started], { ...given, seen: now.seen })
+      const again = await typedPromptStart([started], { ...given, seen: now.seen }, undefined, {
+        waitMs: 2,
+        gapMs: 1,
+      })
       expect(again.events).toEqual([started])
       seen = now.seen!
     }

@@ -250,6 +250,11 @@ export type AgentSetup = {
    */
   readonly bindsAtReady: boolean
   /**
+   * Whether a prompt given as its turn starts may join that turn, as Codex steers a running
+   * turn with what is queued: one model call then holds both prompts.
+   */
+  readonly steers?: true
+  /**
    * Hosts it tries through the proxy on every run, which no setting turns off: their
    * refused tunnels are expected. Any other refused tunnel is not.
    */
@@ -326,4 +331,19 @@ export type AgentSetup = {
    * reach: one that does fails the test, as the fake model was bypassed.
    */
   readonly hosts?: readonly string[]
+  /**
+   * On Windows, the Credential Manager targets the harness keeps its login under, where it
+   * keeps it there: no environment moves that store into the sandbox, so a test of it
+   * refuses to start while one is there, and fails should one appear.
+   */
+  readonly credentials?: readonly RegExp[]
+  /**
+   * On macOS, the Keychain items the harness keeps its login as, under a fixed name: as
+   * Windows' targets, a test of it refuses to start while one is there, and fails should
+   * one appear, named `service:account` as Windows names its target.
+   */
+  readonly keychain?: readonly KeychainItem[]
 }
+
+/** A generic password in the macOS Keychain, by the attributes that name it. */
+export type KeychainItem = { readonly service: string; readonly account: string }

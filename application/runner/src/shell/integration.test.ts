@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto"
 import {
   appendFileSync,
   chmodSync,
-  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -1229,6 +1228,30 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await expect.poll(() => texts).toEqual(["hi"])
     manager.forgetAgent("agy")
     await reading
+  })
+
+  it("starts the turn whose hook fired with the status line that bound its session", async ({
+    shell,
+  }) => {
+    const bin = reporter(shell.home, [
+      // Antigravity fires both at once: the status line's starts last, and is heard first.
+      {
+        agent: "agy",
+        sessionId: "c1",
+        seq: 2,
+        source: "",
+        event: "StatusLine",
+        fields: { conversation_id: "c1", agent_state: "working" },
+      },
+      { agent: "agy", sessionId: "c1", seq: 1.99, source: "", event: "PreInvocation" },
+    ])
+    const manager = shell.manager({
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const next = shell.watch(manager)
+    const terminal = await create(manager, shell)
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await next((summary) => summary.activity?.state === "working")
   })
 
   it("keeps a plan the agent drafts beside its terminal, read as it changes", async ({ shell }) => {
@@ -4168,12 +4191,13 @@ else hook("SessionStart", { source: "startup" }, ready)
   const named = join(home, "named")
   mkdirSync(named, { recursive: true })
   // A real program of the harness's name, as Codex's native one under its npm wrapper and
-  // Antigravity's are, running the TUI as its child: a copy of bash, named so, as a script
-  // shows under its interpreter's name on macOS and Node renames its own process. Its
-  // command doesn't end the line, so bash runs it as a child rather than exec it.
+  // Antigravity's are, running the TUI as its child: bash through a link named so, as a
+  // script shows under its interpreter's name on macOS and Node renames its own process.
+  // Both systems name a process after the path it was run by, link or not; a copy would
+  // do too, but macOS kills a copy of its own signed /bin/bash. Its command doesn't end
+  // the line, so bash runs it as a child rather than exec it.
   for (const agent of ["codex", "agy"]) {
-    copyFileSync(bash, join(named, agent))
-    chmodSync(join(named, agent), 0o755)
+    symlinkSync(bash, join(named, agent))
     const launcher = join(bin, agent === "codex" ? "named" : "named-agy")
     writeFileSync(
       launcher,

@@ -5,7 +5,15 @@ import type { AgentName } from "@novadeck/protocol"
 import type { Report } from "../shell/reports.js"
 import { describe, expect, it } from "../test.js"
 import { loadProbe } from "../testing/probes.js"
-import { apply, escapeVerdictMs, started, subagentRef, summary, type Activity } from "./activity.js"
+import {
+  apply,
+  boundSince,
+  escapeVerdictMs,
+  started,
+  subagentRef,
+  summary,
+  type Activity,
+} from "./activity.js"
 import type { Binding } from "./bindings.js"
 import type { ActivityEvent } from "./events.js"
 import { harnesses } from "./registry.js"
@@ -177,6 +185,23 @@ describe("applying activity", () => {
     expect(
       apply(started(0), binding, fact({ type: "turn-started", instance: "8" })),
     ).toBeUndefined()
+  })
+
+  it("takes, once bound, a hook fired with the one that bound it, however late its shell started", () => {
+    // The status line that bound the session fired at 6 000 and its relay started at
+    // 10 000; the PreInvocation fired with it, its relay starting at 9 000, ahead of the
+    // binding's but heard after it.
+    const bound = started(boundSince({ startedAt: 10_000, firedAt: 6_000 }))
+    const turn = fact({ type: "turn-started", startedAt: 9_000 })
+    expect(apply(bound, binding, turn)?.state).toBe("working")
+    // A hook that started well before the binding fired is older than the session's facts.
+    expect(apply(bound, binding, fact({ type: "turn-started", startedAt: 5_000 }))).toBeUndefined()
+    // Where the binding's firing isn't told, from shortly before its relay started.
+    const told = started(boundSince({ startedAt: 10_000 }))
+    expect(apply(told, binding, fact({ type: "turn-started", startedAt: 9_800 }))?.state).toBe(
+      "working",
+    )
+    expect(apply(told, binding, fact({ type: "turn-started", startedAt: 9_700 }))).toBeUndefined()
   })
 
   it("ignores a fact from a hook that started before the latest applied", () => {
@@ -1174,6 +1199,21 @@ describe("a turn the person's Escape ended", () => {
     expect(
       apply(quiet, binding, fact({ type: "turn-escape-lapsed", startedAt: 20 })),
     ).toBeUndefined()
+  })
+
+  it("reads completed when the window passes with no Stop, but a reply its transcript holds", () => {
+    // Antigravity on Windows, its reply come just as the key did.
+    const antigravity = escaped(turn(started(0, true, false), 10), 20)
+    const kept = on(antigravity, { type: "turn-escape-lapsed", startedAt: 20, reply: "Too late." })
+    expect(summary(kept)).toMatchObject({ state: "idle" })
+    expect(outcome(kept)).toEqual({ outcome: "completed", reply: "Too late.", at: 21 })
+    // The window is closed: a lapse again changes nothing.
+    expect(lapsed(kept, 20)).toBeUndefined()
+    // A Stop told since stays the end, its own reply with it.
+    const told = stop(stopped, 25, { reply: "Told." })
+    expect(
+      outcome(on(told, { type: "turn-escape-lapsed", startedAt: 20, reply: "Too late." })),
+    ).toEqual({ outcome: "completed", reply: "Told.", at: 25 })
   })
 
   it("does not count a Stop from an earlier turn", () => {

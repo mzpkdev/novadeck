@@ -36,21 +36,23 @@ extraResources:
     to: murmur/engine.json
 # Where installed apps look for updates. Builder writes this into the app as
 # resources/app-update.yml, and beside the packages the latest*.yml files and blockmaps
-# that name them, even with --publish never. Every release is still a prerelease.
+# that name them, even with --publish never. Every release from main is a prerelease until
+# someone promotes it to stable. The owner and repo here are the defaults of a local build;
+# the release workflow passes the repository it runs in, so a moved repository needs no edit.
 publish:
   provider: github
   owner: mzpkdev
   repo: novadeck
   releaseType: prerelease
-artifactName: novadeck-${version}-${os}-${arch}.${ext}
-# The AppImage replaces itself in place, and electron-updater renames the file when its
-# name carries a version, which would break whatever launches it. Without one, the file
-# keeps its path across updates.
-appImage:
-  artifactName: novadeck-linux-${arch}.${ext}
-# The installers name the install folder and the Linux package after the package's name,
-# which for the workspace's @novadeck/host would be "@novadeckhost". Electron names the
-# app by productName first, so this changes nothing at run time.
+# No package name carries a version, so releases/latest/download/<name> is always the newest
+# stable build. The AppImage replaces itself in place, and electron-updater renames the file
+# when its name carries a version, which would break whatever launches it; without one, the
+# file keeps its path across updates. Builder renders ${arch} as x86_64 for the AppImage
+# and universal for macOS.
+artifactName: novadeck-${os}-${arch}.${ext}
+# The installers name the install folder after the package's name, which for the
+# workspace's @novadeck/host would be "@novadeckhost". Electron names the app by
+# productName first, so this changes nothing at run time.
 extraMetadata:
   name: novadeck
 mac:
@@ -93,8 +95,8 @@ mac:
   entitlementsInherit: resources/entitlements.mac.plist
   notarize: true
   category: public.app-category.utilities
-  # The ZIP for whoever unpacks it by hand, and the disk image people drag to Applications.
-  # The app inside both is the one signed, notarized and stapled.
+  # The disk image people drag to Applications, and the ZIP that Squirrel.Mac installs
+  # updates from. The app inside both is the one signed, notarized and stapled.
   target:
     - target: zip
       arch:
@@ -115,64 +117,26 @@ win:
     - "!node_modules/node-pty/prebuilds/{darwin,linux}-*{,/**}"
     - "!node_modules/node-pty/prebuilds/win32-arm64{,/**}"
     - "!node_modules/node-pty/third_party{,/**}"
-  # The installer and the portable executable are both .exe files, so each names itself.
   target:
     - target: nsis
-      arch:
-        - x64
-    - target: portable
       arch:
         - x64
 nsis:
   # One click, for the current user, into %LOCALAPPDATA%\Programs\novadeck, with no
   # administrator prompt; uninstalling keeps the projects and sessions in app data.
-  artifactName: novadeck-${version}-win-${arch}-setup.${ext}
-portable:
-  artifactName: novadeck-${version}-win-${arch}-portable.${ext}
+  artifactName: novadeck-${os}-${arch}-setup.${ext}
+toolsets:
+  appimage: 1.0.3
 linux:
   icon: resources/icons
   category: Utility
-  maintainer: mzpkdev
-  # The package managers' one-line summary; the description below it is package.json's.
-  synopsis: A terminal workspace for organizing projects, sessions, and parallel work
   syncDesktopName: true
-  # The AppImage runs anywhere; the deb and rpm install to /opt/novadeck with a menu entry
-  # and `novadeck` on the PATH. The rpm needs rpmbuild (the `rpm` package on Debian and
-  # Ubuntu).
+  # The AppImage is the only Linux package. Builder's default runtime needs libfuse2, which
+  # current distributions no longer install; this toolset swaps in its static runtime, which
+  # mounts through FUSE 3 (fusermount3). It also stops builder from putting --no-sandbox in
+  # the menu entry's Exec line. AppRun still adds it when the kernel refuses unprivileged user
+  # namespaces, as Ubuntu's AppArmor does until install.sh's profile allows them.
   target:
     - target: AppImage
       arch:
         - x64
-    - target: deb
-      arch:
-        - x64
-    - target: rpm
-      arch:
-        - x64
-# electron-builder's dependencies, plus the sound and GBM libraries Electron links against,
-# which nothing else on the list brings to a minimal or server install.
-deb:
-  depends:
-    - libgtk-3-0
-    - libnotify4
-    - libnss3
-    - libxss1
-    - libxtst6
-    - xdg-utils
-    - libatspi2.0-0
-    - libuuid1
-    - libsecret-1-0
-    - libasound2t64 | libasound2
-    - libgbm1
-rpm:
-  depends:
-    - gtk3
-    - libnotify
-    - nss
-    - libXScrnSaver
-    - (libXtst or libXtst6)
-    - xdg-utils
-    - at-spi2-core
-    - (libuuid or libuuid1)
-    - (alsa-lib or libasound2)
-    - (mesa-libgbm or libgbm1)

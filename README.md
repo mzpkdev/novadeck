@@ -5,6 +5,54 @@ A terminal workspace for organizing projects, sessions, and parallel work.
 Focus on one terminal, arrange several in a grid, or spread them across a zoomable
 canvas. Keep related work together and switch between sessions from the sidebar.
 
+## Install
+
+- **macOS:**
+
+  ```sh
+  curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh
+  ```
+
+  Run it as yourself, not with `sudo`, and quit Novadeck first. It checks the download
+  against the release's `SHA256SUMS` and puts the app in `/Applications`, or in
+  `~/Applications` when your account cannot write to `/Applications`. Run again, it
+  upgrades the copy already there, preferring `/Applications`. If another account put
+  Novadeck in `/Applications`, the script stops and leaves that copy for the account that
+  installed it. You can also download
+  [`novadeck-mac-universal.dmg`](https://github.com/mzpkdev/novadeck/releases/latest/download/novadeck-mac-universal.dmg)
+  and drag the app to Applications.
+
+- **Windows:** run [`novadeck-win-x64-setup.exe`](https://github.com/mzpkdev/novadeck/releases/latest/download/novadeck-win-x64-setup.exe).
+  It installs for the current user without an administrator prompt.
+- **Linux (x86_64):**
+
+  ```sh
+  curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh
+  ```
+
+  Run it as yourself, not with `sudo`. It puts the AppImage in `~/.local/share/novadeck`
+  with a menu entry and a `novadeck` command in `~/.local/bin`, checks every download
+  against the release's `SHA256SUMS`, and upgrades when run again. The AppImage needs FUSE
+  (the `fuse3` package), but not libfuse2.
+
+  On systems that block unprivileged user namespaces, as Ubuntu does from 24.04, Electron's
+  sandbox starts only with an AppArmor profile, so the script asks for your password once
+  to write `/etc/apparmor.d/novadeck-appimage-<uid>`. The profile lets a program at your
+  install's path, or at `~/Applications/novadeck.AppImage`, use user namespaces, and so
+  does everything Novadeck starts, including the programs run in its terminals. Both paths
+  are yours to write, so any program running as you could use them too. Without the
+  profile Novadeck still runs, without its sandbox, and says so in the footer. To write the
+  profile later, or for an AppImage in `~/Applications`, run the script with `--sandbox`:
+
+  ```sh
+  curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh -s -- --sandbox
+  ```
+
+Every build keeps itself up to date. Those links point to the latest stable release; until
+the first one is promoted, Novadeck's builds are prereleases on the
+[Releases page](https://github.com/mzpkdev/novadeck/releases). See
+[docs/auto-update.md](docs/auto-update.md) for how updates work.
+
 In Canvas, scroll to zoom in or out, and drag the background or an inactive terminal
 to pan. Click a terminal to activate it, then select its text, scroll its output,
 or drag its header to move it. Activating a terminal brings it in front of the
@@ -109,6 +157,12 @@ that close rather than the final quit. A system shutdown or log-off saves the sa
 on Linux and macOS it quits the app, and on Windows the window saves as soon as the
 session may end.
 
+Shells start with the runner's environment. On macOS, where an app started from the Dock
+or Finder gets no locale, a runner with none of `LANG`, `LC_ALL` and `LC_CTYPE` gives its
+shells `LANG` for the system's language and country in UTF-8 (`AppleLocale`, its `@rg=`
+region override left out), as Terminal.app does (`en_US.UTF-8` when the system has no such
+locale), so typing a character such as "ż" works in bash.
+
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
 **Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent
 to 1200×800, independent of zoom. **Compact** sets 600×400. Extreme ratios respect the
@@ -188,22 +242,26 @@ while one works). A dot on the switcher's button marks what another project has
 waiting on you, in that mark's colour; projects only working don't light it. The list
 grows to 560px before it scrolls.
 
-Drag projects into any order, or move the focused one with Alt+Up and Alt+Down. Pin up
-to nine with the pin beside a row's trash icon: pinned projects lead the list, and
-dragging one across the rule below them pins or unpins it. While any are pinned, a bar
-under the header shows them in that order, each as its number, its name and its mark
-(except the spinner, so the bar stays still while agents work); the current one is
-underlined, and a click switches to it. Drag a pin along the bar to reorder the pins, or
-focus one and press Alt+Left or Alt+Right; a drag there never unpins. The number is its
-shortcut: `Ctrl+1` to `Ctrl+9` (`Cmd` on macOS) switches to that pin, from terminal
-input too, in the desktop app (a browser keeps those keys for its tabs). While a pin has
-that number the key stays out of the terminal, where `Ctrl+3` to `Ctrl+8` would send
-`Esc` and other control codes; without one, it reaches the terminal as usual, and it's
-left alone while you rename a tab or type in another field. The bar slides in with the
-first pin and out with the last, and Zen hides it. Pins that don't fit drop off its end,
-and the switcher's dot covers them again. The order and the pins are kept in this
-browser or app (`novadeck.project-arrangement` in local storage), not shared with other
-clients of the runner.
+Drag projects into any order, or move the focused one with Alt+Up and Alt+Down. Pin up to
+nine with the pin beside a row's trash icon: pinned projects lead the list, and dragging
+one across the rule below them pins or unpins it. While any are pinned, a bar under the
+header shows them in that order, each as its number, its name and its mark (except the
+spinner, so the bar stays still while agents work); the current one is underlined, and a
+click switches to it. Drag a pin along the bar to reorder the pins, or focus one and
+press Alt+Left or Alt+Right; drag one off the bar and let go to unpin it. Drag a project
+out of the switcher and it becomes a pin, which you drag into place on the bar as you
+would any pin; let it go off the bar, or press Esc, and nothing changes. The number is
+its shortcut: `Ctrl+Shift+1` to `Ctrl+Shift+9` (`Cmd+1` to `Cmd+9` on macOS, in the
+desktop app, since a browser keeps those for its tabs) switches to that pin, from
+terminal input too. Shift keeps a bare `Ctrl+3` to `Ctrl+8` for the terminal, where they
+send `Esc`, `Ctrl+\`, `Ctrl+^` and other control codes; `Ctrl+Shift+2`, a terminal's
+`Ctrl+@`, is the pin's while there is a second, so use `Ctrl+Space` for that `NUL`.
+Without a pin of that number the key reaches the terminal as usual, and it's left alone
+while you rename a tab or type in another field. The bar slides in with the first pin and
+out with the last, and Zen hides it. Pins that don't fit drop off its end, and the
+switcher's dot covers them again. The order and the pins are kept in this browser or app
+(`novadeck.project-arrangement` in local storage), not shared with other clients of the
+runner.
 
 The Notifications panel (the bell on the sidebar rail) lists everything across every
 project and session that waits on you: questions, permissions and plans to review, and
@@ -284,7 +342,10 @@ way do not show in `codex agents`.
 Antigravity runs the hook before each model call, and Codex with your first message,
 so their sessions are known from then on; before that, Codex's title and Antigravity's
 status line tell Novadeck that their prompt is up, so other agents' messages can wake
-them. On Windows, Claude Code runs the hook through PowerShell.
+them. On Windows, Claude Code and Codex run the hook through PowerShell and Antigravity
+through cmd, which can't run your own Antigravity status line after Novadeck's: there
+Novadeck leaves yours as it is, and knows Antigravity's prompt is up only once you have
+sent it something.
 
 Removing Novadeck does not remove plugins you left connected, as packaged builds have
 no uninstaller: switch agents off first, or remove the `novadeck` plugin with the
@@ -317,21 +378,21 @@ leave Zen to show the requested panel. Zen is temporary and resets on reload.
 
 ## Keyboard shortcuts
 
-| Action                                            | macOS              | Windows and Linux    |
-| ------------------------------------------------- | ------------------ | -------------------- |
-| Find a terminal                                   | `Cmd+K`            | `Ctrl+Shift+K`       |
-| Recent terminals                                  | `Ctrl+Tab`         | `Ctrl+Tab`           |
-| Cycle backward through recent terminals           | `Ctrl+Shift+Tab`   | `Ctrl+Shift+Tab`     |
-| Toggle Focus and the previous Grid or Canvas view | `Cmd+Enter`        | `Ctrl+Shift+Enter`   |
-| Toggle Zen                                        | `Cmd+Shift+Z`      | `Ctrl+Shift+Z`       |
-| Terminal in that direction, typing there          | `Cmd+Option+↑↓←→`  | `Ctrl+Shift+↑↓←→`    |
-| New terminal                                      | `Cmd+T`            | `Ctrl+Shift+T`       |
-| New session in the current project                | `Cmd+Shift+N`      | `Ctrl+Shift+N`       |
-| Toggle terminal sidebar                           | `Cmd+Shift+1`      | `Ctrl+Shift+1`       |
-| Toggle session sidebar                            | `Cmd+Shift+2`      | `Ctrl+Shift+2`       |
-| Switch to pinned project 1 to 9                   | `Cmd+1` to `Cmd+9` | `Ctrl+1` to `Ctrl+9` |
-| Open preferences                                  | `Cmd+,`            | `Ctrl+,`             |
-| Navigate the workspace                            | `Shift+Esc`        | `Shift+Esc`          |
+| Action                                            | macOS              | Windows and Linux                |
+| ------------------------------------------------- | ------------------ | -------------------------------- |
+| Find a terminal                                   | `Cmd+K`            | `Ctrl+Shift+K`                   |
+| Recent terminals                                  | `Ctrl+Tab`         | `Ctrl+Tab`                       |
+| Cycle backward through recent terminals           | `Ctrl+Shift+Tab`   | `Ctrl+Shift+Tab`                 |
+| Toggle Focus and the previous Grid or Canvas view | `Cmd+Enter`        | `Ctrl+Shift+Enter`               |
+| Toggle Zen                                        | `Cmd+Shift+Z`      | `Ctrl+Shift+Z`                   |
+| Terminal in that direction, typing there          | `Cmd+Option+↑↓←→`  | `Ctrl+Shift+↑↓←→`                |
+| New terminal                                      | `Cmd+T`            | `Ctrl+Shift+T`                   |
+| New session in the current project                | `Cmd+Shift+N`      | `Ctrl+Shift+N`                   |
+| Toggle terminal sidebar                           | `Cmd+Shift+E`      | `Ctrl+Shift+E`                   |
+| Toggle session sidebar                            | `Cmd+Shift+S`      | `Ctrl+Shift+S`                   |
+| Switch to pinned project 1 to 9                   | `Cmd+1` to `Cmd+9` | `Ctrl+Shift+1` to `Ctrl+Shift+9` |
+| Open preferences                                  | `Cmd+,`            | `Ctrl+,`                         |
+| Navigate the workspace                            | `Shift+Esc`        | `Shift+Esc`                      |
 
 The keyboard's home is the selected terminal. A mouse click on the sidebar, a header or
 the view switch leaves typing there, and the shortcuts above work from terminal input.
@@ -589,7 +650,8 @@ sample agents' plans and artifacts), `plain`, `agents` (its seven projects each 
 an agent in a state of its own: waiting, asking, working, and two that finish done and
 failed a moment after it opens, for the project switcher), `messages` or `welcome`. The
 Demo group switches between them without reloading, and the browser tab remembers the
-last one chosen.
+last one chosen. `&turnMs=` sets how long a demo agent's turn works (1500 ms unless
+given), as a spec does that must act on the screen before the turn ends.
 
 - **All at once:** add one terminal per state, named after it, so the tabs and the
   windows in Grid and Canvas show attention, done, error, ended and the rest side by
@@ -607,7 +669,10 @@ last one chosen.
   Escape; "Slow attach" counts terminals attaching over about 3 s; each "Boot
   failure" fails the first attempt as the runner would, so a transient one retries
   on its own and the others wait for Retry (an incompatible runner only for Quit).
-  "Welcome dialog" opens the first-run dialog for connecting agents again.
+  "Welcome dialog" opens the first-run dialog for connecting agents again. "No sandbox"
+  boots as a host running without Electron's sandbox, for the footer's No sandbox chip
+  and its fix command; "No sandbox, no command" as one with no command to offer; and
+  "Sandboxed" back to normal.
 - **Chat:** arm the next send from a chat to fail as the runner turns it away: a draft
   in the agent's box, its shell mode, too tall a message, no box on screen, or no agent
   running (each with Open terminal), a request waiting (answer it first), or a doorbell
@@ -620,10 +685,16 @@ last one chosen.
 - **Crash loop:** count four crashes, which shows the footer and the dialog and fails
   the selected terminal's session's terminals; Try again clears the count and
   restarts them.
-- **Update:** have an update downloaded, then a newer one, for the footer's "Update
-  ready" and Restart, which names the version. Restart shows Restarting…, which stays
-  until Finish restart reloads the demo, as the app comes back on the new version.
-  `?demo=update` opens a variant that already has one waiting, for specs.
+- **Update:** have an update downloaded, available (the app can't install it itself), with
+  no notes, or with notes at the caps, for the notice above the footer's "Update ready" or
+  "Update available" chip. Each press offers a newer version, so the notice comes up
+  again; Later leaves the chip, which opens it again. Install failed turns the update
+  waiting from ready to available, and the notice comes up again with Download. Restart
+  now shows Restarting…, which stays until Finish restart reloads the demo, as the app
+  comes back on the new version; Download opens no page in the demo. Early builds on and
+  off set the channel Preferences' Updates switch shows once Preferences is reopened.
+  `?demo=update` and `?demo=update-available` open variants that already have one
+  waiting, for specs.
 - **Sessions:** mark the selected terminal running, then start a fresh session, to see
   the sessions panel count it.
 - **Another project:** make the agent in the first terminal of another project wait
@@ -632,7 +703,9 @@ last one chosen.
 - **Selected terminal, Agent, New terminals, Notices, Agents, Folders:** put a
   terminal, an agent, the notifications and the pickers in each of their states.
   The "Turn" actions end after 3 s, and "Agent finishes elsewhere" needs the
-  Preferences switch "Notify when an agent finishes" on.
+  Preferences switch "Notify when an agent finishes" on. Agents' "Antigravity limited"
+  connects Antigravity with the note Preferences shows where its own status line keeps
+  Novadeck's out, as on Windows.
 
 ## Repository map
 
@@ -962,11 +1035,17 @@ pnpm package:win
 
 Artifacts go to `application/host/release/`:
 
-- Linux x64: an AppImage, and `.deb` and `.rpm` packages that install to `/opt/novadeck`.
-  Building the rpm needs `rpmbuild`, from the `rpm` package on Debian and Ubuntu.
-- macOS universal: a disk image (`.dmg`) to drag the app to Applications from, and a ZIP.
-- Windows x64: a one-click installer (`-setup.exe`) that installs for the current user
-  without an administrator prompt, and a portable executable (`-portable.exe`).
+- Linux x64: `novadeck-linux-x86_64.AppImage`, built on the static type2 runtime so it
+  mounts with FUSE 3. Releases also carry `install.sh`, the installer in
+  [scripts/install](scripts/install) with the repository filled in.
+- macOS universal: `novadeck-mac-universal.dmg`, the disk image to drag the app to
+  Applications from, and `novadeck-mac-universal.zip`, which updates install from.
+- Windows x64: `novadeck-win-x64-setup.exe`, a one-click installer that installs for the
+  current user without an administrator prompt.
+
+None of the names carries a version, so `releases/latest/download/<name>` is always the
+newest stable build. The ZIP and the AppImage are not advertised: `install.sh` installs
+the AppImage, which replaces itself in place, and the app from the ZIP.
 
 Local builds are unsigned, so Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
 Releases are signed and notarized once the signing credentials are set up; see
@@ -981,7 +1060,11 @@ from source with the rest of the app.
 
 The [release workflow](.github/workflows/release.yml) publishes immutable GitHub
 prereleases from qualifying changes on `main`, with notes, checksums, and native
-packages. It smoke-tests each packaged application before upload. Conventional
+packages. It smoke-tests each packaged application before upload, installs the AppImage and
+the macOS app through `install.sh` served from a local copy of the release, and fails when
+the installed AppImage runs without Electron's sandbox. The workflow feeds
+its own repository into the update feed baked into each app and into `install.sh`, so
+moving the repository needs no edit. Conventional
 Commits determine release eligibility; versions are currently limited to patch
 increments. Documentation-only changes do not trigger a release. See
 [.release-it.json](.release-it.json) for the release configuration.
@@ -993,11 +1076,17 @@ murmur, the `--list-devices` output: during an update the runner uses an older e
 if it speaks the same interface. Both engines are built by the shared
 `application/ggml-build`.
 
-Promote tested binaries on GitHub Releases by clearing **Set as a pre-release**
-and selecting **Set as the latest release**; no rebuild is needed. For an
-interrupted release, inspect the latest workflow first. An unpublished draft or
-orphaned version tag must be cleaned up before rerunning the latest release
-workflow; published immutable releases must remain intact.
+There are two channels. Every release from `main` is a prerelease, the early channel. The
+stable channel is GitHub's latest release that is not a prerelease, which installs, the
+`releases/latest/download/` links and, by default, installed apps follow. Promote a tested
+prerelease by running the [Promote to Stable](.github/workflows/promote.yml) workflow from
+the Actions tab, with a version such as `1.2.3` or none for the newest prerelease. It
+checks that the release is published, is a prerelease, carries every package, `latest*.yml`
+and `install.sh`, and is newer than the current stable release, then clears **Set as a
+pre-release** and sets it as the latest. No rebuild happens, and GitHub still lets those
+two flags change on an immutable release. For an interrupted release, inspect the latest
+workflow first. An unpublished draft or orphaned version tag must be cleaned up before
+rerunning the latest release workflow; published immutable releases must remain intact.
 
 ## Contributing
 

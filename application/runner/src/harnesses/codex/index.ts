@@ -12,6 +12,7 @@ import {
   type Harness,
   type Install,
 } from "../harness.js"
+import { hookCommand, type Dialect } from "../hook-command.js"
 import { box } from "./box.js"
 import { decode } from "./decode.js"
 import { dialogs } from "./dialogs.js"
@@ -38,10 +39,20 @@ const events = [
   "PostToolUse",
 ]
 
+// Codex runs an Interrupt hook for 3 seconds at most, and warns at every start of a plugin
+// that asks for longer (0.159.3, `normalize_command_hook`), which hides its first screen's
+// logo behind the warning's banner. The hook reports an Interrupt within 2 seconds.
+const interruptSeconds = 3
+
+// On Windows Codex runs a hook command in its shell there, PowerShell (7 where installed),
+// not cmd (probed 2026-10-09, 0.159.3), with -NoProfile.
+const hookDialect = (platform: NodeJS.Platform): Dialect =>
+  platform === "win32" ? "powershell" : "sh"
+
+// Without Novadeck it needs nothing printed. Codex asks the person to review its hooks
+// again whenever this text changes, so `hooks.test.ts` pins it.
 const hook = (platform: NodeJS.Platform, event: string): string =>
-  platform === "win32"
-    ? `if defined NOVADECK_HOOK %NOVADECK_HOOK% codex ${event}`
-    : `[ -n "$NOVADECK_HOOK" ] && "$NOVADECK_HOOK" codex ${event} || true`
+  hookCommand(hookDialect(platform), { agent: "codex", event })
 
 // A Stop's reason continues the turn as a user-role hook prompt, which the delivery's
 // wrapper still attributes to its sender; a prompt's context is a developer message, and
@@ -82,6 +93,7 @@ export const codex = {
     { argv: ["codex", "plugin", "remove", id], optional: true },
     { argv: ["codex", "plugin", "marketplace", "remove", "novadeck"], optional: true },
   ],
+  hookDialect,
   hook,
   files: (platform, launchers) => [
     { path: join(".claude-plugin", "marketplace.json"), content: marketplace },
@@ -112,7 +124,13 @@ export const codex = {
                 ...(event === "PreToolUse" && {
                   matcher: "request_user_input|request_permissions",
                 }),
-                hooks: [{ type: "command", command: hook(platform, event), timeout: hookSeconds }],
+                hooks: [
+                  {
+                    type: "command",
+                    command: hook(platform, event),
+                    timeout: event === "Interrupt" ? interruptSeconds : hookSeconds(platform),
+                  },
+                ],
               },
             ],
           ]),

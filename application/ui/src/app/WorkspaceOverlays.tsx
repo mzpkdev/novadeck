@@ -1,4 +1,4 @@
-import { memo, Suspense, useEffect, useLayoutEffect, useSyncExternalStore } from "react"
+import { memo, Suspense, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react"
 
 import type { Backend } from "../backend/port"
 import { terminalElement } from "../interaction/dom"
@@ -77,6 +77,43 @@ const useMurmur = (murmur: Backend["murmur"]): MurmurAddonValue | undefined => {
   return murmur && state && { state, actions: murmur }
 }
 
+type UpdatesSetting = {
+  readonly early: boolean | undefined
+  readonly onChange: (early: boolean) => void
+}
+
+// Whether the desktop app follows early builds, for Preferences, asked of it each time
+// Preferences opens; undefined where the app offers no choice. The switch shows what the
+// person chose at once, as the app remembers it.
+const useEarlyBuilds = (
+  channel: NonNullable<Backend["updates"]>["channel"],
+  open: boolean,
+): UpdatesSetting | undefined => {
+  const [early, setEarly] = useState<boolean>()
+  useEffect(() => {
+    if (!open || !channel) return undefined
+    let current = true
+    channel.get().then(
+      (value) => {
+        if (current) setEarly(value === "early")
+      },
+      () => {},
+    )
+    return () => {
+      current = false
+    }
+  }, [open, channel])
+  return (
+    channel && {
+      early,
+      onChange: (next) => {
+        setEarly(next)
+        channel.set(next ? "early" : "stable")
+      },
+    }
+  )
+}
+
 // Dialogs and the terminal switcher, above the workspace.
 export const WorkspaceOverlays = memo((): React.JSX.Element => {
   const { backend, commands, navigation } = useWorkspaceServices()
@@ -115,6 +152,7 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
   )
   const searchLabel = view === "canvas" ? "Canvas" : view === "grid" ? "Grid" : "Focus"
   const { searching, settings, onExitComplete, onLoaded } = useRouteDialog(dialog, context)
+  const updates = useEarlyBuilds(backend.updates?.channel, settings)
   // Preferences shows what is installed and connected now.
   const refreshAgents = backend.agents?.refresh
   useEffect(() => {
@@ -186,6 +224,7 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
           chat={backend.conversations !== undefined}
           {...(voice ? { voice } : {})}
           {...(murmur ? { murmur } : {})}
+          {...(updates ? { updates } : {})}
           {...(backend.agents
             ? { agents: { list: agents.list, onChange: backend.agents.set } }
             : {})}
