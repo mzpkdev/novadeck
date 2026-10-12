@@ -159,7 +159,8 @@ export const FooterSandbox = ({
             <>
               <code
                 className="sandbox-command"
-                // Scrolls sideways, so the keyboard needs to reach it.
+                // A long unbroken run, such as the URL, scrolls sideways in a narrow
+                // panel, so the keyboard needs to reach it.
                 tabIndex={0}
                 role="group"
                 aria-label="Command to turn on the sandbox"

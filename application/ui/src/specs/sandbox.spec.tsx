@@ -120,6 +120,9 @@ describe("the sandbox notice", () => {
       await notice().getByRole("button", { name: "Copy" }).click()
       await expect.element(notice().getByRole("button", { name: "Copy failed" })).toBeVisible()
       await expect.element(notice().getByText("Select the command and copy it.")).toBeVisible()
+      expect(notice().element().querySelector("[aria-live=polite]")?.textContent).toBe(
+        "Copy failed. Select the command to copy it.",
+      )
       await press("{Escape}")
       await expect.element(notice()).not.toBeInTheDocument()
       await expect.element(chip()).toHaveFocus()

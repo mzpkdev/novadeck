@@ -30,7 +30,7 @@
 #
 # Test hooks, not for use otherwise:
 #
-#   NOVADECK_INSTALL_SBIN_DIRS        The folders searched, after the PATH, for
+#   NOVADECK_INSTALL_SBIN_DIRS        The folders searched, before the PATH, for
 #                                     apparmor_parser, in place of "/sbin /usr/sbin".
 #   NOVADECK_INSTALL_USERNS_SYSCTL    The file that says whether unprivileged user
 #                                     namespaces are restricted, in place of
@@ -389,8 +389,8 @@ install_mac() {
   staging="$(mktemp -d "$folder/.novadeck-install.XXXXXX")" || fail "could not create a folder in $folder."
   ditto -x -k novadeck-mac-universal.zip "$staging" || fail "could not unpack novadeck-mac-universal.zip."
   [ -d "$staging/novadeck.app" ] || fail "novadeck-mac-universal.zip holds no novadeck.app."
-  # Between the two renames the old copy is only in the folder the exit removes, so an
-  # interrupt waits until both are done.
+  # Between the two renames the old copy is only in the folder the exit removes, so
+  # interrupts are ignored until both are done.
   trap '' INT HUP QUIT TERM
   if [ -e "$app" ] && ! mv "$app" "$staging/previous.app"; then
     say "If macOS said your terminal was prevented from modifying apps, allow it under System"
