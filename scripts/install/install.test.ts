@@ -116,8 +116,13 @@ type Scenario = {
   mac?: {
     /** Whether codesign finds a Developer ID signature on the installed app. */
     signed?: boolean
-    /** Where a running Novadeck runs from: the folder to install to, or another. */
-    running?: "installed" | "elsewhere"
+    /**
+     * Where a running Novadeck runs from: the folder to install to, another, or a folder
+     * whose path matches the one to install to only when read as a regex.
+     */
+    running?: "installed" | "elsewhere" | "lookalike"
+    /** The name of the folder that stands in for /Applications. */
+    systemName?: string
     /** Which renames fail: moving the old app aside, the new one in, or that and putting the old one back. */
     mv?: "aside" | "forward" | "both"
     /** Whether removing the folder the new app was unpacked in fails. */
@@ -184,7 +189,7 @@ const run = (scenario: Scenario = {}) => {
     if (tool === "rm" && mac?.rmFails) continue
     symlinkSync(real(tool), join(bin, tool))
   }
-  const applications = join(root, "Applications")
+  const applications = join(root, scenario.mac?.systemName ?? "Applications")
   if (mac) {
     // ditto unpacks the archive into a bundle whose executable holds the archive's text.
     shim(
@@ -202,14 +207,17 @@ ${mac.empty ? 'mkdir -p "$4"' : `mkdir -p "$4/novadeck.app/Contents/MacOS" && cp
         : `echo "$3: code object is not signed at all" >&2; exit 1`,
     )
     // A process list, with the one Novadeck that runs, if any, by its executable's path.
-    const running =
-      mac.running === "installed"
-        ? `${applications}/novadeck.app/Contents/MacOS/novadeck --type=browser`
-        : `/Volumes/novadeck/novadeck.app/Contents/MacOS/novadeck`
+    const running = {
+      installed: `${applications}/novadeck.app/Contents/MacOS/novadeck --type=browser`,
+      elsewhere: `/Volumes/novadeck/novadeck.app/Contents/MacOS/novadeck`,
+      // "Apps+(1)" as a regex matches "Appss1".
+      lookalike: `${join(root, "Appss1")}/novadeck.app/Contents/MacOS/novadeck`,
+    }[mac.running ?? "elsewhere"]
     shim(
       bin,
       "ps",
-      `echo "/sbin/launchd"${mac.running ? `\necho "${running}"` : ""}\necho "awk ${applications}/novadeck.app/Contents/MacOS/"`,
+      // printf, as dash's echo would read a backslash in a path as an escape.
+      `printf '%s\\n' /sbin/launchd${mac.running ? ` '${running}'` : ""} 'awk ${applications}/novadeck.app/Contents/MacOS/'`,
     )
     const failing = {
       aside: "*/previous.app",
@@ -772,6 +780,14 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       expect(result.status).toBe(1)
       expect(result.stderr).toContain("Quit it and run this again")
       expect(readFileSync(executable(result.applications), "utf8")).toBe("old")
+    })
+
+    it("matches a running copy's path as plain text", () => {
+      const lookalike = run({ mac: { systemName: "Apps+(1)", running: "lookalike" } })
+      expect(lookalike.status).toBe(0)
+      const running = run({ mac: { systemName: "Apps+(1)\\n", running: "installed" } })
+      expect(running.status).toBe(1)
+      expect(running.stderr).toContain("Quit it and run this again")
     })
 
     it("installs while a copy runs from somewhere else, such as the disk image", () => {
