@@ -12,7 +12,7 @@ import { createDeck, type Deck } from "./deck.js"
 import { installHarness } from "./install.js"
 import { startFakeModel, type FakeModel } from "./model/server.js"
 import { reap } from "./reap.js"
-import { createSandbox, type Sandbox } from "./sandbox.js"
+import { createSandbox, keychainAsks, type Sandbox, unsuffixedClaudeItem } from "./sandbox.js"
 import { unsupported } from "./support.js"
 import { startTrace, tracesAll, tracing } from "./trace.js"
 import { tripwire } from "./tripwire.js"
@@ -156,6 +156,12 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
         ...(model.rejection() ? [model.rejection()!] : []),
         ...changed().map((path) => `the developer's harness home changed: ${path}`),
         ...harnessLogins(setups).map((target) => `a login appeared in ${loginStore}: ${target}`),
+        ...keychainAsks(sandbox)
+          .filter((service) => unsuffixedClaudeItem.test(service))
+          .map(
+            (service) =>
+              `a harness asked the macOS Keychain for the person's own ${service}, which the sandbox refused`,
+          ),
         ...leftovers.map((one) => `a process outlived the deck in the sandbox: ${one}`),
       ]
       await model.close()

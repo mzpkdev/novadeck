@@ -1,11 +1,13 @@
 import { execFileSync } from "node:child_process"
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, delimiter, dirname, join } from "node:path"
@@ -43,6 +45,11 @@ export type Sandbox = {
    * `ps`'s start convert to.
    */
   readonly started: number
+  /**
+   * On macOS, where the sandbox's `security` writes the Keychain service each program
+   * asked it for, one a line (see `keychainGuard`); none elsewhere.
+   */
+  readonly keychainLog?: string
 }
 
 const windows = process.platform === "win32"
@@ -259,6 +266,53 @@ const sandboxName = (): string =>
   process.env.NOVADECK_E2E_SPACED === "1" ? "novadeck e2e-" : "novadeck-e2e-"
 
 /**
+ * Claude Code's Keychain items with no folder's suffix: the person's own login, never one a
+ * Claude Code given the sandbox's `CLAUDE_CONFIG_DIR` should ask for, as it names each
+ * item `-` and 8 hex digits of that folder's SHA-256 after it (`harness-coverage.md`).
+ */
+export const unsuffixedClaudeItem = /^Claude Code(?!.*-[0-9a-f]{8}$)/
+
+/**
+ * On macOS, a `security` of the sandbox's own, on its PATH before the system's, as Claude
+ * Code calls it by name: it writes each service asked for to `log`, answers "not found"
+ * (exit 44) for one of Claude Code's items with no folder's suffix, the person's own
+ * login, and passes the rest to `/usr/bin/security`. A Claude Code that stopped suffixing
+ * its items is then refused the person's login and fails its test, in CI too, which holds
+ * none. Antigravity calls `/usr/bin/security` by its path, which this can't see; its
+ * login is refused as Windows' is (`credentials.ts`).
+ */
+const keychainGuard = (folder: string, log: string): void => {
+  const program = join(folder, "security")
+  writeFileSync(
+    program,
+    `#!/bin/sh
+service=
+previous=
+for argument in "$@"; do
+  [ "$previous" = "-s" ] && service=$argument
+  previous=$argument
+done
+printf '%s\\n' "$service" >> ${shellQuote(log)}
+case "$service" in
+  "Claude Code"*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+  "Claude Code"*) exit 44 ;;
+esac
+exec /usr/bin/security "$@"
+`,
+  )
+  chmodSync(program, 0o755)
+}
+
+// A word sh reads as the text itself, whatever it holds.
+const shellQuote = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`
+
+/** The Keychain services the sandbox's programs asked for, in order (see `keychainGuard`). */
+export const keychainAsks = (sandbox: Pick<Sandbox, "keychainLog">): readonly string[] => {
+  if (!sandbox.keychainLog || !existsSync(sandbox.keychainLog)) return []
+  return readFileSync(sandbox.keychainLog, "utf8").split("\n").filter(Boolean)
+}
+
+/**
  * Makes a sandbox under the system's temporary folder; the caller removes `root`. Node
  * reaches PATH through a folder of its own, as the one it is installed in may hold global
  * installs of the very harnesses under test.
@@ -277,6 +331,9 @@ export const createSandbox = (options: SandboxOptions): Sandbox => {
   const node = folder("node")
   symlinkSync(process.execPath, join(node, basename(process.execPath)))
   const system = windows ? windowsEnvironment(home, folder) : undefined
+  const keychain = process.platform === "darwin" ? folder("keychain") : undefined
+  const keychainLog = keychain && join(runtime, "keychain.log")
+  if (keychain && keychainLog) keychainGuard(keychain, keychainLog)
   const proxy = options.proxy
   const loopback = "127.0.0.1,localhost"
   const env: Record<string, string> = {
@@ -287,7 +344,12 @@ export const createSandbox = (options: SandboxOptions): Sandbox => {
     SHELL: windows ? (system?.env.ComSpec ?? "cmd.exe") : "/bin/bash",
     TERM: "xterm-256color",
     LANG: "C.UTF-8",
-    PATH: [...options.bins, node, ...(system?.path ?? ["/usr/bin", "/bin"])].join(delimiter),
+    PATH: [
+      ...options.bins,
+      node,
+      ...(keychain ? [keychain] : []),
+      ...(system?.path ?? ["/usr/bin", "/bin"]),
+    ].join(delimiter),
     TMPDIR: folder("tmp"),
     XDG_CONFIG_HOME: folder("home", ".config"),
     XDG_DATA_HOME: folder("home", ".local", "share"),
@@ -309,7 +371,7 @@ export const createSandbox = (options: SandboxOptions): Sandbox => {
     // Node's own fetch takes the proxy only when told to.
     NODE_USE_ENV_PROXY: "1",
   }
-  return { root, home, project, env, started }
+  return { root, home, project, env, started, ...(keychainLog && { keychainLog }) }
 }
 
 // The clock ticks a second that /proc counts processes' start in.
