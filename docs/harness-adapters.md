@@ -116,8 +116,8 @@ application/runner/src/harnesses/
 ```
 
 An adapter imports only `@novadeck/harness-core`, `@novadeck/protocol`, Node and its
-own files, never the runner's modules or another adapter; `.oxlintrc.json` enforces it
-for everything under `harnesses/`. A test that needs the runner's internals (the
+own files, never the runner's modules or another adapter, and harness-core depends on
+neither; `.oxlintrc.json` enforces both. A test that needs the runner's internals (the
 activity machine, say) stays in the runner and reads the adapter's fixtures from its
 package.
 

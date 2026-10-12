@@ -52,7 +52,8 @@ export const harnesses = [
   readonly secretPaths: readonly string[]
 }[]
 
-type HarnessId = (typeof harnesses)[number]["id"]
+/** A harness's id: the agent names the protocol speaks. */
+export type HarnessId = (typeof harnesses)[number]["id"]
 
 /** The harness ids, in table order. */
 export const harnessIds = harnesses.map(({ id }) => id) as unknown as readonly [

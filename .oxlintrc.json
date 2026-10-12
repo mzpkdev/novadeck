@@ -20,7 +20,12 @@
     "prefer-arrow-callback": "error",
     "react/react-in-jsx-scope": "off",
     "typescript/consistent-type-definitions": ["error", "type"],
-    "vitest/valid-expect": ["error", { "maxArgs": 2 }]
+    "vitest/valid-expect": [
+      "error",
+      {
+        "maxArgs": 2
+      }
+    ]
   },
   "overrides": [
     {
@@ -43,20 +48,20 @@
             ],
             "patterns": [
               {
-                "group": ["@novadeck/runner/*"],
+                "group": ["@novadeck/runner/**"],
                 "message": "An adapter must not depend on the runner."
               },
               {
                 "group": [
                   "@novadeck/harness-codex",
-                  "@novadeck/harness-codex/*",
+                  "@novadeck/harness-codex/**",
                   "@novadeck/harness-agy",
-                  "@novadeck/harness-agy/*"
+                  "@novadeck/harness-agy/**"
                 ],
                 "message": "An adapter must not import another adapter."
               },
               {
-                "group": ["../**"],
+                "group": ["../**", "./../**"],
                 "message": "An adapter's sources sit flat in src: nothing above it is its own."
               }
             ]
@@ -78,20 +83,20 @@
             ],
             "patterns": [
               {
-                "group": ["@novadeck/runner/*"],
+                "group": ["@novadeck/runner/**"],
                 "message": "An adapter must not depend on the runner."
               },
               {
                 "group": [
                   "@novadeck/harness-claude",
-                  "@novadeck/harness-claude/*",
+                  "@novadeck/harness-claude/**",
                   "@novadeck/harness-agy",
-                  "@novadeck/harness-agy/*"
+                  "@novadeck/harness-agy/**"
                 ],
                 "message": "An adapter must not import another adapter."
               },
               {
-                "group": ["../**"],
+                "group": ["../**", "./../**"],
                 "message": "An adapter's sources sit flat in src: nothing above it is its own."
               }
             ]
@@ -113,21 +118,54 @@
             ],
             "patterns": [
               {
-                "group": ["@novadeck/runner/*"],
+                "group": ["@novadeck/runner/**"],
                 "message": "An adapter must not depend on the runner."
               },
               {
                 "group": [
                   "@novadeck/harness-claude",
-                  "@novadeck/harness-claude/*",
+                  "@novadeck/harness-claude/**",
                   "@novadeck/harness-codex",
-                  "@novadeck/harness-codex/*"
+                  "@novadeck/harness-codex/**"
                 ],
                 "message": "An adapter must not import another adapter."
               },
               {
-                "group": ["../**"],
+                "group": ["../**", "./../**"],
                 "message": "An adapter's sources sit flat in src: nothing above it is its own."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["harnesses/core/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "@novadeck/runner",
+                "message": "Harness core must not depend on the runner."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["@novadeck/runner/**"],
+                "message": "Harness core must not depend on the runner."
+              },
+              {
+                "group": [
+                  "@novadeck/harness-claude",
+                  "@novadeck/harness-claude/**",
+                  "@novadeck/harness-codex",
+                  "@novadeck/harness-codex/**",
+                  "@novadeck/harness-agy",
+                  "@novadeck/harness-agy/**"
+                ],
+                "message": "Harness core must not depend on an adapter."
               }
             ]
           }

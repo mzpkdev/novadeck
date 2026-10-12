@@ -109,7 +109,7 @@ const typeOnlyPackages: Record<string, readonly string[]> = {
   "app/commands/": [],
   "interaction/": [],
 }
-// The one file in model/ that reads the wire package: its data table of harnesses.
+// The one file in model/ that reads the wire package: its data-only table of harnesses.
 const harnessTable = "model/harnesses.ts"
 const testLayers = new Set(["specs/", "test/", "test.ts"])
 const vendors: Record<string, readonly string[]> = {
@@ -189,7 +189,7 @@ const importViolation = (file: string, layer: string | undefined) => {
   const allowed = layer ? allowedFor(file, layer) : []
   return ({ specifier, typeOnly }: { specifier: string; typeOnly: boolean }): string[] => {
     if (!specifier.startsWith(".")) {
-      if (file === harnessTable && specifier === "@novadeck/protocol") return []
+      if (file === harnessTable && specifier === "@novadeck/protocol/harnesses") return []
       if (isTest(file) || (layer && (adapterOf(layer) || testLayers.has(layer)))) return []
       const limited = layer ? typeOnlyPackages[layer] : undefined
       const ok = limited
