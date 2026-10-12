@@ -1418,14 +1418,14 @@ again.
    `requestId`.
 
 5. **Ringing a new session at its prompt:** the Ready state. Built: `atPrompt` in Claude
-   Code's decoder (`harnesses/claude/decode.ts`), `ready` on a new root
+   Code's decoder (`harnesses/claude/src/decode.ts`), `ready` on a new root
    (`harnesses/roots.ts`), and the state and its untouched rule in
    `messaging/delivery.ts`. A `resume` and a `fork` count too, so a Claude Code the
    runner restores is rung like one started anew. For parity, Codex and Antigravity
    tell their prompt the same way before any session binds (`prompt-shown`): Codex's
-   title (`harnesses/codex/title.ts`, set by its shim, counted only while a `codex`
-   process holds the foreground and its hooks are trusted, `harnesses/codex/trust.ts`),
-   Antigravity's status line (`harnesses/agy/decode.ts`); the terminal manager tells
+   title (`harnesses/codex/src/title.ts`, set by its shim, counted only while a `codex`
+   process holds the foreground and its hooks are trusted, `harnesses/codex/src/trust.ts`),
+   Antigravity's status line (`harnesses/agy/src/decode.ts`); the terminal manager tells
    messaging (`Messaging.shown`), which keeps the agent's messages for the session to
    come.
 

@@ -759,9 +759,9 @@ error in tool execution`, Claude Code's other `<tool_use_error>`s such as a miss
 ## Probe fixtures
 
 The probes under `src/e2e/probes/` record what a real harness showed, and the adapters'
-tests replay it from `harnesses/<agent>/fixtures/*.probe.json` and
+tests replay it from `harnesses/<agent>/src/fixtures/*.probe.json` and
 `terminals/fixtures/doorbell-<agent>.json`. Every screen in them has one shape, a
-`ScreenRecord` (`src/testing/probes.ts`), the one the input-box probe first used:
+`ScreenRecord` (`harnesses/core/src/testing/probes.ts`), the one the input-box probe first used:
 
 ```json
 {
@@ -779,7 +779,7 @@ tests replay it from `harnesses/<agent>/fixtures/*.probe.json` and
 - `bright` holds only the rows whose dim cells blank some of their text (a placeholder
   suggestion), as they read undimmed; every other row reads as `rows` does.
 - `columns`, `cursor` and `bracketedPaste` are optional, kept where the probe knew them.
-  Read back, they default as `testing/screens.ts` does: 80 columns, the cursor on the last
+  Read back, they default as `harnesses/core/src/testing/screens.ts` does: 80 columns, the cursor on the last
   row that shows anything, bracketed paste on. `styles` is a probe's note on each row's
   style runs, for a reader's eyes; no test reads it.
 - A screen sits wherever its fixture needs it (`screens.wide`, `steps[].screen`, a doorbell
