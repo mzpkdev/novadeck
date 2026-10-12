@@ -170,7 +170,7 @@ const budget = {
 // Chinese and Korean up to 2.2, rare characters up to 3, emoji 2.6 to 2.9 and rare ones up to 4.
 // A plain word (lower case, or capitalised) is counted at 0.65 a character, as short random
 // words cost about that, and other ASCII and digits at 1.
-const plainWord = /^[!-/:-@[-`{-~]{0,2}[A-Z]?[a-z']+[!-/:-@[-`{-~]{0,3}$/
+const plainWord = /^[!-&(-/:-@[-`{-~]{0,2}[A-Z]?[a-z']+[!-/:-@[-`{-~]{0,3}$/
 const characterCost = (character: string): number => {
   const code = character.codePointAt(0) ?? 0
   if (code < 128) {

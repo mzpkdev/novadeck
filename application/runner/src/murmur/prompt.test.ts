@@ -172,6 +172,8 @@ describe("asking for a gist", () => {
       [Array.from({ length: 1600 }, (_, index) => `L${index}\n`).join(""), 1],
       [Array.from({ length: 1400 }, (_, index) => `ok ${index % 99}\n`).join(""), 0.83],
       ["q ".repeat(4000), 0.51],
+      ["'Kv ".repeat(2000), 0.76],
+      ["'Kv\n".repeat(2000), 1],
       [Array.from({ length: 2000 }, (_, index) => `${"qZx'"[index % 4]}Kv\n`).join(""), 1],
     ]
 
