@@ -111,6 +111,65 @@ const handlerOf = (
   return { file: routerFile, line }
 }
 
+// The text from `from` to the close of the first block (or call) that opens at paren depth 0.
+const blockFrom = (source: string, from: number, open: "{" | "("): string => {
+  let paren = 0
+  let start = -1
+  let depth = 0
+  for (let i = from; i < source.length; i++) {
+    const ch = source[i]!
+    if (start === -1) {
+      if (ch === "(") paren += 1
+      else if (ch === ")") paren -= 1
+      const typeBrace = /[<:|,&;=]\s*$/.test(source.slice(Math.max(0, i - 4), i))
+      if (ch === open && (open === "(" || (paren === 0 && !typeBrace))) {
+        start = i
+        depth = 1
+        if (open === "(") paren = 0
+      }
+      continue
+    }
+    if (ch === "{" || ch === "(") depth += 1
+    else if (ch === "}" || ch === ")") depth -= 1
+    if (depth === 0) return source.slice(start, i + 1)
+  }
+  return start === -1 ? "" : source.slice(start)
+}
+
+const errorPattern = /new (?:DomainError|ORPCError)\(\s*"([A-Z_]+)"|\berrors\.([A-Z_]+)\b/g
+
+// Codes the procedure raises: in its router handler and in the method that handler calls.
+// Helpers further down the call chain are not followed.
+const errorsOf = (
+  anchors: Anchors,
+  router: string,
+  handler: Anchor | null,
+  id: string,
+  known: Set<string>,
+  routerWide: string[],
+): string[] => {
+  const texts: string[] = []
+  const at = router.indexOf(`.${id}.handler(`)
+  if (at !== -1) texts.push(blockFrom(router, at + id.length + 1, "("))
+  if (handler && handler.line !== null && handler.file !== routerFile) {
+    const source = anchors.read(handler.file)
+    if (source) {
+      const offset = source
+        .split("\n")
+        .slice(0, handler.line - 1)
+        .join("\n").length
+      texts.push(blockFrom(source, offset, "{"))
+    }
+  }
+  const found = texts.flatMap((text) =>
+    [...text.matchAll(errorPattern)].map((match) => match[1] ?? match[2]!),
+  )
+  const authorized = router.includes(`authorized.${id}.handler(`)
+  return [...new Set([...(authorized ? routerWide : []), ...found])].filter((code) =>
+    known.has(code),
+  )
+}
+
 const callersOf = (anchors: Anchors, uiFiles: string[], id: string): Anchor[] => {
   const pattern = new RegExp(`\\.${id.replace(".", "\\.")}\\(`)
   return uiFiles.flatMap((file) => {
@@ -145,7 +204,7 @@ export const extractApi = async (repo: string, anchors: Anchors): Promise<Api> =
   const { contract } = await import("@novadeck/protocol")
   const source = anchors.read(contractFile) ?? ""
   const router = anchors.read(routerFile) ?? ""
-  const known = services(router)
+  const routed = services(router)
   const runnerFiles = sourceFiles(repo, "application/runner/src")
   // The protocol's own client calls some procedures (write, resize, ack) for the UI.
   const callerFiles = [
@@ -153,10 +212,17 @@ export const extractApi = async (repo: string, anchors: Anchors): Promise<Api> =
     ...sourceFiles(repo, "application/protocol/src").filter((file) => file !== contractFile),
   ]
 
+  const apiErrors = extractErrors(anchors, source)
+  const known = new Set(apiErrors.map((each) => each.code))
+  // What the `authorized` middleware raises for every procedure behind it.
+  const middleware = blockFrom(router, router.indexOf("const authorized"), "(")
+  const routerWide = [...middleware.matchAll(/new ORPCError\("([A-Z_]+)"/g)].map((m) => m[1]!)
+
   const procedures = walk(contract).map(({ path, definition }): Procedure => {
     const id = path.join(".")
     const name = path[path.length - 1]!
     const stream = streamed(definition.outputSchema)
+    const handler = handlerOf(repo, anchors, runnerFiles, router, routed, id)
     return {
       id,
       namespace: path.slice(0, -1).join("."),
@@ -165,13 +231,14 @@ export const extractApi = async (repo: string, anchors: Anchors): Promise<Api> =
       input: toJson(definition.inputSchema),
       output: toJson(stream ? stream.yields : definition.outputSchema),
       anchor: { file: contractFile, line: findProcedureLine(source, path) },
-      handler: handlerOf(repo, anchors, runnerFiles, router, known, id),
+      handler: handler,
+      errors: errorsOf(anchors, router, handler, id, known, routerWide),
       callers: callersOf(anchors, callerFiles, id),
       area: null,
     }
   })
 
-  return { procedures, errors: extractErrors(anchors, source) }
+  return { procedures, errors: apiErrors }
 }
 
 // The `name:` line inside its namespace's block, not an earlier procedure of the same name.

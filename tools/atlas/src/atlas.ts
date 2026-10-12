@@ -96,6 +96,9 @@ export type Procedure = {
   anchor: Anchor
   // The runner code that implements it.
   handler: Anchor | null
+  // Error codes it can raise: the router's, and those thrown in its handler method. Helpers
+  // deeper down may raise others.
+  errors: string[]
   // UI (or other) code that calls it.
   callers: Anchor[]
   area: string | null

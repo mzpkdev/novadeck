@@ -1,249 +1,304 @@
-import { Circle, Search, Square } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { ChevronDown, ChevronRight, Search } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode } from "react"
+import { useLocation, useNavigate } from "react-router"
 
 import { areaById, atlas, groupBy, procedureById } from "../atlas-data.ts"
 import type { Procedure } from "../atlas.ts"
-import { AnchorIcon, AnchorLink } from "../components/anchor.tsx"
-import { SchemaView } from "../components/schema.tsx"
-import { useFocus } from "../components/use-focus.ts"
-import { AreaChip, Label, SidePanel, areaOfFile, groupColor } from "./api/shared.tsx"
+import { AnchorLink } from "../components/anchor.tsx"
+import { CodePane } from "./api/code.tsx"
+import { isEmpty } from "./api/model.ts"
+import { ParamsTable } from "./api/params.tsx"
+import { AreaChip } from "./api/shared.tsx"
 
-import "./visual-tokens.css"
+const KindBadge = ({ kind, large = false }: { kind: Procedure["kind"]; large?: boolean }) => (
+  <span
+    className={`inline-flex shrink-0 items-center justify-center rounded-sm font-mono font-semibold uppercase tracking-wide ${
+      large ? "h-5 px-2 text-[10.5px]" : "h-4 w-[44px] text-[9px]"
+    } ${
+      kind === "call"
+        ? "border border-[var(--color-line-strong)] text-muted"
+        : "border border-transparent bg-[var(--color-line-strong)] text-[var(--color-paper)]"
+    }`}
+  >
+    {kind}
+  </span>
+)
 
-const Tile = ({
-  procedure: p,
+const NavRow = ({
+  p,
   selected,
-  dim,
   onSelect,
 }: {
-  procedure: Procedure
+  p: Procedure
   selected: boolean
-  dim: boolean
   onSelect: (id: string) => void
 }) => {
-  const { ref, focused } = useFocus<HTMLButtonElement>(p.id)
+  const ref = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    if (focused) onSelect(p.id)
-  }, [focused, onSelect, p.id])
-  const stream = p.kind === "stream"
+    if (selected) ref.current?.scrollIntoView({ block: "nearest" })
+  }, [selected])
   return (
     <button
       ref={ref}
-      id={p.id}
       type="button"
-      title={`${p.id} (${p.kind})`}
       onClick={() => onSelect(p.id)}
-      className={`size-4 cursor-pointer border-[1.5px] p-0 transition-opacity ${stream ? "rounded-full" : "rounded-[2px]"} ${
+      className={`flex w-full cursor-pointer items-center gap-2 border-l-2 py-[5px] pl-5 pr-3 text-left ${
         selected
-          ? "border-accent bg-accent"
-          : `border-[var(--color-line-strong)] hover:border-accent ${stream ? "bg-transparent" : "bg-[var(--color-line-strong)]"}`
-      } ${dim ? "opacity-20" : ""}`}
-    />
+          ? "border-accent bg-raised text-accent"
+          : "border-transparent hover:bg-raised hover:text-accent"
+      }`}
+    >
+      <KindBadge kind={p.kind} />
+      <span className="min-w-0 truncate font-mono text-[12.5px]">{p.name}</span>
+    </button>
   )
 }
 
-// Which area calls which namespace, and how often: a dot matrix, dot area = call sites.
-const CallMatrix = ({
-  namespaces,
-  selectedNs,
-}: {
-  namespaces: string[]
-  selectedNs: string | null
-}) => {
-  const { lines, peak } = useMemo(() => {
-    const counts = new Map<string, Map<string, number>>()
-    for (const p of atlas.api.procedures)
-      for (const c of p.callers) {
-        const area = areaOfFile(c.file)
-        if (!area) continue
-        const row = counts.get(area) ?? new Map<string, number>()
-        row.set(p.namespace, (row.get(p.namespace) ?? 0) + 1)
-        counts.set(area, row)
-      }
-    const built = [...counts]
-      .map(([area, row]) => ({ area, row, total: [...row.values()].reduce((a, b) => a + b, 0) }))
-      .toSorted((a, b) => b.total - a.total)
-    const top = Math.max(1, ...built.flatMap((r) => [...r.row.values()]))
-    return { lines: built, peak: top }
-  }, [])
-  const CELL = 30
+const ErrorCodes = () => {
+  const [open, setOpen] = useState(false)
   return (
-    <div className="overflow-auto">
-      <div className="inline-block">
-        <div className="flex pl-40">
-          {namespaces.map((ns) => (
-            <div key={ns} className="relative" style={{ width: CELL, height: 64 }}>
-              <span
-                className={`absolute bottom-1 left-1/2 origin-bottom-left -rotate-60 whitespace-nowrap font-mono text-[11px] ${selectedNs === ns ? "text-accent" : "text-muted"}`}
-              >
-                {ns}
-              </span>
-            </div>
+    <div className="border-t border-line">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full cursor-pointer items-center gap-1.5 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-muted hover:text-fg"
+      >
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        All error codes
+        <span className="ml-auto font-mono font-normal">{atlas.api.errors.length}</span>
+      </button>
+      {open ? (
+        <ul className="pb-2">
+          {atlas.api.errors.map((e) => (
+            <li
+              key={e.code}
+              title={e.note ?? undefined}
+              className="flex items-baseline justify-between gap-2 px-3 py-0.5 font-mono text-[11.5px]"
+            >
+              <span className="truncate">{e.code}</span>
+              <span className="text-muted">{e.status}</span>
+            </li>
           ))}
-        </div>
-        {lines.map(({ area, row }) => (
-          <div key={area} className="flex items-center border-t border-line">
-            <div className="flex w-40 shrink-0 items-center gap-1.5 pr-2 text-[12px]">
-              <span className="size-1.5 rounded-full" style={{ background: groupColor(area) }} />
-              <span className="truncate">{areaById.get(area)?.title ?? area}</span>
-            </div>
-            {namespaces.map((ns) => {
-              const n = row.get(ns) ?? 0
-              const d = n ? 5 + 17 * Math.sqrt(n / peak) : 0
-              return (
-                <div
-                  key={ns}
-                  className="flex items-center justify-center"
-                  style={{ width: CELL, height: 26 }}
-                  title={n ? `${areaById.get(area)?.title} calls ${ns}: ${n}` : undefined}
-                >
-                  {n ? (
-                    <span
-                      className={`rounded-full ${selectedNs === ns ? "bg-accent" : "bg-[var(--color-line-strong)]"}`}
-                      style={{ width: d, height: d }}
-                    />
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        ))}
-      </div>
+        </ul>
+      ) : null}
     </div>
   )
 }
 
-const ProcedurePanel = ({ p, onClose }: { p: Procedure; onClose: () => void }) => {
-  const callerAreas = [...new Set(p.callers.map((c) => areaOfFile(c.file)).filter(Boolean))]
+const Nav = ({ selected, onSelect }: { selected: string; onSelect: (id: string) => void }) => {
+  const [filter, setFilter] = useState("")
+  const [closed, setClosed] = useState<Set<string>>(new Set())
+  const terms = filter.toLowerCase().split(/\s+/).filter(Boolean)
+  const searching = terms.length > 0
+  const groups = useMemo(() => {
+    const matches = (p: Procedure) => {
+      const hay =
+        `${p.id} ${p.namespace} ${p.area ?? ""} ${areaById.get(p.area ?? "")?.title ?? ""}`.toLowerCase()
+      return terms.every((t) => hay.includes(t))
+    }
+    return groupBy(atlas.api.procedures, (p) => p.namespace)
+      .map(([ns, list]): [string, Procedure[]] => [ns, list.filter(matches)])
+      .filter(([, list]) => list.length)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter])
   return (
-    <SidePanel
-      title={
-        <>
-          {p.id} <span className="ml-1 font-sans text-[11px] font-normal text-muted">{p.kind}</span>
-        </>
-      }
-      onClose={onClose}
-      className="w-96"
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <AreaChip id={p.area} />
-        <span className="flex items-center gap-1 text-[11px] text-muted" title="contract">
-          contract <AnchorIcon anchor={p.anchor} />
-        </span>
-        <span className="flex items-center gap-1 text-[11px] text-muted" title="handler">
-          handler {p.handler ? <AnchorIcon anchor={p.handler} /> : <span>none</span>}
-        </span>
+    <nav className="flex h-full w-[248px] shrink-0 flex-col border-r border-[var(--color-outline)] bg-panel">
+      <div className="border-b border-line p-3">
+        <label className="relative block">
+          <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted" />
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Search procedures"
+            className="w-full rounded-sm border border-[var(--color-outline)] bg-raised py-1 pl-7 pr-2 text-[12.5px] outline-none placeholder:text-muted focus:border-accent"
+          />
+        </label>
       </div>
-      <div>
-        <Label>Callers {p.callers.length}</Label>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {callerAreas.map((a) => (
-            <AreaChip key={a} id={a} />
-          ))}
-          {p.callers.map((c) => (
-            <AnchorIcon key={`${c.file}:${c.line}`} anchor={c} />
-          ))}
-          {p.callers.length === 0 ? <span className="text-[12px] text-muted">none</span> : null}
-        </div>
-        {p.handler ? (
-          <div className="mt-1 text-[11px]">
-            <AnchorLink anchor={p.handler} />
-          </div>
+      <div className="min-h-0 flex-1 overflow-auto py-1">
+        {groups.map(([ns, list]) => {
+          const open = searching || !closed.has(ns)
+          return (
+            <div key={ns}>
+              <button
+                type="button"
+                onClick={() =>
+                  setClosed((prev) => {
+                    const next = new Set(prev)
+                    if (!next.delete(ns)) next.add(ns)
+                    return next
+                  })
+                }
+                className="flex w-full cursor-pointer items-center gap-1 px-3 pb-1 pt-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted hover:text-fg"
+              >
+                {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                {ns}
+                <span className="ml-auto font-mono font-normal">{list.length}</span>
+              </button>
+              {open
+                ? list.map((p) => (
+                    <NavRow key={p.id} p={p} selected={p.id === selected} onSelect={onSelect} />
+                  ))
+                : null}
+            </div>
+          )
+        })}
+        {groups.length === 0 ? (
+          <div className="px-3 py-4 text-[12px] text-muted">No matches</div>
         ) : null}
       </div>
-      <div>
-        <Label>Input</Label>
-        <SchemaView schema={p.input} />
-      </div>
-      <div>
-        <Label>Output</Label>
-        <SchemaView schema={p.output} />
-      </div>
-    </SidePanel>
+      <ErrorCodes />
+    </nav>
+  )
+}
+
+const Section = ({
+  title,
+  hint,
+  children,
+}: {
+  title: string
+  hint?: ReactNode
+  children: ReactNode
+}) => (
+  <section className="mt-7">
+    <div className="mb-2 flex items-baseline gap-3 border-b border-line pb-1.5">
+      <h2 className="text-[15px] font-semibold">{title}</h2>
+      {hint ? <span className="text-[12px] text-muted">{hint}</span> : null}
+    </div>
+    {children}
+  </section>
+)
+
+const None = ({ children }: { children: ReactNode }) => (
+  <div className="rounded-sm border border-dashed border-[var(--color-outline)] px-3 py-2 text-[12.5px] text-muted">
+    {children}
+  </div>
+)
+
+// Codes every procedure behind the router's middleware can get, found as the ones most
+// procedures list.
+const routerCodes = new Set(
+  (() => {
+    const counts = new Map<string, number>()
+    for (const p of atlas.api.procedures)
+      for (const code of p.errors) counts.set(code, (counts.get(code) ?? 0) + 1)
+    return [...counts].filter(([, n]) => n >= atlas.api.procedures.length / 2).map(([c]) => c)
+  })(),
+)
+
+const Errors = ({ p }: { p: Procedure }) => {
+  const codes = atlas.api.errors.filter((e) => p.errors.includes(e.code))
+  return (
+    <Section
+      title="Errors"
+      hint="Raised in the handler and by the router; helpers deeper down may raise others."
+    >
+      {codes.length === 0 ? (
+        <None>No error codes found.</None>
+      ) : (
+        <div className="overflow-hidden rounded-sm border border-[var(--color-outline)] bg-panel">
+          <div className="grid grid-cols-[minmax(0,2.2fr)_48px_60px_minmax(0,1.6fr)] gap-x-3 bg-raised px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted">
+            <span>Code</span>
+            <span>Status</span>
+            <span>From</span>
+            <span>Note</span>
+          </div>
+          {codes.map((e) => (
+            <div
+              key={e.code}
+              className="grid grid-cols-[minmax(0,2.2fr)_48px_60px_minmax(0,1.6fr)] items-baseline gap-x-3 border-t border-line px-3 py-2"
+            >
+              <span className="break-all font-mono text-[12.5px] font-medium">{e.code}</span>
+              <span className="font-mono text-[12px]">{e.status}</span>
+              <span className="font-mono text-[10.5px] text-muted">
+                {routerCodes.has(e.code) ? "router" : "handler"}
+              </span>
+              <span className="text-[12px] leading-[18px] text-muted">{e.note ?? "—"}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  )
+}
+
+const Reference = ({ p }: { p: Procedure }) => {
+  const input = isEmpty(p.input) ? null : p.input
+  const output = isEmpty(p.output) ? null : p.output
+  const stream = p.kind === "stream"
+  return (
+    <div className="mx-auto max-w-[760px] px-6 pb-16 pt-6">
+      <header>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="break-all font-mono text-[20px] font-semibold leading-7">{p.id}</h1>
+          <KindBadge kind={p.kind} large />
+          <AreaChip id={p.area} />
+        </div>
+        <p className="mt-1.5 text-[12.5px] text-muted">
+          {stream
+            ? "oRPC stream on the runner: one request opens it, then the runner yields events over the authenticated runner connection."
+            : "oRPC procedure on the runner, called over the authenticated runner connection."}
+        </p>
+      </header>
+
+      <Section title="Request" hint={`${p.id} input`}>
+        {input ? <ParamsTable schema={input} /> : <None>No input.</None>}
+      </Section>
+
+      <Section
+        title={stream ? "Events" : "Response"}
+        hint={stream ? "Yields a sequence of the event schema below." : undefined}
+      >
+        {output ? (
+          <ParamsTable schema={output} />
+        ) : (
+          <None>{stream ? "No event payload." : "No output (void)."}</None>
+        )}
+      </Section>
+
+      <Errors p={p} />
+
+      <Section title="Implementation">
+        <dl className="grid grid-cols-[84px_minmax(0,1fr)] gap-x-3 gap-y-2 text-[12.5px]">
+          <dt className="text-muted">Contract</dt>
+          <dd>
+            <AnchorLink anchor={p.anchor} />
+          </dd>
+          <dt className="text-muted">Handler</dt>
+          <dd>
+            {p.handler ? (
+              <AnchorLink anchor={p.handler} />
+            ) : (
+              <span className="text-muted">none</span>
+            )}
+          </dd>
+          <dt className="text-muted">Callers {p.callers.length}</dt>
+          <dd className="flex flex-col gap-1">
+            {p.callers.map((c) => (
+              <AnchorLink key={`${c.file}:${c.line}`} anchor={c} />
+            ))}
+            {p.callers.length === 0 ? <span className="text-muted">none</span> : null}
+          </dd>
+        </dl>
+      </Section>
+    </div>
   )
 }
 
 export const ApiPage = () => {
-  const [filter, setFilter] = useState("")
-  const [selected, setSelected] = useState<string | null>(null)
-  const terms = filter.toLowerCase().split(/\s+/).filter(Boolean)
-  const matches = (p: Procedure) => {
-    const hay = `${p.id} ${p.kind} ${p.area ?? ""}`.toLowerCase()
-    return terms.every((t) => hay.includes(t))
-  }
-  const groups = groupBy(atlas.api.procedures, (p) => p.namespace)
-  const sel = selected ? (procedureById.get(selected) ?? null) : null
+  const { hash } = useLocation()
+  const navigate = useNavigate()
+  const wanted = decodeURIComponent(hash.slice(1))
+  const p = procedureById.get(wanted) ?? atlas.api.procedures[0]
+  if (!p) return <div className="p-6 text-muted">No procedures.</div>
   return (
     <div className="flex h-full">
-      <div className="min-w-0 flex-1 overflow-auto p-5">
-        <div className="mb-4 flex items-center gap-4">
-          <h1 className="text-lg font-semibold">API</h1>
-          <span className="flex items-center gap-1 text-[11px] text-muted">
-            <Square size={11} fill="currentColor" /> call
-          </span>
-          <span className="flex items-center gap-1 text-[11px] text-muted">
-            <Circle size={11} /> stream
-          </span>
-          <label className="relative ml-auto">
-            <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted" />
-            <input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="filter"
-              className="w-36 rounded-sm border border-line bg-panel py-0.5 pl-6 pr-2 text-[12px] outline-none focus:border-accent"
-            />
-          </label>
-        </div>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-          {groups.map(([ns, procedures]) => (
-            <div
-              key={ns}
-              className={`rounded-sm border bg-panel p-2.5 ${sel?.namespace === ns ? "border-accent" : "border-[var(--color-outline)]"}`}
-            >
-              <div className="mb-2 flex items-baseline justify-between">
-                <span className="font-mono text-[12px] font-medium">{ns}</span>
-                <span className="font-mono text-[10px] text-muted">{procedures.length}</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {procedures.map((p) => (
-                  <Tile
-                    key={p.id}
-                    procedure={p}
-                    selected={selected === p.id}
-                    dim={terms.length > 0 && !matches(p)}
-                    onSelect={setSelected}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        <h2 className="mb-1 mt-7 text-[11px] font-semibold uppercase tracking-wider text-muted">
-          Who calls whom
-        </h2>
-        <div className="rounded-sm border border-[var(--color-outline)] bg-panel p-3">
-          <CallMatrix namespaces={groups.map(([ns]) => ns)} selectedNs={sel?.namespace ?? null} />
-        </div>
-        {atlas.api.errors.length ? (
-          <>
-            <h2 className="mb-1 mt-7 text-[11px] font-semibold uppercase tracking-wider text-muted">
-              Errors
-            </h2>
-            <div className="flex flex-wrap gap-1.5">
-              {atlas.api.errors.map((e) => (
-                <span
-                  key={e.code}
-                  title={e.note ?? undefined}
-                  className="rounded-sm border border-line bg-panel px-1.5 font-mono text-[11px] leading-5"
-                >
-                  {e.code} <span className="text-muted">{e.status}</span>
-                </span>
-              ))}
-            </div>
-          </>
-        ) : null}
+      <Nav selected={p.id} onSelect={(id) => void navigate({ hash: id }, { replace: true })} />
+      <div key={p.id} className="min-w-0 flex-1 overflow-auto">
+        <Reference p={p} />
       </div>
-      {sel ? <ProcedurePanel p={sel} onClose={() => setSelected(null)} /> : null}
+      <CodePane p={p} />
     </div>
   )
 }
