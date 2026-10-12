@@ -271,6 +271,9 @@ describe("WebSocket authentication and protocol", () => {
     ).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     })
+    await expect(client.runner.handshake({ protocolVersion: 99, token })).rejects.toMatchObject({
+      code: "INCOMPATIBLE_PROTOCOL",
+    })
     await expect(client.runner.handshake({ protocolVersion, token })).rejects.toMatchObject({
       code: "WORKSPACE_TOO_NEW",
     })

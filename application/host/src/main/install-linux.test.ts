@@ -28,6 +28,7 @@ import {
   newerCopy,
   readImageVersion,
   type Extract,
+  type InstallFiles,
 } from "./install-linux"
 
 let root: string
@@ -137,16 +138,79 @@ const appImage = (version: string): Record<string, string> => ({
   [icon]: "png",
 })
 
-const notAnAppImage: Extract = () => Promise.reject(new Error("not an AppImage"))
+// The extraction fails as running a file does: with a status, a spawn error, or a timeout.
+const failing =
+  (failure: Error): Extract =>
+  () =>
+    Promise.reject(failure)
 
 describe("reading an AppImage's version", () => {
   it("extracts its menu entry and reads it, leaving nothing behind", async () => {
-    expect(await readImageVersion("/x.AppImage", extractFrom(appImage("0.0.71")))).toBe("0.0.71")
+    let folder = ""
+    const extract: Extract = (image, pattern, into) => {
+      folder = into
+      return extractFrom(appImage("0.0.71"))(image, pattern, into)
+    }
+    expect(await readImageVersion("/x.AppImage", extract)).toEqual({
+      version: "0.0.71",
+      unchecked: false,
+    })
+    await expect(stat(folder)).rejects.toThrow()
   })
 
-  it("is nothing when the AppImage has no entry or will not extract", async () => {
-    expect(await readImageVersion("/x.AppImage", extractFrom({}))).toBeUndefined()
-    expect(await readImageVersion("/x.AppImage", notAnAppImage)).toBeUndefined()
+  it("has no version when the AppImage runs but names none", async () => {
+    const none = { version: undefined, unchecked: false }
+    expect(await readImageVersion("/x.AppImage", extractFrom({}))).toEqual(none)
+    expect(
+      await readImageVersion("/x.AppImage", extractFrom({ "n.desktop": "[Desktop Entry]\n" })),
+    ).toEqual(none)
+    expect(
+      await readImageVersion(
+        "/x.AppImage",
+        extractFrom({ "n.desktop": "X-AppImage-Version=latest\n" }),
+      ),
+    ).toEqual(none)
+  })
+
+  it("has no version when the file runs and exits with a status, or is no program", async () => {
+    const none = { version: undefined, unchecked: false }
+    expect(
+      await readImageVersion(
+        "/x.AppImage",
+        failing(Object.assign(new Error("exit 2"), { code: 2 })),
+      ),
+    ).toEqual(none)
+    expect(await readImageVersion("/x.AppImage", failing(error("ENOEXEC")))).toEqual(none)
+  })
+
+  it("could not be checked when the look itself failed, whatever the file is", async () => {
+    const unchecked = { version: undefined, unchecked: true }
+    // A missing exec bit, a missing file, a timeout (the child is killed: no status), and
+    // anything else unknown.
+    const failures = [
+      error("EACCES"),
+      error("ENOENT"),
+      Object.assign(new Error("timed out"), { killed: true, code: null, signal: "SIGTERM" }),
+      new Error("odd"),
+    ]
+    const found = await Promise.all(
+      failures.map((failure) => readImageVersion("/x.AppImage", failing(failure))),
+    )
+    expect(found).toEqual(failures.map(() => unchecked))
+  })
+
+  it("could not be checked when there is no temporary folder", async () => {
+    const before = process.env.TMPDIR
+    process.env.TMPDIR = join(root, "missing")
+    try {
+      expect(await readImageVersion("/x.AppImage", extractFrom(appImage("1.0.0")))).toEqual({
+        version: undefined,
+        unchecked: true,
+      })
+    } finally {
+      if (before === undefined) delete process.env.TMPDIR
+      else process.env.TMPDIR = before
+    }
   })
 })
 
@@ -167,8 +231,12 @@ describe("the AppImages already installed", () => {
     const extract: Extract = async (path, pattern, into) =>
       extractFrom(appImage(versions.get(await readFile(path, "utf8"))!))(path, pattern, into)
     expect(await findInstalled({ env, home: root }, extract)).toEqual([
-      { image, version: "0.0.5" },
-      { image: join(root, "Applications", "novadeck.AppImage"), version: "0.0.9" },
+      { image, version: "0.0.5", unchecked: false },
+      {
+        image: join(root, "Applications", "novadeck.AppImage"),
+        version: "0.0.9",
+        unchecked: false,
+      },
     ])
   })
 
@@ -180,12 +248,16 @@ describe("the AppImages already installed", () => {
     await mkdir(join(root, "Applications"), { recursive: true })
     await symlink(image, join(root, "Applications", "novadeck.AppImage"))
     expect(await findInstalled({ env, home: root }, extractFrom(appImage("1.0.0")))).toEqual([
-      { image, version: "1.0.0" },
+      { image, version: "1.0.0", unchecked: false },
     ])
   })
 })
 
-const copy = (version: string | undefined, image = "/i") => ({ image, version })
+const copy = (version: string | undefined, image = "/i") => ({
+  image,
+  version,
+  unchecked: false,
+})
 
 describe("the installed copy that is newer", () => {
   it("is the newest of those newer than the running one", () => {
@@ -197,6 +269,7 @@ describe("the installed copy that is newer", () => {
   it("is nothing when each is the same, older, or reports no version", () => {
     expect(newerCopy([copy("1.0.0"), copy("0.9.0"), copy(undefined)], "1.0.0")).toBeUndefined()
     expect(newerCopy([], "1.0.0")).toBeUndefined()
+    expect(newerCopy([{ ...copy(undefined), unchecked: true }], "1.0.0")).toBeUndefined()
   })
 })
 
@@ -242,7 +315,10 @@ describe("installing an AppImage", () => {
       installLayout({ env: { XDG_DATA_HOME: data }, home: root }),
       extractFrom(appImage("1.0.0")),
     )
-    expect(result).toEqual({ kind: "installed", image: join(data, "novadeck/novadeck.AppImage") })
+    expect(result).toEqual({
+      kind: "installed",
+      image: join(data, "novadeck/novadeck.AppImage"),
+    })
     expect(await stat(join(data, "applications/dev.mzpk.novadeck.desktop"))).toBeTruthy()
   })
 
@@ -268,14 +344,68 @@ describe("installing an AppImage", () => {
   })
 
   context("when the file cannot be copied", () => {
-    it("fails with a reason and leaves the installed file and no partial copy", async () => {
+    // Writes some of the file, as a full disk does, then fails.
+    const filling: InstallFiles = {
+      copyFile: async (_source, target) => {
+        await writeFile(String(target), "the a")
+        throw Object.assign(new Error("no space"), { code: "ENOSPC" })
+      },
+    }
+
+    it("fails with a reason, removes the partial copy and leaves the installed file", async () => {
+      await write()
       const { image } = layout()
       await mkdir(join(image, ".."), { recursive: true })
       await writeFile(image, "old")
-      const result = await installAppImage(source(), layout(), extractFrom({}))
-      expect(result).toMatchObject({ kind: "failed" })
+      const result = await installAppImage(
+        source(),
+        layout(),
+        extractFrom(appImage("1.0.0")),
+        image,
+        filling,
+      )
+      expect(result).toEqual({ kind: "failed", reason: "There is no space left on the disk." })
       expect(await readFile(image, "utf8")).toBe("old")
       expect(await readdir(join(image, ".."))).toEqual(["novadeck.AppImage"])
+    })
+
+    it("changes nothing else: no icon, command or menu entry", async () => {
+      await write()
+      await installAppImage(source(), layout(), extractFrom(appImage("1.0.0")), undefined, filling)
+      const { icon: iconFile, link, desktop } = layout()
+      await Promise.all(
+        [iconFile, link, desktop].map((path) => expect(lstat(path)).rejects.toThrow()),
+      )
+    })
+
+    it("fails when the source is missing", async () => {
+      const result = await installAppImage(source(), layout(), extractFrom({}))
+      expect(result).toMatchObject({ kind: "failed" })
+      await expect(lstat(layout().icon)).rejects.toThrow()
+    })
+  })
+
+  context("when the installed place is a symlink, as Homebrew's is", () => {
+    it("replaces the file it leads to and keeps the link", async () => {
+      await write()
+      const real = join(root, "Caskroom", "novadeck.AppImage")
+      const place = join(root, "Applications", "novadeck.AppImage")
+      await mkdir(join(real, ".."), { recursive: true })
+      await mkdir(join(place, ".."), { recursive: true })
+      await writeFile(real, "old")
+      await symlink(real, place)
+      const result = await installAppImage(
+        source(),
+        layout(),
+        extractFrom(appImage("1.0.0")),
+        place,
+      )
+      expect(result).toEqual({ kind: "installed", image: place })
+      expect((await lstat(place)).isSymbolicLink()).toBe(true)
+      expect(await readlink(place)).toBe(real)
+      expect(await readFile(real, "utf8")).toBe("the app")
+      expect(await readdir(join(real, ".."))).toEqual(["novadeck.AppImage"])
+      expect(await readdir(join(place, ".."))).toEqual(["novadeck.AppImage"])
     })
   })
 
@@ -286,7 +416,10 @@ describe("installing an AppImage", () => {
       { ...layout(), image: join(root, "a\nb.AppImage") },
       extractFrom({}),
     )
-    expect(result).toEqual({ kind: "failed", reason: "The install path is not valid." })
+    expect(result).toEqual({
+      kind: "failed",
+      reason: "The install path is not valid.",
+    })
   })
 })
 

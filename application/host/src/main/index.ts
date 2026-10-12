@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { access, constants, readFile, realpath } from "node:fs/promises"
 import { homedir } from "node:os"
@@ -50,7 +50,12 @@ import { linuxMenu } from "./menu.js"
 import { notificationText, registerNoticeIpc, showNotices } from "./notices.js"
 import { attachPage, guardPage, lockPagesSession, pagesPartition, webAddress } from "./pages.js"
 import { limitPermissions, ownPage } from "./permissions.js"
-import { leaveForNewerInstalled, portableInstaller, registerPortableIpc } from "./portable.js"
+import {
+  leaveForNewerInstalled,
+  portableInstaller,
+  registerPortableIpc,
+  startAppImage,
+} from "./portable.js"
 import { quitOnShutdown, saveBeforeClose, saveOnSessionEnd, savePages } from "./quit.js"
 import { startRunner, type RunnerHost } from "./runner.js"
 import { registerSandboxIpc, sandboxState } from "./sandbox.js"
@@ -87,7 +92,11 @@ if (!app.commandLine.getSwitchValue("user-data-dir"))
 // one database must not run. A second launch quits at once, before it starts anything,
 // and the first brings its window forward; see the `second-instance` handler below.
 const primaryInstance = app.requestSingleInstanceLock()
-if (!primaryInstance) app.exit(0)
+if (!primaryInstance) {
+  // A development run shares its folder across worktrees, so say whose it is.
+  console.error(`Novadeck is already running on the data folder ${app.getPath("userData")}.`)
+  app.exit(0)
+}
 const developmentOrigin = "http://127.0.0.1:5173"
 // How long quitting waits for the pages' last saves.
 const saveBeforeQuitMs = 1_500
@@ -305,6 +314,17 @@ const updateBuild = (): Promise<UpdateBuild> =>
     }
   })())
 
+// When this copy first learned that a newer release exists, kept for the running version;
+// undefined if it cannot be kept, which leaves the offer without one.
+const outdatedSince = (): string | undefined => {
+  try {
+    return updateState.outdatedSince(app.getVersion(), new Date())
+  } catch (error) {
+    console.warn("The date this copy fell behind was not kept.", error)
+    return undefined
+  }
+}
+
 // Starts checking for updates in a build that looks for them; see ./updater.ts.
 const startUpdates = async (): Promise<void> => {
   const state = updateState.read()
@@ -317,7 +337,8 @@ const startUpdates = async (): Promise<void> => {
     failedVersion: state.installFailedOn,
     // Squirrel.Mac stages macOS updates; the others install from electron-updater's file.
     native: process.platform === "darwin" ? nativeUpdater : undefined,
-    offer: offers.offer,
+    offer: (kind, version, notes) =>
+      offers.offer(kind, version, notes, plan.portable ? outdatedSince : undefined),
     // Synchronous: a failed install on quit is reported as the app exits.
     installFailed: (version) => {
       try {
@@ -476,20 +497,27 @@ const moveToApplications = async (): Promise<boolean> => {
   })
 }
 
-// Starts the AppImage at `image` in place of this process, which ends, after the lock on
-// the data folder is let go so the new process can take it. It runs with no arguments of
-// this one's, which may carry `--no-sandbox` for a system this copy ran on.
-const startInstalled = (image: string): boolean =>
-  relaunchIntoCopy({
-    executable: image,
+// Starts the AppImage at `image` in place of this process; see `startAppImage`.
+const startInstalled = (image: string): Promise<boolean> =>
+  startAppImage({
+    image,
+    env: process.env,
+    spawn,
     exists: existsSync,
-    relaunch: (execPath) => app.relaunch({ execPath, args: [] }),
-    exit: () => {
-      app.releaseSingleInstanceLock()
-      app.exit(0)
-    },
+    releaseLock: () => app.releaseSingleInstanceLock(),
+    exit: () => app.exit(0),
     log: (message, error) => console.warn(message, error),
   })
+
+// Tells the person that the installed copy at `image` would not start, which leaves the
+// app with nothing to do but quit.
+const alertNotStarted = async (image: string): Promise<void> => {
+  await dialog.showMessageBox({
+    type: "error",
+    message: "The installed Novadeck did not start.",
+    detail: `Start it from your applications menu or with the novadeck command. It is at ${image}.`,
+  })
+}
 
 // The AppImages installed on this machine, with their versions.
 const installedCopies = () =>
@@ -498,7 +526,9 @@ const installedCopies = () =>
 const launch = async (): Promise<void> => {
   // A moved app starts again from Applications, and has nothing more to do here.
   if (await moveToApplications()) return
-  const portable = portableOf(await updateBuild())
+  // Linux alone has portable copies yet; the build is not asked elsewhere, as on macOS
+  // that would wait for codesign before the window.
+  const portable = process.platform === "linux" && portableOf(await updateBuild())
   // A portable copy older than the installed one must not open the data the installed
   // one may have upgraded; nothing has started yet, so there is nothing to shut down.
   if (
@@ -518,13 +548,7 @@ const launch = async (): Promise<void> => {
         return response === 0
       },
       start: startInstalled,
-      alert: async () => {
-        await dialog.showMessageBox({
-          type: "error",
-          message: "The installed Novadeck did not start.",
-          detail: "Start it from your applications menu or with the novadeck command.",
-        })
-      },
+      alert: alertNotStarted,
       quit: () => app.exit(0),
       log: (message, error) => console.warn(message, error),
     })
@@ -631,6 +655,9 @@ const launch = async (): Promise<void> => {
         return shutDown()
       },
       start: startInstalled,
+      alert: alertNotStarted,
+      stopping: () => stopping,
+      fallbackMs: installFallbackMs(process.platform),
       quit: () => app.quit(),
       log: (message, error) => console.warn(message, error),
     }),

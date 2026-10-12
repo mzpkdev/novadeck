@@ -35,6 +35,9 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   const sandbox = useUiState((state) => state.sandbox)
   const sandboxOpen = useUiState((state) => state.sandboxOpen)
   const portable = useUiState((state) => state.portable?.portable === true)
+  // A host that can say it is portable has not yet: the sandbox chip waits, so it does not
+  // flash on a copy whose install entry replaces it.
+  const portablePending = useUiState((state) => state.portable === null) && !!portableHost
   // A dialog, the switcher or a question holds the notice back until it is answered.
   const asking = useUiState(
     (state) =>
@@ -124,7 +127,7 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
           : undefined
       }
       sandbox={
-        sandbox && !sandbox.sandboxed && !portable
+        sandbox && !sandbox.sandboxed && !portable && !portablePending
           ? {
               fix: sandbox.fix,
               open: sandboxOpen,

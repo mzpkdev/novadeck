@@ -184,7 +184,10 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
   try {
     return startRunner(options)
   } catch (error) {
-    if (error instanceof WorkspaceTooNewError) return refusingRunner()
+    if (error instanceof WorkspaceTooNewError) {
+      console.error(error)
+      return refusingRunner()
+    }
     throw error
   }
 }

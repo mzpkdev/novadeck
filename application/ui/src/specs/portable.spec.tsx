@@ -71,16 +71,28 @@ describe("a portable copy's install entry", () => {
   })
 
   context("while installing", () => {
-    it("shows Installing… disabled once Install Novadeck is pressed, and does nothing more", async () => {
+    it("shows Installing… once Install Novadeck is pressed, named as it reads, and does nothing more", async () => {
       await openWorkspace("/?portable=on")
       await install().click()
       await primary(quiet()).click()
       await expect.element(quiet()).not.toBeInTheDocument()
-      const installing = page.getByRole("button", {
-        name: /^Install Novadeck$/,
-      })
-      await expect.element(installing).toBeDisabled()
+      const installing = page.getByRole("button", { name: "Installing…", exact: true })
+      await expect.element(installing).toHaveAttribute("aria-disabled", "true")
       await expect.element(installing).toHaveTextContent("Installing…")
+      installing.element().dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      await expectStaysAbsent(quiet())
+    })
+
+    it("keeps focus on the chip when it is pressed while installing", async () => {
+      await openWorkspace("/?portable=on")
+      await install().click()
+      await primary(quiet()).click()
+      const installing = page.getByRole("button", { name: "Installing…", exact: true })
+      await expect.element(installing).toBeVisible()
+      installing.element().focus()
+      await expect.element(installing).toHaveFocus()
+      await press("{Enter}")
+      await expect.element(installing).toHaveFocus()
       await expectStaysAbsent(quiet())
     })
 
@@ -110,12 +122,24 @@ describe("a portable copy's install entry", () => {
         .element(quiet().getByRole("alert"))
         .toHaveTextContent("Could not install Novadeck: There is no space left.")
     })
+
+    it("does not show an earlier failure when the chip opens the panel again", async () => {
+      await openWorkspace("/?portable=on&install=failed")
+      await install().click()
+      await primary(quiet()).click()
+      await expect.element(quiet().getByRole("alert")).toBeVisible()
+      await later(quiet()).click()
+      await expect.element(quiet()).not.toBeInTheDocument()
+      await install().click()
+      await expect.element(quiet()).toBeVisible()
+      await expect.element(quiet().getByRole("alert")).not.toBeInTheDocument()
+    })
   })
 })
 
 describe("a portable copy with a release waiting", () => {
   it("turns the chip to Update available and raises the notice, with Install Novadeck", async () => {
-    await openWorkspace("/?portable=on&update=available&released=recent")
+    await openWorkspace("/?portable=on&update=available&outdated=recent")
     await expect.element(offered()).toBeVisible()
     await expect.element(offered().getByText(/can't update itself/)).toBeVisible()
     await expect.element(primary(offered())).toBeVisible()
@@ -127,19 +151,19 @@ describe("a portable copy with a release waiting", () => {
   })
 
   it("raises the notice once per version while the release is recent", async () => {
-    await openWorkspace("/?portable=on&update=available&released=recent")
+    await openWorkspace("/?portable=on&update=available&outdated=recent")
     await expect.element(offered()).toBeVisible()
     await later(offered()).click()
     await expect.poll(() => localStorage.getItem(seenKey)).toBe("available:0.0.80")
     await cleanup()
-    await openWorkspace("/?portable=on&update=available&released=recent")
+    await openWorkspace("/?portable=on&update=available&outdated=recent")
     await expect.element(update()).toBeVisible()
     await expectStaysAbsent(offered())
   })
 
   it("raises the notice at every launch once the release is 14 days old", async () => {
     localStorage.setItem(seenKey, "available:0.0.80")
-    await openWorkspace("/?portable=on&update=available&released=old")
+    await openWorkspace("/?portable=on&update=available&outdated=old")
     await expect.element(offered()).toBeVisible()
   })
 
@@ -151,11 +175,12 @@ describe("a portable copy with a release waiting", () => {
   })
 
   it("installs from the notice", async () => {
-    await openWorkspace("/?portable=on&update=available&released=recent")
+    await openWorkspace("/?portable=on&update=available&outdated=recent")
     await primary(offered()).click()
     await expect.element(offered()).not.toBeInTheDocument()
-    await expect.element(update()).toBeDisabled()
-    await expect.element(update()).toHaveTextContent("Installing…")
+    const installing = page.getByRole("button", { name: "Installing…", exact: true })
+    await expect.element(installing).toHaveAttribute("aria-disabled", "true")
+    await expect.element(installing).toHaveTextContent("Installing…")
   })
 })
 
@@ -167,6 +192,13 @@ describe("the sandbox chip on a portable copy", () => {
     expect(sandbox().query()).toBeNull()
     await install().click()
     await expect.element(quiet().getByText(/turn on the sandbox/)).toBeVisible()
+  })
+
+  it("does not flash while the host has yet to say it is a portable copy", async () => {
+    await openWorkspace("/?portable=on&sandbox=off&answer=late")
+    await expectStaysAbsent(sandbox(), { ms: 1000 })
+    await expect.element(install()).toBeVisible()
+    await expectStaysAbsent(sandbox())
   })
 
   it("is shown again on an installed copy", async () => {

@@ -14,12 +14,18 @@ import type { SandboxState } from "../model/sandbox"
 import { activeProject } from "../model/state"
 import { createStore, type MutableStore, type Store } from "../model/store"
 import type { PreferencesValue, TerminalMetadata, Workspace } from "../model/types"
-import { noticeRaised, portableNagged, type UpdateOffer } from "../model/update"
+import { noticeRaised, portableNagged, updateKey, type UpdateOffer } from "../model/update"
 import { writePreferences } from "../preferences/preferences-storage"
 import { noArrangement, type ProjectArrangement } from "../projects/project-arrangement"
 import { writeProjectArrangement } from "../projects/project-arrangement-storage"
 import { initialShell, resetPresentation, type ShellState } from "../shell/shell-state"
-import { writeSidebarCollapsed, writeUpdateSeen, writeWindowedView } from "../shell/shell-storage"
+import {
+  readUpdateRaised,
+  writeSidebarCollapsed,
+  writeUpdateRaised,
+  writeUpdateSeen,
+  writeWindowedView,
+} from "../shell/shell-storage"
 import {
   chatKept,
   keepChatDrafts,
@@ -262,24 +268,22 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
 // The update the backend offers, kept for the footer; a later offer replaces the last.
 // One for a version not yet shown opens its notice, which waits while the footer is
 // hidden; so does a stale one for a portable copy (`noticeRaised`).
+// What counts as already raised is kept for the run of the app, not the page's life
+// (`readUpdateRaised`), so a reload or a new attempt at the backend does not raise it again.
 export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => void) =>
-  updates?.onOffer((update) =>
-    ui.update((state) => ({
-      ...state,
-      update,
-      updateOpen:
-        state.updateOpen ||
-        noticeRaised(update, {
-          seen: state.updateSeen,
-          portable: state.portable?.portable === true,
-          known: state.update !== null && sameOffer(state.update, update),
-          now: Date.now(),
-        }),
-    })),
-  ) ?? (() => {})
+  updates?.onOffer((update) => {
+    const state = ui.getSnapshot()
+    const raise = noticeRaised(update, {
+      seen: state.updateSeen,
+      portable: state.portable?.portable === true,
+      known: raisedThisRun(update),
+      now: Date.now(),
+    })
+    if (raise) writeUpdateRaised(updateKey(update))
+    ui.update((current) => ({ ...current, update, updateOpen: current.updateOpen || raise }))
+  }) ?? (() => {})
 
-const sameOffer = (a: UpdateOffer, b: UpdateOffer): boolean =>
-  a.kind === b.kind && a.version === b.version
+const raisedThisRun = (offer: UpdateOffer): boolean => readUpdateRaised() === updateKey(offer)
 
 // Asks the backend once whether the app is a portable copy, and keeps the answer for the
 // footer. An offer heard before the answer, for a copy found stale, raises its notice now.
@@ -289,17 +293,23 @@ export const watchPortable = (portable: Backend["portable"], ui: UiStore): (() =
   void portable?.state().then(
     (portableState) => {
       if (!live) return
+      const { update } = ui.getSnapshot()
+      const raise =
+        portableState.portable &&
+        update !== null &&
+        portableNagged(update, Date.now()) &&
+        !raisedThisRun(update)
+      if (raise) writeUpdateRaised(updateKey(update))
       ui.update((state) => ({
         ...state,
         portable: portableState,
-        updateOpen:
-          state.updateOpen ||
-          (portableState.portable &&
-            state.update !== null &&
-            portableNagged(state.update, Date.now())),
+        updateOpen: state.updateOpen || raise,
       }))
     },
-    () => undefined,
+    // A host that fails to say is not one, so nothing waits on its answer.
+    () => {
+      if (live) ui.update((state) => ({ ...state, portable: { portable: false } }))
+    },
   )
   return () => {
     live = false

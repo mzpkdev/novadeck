@@ -82,13 +82,23 @@ export const desktopEntry = (image: string, icon: string | undefined): string =>
     "",
   ].join("\n")
 
-/** An installed AppImage and the version it reports, if that could be read. */
-export type InstalledCopy = { readonly image: string; readonly version: string | undefined }
+/**
+ * What looking at an installed AppImage's version found: the `version`; none, when the
+ * file ran but names no readable one, so it is not known to be an app a release made; or
+ * `unchecked`, when the look itself failed, say for want of a temporary folder, a timeout,
+ * or the exec bit, and the file may well be a good copy.
+ */
+export type ImageVersion = {
+  readonly version: string | undefined
+  readonly unchecked: boolean
+}
+
+/** An installed AppImage and what looking at its version found. */
+export type InstalledCopy = { readonly image: string } & ImageVersion
 
 /**
  * The installed copy that is a newer version than `running`, or the newest if several
- * are. A copy whose version could not be read is not known to be newer, so it does not
- * count, and the install replaces it.
+ * are. A copy whose version is not known is not known to be newer, so it does not count.
  */
 export const newerCopy = (
   copies: readonly InstalledCopy[],
@@ -140,31 +150,52 @@ const inTemporaryFolder = async <T>(work: (folder: string) => Promise<T>): Promi
   }
 }
 
+// Whether `error` from running an AppImage says the file is no program: the runtime ran
+// and exited with a status, or the system found the file not to be one it can execute.
+// A timeout, a signal, a missing exec bit and any other failure says nothing of the file.
+const isNoProgram = (error: unknown): boolean => {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code as unknown
+  return typeof code === "number" || code === "ENOEXEC"
+}
+
 /**
- * The version of the AppImage at `image`, read from the menu entry inside it without
- * running the app, or undefined when it cannot be read.
+ * The version of the AppImage at `image`, read from the menu entry inside it. This runs
+ * the file's own AppImage runtime with `--appimage-extract`, which unpacks the entry
+ * without starting the app. A file that ran but names no version, or is no program, has
+ * none; one that could not be looked at is `unchecked`.
  */
-export const readImageVersion = async (
-  image: string,
-  extract: Extract,
-): Promise<string | undefined> => {
+export const readImageVersion = async (image: string, extract: Extract): Promise<ImageVersion> => {
+  let folder: string
   try {
-    return await inTemporaryFolder(async (folder) => {
-      await extract(image, "*.desktop", folder)
-      const root = join(folder, "squashfs-root")
-      const entry = (await readdir(root)).find((name) => name.endsWith(".desktop"))
-      return entry === undefined
-        ? undefined
-        : imageVersionOf(await readFile(join(root, entry), "utf8"))
-    })
+    folder = await mkdtemp(join(tmpdir(), "novadeck-"))
   } catch {
-    return undefined
+    return { version: undefined, unchecked: true }
+  }
+  try {
+    await extract(image, "*.desktop", folder)
+    const root = join(folder, "squashfs-root")
+    // Nothing matched: the runtime ran, and the image holds no menu entry.
+    const names = await readdir(root).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return []
+      throw error
+    })
+    const entry = names.find((name) => name.endsWith(".desktop"))
+    return {
+      version:
+        entry === undefined ? undefined : imageVersionOf(await readFile(join(root, entry), "utf8")),
+      unchecked: false,
+    }
+  } catch (error) {
+    return { version: undefined, unchecked: !isNoProgram(error) }
+  } finally {
+    await rm(folder, { recursive: true, force: true })
   }
 }
 
 /**
  * The AppImages already installed: each of the places the installer and Homebrew use that
- * holds a file, once even when one links to the other, with its version.
+ * holds a file, once even when one links to the other, with its version. A place with
+ * nothing in it is left out.
  */
 export const findInstalled = async (
   host: Pick<InstallLocationHost, "env" | "home">,
@@ -181,7 +212,10 @@ export const findInstalled = async (
   return Promise.all(
     found
       .filter(({ real }, index) => found.findIndex((other) => other.real === real) === index)
-      .map(async ({ image, real }) => ({ image, version: await readImageVersion(real, extract) })),
+      .map(async ({ image, real }) => ({
+        image,
+        ...(await readImageVersion(real, extract)),
+      })),
   )
 }
 
@@ -219,45 +253,51 @@ const copyIcon = async (
   }
 }
 
+/** The file operations an install makes that tests may replace. */
+export type InstallFiles = { readonly copyFile: typeof copyFile }
+
 /**
- * Installs the AppImage `source` as install.sh installs a download: the icon, then the
- * file copied beside its destination and renamed over it, so a running install is
- * replaced whole and a copy that fails leaves the destination as it was, the `novadeck`
+ * Installs the AppImage `source` as install.sh installs a download: the file copied
+ * beside its destination and renamed over it, so a running install is replaced whole and
+ * a copy that fails leaves the destination as it was, then the icon, the `novadeck`
  * command linked to it, and the menu entry. A file with no icon gets an entry without
- * one. Running it again repairs a step that failed, so a failure after the file moved
+ * one. The icon is copied only once the file is in place, so a failed install changes
+ * nothing. Running it again repairs a step that failed, so a failure after the file moved
  * is reported, though the new copy is in place. The installed copy updates itself from
  * there; this needs no network.
  *
  * `target` is the file to write, the installed copy being replaced; it defaults to the
- * installer's own path. Only a write to that path adds the icon, command and menu entry:
- * a copy elsewhere, such as Homebrew's in `~/Applications`, is integrated by whatever
- * put it there, and gets the file alone.
+ * installer's own path. When it is a symlink, as Homebrew's in `~/Applications` is, the
+ * file it leads to is replaced and the link stays. Only a write to the installer's path
+ * adds the icon, command and menu entry: a copy elsewhere, such as Homebrew's, is
+ * integrated by whatever put it there, and gets the file alone.
  */
 export const installAppImage = async (
   source: string,
   layout: InstallLayout,
   extract: Extract,
   target: string = layout.image,
+  files: InstallFiles = { copyFile },
 ): Promise<InstallOutcome> => {
   const { link, desktop } = layout
-  const image = target
   const integrate = target === layout.image
   // A line break would end the entry's Exec line early.
-  if (/[\p{Cc}]/u.test(image)) return { kind: "failed", reason: "The install path is not valid." }
+  if (/[\p{Cc}]/u.test(target)) return { kind: "failed", reason: "The install path is not valid." }
+  const image = await realpath(target).catch(() => target)
   const staged = `${image}.new`
-  const icon = integrate ? await copyIcon(source, layout.icon, extract) : undefined
   try {
     await mkdir(dirname(image), { recursive: true })
-    await copyFile(source, staged)
+    await files.copyFile(source, staged)
     await chmod(staged, 0o755)
     await rename(staged, image)
-    if (!integrate) return { kind: "installed", image }
+    if (!integrate) return { kind: "installed", image: target }
+    const icon = await copyIcon(source, layout.icon, extract)
     await mkdir(dirname(link), { recursive: true })
     await rm(link, { force: true })
-    await symlink(image, link)
+    await symlink(target, link)
     await mkdir(dirname(desktop), { recursive: true })
-    await writeFile(desktop, desktopEntry(image, icon))
-    return { kind: "installed", image }
+    await writeFile(desktop, desktopEntry(target, icon))
+    return { kind: "installed", image: target }
   } catch (error) {
     await rm(staged, { force: true }).catch(() => {})
     return { kind: "failed", reason: failureReason(error, dirname(image)) }

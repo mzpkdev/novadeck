@@ -123,7 +123,11 @@ export const updatePlan = (build: UpdateBuild): UpdatePlan | undefined => {
   const portable = portableOf(build)
   const installable =
     kind === "mac" ? build.signed : kind === "appimage" ? build.appImageWritable : true
-  return { kind, mode: installable && !portable ? "install" : "tell", portable }
+  return {
+    kind,
+    mode: installable && !portable ? "install" : "tell",
+    portable,
+  }
 }
 
 /** The app bundle a macOS executable, `novadeck.app/Contents/MacOS/novadeck`, runs from. */
@@ -141,18 +145,6 @@ export const developerIdSigned = (output: string): boolean =>
 export const updateVersionOf = (value: unknown): string | undefined =>
   typeof value === "string" && updateVersionPattern.test(value) ? value : undefined
 
-/**
- * The date of an update's release as an ISO 8601 string, when `value` is a date the page
- * may be told: text that parses to one. electron-updater reads it from the release's
- * `latest*.yml`, where it is the ISO text the publisher wrote; anything else, such as
- * text that is no date, gives undefined, and the offer goes without one.
- */
-export const releasedAtOf = (value: unknown): string | undefined => {
-  if (typeof value !== "string" || value.length > 64) return undefined
-  const time = Date.parse(value)
-  return Number.isNaN(time) ? undefined : new Date(time).toISOString()
-}
-
 // The part of a window that telling it of an update uses.
 type Page = { send(channel: string, offer: UpdateOffer): void }
 
@@ -161,7 +153,9 @@ type Page = { send(channel: string, offer: UpdateOffer): void }
  * a page that started listening later, such as after a reload or in a new window. A
  * report of what the pages already know is dropped; any other replaces it, a newer
  * version and a `ready` update the host then could not install alike. `pages` lists the
- * windows showing the app's own UI.
+ * windows showing the app's own UI. A portable copy passes `outdatedSince`, which gives
+ * when this copy first learned a newer release exists; it is asked only for an offer
+ * that is new.
  */
 export const trackOffer = <P extends Page>(pages: () => readonly P[]) => {
   let last: UpdateOffer | undefined
@@ -171,12 +165,17 @@ export const trackOffer = <P extends Page>(pages: () => readonly P[]) => {
       kind: UpdateOffer["kind"],
       value: unknown,
       notes: readonly string[],
-      released?: unknown,
+      outdatedSince?: () => string | undefined,
     ): void => {
       const version = updateVersionOf(value)
       if (version === undefined || (last?.kind === kind && last.version === version)) return
-      const releasedAt = releasedAtOf(released)
-      last = { kind, version, notes, ...(releasedAt === undefined ? {} : { releasedAt }) }
+      const since = outdatedSince?.()
+      last = {
+        kind,
+        version,
+        notes,
+        ...(since === undefined ? {} : { outdatedSince: since }),
+      }
       for (const page of pages()) page.send(updateOfferChannel, last)
     },
     request: (page: P): void => {
@@ -330,7 +329,6 @@ export type Updater = {
       readonly version: string
       readonly releaseName?: unknown
       readonly releaseNotes?: unknown
-      readonly releaseDate?: unknown
     }) => void,
   ): unknown
   on(event: "error", listener: (error: Error) => void): unknown
@@ -395,16 +393,14 @@ export const checkForUpdates = (
     /** The version installing failed on in an earlier launch, if it did. */
     readonly failedVersion?: string | undefined
     readonly native?: NativeUpdater | undefined
-    readonly offer: (
-      kind: UpdateOffer["kind"],
-      version: string,
-      notes: readonly string[],
-      releasedAt?: unknown,
-    ) => void
+    readonly offer: (kind: UpdateOffer["kind"], version: string, notes: readonly string[]) => void
     readonly installFailed: (version: string) => void
     readonly log: (message: string, error: unknown) => void
   },
-): { readonly setChannel: (channel: UpdateChannel) => void; readonly stop: () => void } => {
+): {
+  readonly setChannel: (channel: UpdateChannel) => void
+  readonly stop: () => void
+} => {
   // Downloads are asked for, to leave out the release that failed to install.
   updater.autoDownload = false
   updater.autoInstallOnAppQuit = mode === "install"
@@ -412,9 +408,7 @@ export const checkForUpdates = (
   // Quiet: failures are reported through `log`, and routine progress is not worth a line.
   updater.logger = { info: () => {}, warn: () => {}, error: () => {} }
 
-  let downloaded:
-    | { readonly version: string; readonly notes: readonly string[]; readonly released: unknown }
-    | undefined
+  let downloaded: { readonly version: string; readonly notes: readonly string[] } | undefined
   // Once an install has begun the app is on its way out, so the mark never goes back.
   let installing = false
   let staging = false
@@ -440,16 +434,15 @@ export const checkForUpdates = (
     staging = false
     updater.autoInstallOnAppQuit = false
     installFailed(downloaded.version)
-    offer("available", downloaded.version, downloaded.notes, downloaded.released)
+    offer("available", downloaded.version, downloaded.notes)
   })
   updater.on("update-available", (info) => {
-    if (mode === "tell")
-      return offer("available", info.version, updateNotesLines(info), info.releaseDate)
+    if (mode === "tell") return offer("available", info.version, updateNotesLines(info))
     // An update is downloaded, so the schedule has ended: a late check must not replace
     // the `ready` offer, or empty the folder the download waits in.
     if (downloaded !== undefined || ended) return
     if (info.version === failedVersion)
-      return offer("available", info.version, updateNotesLines(info), info.releaseDate)
+      return offer("available", info.version, updateNotesLines(info))
     // A failed download is reported through the error event, which logs it. While one is
     // under way electron-updater returns that download's promise, so a second check
     // finding the same release does not download it twice.
@@ -458,10 +451,10 @@ export const checkForUpdates = (
   updater.on("update-downloaded", (info) => {
     stop()
     const notes = updateNotesLines(info)
-    downloaded = { version: info.version, notes, released: info.releaseDate }
+    downloaded = { version: info.version, notes }
     const ready = (): void => {
       staging = false
-      offer("ready", info.version, notes, info.releaseDate)
+      offer("ready", info.version, notes)
     }
     // electron-updater reports the download just before it hands the file to Squirrel,
     // so listening now is in time for the native event that follows.

@@ -64,6 +64,28 @@ export const readUpdateSeen = (): string | null => {
   }
 }
 
+// The offer whose notice came up in this run of the app, by its `updateKey`. It lives in
+// session storage, which outlasts a page reload but not a relaunch, so a stale portable
+// copy's every-launch reminder comes once per launch, not once per page. Without storage
+// it is kept in memory, and a reload is a launch.
+export const updateRaisedStorageKey = "novadeck.update-raised"
+let raisedInMemory: string | null = null
+export const readUpdateRaised = (): string | null => {
+  try {
+    return sessionStorage.getItem(updateRaisedStorageKey) || null
+  } catch {
+    return raisedInMemory
+  }
+}
+
+export const writeUpdateRaised = (key: string): void => {
+  try {
+    sessionStorage.setItem(updateRaisedStorageKey, key)
+  } catch {
+    raisedInMemory = key
+  }
+}
+
 export const writeUpdateSeen = (version: string | null): void => {
   try {
     if (version === null) localStorage.removeItem(updateSeenStorageKey)

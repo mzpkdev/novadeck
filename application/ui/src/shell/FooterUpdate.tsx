@@ -319,11 +319,13 @@ export const FooterUpdate = ({
       <span role="status" aria-live="polite" className="sr-only">
         {waiting
           ? "Installing Novadeck"
-          : offer
-            ? installing
-              ? "Restarting to update"
-              : word
-            : ""}
+          : install.phase === "newer"
+            ? `Novadeck ${install.version} is already installed`
+            : offer
+              ? installing
+                ? "Restarting to update"
+                : word
+              : ""}
       </span>
       {update && (offer || portable) && (
         <>
@@ -331,17 +333,29 @@ export const FooterUpdate = ({
             ref={chip}
             type="button"
             className="footer-action footer-update cursor-pointer font-bold"
-            aria-label={offer ? `${word}: Novadeck ${offer.version}` : word}
+            aria-label={
+              waiting
+                ? "Installing…"
+                : installing
+                  ? "Restarting…"
+                  : offer
+                    ? `${word}: Novadeck ${offer.version}`
+                    : word
+            }
             aria-expanded={visible}
             aria-controls={visible ? panelId : undefined}
-            disabled={installing}
+            // Not `disabled`, which would drop the focus a press left on the chip.
+            aria-disabled={installing || undefined}
             onClick={() => {
+              if (installing) return
               if (visible) {
                 finish("origin")
                 return
               }
               requested.current = true
               opener.current = "chip"
+              // Opened again by the person, the panel starts over without the last failure.
+              if (install.phase === "failed") setInstall({ phase: "idle" })
               update.onOpenChange(true)
             }}
           >

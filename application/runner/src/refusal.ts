@@ -1,4 +1,4 @@
-import { contract } from "@novadeck/protocol"
+import { contract, protocolVersion } from "@novadeck/protocol"
 import { implement } from "@orpc/server"
 
 import type { Connection } from "./router.js"
@@ -15,6 +15,7 @@ export const createRefusal = () => {
       handshake: api.runner.handshake.handler(({ input, context, errors }) => {
         const connection = context.connection
         if (connection.closed || !connection.verify(input.token)) throw errors.UNAUTHORIZED()
+        if (input.protocolVersion !== protocolVersion) throw errors.INCOMPATIBLE_PROTOCOL()
         throw errors.WORKSPACE_TOO_NEW()
       }),
     },

@@ -123,7 +123,11 @@ describe("saving before quit, in the page", () => {
 
 describe("the page's appearance", () => {
   it("goes to the main process as its scheme and ground only", () => {
-    const appearance = { scheme: "dark", ground: "#0f1114", extra: "dropped" } as const
+    const appearance = {
+      scheme: "dark",
+      ground: "#0f1114",
+      extra: "dropped",
+    } as const
     electron.exposed.showAppearance(appearance)
     expect(electron.messages).toEqual([[appearanceChannel, { scheme: "dark", ground: "#0f1114" }]])
   })
@@ -146,7 +150,12 @@ describe("a pasted file's path", () => {
 
 describe("a notice about a terminal", () => {
   it("goes to the main process as its id, title and body only", () => {
-    const notice = { id: "01", title: "t1 is done: Tests", body: "All green.", icon: "x" }
+    const notice = {
+      id: "01",
+      title: "t1 is done: Tests",
+      body: "All green.",
+      icon: "x",
+    }
     electron.exposed.showNotice?.(notice)
     expect(electron.messages).toEqual([
       [noticeChannel, { id: "01", title: "t1 is done: Tests", body: "All green." }],
@@ -200,13 +209,13 @@ describe("an update offer", () => {
     expect(offers).toEqual([])
   })
 
-  it("carries the release date when it is an ISO date-time, and drops any other", () => {
+  it("carries the date the copy fell behind when it is an ISO date-time, and drops any other", () => {
     const offers: unknown[] = []
     electron.exposed.onUpdate!((offer) => offers.push(offer))
-    const releasedAt = "2026-10-01T09:30:00.000Z"
-    for (const value of [releasedAt, "yesterday", "2026-10-01", 20261001, undefined])
-      electron.renderer.emit(updateOfferChannel, {}, { ...ready, releasedAt: value })
-    expect(offers).toEqual([{ ...ready, releasedAt }, ready, ready, ready, ready])
+    const outdatedSince = "2026-10-01T09:30:00.000Z"
+    for (const value of [outdatedSince, "yesterday", "2026-10-01", 20261001, undefined])
+      electron.renderer.emit(updateOfferChannel, {}, { ...ready, outdatedSince: value })
+    expect(offers).toEqual([{ ...ready, outdatedSince }, ready, ready, ready, ready])
   })
 
   it("carries only the notes the contract allows", () => {
@@ -303,7 +312,10 @@ describe("the sandbox", () => {
 describe("whether this copy is portable", () => {
   it("is what the host answers when it is a portable copy of a release version", async () => {
     electron.answer = { portable: true, version: "1.2.3", extra: "dropped" }
-    expect(await electron.exposed.portable!()).toEqual({ portable: true, version: "1.2.3" })
+    expect(await electron.exposed.portable!()).toEqual({
+      portable: true,
+      version: "1.2.3",
+    })
     expect(electron.sent).toEqual([portableChannel])
   })
 

@@ -32,10 +32,13 @@ export const installedImages = (host: Pick<InstallLocationHost, "env" | "home">)
 ]
 
 /**
- * Whether the AppImage file `appImage` is at one of the installed places. Paths are
- * compared canonically, so a symlinked install counts; a file whose canonical path cannot
- * be had is not at any of them. An installed place that is not there has no canonical
- * path, and never matches.
+ * Whether the AppImage file `appImage` is at one of the installed places. Known limits:
+ * AppImageLauncher keeps the original file name when it integrates a file into
+ * `~/Applications`, so such a copy is not at an installed place and counts as portable; and an
+ * `XDG_DATA_HOME` set only in a shell's rc file is not seen by a copy started from the menu,
+ * which can make an installed copy look portable. Paths are compared canonically, so a
+ * symlinked install counts; a file whose canonical path cannot be had is not at any of them.
+ * An installed place that is not there has no canonical path, and never matches.
  */
 export const isInstalledImage = (appImage: string, host: InstallLocationHost): boolean => {
   const running = host.realpath(appImage)

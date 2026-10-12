@@ -25,8 +25,8 @@ describe("demo portable copy", () => {
   })
 
   it("dates a release the given days back", () => {
-    const { releasedAt } = releaseOffer("0.0.80", 20)
-    const days = (Date.now() - Date.parse(releasedAt!)) / (24 * 60 * 60 * 1000)
+    const { outdatedSince } = releaseOffer("0.0.80", 20)
+    const days = (Date.now() - Date.parse(outdatedSince!)) / (24 * 60 * 60 * 1000)
     expect(Math.round(days)).toBe(20)
   })
 })

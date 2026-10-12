@@ -58,24 +58,24 @@ ipcRenderer.on(saveBeforeQuitChannel, () => {
 // and paragraph separators.
 const unwanted = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u
 
-// What a release date is as the host reports it: an ISO 8601 date-time in UTC, as
+// What the date a copy fell behind is as the host reports it: an ISO 8601 date-time in UTC, as
 // `Date.toISOString` writes it.
-const releaseDatePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
+const datePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
 
 // The offer when it is one the contract allows, or undefined. The host builds offers
 // that obey it; this holds the page's side to it should the host be wrong or tricked.
 // A note the page may not have is dropped rather than shortened.
 const offerOf = (value: unknown): UpdateOffer | undefined => {
   if (typeof value !== "object" || value === null) return undefined
-  const { kind, version, notes, releasedAt } = value as Record<string, unknown>
+  const { kind, version, notes, outdatedSince } = value as Record<string, unknown>
   if (kind !== "ready" && kind !== "available") return undefined
   if (typeof version !== "string" || !updateVersionPattern.test(version)) return undefined
   const lines = Array.isArray(notes) ? (notes as unknown[]) : []
   return {
     kind,
     version,
-    ...(typeof releasedAt === "string" && releaseDatePattern.test(releasedAt)
-      ? { releasedAt }
+    ...(typeof outdatedSince === "string" && datePattern.test(outdatedSince)
+      ? { outdatedSince }
       : {}),
     notes: lines
       .filter(
@@ -122,7 +122,10 @@ const installReasonLength = 300
 // The result of an install when it is one the contract allows. Anything else is a
 // failure, as the page cannot tell what happened.
 const installResultOf = (value: unknown): InstallResult => {
-  const unknown: InstallResult = { kind: "failed", reason: "Installing failed." }
+  const unknown: InstallResult = {
+    kind: "failed",
+    reason: "Installing failed.",
+  }
   if (typeof value !== "object" || value === null) return unknown
   const { kind, version, reason } = value as Record<string, unknown>
   if (kind === "installing") return { kind }
@@ -150,7 +153,10 @@ const bridge = {
   },
   // Only the two fields cross; the main process checks them.
   showAppearance: (appearance) => {
-    ipcRenderer.send(appearanceChannel, { scheme: appearance?.scheme, ground: appearance?.ground })
+    ipcRenderer.send(appearanceChannel, {
+      scheme: appearance?.scheme,
+      ground: appearance?.ground,
+    })
   },
   beforeQuit: (save) => {
     beforeQuit = save
@@ -160,7 +166,11 @@ const bridge = {
   },
   // Only the three fields cross; the main process checks them.
   showNotice: (notice) => {
-    ipcRenderer.send(noticeChannel, { id: notice?.id, title: notice?.title, body: notice?.body })
+    ipcRenderer.send(noticeChannel, {
+      id: notice?.id,
+      title: notice?.title,
+      body: notice?.body,
+    })
   },
   // Only a terminal id comes back.
   onNoticeClick: (listener) => {

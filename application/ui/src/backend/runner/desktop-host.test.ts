@@ -327,26 +327,26 @@ describe("a host's portable copy", () => {
   })
 })
 
-// The release date of the offer a host reports with this `releasedAt`, as the page hears it.
-const heardDate = (releasedAt: unknown) => {
-  let offer: { releasedAt?: string } | undefined
+// The outdated-since date of the offer a host reports with this `outdatedSince`, as the page hears it.
+const heardDate = (outdatedSince: unknown) => {
+  let offer: { outdatedSince?: string } | undefined
   desktopUpdates({
     onUpdate: (listener: (offer: unknown) => void) => {
       listener({
         kind: "available",
         version: "0.0.80",
         notes: [],
-        releasedAt,
+        outdatedSince,
       })
       return () => {}
     },
     installUpdate: () => {},
     openUpdatePage: () => {},
   } as unknown as DesktopHost)!.onOffer((each) => (offer = each))
-  return offer?.releasedAt
+  return offer?.outdatedSince
 }
 
-describe("an offer's release date", () => {
+describe("an offer's outdated-since date", () => {
   it("is kept when it reads as a date, and dropped otherwise", () => {
     expect(heardDate("2026-10-01T10:00:00Z")).toBe("2026-10-01T10:00:00Z")
     expect(heardDate("last week")).toBeUndefined()

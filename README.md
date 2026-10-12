@@ -49,7 +49,8 @@ canvas. Keep related work together and switch between sessions from the sidebar.
   ```
 
 Every installed build keeps itself up to date. An AppImage run from anywhere other than the
-install path is portable: it only looks for new releases and offers to install the app from
+install path (`~/.local/share/novadeck/novadeck.AppImage`, or Homebrew's
+`~/Applications/novadeck.AppImage`) is portable: it only looks for new releases and offers to install the app from
 itself (see [docs/auto-update.md](docs/auto-update.md)). Those links point to the latest stable release; until
 the first one is promoted, Novadeck's builds are prereleases on the
 [Releases page](https://github.com/mzpkdev/novadeck/releases). See
@@ -701,17 +702,20 @@ given), as a spec does that must act on the screen before the turn ends.
   waiting, for specs.
 - **Portable:** boot again as a portable copy, which never updates itself and is the way to
   install the app that does. "Portable" shows the quiet Install Novadeck chip (Install when
-  narrow), which never opens by itself; its panel offers Later and Install Novadeck.
-  "Portable, update available" adds a release from two days ago: the chip reads Update
-  available and its notice, raised once per version, installs rather than downloads.
-  "Portable, stale update" is 20 days behind a release, so the notice comes up at every
-  boot. "Portable, installing", "Portable, newer installed" and "Portable, install fails"
-  arm what pressing Install Novadeck ends in: Installing… in the chip, a panel saying a
-  newer Novadeck is already installed with Open Novadeck, or a panel giving the reason with
-  Install Novadeck kept to retry. "Not portable" boots as an installed copy. With "No
-  sandbox" set under Startup, the No sandbox chip stays away on a portable and the install
-  panel adds a line about it. `?portable=on` (with `&install=newer` or `&install=failed`,
-  and `&update=available&released=recent` or `old`) opens variants for specs.
+  narrow), which never opens by itself; its panel offers Later and Install Novadeck, and
+  pressing it here never ends: the chip reads Installing…. "Portable, update available"
+  adds a release this copy learned of two days ago: the chip reads Update available and its
+  notice, raised once per version, installs rather than downloads. "Portable, stale
+  update" has known of a newer release for 20 days, so the notice comes up at every boot.
+  "Portable, newer installed" and "Portable, install fails" arm the other ends of pressing
+  Install Novadeck: a panel saying a newer Novadeck is already installed with Open
+  Novadeck, or a panel giving the reason with Install Novadeck kept to retry. "Portable,
+  slow answer" makes the host take four seconds to say it is portable, to check the No
+  sandbox chip does not flash meanwhile. "Not portable" boots as an installed copy. With
+  "No sandbox" set under Startup, the No sandbox chip stays away on a portable and the
+  install panel adds a line about it. `?portable=on` (with `&install=newer` or
+  `&install=failed`, `&update=available&outdated=recent` or `old`, and `&answer=late` for
+  a delayed portable answer) opens variants for specs.
 - **Sessions:** mark the selected terminal running, then start a fresh session, to see
   the sessions panel count it.
 - **Another project:** make the agent in the first terminal of another project wait

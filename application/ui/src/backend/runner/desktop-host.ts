@@ -69,7 +69,7 @@ const dated = (text: string): boolean => Number.isFinite(Date.parse(text))
 // shows, without control characters.
 export const hostOffer = (offer: unknown): UpdateOffer | undefined => {
   if (typeof offer !== "object" || offer === null) return undefined
-  const { kind, version, notes, releasedAt } = offer as Record<string, unknown>
+  const { kind, version, notes, outdatedSince } = offer as Record<string, unknown>
   if (kind !== "ready" && kind !== "available") return undefined
   if (typeof version !== "string" || !updateVersionPattern.test(version)) return undefined
   const lines = Array.isArray(notes) ? (notes as unknown[]) : []
@@ -81,8 +81,10 @@ export const hostOffer = (offer: unknown): UpdateOffer | undefined => {
       .map((line) => noticeText(line, updateNoteLength))
       .filter(Boolean)
       .slice(0, updateNotesLength),
-    ...(typeof releasedAt === "string" && releasedAt.length <= maxDateLength && dated(releasedAt)
-      ? { releasedAt }
+    ...(typeof outdatedSince === "string" &&
+    outdatedSince.length <= maxDateLength &&
+    dated(outdatedSince)
+      ? { outdatedSince }
       : {}),
   }
 }

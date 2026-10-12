@@ -57,17 +57,18 @@ const requestedUpdate = (): UpdateOffer | undefined => {
       : demo === "update-available" || query.get("update") === "available"
         ? "available"
         : undefined
-  // `&released=recent` or `&released=old` dates the release, two or twenty days back.
-  const released = query.get("released")
-  const days = released === "recent" ? 2 : released === "old" ? 20 : undefined
-  const releasedAt =
+  // `&outdated=recent` or `&outdated=old` dates when this copy learned of the release,
+  // two or twenty days back.
+  const outdated = query.get("outdated")
+  const days = outdated === "recent" ? 2 : outdated === "old" ? 20 : undefined
+  const outdatedSince =
     days === undefined ? undefined : new Date(Date.now() - days * 86_400_000).toISOString()
   return (
     kind && {
       kind,
       version: "0.0.80",
       notes: sampleNotes,
-      ...(releasedAt ? { releasedAt } : {}),
+      ...(outdatedSince ? { outdatedSince } : {}),
     }
   )
 }
@@ -99,6 +100,10 @@ const requestedInstall = (): InstallResult | undefined => {
   return { kind: "installing" }
 }
 
+// `&answer=late` makes the host take 1.5 seconds to say it is a portable copy.
+const answerDelay = (): number =>
+  new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("answer") === "late" ? 1500 : 0
+
 const testBackend = (): ReturnType<typeof createDemoBackend> => {
   if (showcaseRequested()) return createContentDemo()
   const update = requestedUpdate()
@@ -107,7 +112,10 @@ const testBackend = (): ReturnType<typeof createDemoBackend> => {
   const demo = update ? demoWithUpdate(update) : createDemoBackend()
   const withSandbox = sandbox ? { ...demo, sandbox: createDemoSandbox(sandbox) } : demo
   return install
-    ? { ...withSandbox, portable: createDemoPortable({ install }).portable }
+    ? {
+        ...withSandbox,
+        portable: createDemoPortable({ install, answerAfterMs: answerDelay() }).portable,
+      }
     : withSandbox
 }
 

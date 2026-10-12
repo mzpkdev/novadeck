@@ -33,7 +33,7 @@ export const noticeChannel = "novadeck:notice"
 export const noticeClickChannel = "novadeck:notice-click"
 
 /**
- * Main-to-renderer report of an update offer, `{ kind, version, notes, releasedAt? }`; see
+ * Main-to-renderer report of an update offer, `{ kind, version, notes, outdatedSince? }`; see
  * main/updater.ts. A page that starts listening later asks for it on `updateRequestChannel`.
  */
 export const updateOfferChannel = "novadeck:update-offer"

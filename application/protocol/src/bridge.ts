@@ -147,14 +147,16 @@ export const updateChannels: readonly UpdateChannel[] = ["stable", "early"]
  * unsigned macOS app, an AppImage in a folder it cannot write, a portable copy, or after
  * an install failed. `notes` are the release's notes as plain-text lines, at most
  * `updateNotesLength` of them, each at most `updateNoteLength` long, without control
- * characters; empty when the release has none the host could read. `releasedAt` is when
- * the release was published, as an ISO 8601 date-time, when the host could read a valid one.
+ * characters; empty when the release has none the host could read. `outdatedSince` is set
+ * only for a portable copy: when this copy first learned that a newer release exists, as
+ * an ISO 8601 date-time. The host remembers it across launches for as long as the running
+ * version stays the same, so it does not restart with each newer release.
  */
 export type UpdateOffer = {
   readonly kind: "ready" | "available"
   readonly version: string
   readonly notes: readonly string[]
-  readonly releasedAt?: string
+  readonly outdatedSince?: string
 }
 
 /** What an update's version may be, as the host reports it: a release's semantic version. */

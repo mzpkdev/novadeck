@@ -10,6 +10,8 @@ import type { DemoLaunch } from "./with-debug"
 export type DemoPortable = {
   readonly install: InstallResult
   readonly offer?: UpdateOffer
+  // How long the host takes to say it is a portable copy; at once when absent.
+  readonly answerAfterMs?: number
 }
 
 // The version of the portable copy the demo plays.
@@ -21,6 +23,7 @@ export const portableVersion = "0.0.70"
 // installed copy to start.
 export const createDemoPortable = ({
   install,
+  answerAfterMs = 0,
 }: DemoPortable): {
   readonly portable: NonNullable<Backend["portable"]>
   readonly opened: () => number
@@ -29,7 +32,10 @@ export const createDemoPortable = ({
   let opens = 0
   return {
     portable: {
-      state: () => Promise.resolve(state),
+      state: () =>
+        answerAfterMs > 0
+          ? new Promise((resolve) => setTimeout(() => resolve(state), answerAfterMs))
+          : Promise.resolve(state),
       install: () => Promise.resolve(install),
       openInstalled: () => void (opens += 1),
     },
@@ -39,12 +45,12 @@ export const createDemoPortable = ({
 
 const dayMs = 24 * 60 * 60 * 1000
 
-// A release published `days` ago, as the host would tell of it.
+// A release this copy has known of for `days`, as the host would tell of it.
 export const releaseOffer = (version: string, days: number): UpdateOffer => ({
   kind: "available",
   version,
   notes: sampleNotes,
-  releasedAt: new Date(Date.now() - days * dayMs).toISOString(),
+  outdatedSince: new Date(Date.now() - days * dayMs).toISOString(),
 })
 
 const installing: InstallResult = { kind: "installing" }
@@ -62,7 +68,7 @@ export const portableGroup = (launch: DemoLaunch): DemoActionGroup => {
     actions: [
       {
         label: "Portable",
-        hint: "Boots again as a portable copy with no release known: an Install Novadeck chip (Install when narrow) that never opens by itself; its panel says this copy can't update itself, with Later and Install Novadeck",
+        hint: "Boots again as a portable copy with no release known: an Install Novadeck chip (Install when narrow) that never opens by itself; its panel says this copy can't update itself, with Later and Install Novadeck. Pressing Install Novadeck turns the chip to Installing…, which never ends",
         run: boot({ install: installing }),
       },
       {
@@ -74,11 +80,6 @@ export const portableGroup = (launch: DemoLaunch): DemoActionGroup => {
         label: "Portable, stale update",
         hint: "Boots again as a portable copy 20 days behind a release: the same notice, raised at every boot, not only the first",
         run: () => launch.setPortable({ install: installing, offer: release(20) }),
-      },
-      {
-        label: "Portable, installing",
-        hint: "Boots again as a portable copy whose install never ends: press Install Novadeck and the chip reads Installing…, disabled, with no panel",
-        run: boot({ install: installing }),
       },
       {
         label: "Portable, newer installed",
@@ -94,6 +95,11 @@ export const portableGroup = (launch: DemoLaunch): DemoActionGroup => {
             reason: "There is no space left on the disk.",
           },
         }),
+      },
+      {
+        label: "Portable, slow answer",
+        hint: "Boots again as a portable copy whose host takes four seconds to say so: the Install Novadeck chip comes late, and with No sandbox set under Startup, that chip stays away meanwhile instead of flashing",
+        run: boot({ install: installing, answerAfterMs: 4000 }),
       },
       {
         label: "Not portable",

@@ -138,26 +138,51 @@ no longer replaces its own file, as it once did in any writable folder. macOS an
 builds are not told apart yet and keep their rules above.
 
 A portable build still looks for releases, in `tell` mode, so it learns that a newer one
-exists; the offer carries the release's date (`releasedAt`, from the update metadata).
-`DesktopBridge.portable` tells the page whether the copy is portable, and `installApp`
-installs from it (`portable.ts`, `install-linux.ts`):
+exists. Its offer carries `outdatedSince`, when this copy first learned that a newer release
+exists. The host keeps it in `update.json` for the running version and starts over when that
+version changes, so a newer release does not reset it. electron-updater's `releaseDate` is
+the build time, which `promote.yml` does not rewrite, so it is not used. The page raises the
+update notice at every launch once that is 14 days ago. `DesktopBridge.portable` tells the
+page whether the copy is portable, and `installApp` installs from it (`portable.ts`,
+`install-linux.ts`):
 
 - It installs from the running file, with no download: the AppImage is copied beside the
-  install path as `.new` and renamed over it, so a failed copy leaves nothing half-written; the
-  icon is extracted with `--appimage-extract` (no FUSE needed); `~/.local/bin/novadeck` is
-  linked to the image; and the menu entry `dev.mzpk.novadeck.desktop` is written, as
-  `scripts/install/install.sh` does, with the same `Exec` quoting. The AppArmor profile that
-  turns the sandbox on still needs the installer's `--sandbox` step, with `sudo`.
+  install path as `.new` and renamed over it, so a failed copy leaves nothing half-written
+  and nothing else changed. Only then is the icon extracted with `--appimage-extract` (no FUSE
+  needed); `~/.local/bin/novadeck` linked to the image; and the menu entry
+  `dev.mzpk.novadeck.desktop` written, as `scripts/install/install.sh` does, with the same
+  `Exec` quoting. Over an installed copy elsewhere, such as Homebrew's, it writes the file
+  alone; when that place is a symlink, as Homebrew's into the Caskroom is, it replaces the file
+  the link leads to and keeps the link. The AppArmor profile that turns the sandbox on still
+  needs the installer's `--sandbox` step, with `sudo`.
 - It then shuts down as an update does, so pages save and the runner ends its shells, lets go
-  of the single-instance lock, and relaunches into the installed AppImage with no arguments of
-  its own, since the portable's may carry `--no-sandbox`.
+  of the single-instance lock, and starts the installed AppImage as a detached child process
+  (`child_process.spawn`, then `unref`) with no arguments of its own, since the portable's may
+  carry `--no-sandbox`, and without `APPIMAGE`, `APPDIR`, `OWD` and `ARGV0`, which are the
+  portable's. Electron's `app.relaunch` is not used on Linux: the process it starts inherits
+  no-new-privileges, so the AppImage runtime's setuid `fusermount` cannot mount the image and
+  the child dies at once. macOS's move to Applications still relaunches. If the child cannot be
+  spawned, such as for a missing exec bit, the shells are already gone, so a dialog names the
+  path ("The installed Novadeck did not start") and the app quits; it also quits if it is
+  somehow still running ten seconds after the installed copy started.
 - An installed copy newer than the portable one is never overwritten. The answer is `newer`,
-  and `openInstalled` relaunches into that copy after the same shutdown. An installed copy's
-  version is read without running it, from `X-AppImage-Version` in the menu entry
-  electron-builder writes into the AppImage (`--appimage-extract '*.desktop'`); a copy whose
-  version cannot be read counts as not newer and is replaced.
+  and `openInstalled` starts that copy after the same shutdown. An installed copy's version is
+  read from `X-AppImage-Version` in the menu entry electron-builder writes into the AppImage.
+  This does execute the installed file's own AppImage runtime, as `install-linux.ts` runs
+  `<file> --appimage-extract '*.desktop'` in a temporary folder with a 20 second limit; that
+  unpacks the entry and starts no app. The result has three cases. The version is read. The
+  file runs but names no readable version, or exits with a status or is no program: it counts
+  as not newer and is replaced. Or it could not be checked, because of a missing temporary
+  folder, a timeout, a missing exec bit or another failure unrelated to the file's contents:
+  it is never overwritten, and the install answers `failed` with a short reason. At launch an
+  unchecked copy is ignored; the runner's `WORKSPACE_TOO_NEW` refusal is the fallback.
 - A failure, such as a full disk or a folder that cannot be written, is returned with a short
-  reason.
+  reason, as is a request while the app is already quitting ("Novadeck is quitting.").
+
+Known limits. AppImageLauncher keeps the AppImage's own file name when it integrates a file
+into `~/Applications`, so such a copy is not at an installed place and counts as portable. An
+`XDG_DATA_HOME` set only in a shell's rc file is not seen by a copy started from the menu, which
+can make an installed copy look portable.
 
 Both copies keep their data in the same folder, so the installed app opens where the portable
 left off. An older runner refuses a database a newer one has upgraded, so when a portable

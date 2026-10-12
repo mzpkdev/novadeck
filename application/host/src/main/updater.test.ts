@@ -25,7 +25,6 @@ import {
   portableOf,
   quitWithoutInstalling,
   registerUpdateIpc,
-  releasedAtOf,
   switchCheckMs,
   trackOffer,
   updatePlan,
@@ -48,7 +47,10 @@ const build = (overrides: Partial<UpdateBuild> = {}): UpdateBuild => ({
 })
 
 const appImage = {
-  env: { APPIMAGE: "/home/me/novadeck.AppImage", APPDIR: "/tmp/.mount_novadeAbC" },
+  env: {
+    APPIMAGE: "/home/me/novadeck.AppImage",
+    APPDIR: "/tmp/.mount_novadeAbC",
+  },
   execPath: "/tmp/.mount_novadeAbC/novadeck",
 }
 
@@ -66,7 +68,12 @@ describe("how a build updates", () => {
       updatePlan(build({ platform: "win32", env: { NOVADECK_UPDATES: "off" } })),
     ).toBeUndefined()
     expect(
-      updatePlan(build({ ...appImage, env: { ...appImage.env, NOVADECK_UPDATES: "off" } })),
+      updatePlan(
+        build({
+          ...appImage,
+          env: { ...appImage.env, NOVADECK_UPDATES: "off" },
+        }),
+      ),
     ).toBeUndefined()
   })
 
@@ -178,18 +185,6 @@ describe("whether a build is portable", () => {
   })
 })
 
-describe("the date of a release", () => {
-  it("is an ISO date-time, however the release's date was written", () => {
-    expect(releasedAtOf("2026-10-01T11:30:00+02:00")).toBe("2026-10-01T09:30:00.000Z")
-    expect(releasedAtOf("2026-10-01")).toBe("2026-10-01T00:00:00.000Z")
-  })
-
-  it("is nothing for anything that is no date", () => {
-    for (const value of [undefined, 3, null, "soon", "", "x".repeat(100), new Date()])
-      expect(releasedAtOf(value)).toBeUndefined()
-  })
-})
-
 describe("the macOS app bundle", () => {
   it("is the folder above Contents/MacOS", () => {
     expect(bundleOf("/Applications/novadeck.app/Contents/MacOS/novadeck")).toBe(
@@ -224,7 +219,10 @@ describe("an update's version", () => {
 
 const page = () => {
   const sent: [string, unknown][] = []
-  return { sent, send: (channel: string, offer: unknown) => void sent.push([channel, offer]) }
+  return {
+    sent,
+    send: (channel: string, offer: unknown) => void sent.push([channel, offer]),
+  }
 }
 
 describe("telling pages of an update", () => {
@@ -238,14 +236,34 @@ describe("telling pages of an update", () => {
     expect(offers.current()).toEqual(offer)
   })
 
-  it("carries the release date when it is one", () => {
+  it("carries when the copy fell behind, asking only for an offer that is new", () => {
     const open = page()
     const offers = trackOffer(() => [open])
-    offers.offer("available", "1.2.3", [], "2026-10-01T09:30:00Z")
-    offers.offer("available", "1.2.4", [], "soon")
+    const asked: string[] = []
+    const since = (): string => {
+      asked.push("asked")
+      return "2026-10-01T09:30:00.000Z"
+    }
+    offers.offer("available", "1.2.3", [], since)
+    offers.offer("available", "1.2.3", [], since)
+    offers.offer("available", "1.2.4", [])
+    expect(asked).toHaveLength(1)
     expect(open.sent.map(([, offer]) => offer)).toEqual([
-      { kind: "available", version: "1.2.3", notes: [], releasedAt: "2026-10-01T09:30:00.000Z" },
+      {
+        kind: "available",
+        version: "1.2.3",
+        notes: [],
+        outdatedSince: "2026-10-01T09:30:00.000Z",
+      },
       { kind: "available", version: "1.2.4", notes: [] },
+    ])
+  })
+
+  it("goes without the date when the copy cannot say", () => {
+    const open = page()
+    trackOffer(() => [open]).offer("available", "1.2.3", [], () => undefined)
+    expect(open.sent).toEqual([
+      [updateOfferChannel, { kind: "available", version: "1.2.3", notes: [] }],
     ])
   })
 
@@ -512,7 +530,6 @@ describe("checking for updates", () => {
   ) => {
     const updater = new FakeUpdater()
     const offered: [string, string, readonly string[]][] = []
-    const released: unknown[] = []
     const failed: string[] = []
     const logged: string[] = []
     const checks = checkForUpdates(updater as unknown as Updater, {
@@ -520,24 +537,27 @@ describe("checking for updates", () => {
       channel: options.channel ?? "stable",
       failedVersion: options.failedVersion,
       native: options.native,
-      offer: (kind, version, notes, releasedAt) => {
-        offered.push([kind, version, notes])
-        released.push(releasedAt)
-      },
+      offer: (kind, version, notes) => void offered.push([kind, version, notes]),
       installFailed: (version) => void failed.push(version),
       log: (message) => void logged.push(message),
     })
-    return { updater, offered, released, failed, logged, ...checks }
+    return { updater, offered, failed, logged, ...checks }
   }
 
   it("installs on quitting in install mode, and asks for each download itself", () => {
     const { updater } = checking()
-    expect(updater).toMatchObject({ autoDownload: false, autoInstallOnAppQuit: true })
+    expect(updater).toMatchObject({
+      autoDownload: false,
+      autoInstallOnAppQuit: true,
+    })
   })
 
   it("downloads and installs nothing in tell mode", () => {
     const { updater } = checking({ mode: "tell" })
-    expect(updater).toMatchObject({ autoDownload: false, autoInstallOnAppQuit: false })
+    expect(updater).toMatchObject({
+      autoDownload: false,
+      autoInstallOnAppQuit: false,
+    })
   })
 
   it("follows only releases that are not prereleases on the stable channel, and every release on early", () => {
@@ -735,20 +755,14 @@ describe("checking for updates", () => {
         releaseName: "Novadeck v1.2.3",
         releaseNotes: "<p>Faster.</p>",
       })
-      updater.emit("update-available", { version: "1.3.0", releaseNotes: null })
+      updater.emit("update-available", {
+        version: "1.3.0",
+        releaseNotes: null,
+      })
       expect(offered).toEqual([
         ["available", "1.2.3", ["Faster."]],
         ["available", "1.3.0", []],
       ])
-    })
-
-    it("hands on the date the release was published", () => {
-      const { updater, released } = checking({ mode: "tell" })
-      updater.emit("update-available", {
-        version: "1.2.3",
-        releaseDate: "2026-10-01T09:30:00.000Z",
-      })
-      expect(released).toEqual(["2026-10-01T09:30:00.000Z"])
     })
 
     it("keeps checking, so a newer release replaces the offer", async () => {

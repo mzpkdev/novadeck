@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises"
+import { readdir, readFile, stat } from "node:fs/promises"
 import { join } from "node:path"
 
 import { context, describe, expect, it } from "../test"
@@ -7,6 +7,21 @@ const output = join(process.cwd(), "out")
 const read = (path: string): Promise<string> => readFile(join(output, path), "utf8")
 
 describe("compiled desktop host", () => {
+  it("is built from the current sources", async () => {
+    // The test task builds first (turbo.json); run on its own, a stale build must not pass.
+    const built = (await stat(join(output, "main/index.js"))).mtimeMs
+    const sources = await readdir(join(process.cwd(), "src"), { recursive: true })
+    const changed = await Promise.all(
+      sources
+        .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+        .map(async (name) => ({
+          name,
+          at: (await stat(join(process.cwd(), "src", name))).mtimeMs,
+        })),
+    )
+    expect(changed.filter(({ at }) => at > built).map(({ name }) => name)).toEqual([])
+  })
+
   context("after the production build", () => {
     it("keeps the application identity and starts the embedded HTTP server", async () => {
       const main = await read("main/index.js")
@@ -88,18 +103,41 @@ describe("compiled desktop host", () => {
 
       expect(main).toContain("requestSingleInstanceLock()")
       expect(main).toContain('app.on("second-instance"')
-      // A relaunch lets go of the lock first, so the new process can take it.
-      expect(main.indexOf("releaseSingleInstanceLock()")).toBeLessThan(
-        main.indexOf("app.exit(0)", main.indexOf("releaseSingleInstanceLock()")),
-      )
       expect(main.indexOf("requestSingleInstanceLock()")).toBeLessThan(main.indexOf("whenReady()"))
+      // A second launch says which data folder is taken before it quits.
+      const refusal = main.slice(main.indexOf("if (!primaryInstance)"))
+      expect(refusal.indexOf("console.error(")).toBeGreaterThan(-1)
+      expect(refusal.indexOf("console.error(")).toBeLessThan(refusal.indexOf("app.exit(0)"))
+      expect(refusal.slice(0, refusal.indexOf("app.exit(0)"))).toContain('getPath("userData")')
+    })
+
+    it("starts the installed AppImage as a detached child after letting go of the lock, never through app.relaunch", async () => {
+      const main = await read("main/index.js")
+
+      expect(main).toContain("releaseLock: () => app.releaseSingleInstanceLock()")
+      expect(main).toContain("exit: () => app.exit(0)")
+      expect(main).toContain('import { execFile, spawn } from "node:child_process"')
+      // The lock goes first so the child can take it; the child is let go of before this one
+      // exits. The bundler may rename `spawn`.
+      expect(main).toMatch(
+        /releaseLock\(\);[\s\S]*?spawn\d*\(image, \[\], \{\s*detached: true,\s*stdio: "ignore"[\s\S]*?child\.unref\(\);\s*exit\(\);/u,
+      )
+      // Electron's relaunch hands the child no-new-privileges, which stops an AppImage from
+      // mounting; only macOS still uses it, and with the executable alone.
+      expect(main).not.toContain("args: []")
+      expect(main.match(/app\.relaunch\(/gu)).toHaveLength(1)
     })
 
     it("tells a portable copy of a newer installed one before the runner starts, and offers the install to the page", async () => {
       const main = await read("main/index.js")
       const preload = await read("preload/index.cjs")
 
-      expect(main.indexOf("leaveForNewerInstalled(")).toBeLessThan(main.indexOf("startRunner("))
+      expect(main.indexOf("await leaveForNewerInstalled(")).toBeGreaterThan(-1)
+      expect(main.indexOf("await leaveForNewerInstalled(")).toBeLessThan(
+        main.indexOf("runner = startRunner("),
+      )
+      // Only Linux has portable copies, so macOS never waits for codesign to open its window.
+      expect(main).toContain('process.platform === "linux" && portableOf(await updateBuild())')
       expect(main).toContain("registerPortableIpc(")
       expect(preload).toContain("novadeck:portable")
       expect(preload).toContain("novadeck:install-app")
@@ -114,7 +152,10 @@ describe("compiled desktop host", () => {
       expect(main).toContain("Menu.setApplicationMenu")
       expect(main).toContain("moveToApplicationsFolder")
       expect(main).toContain("isInApplicationsFolder")
-      expect(main.indexOf("await moveToApplications()")).toBeLessThan(main.indexOf("startRunner("))
+      expect(main.indexOf("await moveToApplications()")).toBeGreaterThan(-1)
+      expect(main.indexOf("await moveToApplications()")).toBeLessThan(
+        main.indexOf("runner = startRunner("),
+      )
       expect(main).toContain('"app-update.yml"')
       expect(main).not.toContain("mzpkdev/novadeck/releases/tag")
     })

@@ -1,32 +1,27 @@
 import { context, describe, expect, it } from "../test"
-import {
-  noticeRaised,
-  portableNagged,
-  releaseStale,
-  staleAfterMs,
-  type UpdateOffer,
-} from "./update"
+import { noticeRaised, portableNagged, offerStale, staleAfterMs, type UpdateOffer } from "./update"
 
 const now = Date.parse("2026-10-12T12:00:00Z")
 const dated = (ms: number, kind: UpdateOffer["kind"] = "available"): UpdateOffer => ({
   kind,
   version: "0.0.80",
   notes: [],
-  releasedAt: new Date(now - ms).toISOString(),
+  outdatedSince: new Date(now - ms).toISOString(),
 })
 const day = 24 * 60 * 60 * 1000
 
 describe("a stale release", () => {
-  it("is one published 14 days ago or more", () => {
+  it("is one this copy has known of for 14 days or more", () => {
     expect(staleAfterMs).toBe(14 * day)
-    expect(releaseStale(dated(14 * day), now)).toBe(true)
-    expect(releaseStale(dated(14 * day - 1), now)).toBe(false)
-    expect(releaseStale(dated(60 * day), now)).toBe(true)
+    expect(offerStale(dated(14 * day), now)).toBe(true)
+    expect(offerStale(dated(14 * day - 1), now)).toBe(false)
+    expect(offerStale(dated(60 * day), now)).toBe(true)
   })
 
-  it("is not one with no readable date", () => {
-    expect(releaseStale({ kind: "available", version: "0.0.80", notes: [] }, now)).toBe(false)
-    expect(releaseStale({ ...dated(0), releasedAt: "last week" }, now)).toBe(false)
+  it("is not one with no readable date, or one in the future", () => {
+    expect(offerStale({ kind: "available", version: "0.0.80", notes: [] }, now)).toBe(false)
+    expect(offerStale({ ...dated(0), outdatedSince: "last week" }, now)).toBe(false)
+    expect(offerStale(dated(-30 * day), now)).toBe(false)
   })
 
   it("is nagged about on a portable copy only for a release to fetch", () => {

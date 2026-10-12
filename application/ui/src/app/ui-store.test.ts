@@ -20,6 +20,9 @@ import {
   type UiState,
 } from "./ui-store"
 
+// A run of the app's memory of what it raised outlasts a store, so each test starts one.
+beforeEach(() => sessionStorage.clear())
+
 const initial = (updateSeen: string | null = null): UiState =>
   initialUi({
     updateSeen,
@@ -480,12 +483,12 @@ describe("the sandbox", () => {
   })
 })
 
-// A release published 20 days ago, which a portable copy is stale against.
+// A release this copy has known of for 20 days, which a portable copy is stale against.
 const stale = (kind: UpdateOffer["kind"] = "available"): UpdateOffer => ({
   kind,
   version: "0.0.80",
   notes: [],
-  releasedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+  outdatedSince: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
 })
 
 describe("a portable copy", () => {
@@ -513,6 +516,7 @@ describe("a portable copy", () => {
   it("is never there where the backend does not say, or fails to", async () => {
     const ui = createUiStore(initial())
     watchPortable(undefined, ui)()
+    expect(ui.getSnapshot().portable).toBeNull()
     watchPortable(
       {
         state: () => Promise.reject(new Error("no")),
@@ -521,8 +525,7 @@ describe("a portable copy", () => {
       },
       ui,
     )
-    await Promise.resolve()
-    expect(ui.getSnapshot().portable).toBeNull()
+    await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual({ portable: false }))
   })
 
   it("raises the notice of a stale release shown before, whichever is heard first", async () => {
@@ -540,7 +543,8 @@ describe("a portable copy", () => {
     expect(early.getSnapshot().updateOpen).toBe(false)
     watchPortable(host, early)
     await vi.waitFor(() => expect(early.getSnapshot().updateOpen).toBe(true))
-    // The answer first.
+    // The answer first, in another run.
+    sessionStorage.clear()
     const second = updateHost()
     const late = createUiStore(initial(seen))
     watchPortable(host, late)
@@ -560,6 +564,39 @@ describe("a portable copy", () => {
     ui.update((state) => ({ ...state, updateOpen: false }))
     report(stale())
     expect(ui.getSnapshot().updateOpen).toBe(false)
+  })
+
+  it("does not raise a stale release's notice again in a store made anew within the run", async () => {
+    const seen = "available:0.0.80"
+    const host = {
+      state: () => Promise.resolve(here),
+      install: () => Promise.resolve({ kind: "installing" as const }),
+      openInstalled: () => {},
+    }
+    const first = updateHost()
+    const before = createUiStore(initial(seen))
+    watchUpdates(first.updates, before)
+    watchPortable(host, before)
+    await vi.waitFor(() => expect(before.getSnapshot().portable).toEqual(here))
+    first.report(stale())
+    expect(before.getSnapshot().updateOpen).toBe(true)
+    // A page reload, or the backend attempted again: the store starts over, the run goes on.
+    const second = updateHost()
+    const after = createUiStore(initial(seen))
+    watchUpdates(second.updates, after)
+    watchPortable(host, after)
+    await vi.waitFor(() => expect(after.getSnapshot().portable).toEqual(here))
+    second.report(stale())
+    expect(after.getSnapshot().updateOpen).toBe(false)
+    // A relaunch is a new run.
+    sessionStorage.clear()
+    const third = updateHost()
+    const relaunched = createUiStore(initial(seen))
+    watchUpdates(third.updates, relaunched)
+    watchPortable(host, relaunched)
+    await vi.waitFor(() => expect(relaunched.getSnapshot().portable).toEqual(here))
+    third.report(stale())
+    expect(relaunched.getSnapshot().updateOpen).toBe(true)
   })
 
   it("leaves the notice of an installed copy to once per version", () => {
