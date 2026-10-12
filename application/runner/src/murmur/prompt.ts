@@ -85,10 +85,10 @@ A plan "1. Move invoicing out of the billing module 2. Add a queue between them"
 export const gistSystem = `You write one line for a developer's notification list. You get the reply an AI coding agent ended its turn with. Reply with a JSON object holding asks and a gist, in that order.
 
 asks: true when the reply ends by asking the person to pick, decide or supply something the agent needs to go on, with or without a question mark: "Which direction appeals to you?", "Tell me where it downloaded". false for an offer to do more, such as "Want me to add tests?", "Should I also update the docs?" or "Let me know if you need anything else".
-gist: ${gistWords.min} to ${gistWords.max} words, at most ${gistCharacters} characters, a complete phrase naming what the agent did or found. Never copy a sentence from the reply.
+gist: ${gistWords.min} to ${gistWords.max} words, at most ${gistCharacters} characters, a complete phrase of about 4 to 8 words naming the result, what the agent did or found, not the topic. Never copy a sentence from the reply.
 
 Rules:
-- The gist is a statement, never a question and never the reply's own question: asks carries that.
+- The gist is a statement, never a question and never the reply's own question: asks carries that. When the reply asks, the gist still says what the agent found, proposed or did ("Two rounding modes proposed"): never "question", "clarify" or "open question".
 - Write in the language of the reply, whatever language these instructions are in.
 - Use only facts in the reply. Never say tests pass, CI is green or something works unless the reply says so in those words.
 - When the turn ended with an error, say what failed if the reply says so.
@@ -157,9 +157,56 @@ const budget = {
   choices: 8,
   choice: 80,
   plan: 1500,
-  replyHead: 600,
-  replyTail: 1200,
+  // A reply is budgeted in tokens, estimated by `cost`, since a chat window of 4096 tokens holds
+  // very different amounts of text by script: its system prompt, the answer and a margin come
+  // out of it, and about 3000 are left for the reply.
+  replyHead: 1500,
+  replyTail: 1500,
 }
+
+// What a character costs the model, in tokens, rounded up for safety. English prose runs at
+// about 0.27, code and symbols at 0.35, and Chinese, Japanese and emoji at 0.55 to 1.35 (measured
+// on the engine's own tokenizer); anything outside ASCII is counted at the dearest.
+const cost = (text: string): number => {
+  let units = 0
+  for (const character of text) units += character.charCodeAt(0) < 128 ? 0.36 : 1.4
+  return units
+}
+
+// The longest start of `text` that costs at most `limit` tokens.
+const startWithin = (text: string, limit: number): string => {
+  let units = 0
+  let end = 0
+  for (const character of text) {
+    units += cost(character)
+    if (units > limit) break
+    end += character.length
+  }
+  return text.slice(0, end)
+}
+
+// The longest end of `text` that costs at most `limit` tokens.
+const endWithin = (text: string, limit: number): string => {
+  let units = 0
+  let start = text.length
+  for (const character of [...text].toReversed()) {
+    units += cost(character)
+    if (units > limit) break
+    start -= character.length
+  }
+  return text.slice(start)
+}
+
+// A reply without what is no prose, so the budget goes to the words: code blocks, link
+// addresses, bare URLs and the rows of tables are marked or dropped. It works on redacted text.
+const prose = (text: string): string =>
+  text
+    .replaceAll(/```[^]*?(?:```|$)/g, "[code]")
+    .replaceAll(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, "$1")
+    .replaceAll(/\b(?:https?|ftp):\/\/\S+/g, "[link]")
+    .replaceAll(/(?:^[ \t]*\|.*\n?){2,}/gm, (rows) => `${rows.split("\n")[0]?.trim()}\n[table]\n`)
+    .replaceAll(/\n{3,}/g, "\n\n")
+    .trim()
 
 const head = (text: string, limit: number): string =>
   text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`
@@ -197,12 +244,20 @@ const noteMessages = (input: NoteDigest): Message[] => {
     )
     lines.push("", "Write the headline in the language of the plan.")
   } else {
-    const reply = input.reply.trim()
-    const whole = reply.length <= budget.replyHead + budget.replyTail
+    const reply = prose(input.reply)
+    const whole = cost(reply) <= budget.replyHead + budget.replyTail
     if (input.failed) lines.push("The turn ended with an error.", "")
+    // The two ends are named and the cut marked, so they are not read as one text.
     lines.push(
-      "The agent's reply:",
-      whole ? reply : `${head(reply, budget.replyHead)}\n${tail(reply, budget.replyTail)}`,
+      ...(whole
+        ? ["The agent's reply:", reply]
+        : [
+            "The start of the agent's reply:",
+            startWithin(reply, budget.replyHead).trimEnd(),
+            "[…]",
+            "The end of the agent's reply:",
+            endWithin(reply, budget.replyTail).trimStart(),
+          ]),
     )
     lines.push("", "Write the gist in the language of the reply.")
   }

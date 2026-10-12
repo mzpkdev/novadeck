@@ -140,15 +140,62 @@ describe("asking for a gist", () => {
     expect(user(reply("The build is broken.", true))).toContain("The turn ended with an error.")
   })
 
-  it("shows the head and the tail of a long reply, not the middle", () => {
-    const text = `${"a".repeat(700)}${"MIDDLE".repeat(500)}${"z".repeat(1300)}`
+  it("shows the start and the end of a long reply, named and with the cut marked", () => {
+    const text = `${"a".repeat(4500)}${"MIDDLE".repeat(1000)}${"z".repeat(4500)}`
 
     const shown = user(reply(text))
 
-    expect(shown).toContain("a".repeat(500))
+    expect(shown).toContain("The start of the agent's reply:\n")
+    expect(shown).toContain("\n[…]\nThe end of the agent's reply:\n")
+    expect(shown).toContain("a".repeat(1000))
     expect(shown).toContain("z".repeat(1000))
     expect(shown).not.toContain("MIDDLE")
-    expect(shown.length).toBeLessThan(2200)
+    // Not so much that the model's window is gone: about 3000 tokens at the dearest rate.
+    expect(shown.length).toBeLessThan(9000)
+  })
+
+  it("shows a reply that fits whole, unmarked", () => {
+    const shown = user(reply("Fixed the build.\n\nWant me to push?"))
+
+    expect(shown).toContain("The agent's reply:\nFixed the build.\n\nWant me to push?")
+    expect(shown).not.toContain("[…]")
+  })
+
+  it("budgets by what the text costs the model, so a script that costs more gets less", () => {
+    const english = user(reply("word ".repeat(3000)))
+    const chinese = user(reply("我已经修改了数据库配置。".repeat(400)))
+
+    expect(english.length).toBeGreaterThan(chinese.length * 2)
+    expect(chinese.length).toBeLessThan(3000)
+    expect(chinese).toContain("[…]")
+  })
+
+  it("leaves out what is no prose, after which the words fit", () => {
+    const text = [
+      "Fixed it in [the PR](https://example.com/pull/131) and ![shot](https://example.com/a.png).",
+      "```ts\nconst secret = 1\n```",
+      "See https://example.com/docs/a?b=c for more.",
+      "| Term | Meaning |\n| --- | --- |\n| a | b |\n| c | d |",
+      "```js\nunclosed fence",
+    ].join("\n\n\n\n")
+
+    const shown = user(reply(text))
+
+    expect(shown).toContain("Fixed it in the PR and shot.")
+    expect(shown).not.toMatch(/example\.com|const secret|unclosed|--- \|/)
+    expect(shown).toContain("[code]")
+    expect(shown).toContain("See [link] for more.")
+    expect(shown).toContain("| Term | Meaning |\n[table]")
+    expect(shown).not.toContain("\n\n\n")
+  })
+
+  it("spends the budget on prose, not on a long code block", () => {
+    const text = `${"The fix is in.\n\n"}\`\`\`\n${"x = 1\n".repeat(3000)}\`\`\`\n\nAll done.`
+
+    const shown = user(reply(text))
+
+    expect(shown).toContain("The fix is in.\n\n[code]\n\nAll done.")
+    expect(shown).not.toContain("[…]")
   })
 
   it("tells the model what asking is, and asks for asks first", () => {

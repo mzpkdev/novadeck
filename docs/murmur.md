@@ -31,6 +31,13 @@ Notes are handed their own digests:
 - a headline: the first question an agent asks, with the labels of the answers it offers (at
   most 16), or the start of a plan it asks the person to review (at most 16 KiB);
 - a gist: the agent's last reply, whole when short, else its first and last 4000 characters.
+  The prompt strips what is no prose, after redaction (fenced code becomes `[code]`, link
+  addresses and bare URLs go, table rows become their first row and `[table]`), then budgets
+  what is left by what it costs the model in tokens: about 3000 of the 4096-token window, at 0.36
+  per ASCII character and 1.4 per other (Chinese, Japanese and emoji cost up to 1.35 measured).
+  That is about 4000 characters of English each at the start and the end, and fewer in other
+  scripts. A cut reply is shown as "The start of the agent's reply:", `[…]`, "The end of the
+  agent's reply:", so the two pieces are not read as one text.
 
 Nothing else is read, and nothing leaves the machine: the server listens on `127.0.0.1`
 behind a random API key made for each launch and passed in the environment

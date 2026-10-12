@@ -601,8 +601,19 @@ const create = (
 }
 
 const idle = (reply: string | null) =>
-  ({ state: "idle", lastTurn: { reply } }) as unknown as MurmurSubject["activity"]
-const working = () => ({ state: "working", lastTurn: null }) as unknown as MurmurSubject["activity"]
+  ({
+    state: "idle",
+    pending: [],
+    plans: [],
+    lastTurn: { reply },
+  }) as unknown as MurmurSubject["activity"]
+const working = () =>
+  ({
+    state: "working",
+    pending: [],
+    plans: [],
+    lastTurn: null,
+  }) as unknown as MurmurSubject["activity"]
 const report = (fields: Partial<Parameters<Murmur["reported"]>[1]> = {}) => ({
   session: false,
   ...fields,
