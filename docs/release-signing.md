@@ -102,7 +102,8 @@ gh attestation verify novadeck-linux-x86_64.AppImage --repo novadeck-org/novadec
 ```
 
 Releases up to v0.0.95 were built before the repository moved from `mzpkdev/novadeck`, so
-their attestations name that repository; verify those with `--repo mzpkdev/novadeck`.
+their attestations live under that owner; verify those with
+`--owner mzpkdev --signer-repo mzpkdev/novadeck`.
 
 Each release also signs `SHA256SUMS` with the Novadeck release key, as
 `SHA256SUMS.asc`, which needs only `gpg` and `sha256sum` to check:
