@@ -142,7 +142,21 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
       // Checked once the deck has closed, so what a harness sends as it exits counts too,
       // while the fake model still listens.
       await close()
-      const leftovers = await reap(sandbox)
+      // A check that throws, as the Keychain or ps may, is a problem of its own, and the
+      // rest are still told.
+      const unchecked: string[] = []
+      const checked = async <T>(what: string, check: () => T | Promise<T>, none: T) => {
+        try {
+          return await check()
+        } catch (error) {
+          unchecked.push(`${what} couldn't be checked: ${(error as Error).message}`)
+          return none
+        }
+      }
+      const leftovers = await checked("leftover processes", () => reap(sandbox), [])
+      const changes = await checked("the developer's harness home", changed, [])
+      const appeared = await checked(loginStore, () => harnessLogins(setups), [])
+      const asks = await checked("the sandbox's Keychain log", () => keychainAsks(sandbox), [])
       const hosts = new Set(setups.flatMap((setup) => setup.hosts ?? []))
       const problems = [
         ...(model.foreign > 0
@@ -154,15 +168,16 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
         ...model.errors.map((error) => `the fake model failed on a request: ${error}`),
         // Reported here too when a wait failed with it: a test may have swallowed that.
         ...(model.rejection() ? [model.rejection()!] : []),
-        ...changed().map((path) => `the developer's harness home changed: ${path}`),
-        ...harnessLogins(setups).map((target) => `a login appeared in ${loginStore}: ${target}`),
-        ...keychainAsks(sandbox)
+        ...changes.map((path) => `the developer's harness home changed: ${path}`),
+        ...appeared.map((target) => `a login appeared in ${loginStore}: ${target}`),
+        ...asks
           .filter((service) => unsuffixedClaudeItem.test(service))
           .map(
             (service) =>
               `a harness asked the macOS Keychain for the person's own ${service}, which the sandbox refused`,
           ),
         ...leftovers.map((one) => `a process outlived the deck in the sandbox: ${one}`),
+        ...unchecked,
       ]
       await model.close()
       if (problems.length > 0) throw new Error(problems.join("\n"))
