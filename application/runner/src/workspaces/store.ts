@@ -954,11 +954,16 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
       `
   }
 
-  /** Takes murmur's title from every kept terminal; the ids it took it from. */
+  /**
+   * Takes murmur's title from every kept terminal, as murmur is turned off or uninstalled,
+   * and from the disk; the ids it took it from.
+   */
   clearMurmurTitles(): readonly string[] {
-    const rows = this.queries.all`
-      UPDATE terminals SET murmur_title = NULL WHERE murmur_title IS NOT NULL RETURNING id
-    ` as { id: string }[]
+    const rows = this.forget(
+      () => this.queries.all`
+        UPDATE terminals SET murmur_title = NULL WHERE murmur_title IS NOT NULL RETURNING id
+      `,
+    ) as { id: string }[]
     return rows.map(({ id }) => id)
   }
 

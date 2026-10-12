@@ -28,7 +28,10 @@ export const engineStatus = async (
  */
 export const fetchEngine = async (options: {
   manifest: Manifest
-  /** Where the archive is: an https URL ending in `/`, or a folder; `undefined` when this build has none. */
+  /**
+   * Where the archive is: an https URL ending in `/`, or a folder; `undefined`, or empty as
+   * a packaged build that knows no release passes it, when this build has none.
+   */
   source: string | undefined
   directory: string
   program: string
@@ -37,8 +40,7 @@ export const fetchEngine = async (options: {
   replacing: () => Promise<void>
 }): Promise<void> => {
   const { manifest, source, directory, signal } = options
-  if (source === undefined)
-    throw new DownloadError("This build has nowhere to download the engine from.")
+  if (!source) throw new DownloadError("This build has nowhere to download the engine from.")
   const archive = join(directory, "downloads", manifest.file)
   await download({
     from: locate(source, manifest.file),

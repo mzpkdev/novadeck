@@ -41,6 +41,7 @@ const setup = async (
     devices?: FakeDevice[]
     behaviour?: string
     engine?: false | string
+    source?: string
     store?: WorkspaceStore
     directory?: string
     voice?: ConstructorParameters<typeof Murmur>[1]["voice"]
@@ -61,6 +62,7 @@ const setup = async (
     options.engine === false ? undefined : (options.engine ?? (await llamaArchive(resources)))
   const murmur = new Murmur(store, {
     engine: manifest,
+    ...(options.source !== undefined && { source: options.source }),
     directory,
     model: await modelFile(resources, options.behaviour),
     launch: fakeLaunch(options.devices ?? [arc, nvidia, processor]),
@@ -131,6 +133,18 @@ describe("murmur without an engine", () => {
 })
 
 describe("installing murmur", () => {
+  it("fails saying so where the build has nowhere to download the engine from", async ({
+    resources,
+  }) => {
+    // A packaged build whose app-update.yml names no release passes an empty source.
+    const { murmur, directory } = await setup(resources, { source: "" })
+    await murmur.install().catch(() => {})
+    await murmur.settled()
+    expect(murmur.state()).toMatchObject({ installed: false, enabled: false })
+    expect(murmur.state().failure).toBe("This build has nowhere to download the engine from.")
+    expect(await readdir(directory)).not.toContain("engine")
+  })
+
   it("fetches the engine and the model, checks them on the integrated GPU, and turns murmur on", async ({
     resources,
   }) => {

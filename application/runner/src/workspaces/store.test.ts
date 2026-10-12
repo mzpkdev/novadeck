@@ -550,6 +550,19 @@ describe("saved terminals", () => {
             workspace.dockItem(moving.id, there)
           },
         ],
+        [
+          "murmur's titles",
+          "SECRET_MURMUR_TITLE",
+          () => {
+            const naming = { person: null, agent: null, summary: null }
+            workspace.saveTerminal({
+              ...numbered(randomUUID(), "t6"),
+              sessionId: session.id,
+              naming: { ...naming, murmur: { title: "SECRET_MURMUR_TITLE" } },
+            })
+            workspace.clearMurmurTitles()
+          },
+        ],
       ]
       for (const [what, secret, forget] of forgetting) {
         forget()
