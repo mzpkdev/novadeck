@@ -27,8 +27,10 @@ const profiled = /^novadeck-appimage-\d+(?:-brew)?(?: \(|$)/u
  * The command that turns the sandbox on, or undefined where none can work. It is for
  * Linux with a release repository, and only where the system restricts unprivileged user
  * namespaces and the installer's profile is not already in effect, which the process's
- * AppArmor label shows: otherwise the sandbox was turned off on purpose, by a flag or
- * `ELECTRON_DISABLE_SANDBOX`. A relative `XDG_DATA_HOME` counts as unset, as the XDG
+ * AppArmor label shows. Otherwise there is none, though the cause is not always a choice:
+ * a flag or `ELECTRON_DISABLE_SANDBOX` turns the sandbox off on purpose, but a system
+ * without user namespaces (a kernel setting, a container, no `unshare`) makes the AppImage
+ * start without it too. A relative `XDG_DATA_HOME` counts as unset, as the XDG
  * specification says and the installer does. The installer's AppArmor profile covers the AppImage at
  * the two places it installs to, so an AppImage there needs only the installer's
  * `--sandbox` mode, which writes the profile; one anywhere else, such as Downloads, needs

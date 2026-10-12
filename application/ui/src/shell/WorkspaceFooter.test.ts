@@ -373,7 +373,7 @@ describe("the footer without the security sandbox", () => {
   it("says it was started without, blocking nothing, and has no command or button without a fix", () => {
     const page = mount({ fix: "", open: true })
     const region = panel(page)!
-    expect(region.textContent).toContain("Novadeck was started without its security sandbox.")
+    expect(region.textContent).toContain("Started with --no-sandbox, or this system")
     expect(region.textContent).not.toContain("blocks")
     expect(region.querySelector("code")).toBeNull()
     expect(region.querySelector("button")).toBeNull()

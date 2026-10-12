@@ -5,30 +5,50 @@ import { KeepFocus, useRecoverFocus } from "./notice-focus"
 
 const copiedMs = 1500
 
-// The fix to copy: a button that puts it on the clipboard and says so for a moment.
+type Copy = "idle" | "copied" | "failed"
+
+// The fix to copy: a button that puts it on the clipboard and says so for a moment, or
+// says it could not, then the text beside it asks to select the command by hand.
 const CopyFix = ({ fix }: { readonly fix: string }): React.JSX.Element => {
-  const [copied, setCopied] = useState(false)
+  const [copy, setCopy] = useState<Copy>("idle")
   useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), copiedMs)
+    // A failure stays, with its hint, until the next try.
+    if (copy !== "copied") return
+    const timer = setTimeout(() => setCopy("idle"), copiedMs)
     return () => clearTimeout(timer)
-  }, [copied])
+  }, [copy])
+  const label = copy === "copied" ? "Copied" : copy === "failed" ? "Copy failed" : "Copy"
   return (
-    <button
-      type="button"
-      className="button min-h-8 px-3"
-      onClick={(event) => {
-        // The panel keeps mouse focus from moving, and the workspace hands it to the
-        // terminal after a click: take it here, so Escape still closes the panel.
-        event.currentTarget.focus()
-        void navigator.clipboard?.writeText(fix).then(
-          () => setCopied(true),
-          () => undefined,
-        )
-      }}
-    >
-      {copied ? "Copied" : "Copy"}
-    </button>
+    <>
+      <button
+        type="button"
+        className="button min-h-8 px-3"
+        onClick={(event) => {
+          // The panel keeps mouse focus from moving, and the workspace hands it to the
+          // terminal after a click: take it here, so Escape still closes the panel.
+          event.currentTarget.focus()
+          const write = navigator.clipboard?.writeText(fix)
+          if (!write) {
+            setCopy("failed")
+            return
+          }
+          void write.then(
+            () => setCopy("copied"),
+            () => setCopy("failed"),
+          )
+        }}
+      >
+        {label}
+      </button>
+      <span aria-live="polite" aria-atomic className="sr-only">
+        {copy === "failed"
+          ? "Copy failed. Select the command to copy it."
+          : copy === "copied"
+            ? "Copied"
+            : ""}
+      </span>
+      {copy === "failed" && <span className="sandbox-text">Select the command and copy it.</span>}
+    </>
   )
 }
 
@@ -111,8 +131,12 @@ export const FooterSandbox = ({
           aria-labelledby={titleId}
           className="floating sandbox-panel"
           tabIndex={-1}
-          // A click anywhere on it leaves focus where it was, in a terminal.
-          onMouseDown={(event) => event.preventDefault()}
+          // A click on it leaves focus where it was, in a terminal; except on the command,
+          // which must stay selectable.
+          onMouseDown={(event) => {
+            if (event.target instanceof Element && event.target.closest(".sandbox-command")) return
+            event.preventDefault()
+          }}
           // Plain Escape closes it; with Shift it goes on to the workspace, which
           // starts navigating.
           onKeyDown={(event) => {
@@ -128,12 +152,20 @@ export const FooterSandbox = ({
           </p>
           <p className="sandbox-text">
             {fix === ""
-              ? "Novadeck was started without its security sandbox."
+              ? "Started with --no-sandbox, or this system doesn't let Novadeck create the user namespaces the sandbox needs."
               : "This system blocks the sandbox. Run this command, then quit Novadeck and start it again from your applications menu."}
           </p>
           {fix !== "" && (
             <>
-              <code className="sandbox-command">{fix}</code>
+              <code
+                className="sandbox-command"
+                // Scrolls sideways, so the keyboard needs to reach it.
+                tabIndex={0}
+                role="group"
+                aria-label="Command to turn on the sandbox"
+              >
+                {fix}
+              </code>
               <div className="update-actions">
                 <CopyFix fix={fix} />
               </div>
