@@ -52,6 +52,9 @@ const archive = "zip of novadeck.app"
 // Where the host keeps a real tool.
 const real = (tool: string) => ["/usr/bin", "/bin"].map((d) => join(d, tool)).find(existsSync)!
 
+// Root may write anywhere, so the tests of folders it cannot write to do not apply.
+const asRoot = process.getuid?.() === 0
+
 // The executable of the app installed in an Applications folder.
 const executable = (folder: string) => join(folder, "novadeck.app/Contents/MacOS/novadeck")
 
@@ -113,8 +116,12 @@ type Scenario = {
   mac?: {
     /** Whether codesign finds a Developer ID signature on the installed app. */
     signed?: boolean
-    /** Whether pgrep finds the app running. */
-    running?: boolean
+    /** Where a running Novadeck runs from: the folder to install to, or another. */
+    running?: "installed" | "elsewhere"
+    /** Which renames fail: moving the old app aside, the new one in, or that and putting the old one back. */
+    mv?: "aside" | "forward" | "both"
+    /** Whether removing the folder the new app was unpacked in fails. */
+    rmFails?: boolean
     /** Whether this account may write to /Applications; it may when unset. */
     systemWritable?: boolean
     /** An app already installed in /Applications ("system") or ~/Applications ("user"). */
@@ -173,6 +180,8 @@ const run = (scenario: Scenario = {}) => {
 
   for (const tool of tools) {
     if (tool === "sha256sum" && mac && mac.sha256sum === false) continue
+    if (tool === "mv" && mac?.mv) continue
+    if (tool === "rm" && mac?.rmFails) continue
     symlinkSync(real(tool), join(bin, tool))
   }
   const applications = join(root, "Applications")
@@ -192,7 +201,31 @@ ${mac.empty ? 'mkdir -p "$4"' : `mkdir -p "$4/novadeck.app/Contents/MacOS" && cp
         ? `echo "Authority=Developer ID Application: Acme (TEAM)" >&2`
         : `echo "$3: code object is not signed at all" >&2; exit 1`,
     )
-    shim(bin, "pgrep", `echo "pgrep $*" >> "${log}"; exit ${mac.running ? 0 : 1}`)
+    // A process list, with the one Novadeck that runs, if any, by its executable's path.
+    const running =
+      mac.running === "installed"
+        ? `${applications}/novadeck.app/Contents/MacOS/novadeck --type=browser`
+        : `/Volumes/novadeck/novadeck.app/Contents/MacOS/novadeck`
+    shim(
+      bin,
+      "ps",
+      `echo "/sbin/launchd"${mac.running ? `\necho "${running}"` : ""}\necho "awk ${applications}/novadeck.app/Contents/MacOS/"`,
+    )
+    const failing = {
+      aside: "*/previous.app",
+      forward: "*/.novadeck-install.*/novadeck.app",
+      both: "*/.novadeck-install.*/*.app",
+    }
+    if (mac.mv) {
+      shim(
+        bin,
+        "mv",
+        `case "${mac.mv === "aside" ? "$2" : "$1"}" in ${failing[mac.mv]}) exit 1 ;; esac\nexec ${real("mv")} "$@"`,
+      )
+    }
+    if (mac.rmFails) {
+      shim(bin, "rm", `case "$*" in *.novadeck-install*) exit 1 ;; esac\nexec ${real("rm")} "$@"`)
+    }
     shim(bin, "shasum", `[ "$1" = -a ] && shift 2; exec ${real("sha256sum")} "$@"`)
     mkdirSync(applications)
     const existing =
@@ -692,11 +725,14 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       expect(result.stderr).toContain("does not match its checksum")
     })
 
-    it("installs to ~/Applications when this account cannot write to /Applications", () => {
-      const result = run({ mac: { systemWritable: false } })
-      expect(result.status).toBe(0)
-      expect(readFileSync(executable(join(result.home, "Applications")), "utf8")).toBe(archive)
-    })
+    it.skipIf(asRoot)(
+      "installs to ~/Applications when this account cannot write to /Applications",
+      () => {
+        const result = run({ mac: { systemWritable: false } })
+        expect(result.status).toBe(0)
+        expect(readFileSync(executable(join(result.home, "Applications")), "utf8")).toBe(archive)
+      },
+    )
 
     it("replaces a copy in /Applications", () => {
       const result = run({ mac: { existing: "system" } })
@@ -719,7 +755,7 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       expect(readFileSync(executable(result.applications), "utf8")).toBe(archive)
     })
 
-    it.skipIf(process.getuid?.() === 0)(
+    it.skipIf(asRoot)(
       "leaves a copy in /Applications that is not this account's to replace",
       () => {
         const result = run({ mac: { existing: "system", existingWritable: false } })
@@ -732,11 +768,48 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
     )
 
     it("leaves a running copy alone", () => {
-      const result = run({ mac: { existing: "system", running: true } })
+      const result = run({ mac: { existing: "system", running: "installed" } })
       expect(result.status).toBe(1)
       expect(result.stderr).toContain("Quit it and run this again")
-      expect(result.lines).toContain(`pgrep -f ${result.applications}/novadeck.app/Contents/MacOS/`)
       expect(readFileSync(executable(result.applications), "utf8")).toBe("old")
+    })
+
+    it("installs while a copy runs from somewhere else, such as the disk image", () => {
+      const result = run({ mac: { existing: "system", running: "elsewhere" } })
+      expect(result.status).toBe(0)
+      expect(readFileSync(executable(result.applications), "utf8")).toBe(archive)
+    })
+
+    it("says how to allow a terminal macOS stops from replacing the app", () => {
+      const result = run({ mac: { existing: "system", mv: "aside" } })
+      expect(result.status).toBe(1)
+      expect(result.stdout).toContain("App Management")
+      expect(readFileSync(executable(result.applications), "utf8")).toBe("old")
+      expect(readdirSync(result.applications)).toEqual(["novadeck.app"])
+    })
+
+    it("puts the old copy back when the new one cannot move in", () => {
+      const result = run({ mac: { existing: "system", mv: "forward" } })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain("could not move Novadeck into")
+      expect(readFileSync(executable(result.applications), "utf8")).toBe("old")
+      expect(readdirSync(result.applications)).toEqual(["novadeck.app"])
+    })
+
+    it("keeps the old copy, and says where, when it cannot be put back either", () => {
+      const result = run({ mac: { existing: "system", mv: "both" } })
+      expect(result.status).toBe(1)
+      const kept = /which is now (\S+)\.$/m.exec(result.stderr)?.[1]
+      expect(kept).toBeDefined()
+      expect(readFileSync(join(kept!, "Contents/MacOS/novadeck"), "utf8")).toBe("old")
+    })
+
+    it("succeeds when it cannot remove the copy it replaced, and the next run does too", () => {
+      const result = run({ mac: { existing: "system", rmFails: true } })
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("delete it by hand")
+      expect(readFileSync(executable(result.applications), "utf8")).toBe(archive)
+      expect(result.again().status).toBe(0)
     })
 
     it("keeps the installed copy when the archive holds no app", () => {

@@ -367,26 +367,33 @@ install_mac() {
   fetch "$base" novadeck-mac-universal.zip
 
   # Replacing the app under a running copy would leave it starting helpers of another
-  # version.
-  if has pgrep && pgrep -f "$app/Contents/MacOS/" > /dev/null 2>&1; then
+  # version. The app's command line starts with its executable's path, taken as plain text.
+  if ps -axo command= 2> /dev/null | awk -v path="$app/Contents/MacOS/" 'index($0, path) == 1 { found = 1 } END { exit !found }'; then
     fail "Novadeck is running from $app. Quit it and run this again."
   fi
 
   # Unpacked next to the app, so it moves into place in one rename. ditto keeps the
   # bundle's symlinks and signature intact, and curl leaves the download unquarantined.
+  # The folder's name is new each run, so one an earlier run could not remove is no
+  # obstacle.
   mkdir -p "$folder"
-  staging="$folder/.novadeck-install"
-  rm -rf "$staging"
+  staging="$(mktemp -d "$folder/.novadeck-install.XXXXXX")" || fail "could not create a folder in $folder."
   ditto -x -k novadeck-mac-universal.zip "$staging" || fail "could not unpack novadeck-mac-universal.zip."
   [ -d "$staging/novadeck.app" ] || fail "novadeck-mac-universal.zip holds no novadeck.app."
-  if [ -e "$app" ]; then
-    mv "$app" "$staging/previous.app" || fail "could not replace $app."
+  if [ -e "$app" ] && ! mv "$app" "$staging/previous.app"; then
+    say "If macOS said your terminal was prevented from modifying apps, allow it under System"
+    say "Settings > Privacy & Security > App Management, then run this again."
+    fail "could not replace $app."
   fi
   if ! mv "$staging/novadeck.app" "$app"; then
-    [ -e "$staging/previous.app" ] && mv "$staging/previous.app" "$app"
+    if [ -e "$staging/previous.app" ] && ! mv "$staging/previous.app" "$app"; then
+      # Kept, as the earlier copy is in it.
+      kept="$staging"
+      staging=""
+      fail "could not move Novadeck into $folder, nor put back the copy that was there, which is now $kept/previous.app."
+    fi
     fail "could not move Novadeck into $folder."
   fi
-  rm -rf "$staging"
 
   say "Installed Novadeck to $app"
   if developer_id_signed "$app"; then
@@ -395,6 +402,11 @@ install_mac() {
     say "Done. This build is not signed, so Novadeck tells you of new versions rather than"
     say "installing them; run this again to install one."
   fi
+  # The copy it replaced; leaving it behind costs only space.
+  if ! rm -rf "$staging" 2> /dev/null; then
+    say "Could not remove $staging, which holds the copy this replaced; delete it by hand."
+  fi
+  staging=""
 }
 
 usage() {

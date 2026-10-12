@@ -13,10 +13,11 @@ canvas. Keep related work together and switch between sessions from the sidebar.
   curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh
   ```
 
-  Run it as yourself, not with `sudo`. It puts the app in `/Applications`, or in
-  `~/Applications` when your account cannot write to `/Applications`, replaces a copy
-  already in either, checks the download against the release's `SHA256SUMS`, and upgrades
-  when run again. Quit Novadeck first. You can also download
+  Run it as yourself, not with `sudo`, and quit Novadeck first. It checks the download
+  against the release's `SHA256SUMS` and puts the app in `/Applications`, or in
+  `~/Applications` when your account cannot write to `/Applications`. Run again, it
+  upgrades the copy already there, preferring `/Applications`; a copy another account put
+  in `/Applications` is left for that account to upgrade. You can also download
   [`novadeck-mac-universal.dmg`](https://github.com/mzpkdev/novadeck/releases/latest/download/novadeck-mac-universal.dmg)
   and drag the app to Applications.
 
