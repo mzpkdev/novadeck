@@ -700,8 +700,18 @@ export class Murmur implements Describer {
       }),
       signal: limit,
     })
-    if (!response.ok)
+    if (!response.ok) {
+      // A request too big for the context is that job's, not the engine's: it gets no text,
+      // and asking it again would be as big.
+      if (
+        response.status === 400 &&
+        (await response.text()).includes("exceed_context_size_error")
+      ) {
+        server.touch(running)
+        return undefined
+      }
       throw new EngineError(server.explain(running, `the engine answered ${response.status}`))
+    }
     server.touch(running)
     let body: { choices?: { message?: { content?: unknown } }[] } | undefined
     try {

@@ -133,6 +133,8 @@ const reply = (text: string, failed = false): NoteDigest => ({
   failed,
 })
 
+const make = (n: number, from: string) =>
+  Array.from({ length: n }, (_, index) => from[(index * 7 + (index >> 3)) % from.length]).join("")
 describe("asking for a gist", () => {
   it("shows a short reply whole, and says when the turn failed", () => {
     expect(user(reply("I fixed the build."))).toContain("I fixed the build.")
@@ -150,8 +152,35 @@ describe("asking for a gist", () => {
     expect(shown).toContain("a".repeat(1000))
     expect(shown).toContain("z".repeat(1000))
     expect(shown).not.toContain("MIDDLE")
-    // Not so much that the model's window is gone: about 3000 tokens at the dearest rate.
-    expect(shown.length).toBeLessThan(9000)
+  })
+
+  it("keeps every kind of text inside the window, by the rates the engine's tokenizer measured", () => {
+    // [text, tokens per character the tokenizer was measured to take at most]
+    const texts: [string, number][] = [
+      [make(8000, "0123456789"), 1],
+      [Array.from({ length: 1400 }, (_, index) => `${index * 37} `).join(""), 1],
+      [make(8000, "0123456789abcdef"), 0.9],
+      [make(8000, "!@#$%^&*()_+-=[]{};:,.<>/?|~"), 0.7],
+      [make(4000, "\u{1F300}\u{1F680}\u{1F9E0}"), 2.9],
+      [make(4000, "\u{20000}\u{20BB7}\u{2A6D6}"), 4],
+      [make(4000, "\u3400\u4DB5"), 3],
+      [make(4000, "\uAC00\uD7A3"), 2.2],
+      ["The runner was fixed and all the checks pass again. ".repeat(160), 0.3],
+      ["x".repeat(8000), 0.5],
+    ]
+
+    for (const [text, rate] of texts) {
+      // Less the labels and the closing line, which are about 150 characters of English.
+      const shown = [...(messages(reply(text))[1]?.content ?? "")].length - 150
+      // The system prompt is about 450 tokens, and the model answers in up to 128.
+      expect(shown * rate + 60 + 450 + 128).toBeLessThan(4096)
+    }
+  })
+
+  it("shows about as much as the window allows of plain English", () => {
+    const shown = user(reply("The runner was fixed and all the checks pass again. ".repeat(400)))
+
+    expect(shown.length).toBeGreaterThan(6000)
   })
 
   it("shows a reply that fits whole, unmarked", () => {
@@ -187,6 +216,33 @@ describe("asking for a gist", () => {
     expect(shown).toContain("See [link] for more.")
     expect(shown).toContain("| Term | Meaning |\n[table]")
     expect(shown).not.toContain("\n\n\n")
+  })
+
+  it("takes a fence only at the start of a line, and keeps the sentences around a stray one", () => {
+    const shown = user(
+      reply("Wrap it in ``` fences like this.\n\nI changed the parser and all 12 tests pass."),
+    )
+
+    expect(shown).toContain("Wrap it in ``` fences like this.")
+    expect(shown).toContain("I changed the parser and all 12 tests pass.")
+    expect(shown).not.toContain("[code]")
+  })
+
+  it("runs a fence to its own closing line, nested longer fences included, or to the end", () => {
+    const nested = user(reply("Before.\n````md\n```ts\nlet a = 1\n```\nstill code\n````\nAfter."))
+    const open = user(reply("Before.\n  ```ts\nlet a = 1\nnever closed"))
+
+    expect(nested).toContain("Before.\n[code]\nAfter.")
+    expect(nested).not.toMatch(/still code|let a/)
+    expect(open).toContain("Before.\n[code]")
+    expect(open).not.toContain("never closed")
+  })
+
+  it("leaves a redaction mark as it is, link or no link", () => {
+    const shown = user(reply("Use [redacted](expires) and [the docs](https://example.com/a) now."))
+
+    expect(shown).toContain("[redacted](expires)")
+    expect(shown).toContain("Use [redacted](expires) and the docs now.")
   })
 
   it("spends the budget on prose, not on a long code block", () => {

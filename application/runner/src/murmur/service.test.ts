@@ -1420,3 +1420,29 @@ describe("notes giving way", () => {
     expect(counted.failures).toBe(0)
   })
 })
+
+describe("a request too big for the context", () => {
+  it("gets no text for any kind of job, without a failure or a restart", async ({ resources }) => {
+    const context = await installed(resources, { now: () => 1_000 })
+    await writeFile(await modelOf(context.directory), "overflow")
+    await context.murmur.set({ enabled: false })
+    await context.murmur.set({ enabled: true })
+
+    expect(await context.murmur.note(question, { terminal: "a" })).toBeNull()
+    expect(await context.murmur.note(reply, { terminal: "b" })).toBeNull()
+    expect(await context.murmur.describe(digest, { terminal: "c" })).toBeNull()
+
+    const counted = context.murmur as unknown as {
+      refusedUntil: number
+      failures: number
+      engineStrikes: number
+    }
+    expect(counted.refusedUntil).toBe(0)
+    expect(counted.failures).toBe(0)
+    expect(counted.engineStrikes).toBe(0)
+    expect(context.murmur.state().failure).toBeNull()
+    // The engine was not stopped for it: a smaller request is answered at once.
+    await fix(context)
+    expect(await context.murmur.note(reply, { terminal: "d" })).toMatchObject({ kind: "gist" })
+  })
+})

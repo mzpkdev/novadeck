@@ -5,6 +5,7 @@
 //   "crash"         exits when it is asked to complete
 //   "slow"          takes half a second to answer
 //   "copy"          answers with the first example of the kind asked for, whatever it is asked
+//   "overflow"      answers 400 exceed_context_size_error, as the real server does for a request too big
 //   "hang"          never answers a completion
 //   "garbage"       answers with something that isn't the JSON asked for
 //   "device"        puts the device it runs on in its title
@@ -84,6 +85,22 @@ const server = createServer(async (request, response) => {
   }
   if (mode.includes("hang")) await new Promise(() => {})
   if (mode.includes("slow")) await new Promise((resolve) => setTimeout(resolve, 500))
+  if (mode.includes("overflow")) {
+    response.statusCode = 400
+    response.end(
+      JSON.stringify({
+        error: {
+          code: 400,
+          message:
+            "request (5000 tokens) exceeds the available context size (4096 tokens), try increasing it",
+          type: "exceed_context_size_error",
+          n_prompt_tokens: 5000,
+          n_ctx: 4096,
+        },
+      }),
+    )
+    return
+  }
   completions += 1
   if (mode.includes("log"))
     appendFileSync(`${argument("-m")}.requests`, `${JSON.stringify(asked)}\n`)

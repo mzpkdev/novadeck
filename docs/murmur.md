@@ -33,10 +33,16 @@ Notes are handed their own digests:
 - a gist: the agent's last reply, whole when short, else its first and last 4000 characters.
   The prompt strips what is no prose, after redaction (fenced code becomes `[code]`, link
   addresses and bare URLs go, table rows become their first row and `[table]`), then budgets
-  what is left by what it costs the model in tokens: about 3000 of the 4096-token window, at 0.36
-  per ASCII character and 1.4 per other (Chinese, Japanese and emoji cost up to 1.35 measured).
-  That is about 4000 characters of English each at the start and the end, and fewer in other
-  scripts. A cut reply is shown as "The start of the agent's reply:", `[…]`, "The end of the
+  what is left by what it costs the model in tokens, as a ceiling that does not undercount: 3200 of
+  the 4096-token window. A plain word costs 0.6 a character, other ASCII 0.9, a digit 1 (and a
+  number its leading space), Chinese, Japanese and Korean 2 to 2.4, other scripts 1.5 to 3, and
+  anything beyond the basic plane 4. It was measured on the engine's own tokenizer against random
+  digits, hex, base64, symbols, path lists, emoji and rare characters. That is about 3200
+  characters of English each at the start and the end, and far fewer of dense text. Fenced code
+  is a line that begins with three or more backticks, up to a line of at least as many, so a
+  stray ``` in a sentence is no fence. A request that is still too big for the context (the
+  engine answers 400 `exceed_context_size_error`) is a refusal of that job: no text, and no
+  failure, back-off or restart. A cut reply is shown as "The start of the agent's reply:", `[…]`, "The end of the
   agent's reply:", so the two pieces are not read as one text.
 
 Nothing else is read, and nothing leaves the machine: the server listens on `127.0.0.1`

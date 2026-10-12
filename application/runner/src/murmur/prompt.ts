@@ -157,52 +157,120 @@ const budget = {
   choices: 8,
   choice: 80,
   plan: 1500,
-  // A reply is budgeted in tokens, estimated by `cost`, since a chat window of 4096 tokens holds
-  // very different amounts of text by script: its system prompt, the answer and a margin come
-  // out of it, and about 3000 are left for the reply.
-  replyHead: 1500,
-  replyTail: 1500,
+  // A reply is budgeted in tokens, estimated by `cost` as a ceiling, since a chat window of
+  // 4096 tokens holds very different amounts of text by script: the system prompt (about 450),
+  // the answer (128) and a margin come out of it, and 3200 are left for the reply.
+  replyHead: 1600,
+  replyTail: 1600,
 }
 
-// What a character costs the model, in tokens, rounded up for safety. English prose runs at
-// about 0.27, code and symbols at 0.35, and Chinese, Japanese and emoji at 0.55 to 1.35 (measured
-// on the engine's own tokenizer); anything outside ASCII is counted at the dearest.
-const cost = (text: string): number => {
-  let units = 0
-  for (const character of text) units += character.charCodeAt(0) < 128 ? 0.36 : 1.4
-  return units
+// What text costs the model, in tokens, as a ceiling that does not undercount whatever the text
+// is. Measured on the engine's own tokenizer, per character: English words 0.27, digits 1.0,
+// hex and random letters and digits 0.7 to 0.9, symbols 0.7, common Chinese 0.5 to 1.7, random
+// Chinese and Korean up to 2.2, rare characters up to 3, emoji 2.6 to 2.9 and rare ones up to 4.
+// A plain word is counted at 0.6 a character, other ASCII at 0.9 and digits at 1.
+const plainWord = /^[!-/:-@[-`{-~]{0,2}[A-Za-z']+[!-/:-@[-`{-~]{0,3}$/
+const characterCost = (character: string): number => {
+  const code = character.codePointAt(0) ?? 0
+  if (code < 128) {
+    if (code >= 48 && code <= 57) return 1
+    return code <= 32 ? 0.1 : 0.9
+  }
+  if (code >= 0x10000) return 4
+  // Letters of Latin, Greek and Cyrillic, then Hebrew, Arabic, Indic scripts and Thai.
+  if (code < 0x590) return code < 0x2c0 || code >= 0x370 ? 2 : 3
+  if (code < 0x1000) return 1.5
+  // Han, kana, and Hangul syllables.
+  if ((code >= 0x4e00 && code <= 0x9fff) || (code >= 0x3040 && code <= 0x30ff)) return 2
+  if (code >= 0xac00 && code <= 0xd7a3) return 2.4
+  return 3
 }
+// One word or one run of white space.
+const pieceCost = (piece: string): number =>
+  plainWord.test(piece)
+    ? 0.6 * piece.length
+    : // A number takes the space before it as a token of its own.
+      [...piece].reduce(
+        (sum, character) => sum + characterCost(character),
+        /^\d/.test(piece) ? 1 : 0,
+      )
 
-// The longest start of `text` that costs at most `limit` tokens.
+// Words and the white space between them, in order.
+const pieces = (text: string): string[] => text.split(/(\s+)/).filter(Boolean)
+
+const cost = (text: string): number =>
+  pieces(text).reduce((sum, piece) => sum + pieceCost(piece), 0)
+
+// The longest start of `text` that costs at most `limit` tokens, by whole words and then by
+// characters of the word that does not fit.
 const startWithin = (text: string, limit: number): string => {
   let units = 0
-  let end = 0
-  for (const character of text) {
-    units += cost(character)
-    if (units > limit) break
-    end += character.length
+  let taken = ""
+  for (const piece of pieces(text)) {
+    const price = pieceCost(piece)
+    if (units + price <= limit) {
+      units += price
+      taken += piece
+      continue
+    }
+    for (const character of piece) {
+      units += characterCost(character)
+      if (units > limit) break
+      taken += character
+    }
+    break
   }
-  return text.slice(0, end)
+  return taken
 }
 
 // The longest end of `text` that costs at most `limit` tokens.
 const endWithin = (text: string, limit: number): string => {
   let units = 0
-  let start = text.length
-  for (const character of [...text].toReversed()) {
-    units += cost(character)
-    if (units > limit) break
-    start -= character.length
+  let taken = ""
+  for (const piece of pieces(text).toReversed()) {
+    const price = pieceCost(piece)
+    if (units + price <= limit) {
+      units += price
+      taken = piece + taken
+      continue
+    }
+    for (const character of [...piece].toReversed()) {
+      units += characterCost(character)
+      if (units > limit) break
+      taken = character + taken
+    }
+    break
   }
-  return text.slice(start)
+  return taken
+}
+
+// Fenced code, replaced by a marker: a fence is a line that begins with three or more
+// backticks, and ends at a line of at least as many (or the end of the reply, when unclosed).
+// Backticks inside a sentence are no fence.
+const withoutCode = (text: string): string => {
+  const lines: string[] = []
+  let fence = 0
+  for (const line of text.split("\n")) {
+    const ticks = /^[ \t]*(`{3,})/.exec(line)?.[1]?.length ?? 0
+    if (fence === 0) {
+      if (ticks === 0) lines.push(line)
+      else {
+        fence = ticks
+        lines.push("[code]")
+      }
+    } else if (ticks >= fence && /^[ \t]*`+[ \t]*$/.test(line)) fence = 0
+  }
+  return lines.join("\n")
 }
 
 // A reply without what is no prose, so the budget goes to the words: code blocks, link
-// addresses, bare URLs and the rows of tables are marked or dropped. It works on redacted text.
+// addresses, bare URLs and the rows of tables are marked or dropped. It works on redacted text,
+// whose marks it leaves as they are.
 const prose = (text: string): string =>
-  text
-    .replaceAll(/```[^]*?(?:```|$)/g, "[code]")
-    .replaceAll(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, "$1")
+  withoutCode(text)
+    .replaceAll(/!?\[([^\]\n]*)\]\([^)\s]*\)/g, (link, label: string) =>
+      label === "redacted" ? link : label,
+    )
     .replaceAll(/\b(?:https?|ftp):\/\/\S+/g, "[link]")
     .replaceAll(/(?:^[ \t]*\|.*\n?){2,}/gm, (rows) => `${rows.split("\n")[0]?.trim()}\n[table]\n`)
     .replaceAll(/\n{3,}/g, "\n\n")
