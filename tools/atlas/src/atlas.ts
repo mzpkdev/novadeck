@@ -20,6 +20,8 @@ export type Atlas = {
   root: string
   runtime: Runtime
   areas: Area[]
+  // How areas depend on each other, from imports, procedure calls and table queries.
+  links: AreaLink[]
   api: Api
   data: Data
   agents: AgentSurface
@@ -70,6 +72,16 @@ export type Area = {
   tools: string[]
 }
 
+export type AreaLink = {
+  from: string
+  to: string
+  // "import": `from` imports code in `to`; "call": `from` calls a procedure `to` serves;
+  // "data": `from` queries a table `to` owns.
+  kind: "import" | "call" | "data"
+  // How many imports, call sites or queries make up the link.
+  weight: number
+}
+
 export type Api = { procedures: Procedure[]; errors: ApiError[] }
 
 export type Procedure = {
@@ -104,7 +116,13 @@ export type Table = {
   area: string | null
 }
 
-export type Column = { name: string; type: string; constraints: string }
+export type Column = {
+  name: string
+  type: string
+  constraints: string
+  // The table a foreign key points at, from `REFERENCES t(...)`.
+  references: string | null
+}
 
 export type Setting = {
   key: string
@@ -156,6 +174,13 @@ export type Flow = {
   steps: FlowStep[]
 }
 
-export type FlowStep = { from: string; to: string; text: string; anchor: Anchor }
+export type FlowStep = {
+  from: string
+  to: string
+  // Two to four words for the arrow; `text` is the full sentence, shown on demand.
+  label: string
+  text: string
+  anchor: Anchor
+}
 
 export type BrokenAnchor = { where: string; file: string; text: string }

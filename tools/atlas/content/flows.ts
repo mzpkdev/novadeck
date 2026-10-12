@@ -1,6 +1,6 @@
 import type { AnchorRef, Flow, FlowStep } from "../src/atlas.ts"
 
-type CuratedStep = Omit<FlowStep, "anchor"> & { anchor: AnchorRef }
+type CuratedStep = Omit<FlowStep, "anchor" | "label"> & { label?: string; anchor: AnchorRef }
 
 const host = "application/host/src"
 const runnerSrc = "application/runner/src"

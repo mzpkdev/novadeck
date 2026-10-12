@@ -10,6 +10,7 @@ import { createAnchors, type Anchors } from "./anchors.ts"
 import { extractApi } from "./api.ts"
 import { areaOf, extractAreas } from "./areas.ts"
 import { extractData } from "./data.ts"
+import { extractLinks } from "./links.ts"
 
 const repo = resolve(import.meta.dirname, "../../..")
 const output = resolve(import.meta.dirname, "../src/generated/atlas.json")
@@ -31,6 +32,7 @@ const resolveFlows = (anchors: Anchors): Flow[] =>
     ...flow,
     steps: flow.steps.map((step, index) => ({
       ...step,
+      label: step.label ?? step.text,
       anchor: anchors.resolve(step.anchor, `flow ${flow.id} step ${index + 1}`),
     })),
   }))
@@ -51,6 +53,7 @@ export const build = async (): Promise<Atlas> => {
     root: repo,
     runtime: resolveRuntime(anchors, areas),
     areas,
+    links: extractLinks(repo, anchors, areas, { api, data }),
     api: {
       ...api,
       procedures: api.procedures.map((procedure) => ({

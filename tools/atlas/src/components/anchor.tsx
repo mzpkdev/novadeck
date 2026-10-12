@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react"
+import { ExternalLink, FileCode } from "lucide-react"
 
 import { atlas } from "../atlas-data.ts"
 import type { Anchor } from "../atlas.ts"
@@ -61,3 +61,28 @@ export const DocLink = ({ file }: { file: string }) => (
     {file}
   </a>
 )
+
+// An anchor as a small icon: the path shows on hover, a click opens it on GitHub. For
+// places where the picture carries the meaning and the file is a detail.
+export const AnchorIcon = ({ anchor, size = 13 }: { anchor: Anchor; size?: number }) => {
+  const { file, line } = anchor
+  if (line === null) {
+    return (
+      <span className="inline-flex text-bad" title={`${file}: anchor text no longer found`}>
+        <FileCode size={size} />
+      </span>
+    )
+  }
+  return (
+    <a
+      href={blobUrl(file, line)}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex text-muted hover:text-accent"
+      title={`${file}:${line}`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <FileCode size={size} />
+    </a>
+  )
+}

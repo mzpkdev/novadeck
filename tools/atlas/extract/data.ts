@@ -27,7 +27,9 @@ const tableConstraint = /^(PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT)\b/i
 
 const columnOf = (text: string): Column => {
   const [name = "", type = "", ...rest] = text.split(/\s+/)
-  return { name, type, constraints: rest.join(" ") }
+  const constraints = rest.join(" ")
+  const references = /REFERENCES\s+(\w+)/i.exec(constraints)?.[1] ?? null
+  return { name, type, constraints, references }
 }
 
 // SQL comments blanked out to the same length, so their commas and parentheses don't
