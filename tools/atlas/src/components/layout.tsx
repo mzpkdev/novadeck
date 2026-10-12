@@ -26,7 +26,7 @@ const nav = [
 const Banner = () => {
   if (atlas.broken.length === 0) return null
   return (
-    <div className="shrink-0 border-b border-warn bg-panel px-4 py-2 text-[12px] text-warn">
+    <div className="shrink-0 border-b border-warn bg-[var(--color-warning)] px-4 py-2 text-[12px] text-warn">
       <div className="flex items-center gap-2 font-medium">
         <TriangleAlert size={14} />
         {atlas.broken.length} curated anchor{atlas.broken.length === 1 ? "" : "s"} no longer resolve
@@ -58,7 +58,7 @@ export const Layout = () => {
 
   return (
     <div className="flex h-full">
-      <nav className="flex w-48 shrink-0 flex-col border-r border-line bg-panel">
+      <nav className="region-sidebar flex w-48 shrink-0 flex-col border-r">
         <div className="px-4 py-3 text-[13px] font-semibold tracking-wide">Novadeck Atlas</div>
         <button
           type="button"

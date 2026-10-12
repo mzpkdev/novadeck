@@ -34,11 +34,16 @@ const AtlasNode = ({ data, selected }: NodeProps<FlowNode>) => {
   return (
     <div
       className={clsx(
+        // Graphite keeps the accent for what is selected; kinds differ by line alone.
         "w-48 rounded-sm border bg-panel px-3 py-2",
-        node.kind === "external" ? "border-dashed" : "border-solid",
-        node.kind === "server" ? "border-accent" : "border-muted",
-        node.kind === "binary" && "border-l-4",
-        selected && "outline outline-2 outline-accent",
+        node.kind === "external"
+          ? "border-dashed border-[var(--color-line-strong)]"
+          : "border-solid border-[var(--color-outline)]",
+        node.kind === "binary" && "border-l-4 border-l-[var(--color-line-strong)]",
+        node.kind === "server" && "bg-raised",
+        selected
+          ? "border-accent shadow-lg outline outline-1 outline-accent"
+          : "shadow-[var(--shadow-control)]",
       )}
     >
       <div className="font-mono text-[10px] uppercase tracking-wider text-muted">{node.kind}</div>
@@ -168,10 +173,13 @@ export const MapPage = () => {
           targetHandle: `in-${b}`,
           label: [edge, ...more].map((each) => each.channel).join(" · "),
           selected: selected || more.some((each) => selection?.id === each.id),
-          markerEnd: { type: MarkerType.ArrowClosed },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: selected ? "var(--accent)" : "var(--color-line-strong)",
+          },
           style: selected
             ? { stroke: "var(--accent)", strokeWidth: 2 }
-            : { stroke: "var(--muted)" },
+            : { stroke: "var(--color-line-strong)" },
           labelStyle: { fill: "var(--fg)", fontSize: 11, fontFamily: "var(--font-mono)" },
           labelBgStyle: { fill: "var(--panel)", stroke: "var(--line)" },
           labelBgPadding: [4, 2],
@@ -186,7 +194,7 @@ export const MapPage = () => {
 
   return (
     <div className="flex h-full">
-      <div className="relative min-w-0 flex-1">
+      <div className="workspace relative min-w-0 flex-1">
         {atlas.runtime.nodes.length === 0 ? (
           <div className="p-6">
             <Empty>No runtime nodes extracted yet.</Empty>
@@ -205,7 +213,7 @@ export const MapPage = () => {
             onEdgeClick={(_, e) => setSelection({ type: "edge", id: e.id })}
             onPaneClick={() => setSelection(null)}
           >
-            <Background color="var(--line)" />
+            <Background color="var(--accent)" gap={18} size={1.4} />
             <Controls showInteractive={false} />
           </ReactFlow>
         )}

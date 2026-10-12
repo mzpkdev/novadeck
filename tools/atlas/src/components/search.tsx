@@ -66,7 +66,10 @@ export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-center bg-black/50 pt-24" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex justify-center bg-[var(--color-scrim)] pt-24"
+      onMouseDown={onClose}
+    >
       <div
         className="h-fit max-h-[70vh] w-[560px] max-w-[92vw] overflow-hidden rounded-sm border border-line bg-panel shadow-lg"
         onMouseDown={(e) => e.stopPropagation()}

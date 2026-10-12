@@ -1,32 +1,126 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
+@import "@fontsource-variable/jetbrains-mono";
 
-:root {
-  color-scheme: dark;
-  --bg: #0e0f11;
-  --panel: #151619;
-  --raised: #1c1e22;
-  --line: #2a2c32;
-  --fg: #d9dadd;
-  --muted: #8a8d95;
-  --accent: #7aa7ff;
-  --warn: #e0a34a;
-  --bad: #e5645f;
+/* Novadeck's Graphite theme, replicated rather than imported: the values are copied from
+   application/ui/src/theme/graphite.css and base.css, so the atlas looks like the app
+   without depending on the UI package. Copy again when Graphite changes. Light is warm
+   paper and a deep teal; dark is slate and an electric cyan. */
+
+@font-face {
+  font-family: "InterVariable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./assets/fonts/InterVariable.woff2") format("woff2");
 }
 
-@media (prefers-color-scheme: light) {
+:root {
+  color-scheme: light;
+
+  /* Grounds */
+  --color-paper: #f5f3ee;
+  --color-shell: oklch(from var(--color-paper) calc(l - 0.03) c h);
+  --color-soft: oklch(from var(--color-paper) calc(l - 0.057) c h);
+  --color-fill: oklch(from var(--color-paper) calc(l - 0.018) c h);
+  /* Text */
+  --color-ink: #181816;
+  --color-muted: #5c5a55;
+  /* Lines */
+  --color-line: oklch(from var(--color-paper) calc(l - 0.072) c h);
+  --color-line-strong: #837e76;
+  --color-outline: oklch(from var(--color-paper) calc(l - 0.091) c h);
+  /* Emphasis */
+  --color-strong: #007a72;
+  --color-strong-hover: #00665f;
+  /* Overlays */
+  --color-scrim: rgb(24 24 22 / 0.2);
+  --color-selection: #ccd6d0;
+  --color-shadow: rgb(24 24 22);
+  /* Tones */
+  --color-warning: #f0e2b4;
+  --color-warning-fg: #6b4e0a;
+  --color-danger: #fcdbd7;
+  --color-danger-fg: #8a2a22;
+  /* Depth */
+  --shadow-control: 0 1px 2px color-mix(in srgb, var(--color-shadow) 7%, transparent);
+  --shadow-floating:
+    0 2px 4px -1px color-mix(in srgb, var(--color-shadow) 8%, transparent),
+    0 10px 22px -6px color-mix(in srgb, var(--color-shadow) 14%, transparent),
+    0 28px 52px -22px color-mix(in srgb, var(--color-shadow) 18%, transparent);
+  /* Chrome: the sidebar under a faint grain of dark specks. */
+  --region-sidebar-bg: #f4f2ec;
+  --region-sidebar-border-color: #d0cdc6;
+  --region-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.07 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+  /* Workspace: the map's canvas, recessed, with a vignette and a dot grid in the accent. */
+  --workspace-bg: #e2dfd9;
+  --workspace-glow-bg: #eae8e3;
+  --workspace-edge-bg: #d1cec7;
+  --workspace-inset-shadow:
+    inset 0 6px 10px -8px color-mix(in srgb, var(--color-shadow) 16%, transparent),
+    inset 6px 0 10px -8px color-mix(in srgb, var(--color-shadow) 12%, transparent);
+  --canvas-dots-opacity: 0.12;
+  /* Shape and type */
+  --radius-control: 2px;
+  --radius-panel: 3px;
+  --radius-popover: 4px;
+  --font-sans: "InterVariable", "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
   :root {
-    color-scheme: light;
-    --bg: #f6f6f7;
-    --panel: #ffffff;
-    --raised: #eeeff1;
-    --line: #d9dadf;
-    --fg: #1d1e22;
-    --muted: #666a73;
-    --accent: #2f5fd0;
-    --warn: #8a5800;
-    --bad: #c0392b;
+    color-scheme: dark;
+
+    --color-paper: #1d1f23;
+    --color-soft: oklch(from var(--color-paper) calc(l + 0.038) c h);
+    --color-fill: oklch(from var(--color-paper) calc(l + 0.018) c h);
+    --color-ink: #e8e9ed;
+    --color-muted: #a2a6af;
+    --color-line: oklch(from var(--color-paper) calc(l + 0.074) c h);
+    --color-line-strong: #6e7179;
+    --color-outline: oklch(from var(--color-paper) calc(l + 0.091) c h);
+    --color-strong: #00e5d6;
+    --color-strong-hover: #5cefe4;
+    --color-scrim: rgb(6 7 9 / 0.55);
+    --color-selection: #323641;
+    --color-shadow: rgb(3 4 6);
+    --color-warning: #342a10;
+    --color-warning-fg: #ecd592;
+    --color-danger: #3f2422;
+    --color-danger-fg: #f1b8b1;
+    --shadow-control:
+      0 1px 2px color-mix(in srgb, var(--color-shadow) 45%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--color-shadow) 20%, transparent);
+    --shadow-floating:
+      0 2px 6px -2px color-mix(in srgb, var(--color-shadow) 50%, transparent),
+      0 12px 28px -8px color-mix(in srgb, var(--color-shadow) 65%, transparent),
+      0 32px 56px -24px color-mix(in srgb, var(--color-shadow) 70%, transparent);
+    --region-sidebar-bg: #111418;
+    --region-sidebar-border-color: #23262c;
+    --region-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='192' height='192'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.035 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E");
+    --workspace-bg: #0f1112;
+    --workspace-glow-bg: #191b1f;
+    --workspace-edge-bg: #0b0c0e;
+    --workspace-inset-shadow:
+      inset 0 8px 12px -8px color-mix(in srgb, var(--color-shadow) 70%, transparent),
+      inset 8px 0 12px -8px color-mix(in srgb, var(--color-shadow) 55%, transparent);
+    --canvas-dots-opacity: 0.07;
   }
+}
+
+/* The atlas's own small vocabulary, drawn from Graphite's tokens: pages sit on the shell,
+   cards and panels are paper with the window outline, fills step off the paper. */
+:root {
+  --bg: var(--color-shell);
+  --panel: var(--color-paper);
+  --raised: var(--color-fill);
+  --line: var(--color-line);
+  --fg: var(--color-ink);
+  --muted: var(--color-muted);
+  --accent: var(--color-strong);
+  --warn: var(--color-warning-fg);
+  --bad: var(--color-danger-fg);
 }
 
 @theme inline {
@@ -39,34 +133,94 @@
   --color-accent: var(--accent);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --radius-sm: var(--radius-panel);
+  --shadow-lg: var(--shadow-floating);
 }
 
-html,
-body,
-#root {
-  height: 100%;
+/* Element defaults sit in the base layer, so Tailwind's utilities still win over them. */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /* Inter's I, l and 0 told apart, and figures that hold still, as in the app. */
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv05", "cv08", "zero";
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+  }
+
+  a {
+    color: var(--accent);
+  }
+
+  a:hover {
+    color: var(--color-strong-hover);
+  }
+
+  ::selection {
+    background: var(--color-selection);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-strong);
+    outline-offset: 2px;
+  }
 }
 
-body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 1.6;
+/* Cards and panels on the shell take the window's outline, so their edge reads in both
+   schemes; dividers inside them keep the line. */
+.bg-panel.border,
+.bg-panel.border-r,
+.bg-panel.border-l {
+  border-color: var(--color-outline);
 }
 
-a {
-  color: var(--accent);
+/* The sidebar, as the app's chrome: its own ground under the grain. */
+.region-sidebar {
+  background: var(--region-image), var(--region-sidebar-bg);
+  border-color: var(--region-sidebar-border-color);
+}
+
+/* The map's canvas, as the app's workspace: recessed, lit in the middle. */
+.workspace {
+  background: radial-gradient(
+    ellipse at 50% 45%,
+    var(--workspace-glow-bg),
+    var(--workspace-bg) 55%,
+    var(--workspace-edge-bg)
+  );
+  box-shadow: var(--workspace-inset-shadow);
 }
 
 .react-flow {
-  --xy-background-color: var(--bg);
-  --xy-edge-stroke: var(--muted);
-  --xy-controls-button-background-color: var(--panel);
+  --xy-background-color: transparent;
+  --xy-edge-stroke: var(--color-line-strong);
+  --xy-controls-button-background-color: var(--color-paper);
+  --xy-controls-button-background-color-hover: var(--color-fill);
   --xy-controls-button-color: var(--fg);
-  --xy-controls-button-border-color: var(--line);
+  --xy-controls-button-border-color: var(--color-outline);
+}
+
+.react-flow__background {
+  opacity: var(--canvas-dots-opacity);
 }
 
 :target,
