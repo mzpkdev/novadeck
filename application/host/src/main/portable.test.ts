@@ -215,9 +215,12 @@ describe("installing from a portable copy", () => {
     it("is left as it is, whether or not it would be newer", async () => {
       const { host, calls } = hosting({ find: async () => [copy(undefined, true)] })
       const result = await portableInstaller(host).install()
-      expect(result).toMatchObject({ kind: "failed" })
+      expect(result).toMatchObject({
+        kind: "failed",
+        reason: expect.stringContaining("install.sh"),
+      })
       await settle()
-      expect(calls).toEqual([])
+      expect(calls.filter((call) => !call.startsWith("log "))).toEqual([])
     })
   })
 
@@ -498,12 +501,25 @@ describe("starting the installed copy", () => {
     ])
   })
 
-  it("starts the image directly when there is no bash", async () => {
+  it("finds bash in /usr/bin when /bin has none", async () => {
     const { start, spawned } = starting((child) => child.emit("spawn"), {
       runnable: (path) => path !== "/bin/bash",
     })
     expect(await start).toBe(true)
+    expect(spawned).toMatchObject([
+      { file: "/usr/bin/bash", args: ["-c", closeDescriptors, "/i/novadeck.AppImage"] },
+    ])
+  })
+
+  it("starts the image directly, and says so, when there is no bash", async () => {
+    const { start, calls, spawned } = starting((child) => child.emit("spawn"), {
+      runnable: (path) => !path.endsWith("/bash"),
+    })
+    expect(await start).toBe(true)
     expect(spawned).toMatchObject([{ file: "/i/novadeck.AppImage", args: [] }])
+    expect(calls).toContain(
+      "log Starting the installed copy without bash, so this copy's mount stays while it runs.",
+    )
   })
 
   it("does not exit when the child fails to start", async () => {
@@ -558,7 +574,7 @@ describe("the descriptors of the installed copy", () => {
         mounts: [],
         spawn: (file, args, options) =>
           spawn(file, [...args], { ...options, stdio: ["ignore", "ignore", "ignore", ...held] }),
-        runnable: (path) => (direct ? path !== "/bin/bash" : true),
+        runnable: (path) => (direct ? !path.endsWith("/bash") : true),
         releaseLock: () => {},
         exit: () => {},
         log: () => {},

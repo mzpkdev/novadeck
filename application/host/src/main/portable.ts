@@ -95,11 +95,14 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
     // no second copy appears; `find` lists them in that order. One that could not be
     // looked at may be a newer app, so it is left as it is.
     const [replaced] = copies
-    if (replaced?.unchecked)
+    if (replaced?.unchecked) {
+      host.log("The installed copy could not be checked.", replaced.image)
       return {
         kind: "failed",
-        reason: "The installed Novadeck could not be checked, so it was left as it is.",
+        reason:
+          "The installed Novadeck could not be checked, so it was left as it is. Reinstall it with install.sh, or remove it, and try again.",
       }
+    }
     if (host.stopping()) return quitting
     const outcome = await host.install(host.source, replaced?.image)
     if (outcome.kind === "failed") return outcome
@@ -265,7 +268,8 @@ export type StartedProcess = {
 // mounted as long as the installed app runs. Bash is needed: dash cannot name those above 9.
 export const closeDescriptors =
   'for fd in /proc/$$/fd/*; do n=${fd##*/}; [ "$n" -gt 2 ] && eval "exec $n>&-"; done; exec "$0"'
-const bash = "/bin/bash"
+// Where bash may be; the first that can run starts the copy.
+const shells = ["/bin/bash", "/usr/bin/bash"]
 
 /**
  * Starts the AppImage `image` in place of this process and ends it, as electron-updater
@@ -273,7 +277,7 @@ const bash = "/bin/bash"
  * `--no-sandbox` for a system this copy ran on. Electron's own `relaunch` would not do on
  * Linux: its child inherits no-new-privileges, and the AppImage runtime then cannot mount
  * itself. The child starts through bash, which closes the descriptors it inherited and
- * becomes the app, or directly when there is no bash. The lock on the data folder is let
+ * becomes the app, or directly, logged, when there is no bash at /bin or /usr/bin. The lock on the data folder is let
  * go first so the child can take it; this process has shut down by now. Resolves true
  * after `exit`, or false, having logged why, when the child could not be started, as with
  * a missing file or exec bit: `runnable` says whether a path can be executed, as bash
@@ -314,9 +318,14 @@ export const startAppImage = ({
     }
     releaseLock()
     try {
-      const [file, args] = runnable(bash)
-        ? [bash, ["-c", closeDescriptors, image]]
-        : [image, [] as string[]]
+      const bash = shells.find(runnable)
+      if (bash === undefined)
+        log(
+          "Starting the installed copy without bash, so this copy's mount stays while it runs.",
+          image,
+        )
+      const [file, args] =
+        bash === undefined ? [image, [] as string[]] : [bash, ["-c", closeDescriptors, image]]
       const child = spawn(file, args, {
         detached: true,
         stdio: "ignore",
