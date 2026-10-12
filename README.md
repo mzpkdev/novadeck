@@ -657,13 +657,14 @@ connection state, the crash-loop count and the terminal count, over the demo swi
 sample agents' plans and artifacts), `plain`, `agents` (its seven projects each with
 an agent in a state of its own: waiting, asking, working, and two that finish done and
 failed a moment after it opens, for the project switcher), `messages` or `welcome`. The
-switcher in the panel's header changes between them without reloading, and the browser
+switcher in the panel's header changes between them without reloading (pressing the
+current one boots it again), and the browser
 tab remembers the last one chosen. `&turnMs=` sets how long a demo agent's turn works
 (1500 ms unless given), as a spec does that must act on the screen before the turn ends.
 
 The search field at the top filters actions by label, hint and group. Groups start folded,
 under three sections (Terminals, Agents, App), and the panel remembers which you opened in
-this tab. A ↻ beside an action marks one that boots the demo again.
+this tab. A ↺ beside an action marks one that boots the demo again.
 
 Terminals:
 

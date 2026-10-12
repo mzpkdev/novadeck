@@ -8,7 +8,6 @@ import { Bug, ChevronDown, ChevronRight, ChevronUp, RotateCcw, Search, X } from 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 
 import type { Workspace } from "../../../model/types"
-import { SegmentGroup } from "../../../ui-toolkit/SegmentGroup"
 import type { BackendConnectionState, BackendSink, DebugPanelProps } from "../../port"
 import { demoVariants } from "../variants"
 import { portableGroup } from "./portable"
@@ -27,9 +26,7 @@ const connectionTone = (connection: BackendConnectionState) =>
   connection === "connected" ? undefined : connection === "reconnecting" ? "warning" : "danger"
 
 // The variants the header switches between; the welcome one is the Welcome dialog's.
-const variantItems = demoVariants
-  .filter((variant) => variant !== "welcome")
-  .map((variant) => ({ value: variant, label: variant }))
+const variantItems = demoVariants.filter((variant) => variant !== "welcome")
 
 // The groups opened in this tab, kept across the demo's boots, which remount the panel.
 const openedKey = "novadeck.debug-panel.opened"
@@ -172,7 +169,7 @@ export const createDebugPanel = ({
             }}
           >
             <Bug size={14} aria-hidden />
-            Debug
+            <span className="debug-handle-label">Debug</span>
             {open ? (
               <ChevronDown size={12} aria-hidden className="debug-handle-chevron" />
             ) : (
@@ -221,19 +218,30 @@ export const createDebugPanel = ({
                 <span aria-hidden className="debug-label w-10 shrink-0 text-caption">
                   Demo
                 </span>
-                {/* Choosing one boots the demo again into it. */}
-                <SegmentGroup
-                  label="Demo"
-                  items={variantItems}
-                  value={launch.variant}
-                  onValueChange={(next) => {
-                    const variant = variantItems.find((item) => item.value === next)?.value
-                    if (variant && variant !== launch.variant) launch.switchVariant(variant)
-                  }}
-                  className="flex min-w-0 flex-1 gap-0.5"
-                  itemClassName="flex h-6 flex-1 items-center justify-center px-1.5 text-control"
-                  indicatorClassName="absolute"
-                />
+                {/* Buttons, not a radio group: each boots the demo again into its variant,
+                    the current one included, so arrow keys mustn't choose. */}
+                <div
+                  role="group"
+                  aria-label="Demo"
+                  className="segmented flex min-w-0 flex-1 gap-0.5"
+                >
+                  {variantItems.map((variant) => (
+                    <button
+                      key={variant}
+                      type="button"
+                      aria-pressed={variant === launch.variant}
+                      title={
+                        variant === launch.variant
+                          ? "Boots this demo again"
+                          : "Boots the demo again into it"
+                      }
+                      className="segment flex h-6 flex-1 items-center justify-center px-1.5 text-control"
+                      onClick={() => launch.switchVariant(variant)}
+                    >
+                      {variant}
+                    </button>
+                  ))}
+                </div>
               </div>
               <label className="debug-search field flex h-8 items-center gap-2 px-2.5">
                 <Search size={14} aria-hidden className="field-indicator shrink-0" />
