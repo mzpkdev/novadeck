@@ -17,12 +17,13 @@ import { basename, delimiter, dirname, join } from "node:path"
  * environment made only of what the sandbox sets, never the developer's. Nothing in it
  * can reach the developer's real configuration, login or keyring, with a gap on each of
  * Windows and macOS, where a store is the user's whatever the environment says. On macOS,
- * the login Keychain and the user's defaults: Claude Code names its Keychain items after
- * the sandbox's folder, and its `security` is the sandbox's own (`keychainGuard`); Codex
- * keeps its login in a file; a test of Antigravity, whose item has a fixed name, refuses
- * to start while it is there (`credentials.ts`); and Codex reads Reduce motion from the
- * defaults. On Windows, the registry. A terminal's `cmd /k`, as the runner starts one,
- * and Antigravity's `cmd /c` for its hooks run the developer's
+ * the login Keychain and the user's defaults: Claude Code names its login's Keychain items
+ * after the sandbox's folder, and its `security` is the sandbox's own, which refuses it any
+ * item with no such suffix (`keychainGuard`); Codex keeps its login in a file; a test of
+ * Antigravity, whose item has a fixed name, refuses to start while it is there
+ * (`credentials.ts`); and Codex reads Reduce motion from the defaults. On Windows, the
+ * registry. A terminal's `cmd /k`, as the runner starts one, and Antigravity's `cmd /c`
+ * for its hooks run the developer's
  * `HKCU\Software\Microsoft\Command Processor\AutoRun` (clink, doskey macros, a `cd`),
  * as cmd does without `/d`; the runner leaves it so, as a person's terminal should run
  * it. A developer with one set may see a test fail that CI, which has none, passes.
@@ -279,32 +280,19 @@ export const unsuffixedClaudeItem = /^Claude Code(?!.*-[0-9a-f]{8}$)/
 
 /**
  * On macOS, a `security` of the sandbox's own, on its PATH before the system's, as Claude
- * Code calls it by name: it writes each service asked for to `log`, answers "not found"
- * (exit 44) for one of Claude Code's items with no folder's suffix, the person's own
- * login, and passes the rest to `/usr/bin/security`. A Claude Code that stopped suffixing
- * its items is then refused the person's login and fails its test, in CI too, which holds
- * none. Antigravity calls `/usr/bin/security` by its path, which this can't see; its
- * login is refused as Windows' is (`credentials.ts`).
+ * Code calls it by name (`keychain-guard.sh`): it writes each service asked for to `log`,
+ * whether given as `-s`, joined as `-sName` or, as Claude Code writes its items, on the
+ * input of `security -i`, and answers "not found" (exit 44), passing nothing on, where one
+ * is a Claude Code item with no folder's suffix, the person's own, such as its fixed
+ * `Claude Code-device-keys`; the rest goes to `real`. Claude Code is then never given the
+ * person's items, nor can it overwrite them, and its test fails, in CI too, which holds
+ * none. Antigravity calls `/usr/bin/security` by its path, which this can't see; its login
+ * is refused as Windows' is (`credentials.ts`).
  */
-const keychainGuard = (folder: string, log: string): void => {
+export const keychainGuard = (folder: string, log: string, real = "/usr/bin/security"): void => {
   const program = join(folder, "security")
-  writeFileSync(
-    program,
-    `#!/bin/sh
-service=
-previous=
-for argument in "$@"; do
-  [ "$previous" = "-s" ] && service=$argument
-  previous=$argument
-done
-printf '%s\\n' "$service" >> ${shellQuote(log)}
-case "$service" in
-  "Claude Code"*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
-  "Claude Code"*) exit 44 ;;
-esac
-exec /usr/bin/security "$@"
-`,
-  )
+  const guard = readFileSync(new URL("keychain-guard.sh", import.meta.url), "utf8")
+  writeFileSync(program, `#!/bin/sh\nlog=${shellQuote(log)}\nreal=${shellQuote(real)}\n${guard}`)
   chmodSync(program, 0o755)
 }
 

@@ -48,7 +48,7 @@ Evidence:
 
 **Early keys.** A key pressed into a permission dialog within about 25 ms of its drawing, while its `PermissionRequest` hook still runs, may be dropped: a digit moves the cursor and chooses nothing, an Enter does nothing. A key once the screen has settled takes, as Novadeck's answers wait for (seen 2026-10-11, 2.1.287, on a developer's Mac).
 
-**Login on macOS.** Claude Code keeps its login in the login Keychain, a generic password named `Claude Code-credentials`; with `CLAUDE_CONFIG_DIR` set, every item it reads or writes there, the legacy API key's too, gets `-` and the first 8 hex digits of that folder's SHA-256 after its name, so a Claude Code given another folder never sees the person's own (read 2026-10-11, 2.1.287's `security find-generic-password` calls; the e2e suite relies on it).
+**Login on macOS.** Claude Code keeps its login in the login Keychain, a generic password named `Claude Code-credentials`; with `CLAUDE_CONFIG_DIR` set, every item of its login, the legacy API key's too, gets `-` and the first 8 hex digits of that folder's SHA-256 after its name, so a Claude Code given another folder never sees the person's own login (read 2026-10-11, 2.1.287's `security` calls; the e2e suite relies on it). Not every item: its device key store's Keychain variant uses a fixed `Claude Code-device-keys`, whatever the folder; when it chooses that over its file store wasn't found, and no e2e scenario reached it. It reads an item with `security find-generic-password` and writes one through `security -i`, the `add-generic-password -U … -s "<service>" -X "<hex>"` command on its input, for an item of 4,032 characters or fewer.
 
 **Sessions.**
 

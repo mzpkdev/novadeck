@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process"
-import { rmSync } from "node:fs"
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 import { describe, expect, it } from "../test.js"
-import { createSandbox, keychainAsks, unsuffixedClaudeItem } from "./sandbox.js"
+import { createSandbox, keychainAsks, keychainGuard, unsuffixedClaudeItem } from "./sandbox.js"
 
 describe("Claude Code's Keychain items", () => {
   it("are the person's own without a folder's suffix, and the sandbox's with one", () => {
@@ -12,6 +14,57 @@ describe("Claude Code's Keychain items", () => {
     expect(unsuffixedClaudeItem.test("Claude Code-credentials-1a2b3c4d")).toBe(false)
     expect(unsuffixedClaudeItem.test("Claude Code-1a2b3c4d")).toBe(false)
     expect(unsuffixedClaudeItem.test("gemini")).toBe(false)
+  })
+})
+
+// The guard over a stand-in for the system's security, which writes what reached it.
+const guarded = (resources: { defer: (cleanup: () => void) => void }) => {
+  const folder = mkdtempSync(join(tmpdir(), "novadeck-keychain-"))
+  resources.defer(() => rmSync(folder, { recursive: true, force: true }))
+  const real = join(folder, "real")
+  const reached = join(folder, "reached")
+  writeFileSync(real, `#!/bin/sh\n{ printf '%s|' "$@"; printf '\\n'; cat; } > '${reached}'\n`)
+  chmodSync(real, 0o755)
+  const log = join(folder, "log")
+  keychainGuard(folder, log, real)
+  const run = (args: readonly string[], input = "") =>
+    spawnSync(join(folder, "security"), args, { input }).status
+  return {
+    run,
+    reached: () => (existsSync(reached) ? readFileSync(reached, "utf8") : undefined),
+    asked: () => keychainAsks({ keychainLog: log }),
+  }
+}
+
+describe.skipIf(process.platform === "win32")("the sandbox's security", () => {
+  it("refuses the person's own Claude Code item however it is named, passing nothing on", ({
+    resources,
+  }) => {
+    const guard = guarded(resources)
+
+    expect(guard.run(["find-generic-password", "-a", "me", "-s", "Claude Code-credentials"])).toBe(
+      44,
+    )
+    expect(guard.run(["find-generic-password", "-sClaude Code-credentials"])).toBe(44)
+    expect(
+      guard.run(["-i"], 'add-generic-password -U -a "me" -s "Claude Code-device-keys" -X "00"\n'),
+    ).toBe(44)
+    expect(guard.reached()).toBeUndefined()
+    expect(guard.asked()).toEqual([
+      "Claude Code-credentials",
+      "Claude Code-credentials",
+      "Claude Code-device-keys",
+    ])
+  })
+
+  it("passes on what the sandbox's Claude Code asks for, its input as it came", ({ resources }) => {
+    const guard = guarded(resources)
+    const input = 'add-generic-password -U -a "me" -s "Claude Code-credentials-1a2b3c4d" -X "00"\n'
+
+    expect(guard.run(["-i"], input)).toBe(0)
+    expect(guard.reached()).toBe(`-i|\n${input}`)
+    expect(guard.run(["find-generic-password", "-s", "gemini"])).toBe(0)
+    expect(guard.asked()).toEqual(["Claude Code-credentials-1a2b3c4d", "gemini"])
   })
 })
 
