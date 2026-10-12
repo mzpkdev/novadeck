@@ -49,9 +49,10 @@ export type SettingsChange = {
   readonly [K in keyof RunnerSettings]?: RunnerSettings[K] | undefined
 }
 
-// Raise it whenever a column is dropped or changed: a database with a lower version is an
+// Raise it for any change but an added column: a database with a lower version is an
 // earlier build's. A build that only adds columns may leave it, as a runner reads columns
-// it doesn't know, on a database of its own version, as a newer build's.
+// it doesn't know, on a database of its own version, as a newer build's; an added table,
+// index or constraint goes unseen.
 const schemaVersion = 1
 const schema = `
   CREATE TABLE projects (
@@ -274,10 +275,9 @@ const schemaDifference = (
     ].join(", ")})`
     return [{ text, missing: missing.length, extra: extra.length }]
   })
-  const [first] = differences
-  if (!first) return undefined
+  if (differences.length === 0) return undefined
   return {
-    text: first.text,
+    text: differences.map(({ text }) => text).join("; "),
     newer: differences.every(({ missing }) => missing === 0),
   }
 }

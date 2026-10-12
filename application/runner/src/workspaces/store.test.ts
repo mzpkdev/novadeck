@@ -286,7 +286,7 @@ describe("workspace metadata", () => {
     try {
       const columns = database.prepare("SELECT name FROM pragma_table_info('terminals')").all()
       expect(columns).toContainEqual({ name: "future_note" })
-      // Nothing was added: the table this runner would have created is still absent.
+      // Nothing was kept: the table this runner would have created is still absent.
       expect(
         database.prepare("SELECT name FROM sqlite_schema WHERE name = 'terminal_numbers'").get(),
       ).toBeUndefined()
@@ -305,7 +305,7 @@ describe("workspace metadata", () => {
       "ALTER TABLE terminals DROP COLUMN murmur_title; ALTER TABLE companion_items ADD COLUMN legacy TEXT",
     )
     old.close()
-    expect(() => new WorkspaceStore(path)).toThrow(/earlier build/)
+    expect(() => new WorkspaceStore(path)).toThrow(/earlier build: .*expects murmur_title TEXT/)
   })
 
   it("refuses a database from before murmur titles, which has no murmur_title", ({ directory }) => {
