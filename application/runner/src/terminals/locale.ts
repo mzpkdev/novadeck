@@ -5,8 +5,10 @@ import { existsSync } from "node:fs"
  * The shells' environment with a UTF-8 locale where it names none. An app macOS starts
  * from the Dock or Finder gets no `LANG`, so its shells would run in the C locale, where
  * bash's line editor mangles a character such as "ż" as it is typed. Terminal.app sets
- * `LANG` from the system's region for the same reason; this does as it does, the region
- * read by `region`, and falls back to `en_US.UTF-8` where the system has no such locale.
+ * `LANG` from the system's language and country for the same reason; this does as it
+ * does, reading them from `region` (`AppleLocale`, its `@rg=` override left out), and
+ * falls back to `en_US.UTF-8` where the system has no such locale. It asks `defaults` once,
+ * as the runner starts, within 2 s.
  * Elsewhere, or with any locale variable set, the environment is left as it is.
  */
 export const withLocale = (
@@ -24,7 +26,7 @@ export const withLocale = (
 /** The region macOS formats for, as `en_US@rg=plzzzz`; undefined when it can't be read. */
 const systemRegion = (): string | undefined => {
   try {
-    return execFileSync("defaults", ["read", "-g", "AppleLocale"], {
+    return execFileSync("/usr/bin/defaults", ["read", "-g", "AppleLocale"], {
       encoding: "utf8",
       timeout: 2_000,
       stdio: ["ignore", "pipe", "ignore"],

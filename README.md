@@ -133,8 +133,9 @@ session may end.
 
 Shells start with the runner's environment. On macOS, where an app started from the Dock
 or Finder gets no locale, a runner with none of `LANG`, `LC_ALL` and `LC_CTYPE` gives its
-shells `LANG` for the system's region in UTF-8, as Terminal.app does (`en_US.UTF-8` when
-the system has no such locale), so typing a character such as "ż" works in bash.
+shells `LANG` for the system's language and country in UTF-8 (`AppleLocale`, its `@rg=`
+region override left out), as Terminal.app does (`en_US.UTF-8` when the system has no such
+locale), so typing a character such as "ż" works in bash.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
 **Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent

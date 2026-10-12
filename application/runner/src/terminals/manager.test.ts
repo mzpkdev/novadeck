@@ -1456,6 +1456,26 @@ describe.skipIf(process.platform === "win32")("terminal environment", () => {
       ),
     ).toContain("[|own|]")
   })
+
+  it.runIf(process.platform === "darwin")(
+    "gives a shell on macOS a UTF-8 LANG where the runner has no locale, as an app opened from the Dock has none",
+    async ({ terminals }) => {
+      const manager = terminals.manager({ baseEnv: { PATH: process.env.PATH }, env: { PS1: "" } })
+      const terminal = await manager.create(
+        { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+        "owner",
+      )
+      const stream = terminals.attach(manager, terminal.id, "owner")
+      await stream.next()
+      manager.write({ terminalId: terminal.id, data: "printf '[%s]\\n' \"$LANG\"\n" }, "owner")
+      const events = await until(manager, stream, "owner", (_event, text) =>
+        /\[[^\]\r\n]*\]\r\n/.test(text),
+      )
+      const printed = events.map((event) => ("data" in event ? event.data : "")).join("")
+
+      expect(printed).toMatch(/\[[a-z]{2}_[A-Z]{2}\.UTF-8\]/)
+    },
+  )
 })
 
 describe.skipIf(process.platform === "win32")("terminal limits", () => {
