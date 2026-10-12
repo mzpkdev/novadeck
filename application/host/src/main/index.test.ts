@@ -116,9 +116,17 @@ describe("compiled desktop host", () => {
     it("lets go of the lock before electron-updater starts the new AppImage on a restart", async () => {
       const main = await read("main/index.js")
 
-      // The bundler may rename the imported `autoUpdater`.
+      // On Electron's own autoUpdater, which electron-updater emits on; the bundler may
+      // rename the import.
+      const native =
+        /\{[^}]*\bautoUpdater(?: as ([\w$]+))?(?=\s*[,}])[^}]*\} from "electron"/u.exec(main)
+      expect(native).not.toBeNull()
+      const name = (native?.[1] ?? "autoUpdater").replaceAll("$", "\\$")
       expect(main).toMatch(
-        /process\.platform === "linux"\)\s*\w+\.once\("before-quit-for-update", \(\) => app\.releaseSingleInstanceLock\(\)\);\s*updater\?\.quitAndInstall\(true, true\)/u,
+        new RegExp(
+          `process\\.platform === "linux"\\)\\s*${name}\\.once\\("before-quit-for-update", \\(\\) => app\\.releaseSingleInstanceLock\\(\\)\\);\\s*updater\\?\\.quitAndInstall\\(true, true\\)`,
+          "u",
+        ),
       )
     })
 

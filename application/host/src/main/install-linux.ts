@@ -255,8 +255,8 @@ export const failureReason = (error: unknown, folder: string): string => {
   if (code === "ENOSPC") return "There is no space left on the disk."
   if (code === "EACCES" || code === "EPERM" || code === "EROFS")
     return `Novadeck cannot write to ${folder}.`
-  // The page puts "Could not install Novadeck:" before the reason and drops long ones, so
-  // cut a long message here, on a whole character.
+  // The page puts "Could not install Novadeck:" before the reason and shortens a long
+  // one; cut it here too, keeping whole characters.
   if (!(error instanceof Error) || error.message === "") return "Something went wrong."
   const characters = Array.from(error.message)
   return characters.length <= maxReasonLength
