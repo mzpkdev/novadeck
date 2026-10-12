@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process"
+import { join } from "node:path"
+
 import { context, describe, expect, it } from "../../test"
 import { type Facts, parseAffected, plan, quirks, select, setups } from "./plan.ts"
 
@@ -201,5 +204,22 @@ describe("E2E rows", () => {
       "Mixed",
     ])
     expect(planned.quirks.map((row) => row.agents)).toEqual(ids)
+  })
+})
+
+describe("the plan script", () => {
+  // CI runs it with plain node, no package built: what it imports must load that way too.
+  it("runs under plain node and plans every row for a nightly run", () => {
+    const script = join(import.meta.dirname, "main.ts")
+    const env = { ...process.env, GITHUB_EVENT_NAME: "schedule", GITHUB_OUTPUT: "" }
+    const printed = execFileSync(process.execPath, [script], { env, encoding: "utf8" })
+    const planned = JSON.parse(printed) as ReturnType<typeof plan>
+    expect(planned.run).toBe(true)
+    expect(planned.e2e.map((row) => row.name)).toEqual([
+      "Claude Code",
+      "Codex",
+      "Antigravity",
+      "Mixed",
+    ])
   })
 })
