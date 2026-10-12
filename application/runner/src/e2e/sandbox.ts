@@ -15,9 +15,14 @@ import { basename, delimiter, dirname, join } from "node:path"
 /**
  * Where an end-to-end test runs its harnesses: a throwaway home and project, and an
  * environment made only of what the sandbox sets, never the developer's. Nothing in it
- * can reach the developer's real configuration, login or keyring, with one gap on
- * Windows: the registry, which no environment moves. A terminal's `cmd /k`, as the
- * runner starts one, and Antigravity's `cmd /c` for its hooks run the developer's
+ * can reach the developer's real configuration, login or keyring, with a gap on each of
+ * Windows and macOS, where a store is the user's whatever the environment says. On macOS,
+ * the login Keychain and the user's defaults: Claude Code names its Keychain items after
+ * the sandbox's folder, and its `security` is the sandbox's own (`keychainGuard`); Codex
+ * keeps its login in a file; a test of Antigravity, whose item has a fixed name, refuses
+ * to start while it is there (`credentials.ts`); and Codex reads Reduce motion from the
+ * defaults. On Windows, the registry. A terminal's `cmd /k`, as the runner starts one,
+ * and Antigravity's `cmd /c` for its hooks run the developer's
  * `HKCU\Software\Microsoft\Command Processor\AutoRun` (clink, doskey macros, a `cd`),
  * as cmd does without `/d`; the runner leaves it so, as a person's terminal should run
  * it. A developer with one set may see a test fail that CI, which has none, passes.
@@ -30,7 +35,7 @@ export type Sandbox = {
   readonly project: string
   /**
    * The environment every sandboxed process gets: HOME, XDG folders, a PATH of the pinned
-   * harnesses and system tools, a dead D-Bus address so no keyring is reachable, the fake
+   * harnesses and system tools, a dead D-Bus address so no secret service answers, the fake
    * model as HTTP(S)_PROXY with loopback exempt (Node's fetch included), and npm's
    * prefix inside the sandbox so a harness that updates itself can't touch a global
    * install. On Windows also the user's folders, which programs there find their home
