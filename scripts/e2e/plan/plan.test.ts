@@ -39,8 +39,8 @@ describe("E2E selection", () => {
       ).toEqual(["claude", "agy"])
     })
 
-    it("ignores an adapter no pin names", () => {
-      expect(select(pullRequest(["@novadeck/harness-other"]), ids)).toEqual([])
+    it("runs everything for an adapter no pin names yet, as for any package no rule names", () => {
+      expect(select(pullRequest(["@novadeck/harness-other"]), ids)).toEqual(ids)
     })
   })
 
@@ -85,6 +85,13 @@ describe("E2E selection", () => {
     })
   })
 
+  context("when a pull request changes a package no rule names", () => {
+    it("runs everything, as one the runner may build on", () => {
+      const affected = ["@novadeck/new-engine", "@novadeck/runner"]
+      expect(select(pullRequest(affected, ["engines/new-engine/index.ts"]), ids)).toEqual(ids)
+    })
+  })
+
   context("when a pull request changes nothing the suite runs on", () => {
     it("runs nothing for documentation alone", () => {
       expect(select(pullRequest([], ["docs/e2e-testing.md", "README.md"]), ids)).toEqual([])
@@ -92,6 +99,11 @@ describe("E2E selection", () => {
 
     it("runs nothing for the UI alone", () => {
       expect(select(pullRequest(["@novadeck/ui"], ["application/ui/src/app.tsx"]), ids)).toEqual([])
+    })
+
+    it("runs nothing for the host and the UI it bundles", () => {
+      const affected = ["@novadeck/ui", "@novadeck/host"]
+      expect(select(pullRequest(affected, ["application/host/src/main/index.ts"]), ids)).toEqual([])
     })
 
     it("runs nothing for other scripts or workflows", () => {

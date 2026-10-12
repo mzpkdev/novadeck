@@ -80,8 +80,10 @@ nightly schedule and a manual dispatch run everything, and so does a pull reques
 turbo's list of affected packages (`turbo ls --affected`, from the pull request's base to
 its head) or git's list of changed files can't be had. Otherwise:
 
-- Everything runs when `@novadeck/harness-core`, `protocol`, `relay`, `whisper`, `murmur` or
-  `ggml-build` is affected, or a changed file is in `application/runner/` (the suite and
+- Everything runs when a package other than an adapter, the runner, the UI or the host is
+  affected (`@novadeck/harness-core`, `protocol`, `relay`, the engines, or one added later,
+  so a new package runs everything until a rule says otherwise; an adapter not yet pinned
+  counts as one), or a changed file is in `application/runner/` (the suite and
   the pins), `scripts/e2e/`, `.github/actions/e2e-harness-cache/`, or is
   `.github/workflows/e2e.yml`, the root `package.json`, `pnpm-lock.yaml`,
   `pnpm-workspace.yaml` or `turbo.json`. The runner is judged by its files, not by turbo:

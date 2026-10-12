@@ -11,18 +11,13 @@ export type Facts = {
   readonly files: readonly string[] | undefined
 }
 
-// Packages the runner builds on besides the adapters: a change in one can break any
-// harness. The runner itself isn't one: turbo reports it affected by any package it depends
-// on, an adapter's too, which would run everything for a change to one harness. Its own
-// changes are told by its files instead (`sharedFolders`).
-const shared = new Set([
-  "@novadeck/harness-core",
-  "@novadeck/protocol",
-  "@novadeck/relay",
-  "@novadeck/whisper",
-  "@novadeck/murmur",
-  "@novadeck/ggml-build",
-])
+// The packages a change in which runs no harness of its own: the suite runs on none of the
+// UI and the host, and the runner is reported affected by any package it depends on, an
+// adapter's too, which would run everything for a change to one harness; its own changes
+// are told by its files instead (`sharedFolders`). Any other package but an adapter, one
+// the runner builds on (harness-core, the protocol, the relay, the engines) or one added
+// later, can break any harness, so it runs everything.
+const unshared = new Set(["@novadeck/runner", "@novadeck/ui", "@novadeck/host"])
 
 // The runner, where the suite and the pins live, and what lies outside every package yet
 // inside what the suite runs on or how CI runs it.
@@ -47,7 +42,8 @@ export const select = (facts: Facts, ids: readonly string[]): readonly string[] 
   if (facts.event !== "pull_request") return ids
   const { affected, files } = facts
   if (!affected || !files) return ids
-  if (affected.some((name) => shared.has(name))) return ids
+  const adapters = new Set(ids.map(adapterOf))
+  if (affected.some((name) => !adapters.has(name) && !unshared.has(name))) return ids
   if (files.some((file) => sharedFiles.has(file) || sharedFolders.some((f) => file.startsWith(f))))
     return ids
   return ids.filter((id) => affected.includes(adapterOf(id)))

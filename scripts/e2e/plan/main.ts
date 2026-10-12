@@ -37,11 +37,24 @@ const facts = (event: string, base: string | undefined, head: string | undefined
   }
   const env = { ...process.env, TURBO_SCM_BASE: base, TURBO_SCM_HEAD: head }
   const turbo = run("pnpm", ["exec", "turbo", "ls", "--affected", "--output", "json"], env)
-  const diff = run("git", ["diff", "--name-only", "--no-renames", `${base}...${head}`], env)
+  // Unquoted and NUL-separated, so a path with spaces or non-ASCII letters reads as it is.
+  const diff = run(
+    "git",
+    [
+      "-c",
+      "core.quotePath=false",
+      "diff",
+      "-z",
+      "--name-only",
+      "--no-renames",
+      `${base}...${head}`,
+    ],
+    env,
+  )
   return {
     event,
     affected: turbo === undefined ? undefined : parseAffected(turbo),
-    files: diff?.split("\n").filter(Boolean),
+    files: diff?.split("\0").filter(Boolean),
   }
 }
 
