@@ -45,8 +45,9 @@ releases feed. `stable` sets it false and `early` true.
 | ------------------------------ | --------------------------------------------------------------------------------- |
 | macOS, Developer ID signed     | Installs (Squirrel.Mac)                                                           |
 | macOS, unsigned                | Tells; every build is unsigned until the certificates are in place                |
-| Windows installer (`-setup`)   | Installs. There is no portable build                                              |
-| Linux AppImage                 | Installs by replacing its file if the AppImage's folder is writable; tells if not |
+| Windows installer (`-setup`)   | Installs. A portable Windows build is not told apart yet                          |
+| Linux AppImage, installed      | Installs by replacing its file if the AppImage's folder is writable; tells if not |
+| Linux AppImage, portable       | Tells; never installs itself. See "Portable builds"                               |
 | Any other Linux build          | No checks: Linux ships only the AppImage                                          |
 | A release whose install failed | Tells of that release only; newer ones install                                    |
 | Local and pull request builds  | No checks: they carry version 0.0.0                                               |
@@ -124,6 +125,51 @@ Linux build is an AppImage when `APPIMAGE` is set and the running executable lie
 `APPDIR`; shells inside an AppImage inherit `APPIMAGE`, so a program started from one is told
 apart by its executable. Any other packaged Linux build never checks: Linux ships only the
 AppImage.
+
+## Portable builds
+
+A portable build runs from wherever it was put and is not meant to last: it leads the person
+to the installed app, which updates itself. On Linux it is an AppImage anywhere but the two
+places the installer puts it, `${XDG_DATA_HOME:-~/.local/share}/novadeck/novadeck.AppImage`
+(a relative `XDG_DATA_HOME` counts as unset) and Homebrew's `~/Applications/novadeck.AppImage`;
+paths are compared by their canonical form, so a link to an install counts as installed
+(`install-location.ts`, shared with the sandbox fix). An AppImage run from Downloads therefore
+no longer replaces its own file, as it once did in any writable folder. macOS and Windows
+builds are not told apart yet and keep their rules above.
+
+A portable build still looks for releases, in `tell` mode, so it learns that a newer one
+exists; the offer carries the release's date (`releasedAt`, from the update metadata).
+`DesktopBridge.portable` tells the page whether the copy is portable, and `installApp`
+installs from it (`portable.ts`, `install-linux.ts`):
+
+- It installs from the running file, with no download: the AppImage is copied beside the
+  install path as `.new` and renamed over it, so a failed copy leaves nothing half-written; the
+  icon is extracted with `--appimage-extract` (no FUSE needed); `~/.local/bin/novadeck` is
+  linked to the image; and the menu entry `dev.mzpk.novadeck.desktop` is written, as
+  `scripts/install/install.sh` does, with the same `Exec` quoting. The AppArmor profile that
+  turns the sandbox on still needs the installer's `--sandbox` step, with `sudo`.
+- It then shuts down as an update does, so pages save and the runner ends its shells, lets go
+  of the single-instance lock, and relaunches into the installed AppImage with no arguments of
+  its own, since the portable's may carry `--no-sandbox`.
+- An installed copy newer than the portable one is never overwritten. The answer is `newer`,
+  and `openInstalled` relaunches into that copy after the same shutdown. An installed copy's
+  version is read without running it, from `X-AppImage-Version` in the menu entry
+  electron-builder writes into the AppImage (`--appimage-extract '*.desktop'`); a copy whose
+  version cannot be read counts as not newer and is replaced.
+- A failure, such as a full disk or a folder that cannot be written, is returned with a short
+  reason.
+
+Both copies keep their data in the same folder, so the installed app opens where the portable
+left off. An older runner refuses a database a newer one has upgraded, so when a portable
+build starts and finds a newer installed copy it tells the person before the runner starts,
+and offers to open that copy or quit.
+
+## One instance per data folder
+
+The host takes Electron's single-instance lock at startup. Chromium keys it on the data
+folder (`userData`), not on the executable, so a portable and an installed copy exclude each
+other. A second launch quits at once, before it starts anything, and the running window comes
+to the front. The smoke tests pass `--user-data-dir`, so each gets its own lock.
 
 ## Moving to Applications
 

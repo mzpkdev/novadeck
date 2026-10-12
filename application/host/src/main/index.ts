@@ -39,10 +39,18 @@ import {
   resolveMoveConflict,
 } from "./applications-folder.js"
 import { dataFolderName } from "./data-folder.js"
+import {
+  extractWithProcess,
+  findInstalled,
+  installAppImage,
+  installLayout,
+} from "./install-linux.js"
+import { isInstalledImage } from "./install-location.js"
 import { linuxMenu } from "./menu.js"
 import { notificationText, registerNoticeIpc, showNotices } from "./notices.js"
 import { attachPage, guardPage, lockPagesSession, pagesPartition, webAddress } from "./pages.js"
 import { limitPermissions, ownPage } from "./permissions.js"
+import { leaveForNewerInstalled, portableInstaller, registerPortableIpc } from "./portable.js"
 import { quitOnShutdown, saveBeforeClose, saveOnSessionEnd, savePages } from "./quit.js"
 import { startRunner, type RunnerHost } from "./runner.js"
 import { registerSandboxIpc, sandboxState } from "./sandbox.js"
@@ -55,11 +63,13 @@ import {
   installFallbackMs,
   installOnlyOnOrderlyQuit,
   installUpdate,
+  portableOf,
   quitWithoutInstalling,
   registerUpdateIpc,
   trackOffer,
   updatePlan,
   type Updater,
+  type UpdateBuild,
   type UpdaterKind,
 } from "./updater.js"
 
@@ -72,6 +82,12 @@ if (!app.commandLine.getSwitchValue("user-data-dir"))
     "userData",
     join(app.getPath("appData"), dataFolderName({ packaged: app.isPackaged })),
   )
+// One instance runs per data folder: Chromium's singleton lock is keyed on userData, so a
+// portable and an installed copy, which share it, exclude each other, as two windows on
+// one database must not run. A second launch quits at once, before it starts anything,
+// and the first brings its window forward; see the `second-instance` handler below.
+const primaryInstance = app.requestSingleInstanceLock()
+if (!primaryInstance) app.exit(0)
 const developmentOrigin = "http://127.0.0.1:5173"
 // How long quitting waits for the pages' last saves.
 const saveBeforeQuitMs = 1_500
@@ -225,6 +241,15 @@ const checksSignature = (): boolean =>
   app.getVersion() !== "0.0.0" &&
   process.env.NOVADECK_UPDATES !== "off"
 
+// The canonical form of a path, or undefined when it cannot be had.
+const realpathOrUndefined = (path: string): string | undefined => {
+  try {
+    return realpathSync(path)
+  } catch {
+    return undefined
+  }
+}
+
 /** Whether the folder holding the AppImage file can be written to, as replacing it takes. */
 const appImageWritable = (): Promise<boolean> => {
   const file = process.env.APPIMAGE
@@ -251,23 +276,39 @@ const loadUpdater = async (kind: UpdaterKind): Promise<NonNullable<typeof update
   }
 }
 
+// What decides how this build updates, read once: the signature takes a moment to ask.
+let build: Promise<UpdateBuild> | undefined
+const updateBuild = (): Promise<UpdateBuild> =>
+  (build ??= (async () => {
+    const appDir = process.env.APPDIR
+    const linux = process.platform === "linux"
+    const appImage = process.env.APPIMAGE
+    return {
+      packaged: app.isPackaged,
+      version: app.getVersion(),
+      platform: process.platform,
+      execPath: process.execPath,
+      // The AppImage mounts under TMPDIR, which may reach it through a symlink; the
+      // executable's path is the real one.
+      env: { ...process.env, APPDIR: appDir && (await realpath(appDir).catch(() => appDir)) },
+      // Asked only where it matters: codesign takes a moment.
+      signed: checksSignature() && (await bundleSigned()),
+      appImageWritable: linux && (await appImageWritable()),
+      appImageInstalled:
+        linux &&
+        appImage !== undefined &&
+        isInstalledImage(appImage, {
+          env: process.env,
+          home: homedir(),
+          realpath: realpathOrUndefined,
+        }),
+    }
+  })())
+
 // Starts checking for updates in a build that looks for them; see ./updater.ts.
 const startUpdates = async (): Promise<void> => {
-  const appDir = process.env.APPDIR
   const state = updateState.read()
-  const linux = process.platform === "linux"
-  const plan = updatePlan({
-    packaged: app.isPackaged,
-    version: app.getVersion(),
-    platform: process.platform,
-    execPath: process.execPath,
-    // The AppImage mounts under TMPDIR, which may reach it through a symlink; the
-    // executable's path is the real one.
-    env: { ...process.env, APPDIR: appDir && (await realpath(appDir).catch(() => appDir)) },
-    // Asked only where it matters: codesign takes a moment.
-    signed: checksSignature() && (await bundleSigned()),
-    appImageWritable: linux && (await appImageWritable()),
-  })
+  const plan = updatePlan(await updateBuild())
   if (!plan) return
   updater = await loadUpdater(plan.kind)
   updates = checkForUpdates(updater, {
@@ -435,9 +476,60 @@ const moveToApplications = async (): Promise<boolean> => {
   })
 }
 
+// Starts the AppImage at `image` in place of this process, which ends, after the lock on
+// the data folder is let go so the new process can take it. It runs with no arguments of
+// this one's, which may carry `--no-sandbox` for a system this copy ran on.
+const startInstalled = (image: string): boolean =>
+  relaunchIntoCopy({
+    executable: image,
+    exists: existsSync,
+    relaunch: (execPath) => app.relaunch({ execPath, args: [] }),
+    exit: () => {
+      app.releaseSingleInstanceLock()
+      app.exit(0)
+    },
+    log: (message, error) => console.warn(message, error),
+  })
+
+// The AppImages installed on this machine, with their versions.
+const installedCopies = () =>
+  findInstalled({ env: process.env, home: homedir() }, extractWithProcess)
+
 const launch = async (): Promise<void> => {
   // A moved app starts again from Applications, and has nothing more to do here.
   if (await moveToApplications()) return
+  const portable = portableOf(await updateBuild())
+  // A portable copy older than the installed one must not open the data the installed
+  // one may have upgraded; nothing has started yet, so there is nothing to shut down.
+  if (
+    await leaveForNewerInstalled({
+      portable,
+      version: app.getVersion(),
+      find: installedCopies,
+      ask: async (version) => {
+        const { response } = await dialog.showMessageBox({
+          type: "info",
+          message: "A newer Novadeck is installed.",
+          detail: `This copy is version ${app.getVersion()} and the installed one is ${version}, which may have upgraded your workspace in a way this copy cannot open. Open the installed Novadeck instead.`,
+          buttons: ["Open Novadeck", "Quit"],
+          defaultId: 0,
+          cancelId: 1,
+        })
+        return response === 0
+      },
+      start: startInstalled,
+      alert: async () => {
+        await dialog.showMessageBox({
+          type: "error",
+          message: "The installed Novadeck did not start.",
+          detail: "Start it from your applications menu or with the novadeck command.",
+        })
+      },
+      quit: () => app.exit(0),
+      log: (message, error) => console.warn(message, error),
+    })
+  )
+    return
   channel = updateState.read().channel
   await appearance.restore(nativeTheme)
   runner = startRunner({
@@ -516,6 +608,33 @@ const launch = async (): Promise<void> => {
       }
     },
   })
+  // The page learns whether this is a portable copy and may install the app from it, or
+  // open an installed copy found newer.
+  registerPortableIpc(ipcMain, {
+    window: (event) => appWindow(event)?.webContents,
+    installer: portableInstaller({
+      portable,
+      version: app.getVersion(),
+      source: process.env.APPIMAGE ?? "",
+      find: installedCopies,
+      install: (source, target) =>
+        installAppImage(
+          source,
+          installLayout({ env: process.env, home: homedir() }),
+          extractWithProcess,
+          target,
+        ),
+      shutdown: () => {
+        stopping = true
+        orderlyQuit = true
+        updates?.stop()
+        return shutDown()
+      },
+      start: startInstalled,
+      quit: () => app.quit(),
+      log: (message, error) => console.warn(message, error),
+    }),
+  })
   // The page learns whether Electron's sandbox is on, and how to turn it on if not.
   registerSandboxIpc(ipcMain, {
     window: appWindow,
@@ -532,13 +651,7 @@ const launch = async (): Promise<void> => {
         ),
         env: process.env,
         home: homedir(),
-        realpath: (path) => {
-          try {
-            return realpathSync(path)
-          } catch {
-            return undefined
-          }
-        },
+        realpath: realpathOrUndefined,
       }),
   })
   ipcMain.handle(directoryPickerChannel, async (event) => {
@@ -564,7 +677,20 @@ const launch = async (): Promise<void> => {
 
 app.setAppUserModelId(appId)
 
+// A window shown again: the one a second launch asked for.
+const bringForward = (window: BrowserWindow): void => {
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+}
+
+app.on("second-instance", () => {
+  const [window] = BrowserWindow.getAllWindows()
+  if (window) bringForward(window)
+})
+
 app.whenReady().then(() => {
+  if (!primaryInstance) return
   // A system shutdown quits, which saves every page and terminal before the shells end.
   quitOnShutdown(powerMonitor, quitOnSessionEnd)
   // Ctrl+Q and the menu's Quit are the person's quit, which installs a waiting update; a

@@ -22,8 +22,10 @@ import {
   installFallbackMs,
   installOnlyOnOrderlyQuit,
   installUpdate,
+  portableOf,
   quitWithoutInstalling,
   registerUpdateIpc,
+  releasedAtOf,
   switchCheckMs,
   trackOffer,
   updatePlan,
@@ -41,6 +43,7 @@ const build = (overrides: Partial<UpdateBuild> = {}): UpdateBuild => ({
   env: {},
   signed: false,
   appImageWritable: true,
+  appImageInstalled: true,
   ...overrides,
 })
 
@@ -72,14 +75,27 @@ describe("how a build updates", () => {
   })
 
   context("on Linux", () => {
-    it("installs an AppImage that can replace its own file", () => {
-      expect(updatePlan(build(appImage))).toEqual({ kind: "appimage", mode: "install" })
+    it("installs an installed AppImage that can replace its own file", () => {
+      expect(updatePlan(build(appImage))).toEqual({
+        kind: "appimage",
+        mode: "install",
+        portable: false,
+      })
     })
 
-    it("only tells of updates when the folder of the AppImage cannot be written to", () => {
+    it("only tells of updates when the folder of an installed AppImage cannot be written to", () => {
       expect(updatePlan(build({ ...appImage, appImageWritable: false }))).toEqual({
         kind: "appimage",
         mode: "tell",
+        portable: false,
+      })
+    })
+
+    it("only tells of updates when the AppImage is portable, even in a folder it can write to", () => {
+      expect(updatePlan(build({ ...appImage, appImageInstalled: false }))).toEqual({
+        kind: "appimage",
+        mode: "tell",
+        portable: true,
       })
     })
 
@@ -102,12 +118,20 @@ describe("how a build updates", () => {
 
   context("on Windows", () => {
     it("installs", () => {
-      expect(updatePlan(build({ platform: "win32" }))).toEqual({ kind: "nsis", mode: "install" })
+      expect(updatePlan(build({ platform: "win32" }))).toEqual({
+        kind: "nsis",
+        mode: "install",
+        portable: false,
+      })
     })
 
-    it("has no portable build to treat differently", () => {
+    it("does not tell a portable copy from an installed one yet", () => {
       const env = { PORTABLE_EXECUTABLE_DIR: "C:\\Tools" }
-      expect(updatePlan(build({ platform: "win32", env }))?.mode).toBe("install")
+      expect(updatePlan(build({ platform: "win32", env, appImageInstalled: false }))).toEqual({
+        kind: "nsis",
+        mode: "install",
+        portable: false,
+      })
     })
   })
 
@@ -116,12 +140,53 @@ describe("how a build updates", () => {
       expect(updatePlan(build({ platform: "darwin", signed: true }))).toEqual({
         kind: "mac",
         mode: "install",
+        portable: false,
       })
     })
 
     it("only tells of updates when it is not", () => {
-      expect(updatePlan(build({ platform: "darwin" }))).toEqual({ kind: "mac", mode: "tell" })
+      expect(updatePlan(build({ platform: "darwin" }))).toEqual({
+        kind: "mac",
+        mode: "tell",
+        portable: false,
+      })
     })
+  })
+})
+
+describe("whether a build is portable", () => {
+  it("is an AppImage anywhere but the places the installer puts it", () => {
+    expect(portableOf(build({ ...appImage, appImageInstalled: false }))).toBe(true)
+    expect(portableOf(build(appImage))).toBe(false)
+  })
+
+  it("is not a build that is no AppImage, or one that looks for no updates", () => {
+    expect(portableOf(build({ appImageInstalled: false }))).toBe(false)
+    expect(portableOf(build({ ...appImage, appImageInstalled: false, version: "0.0.0" }))).toBe(
+      false,
+    )
+    const env = { ...appImage.env, NOVADECK_UPDATES: "off" }
+    expect(portableOf(build({ ...appImage, env, appImageInstalled: false }))).toBe(false)
+    expect(portableOf(build({ ...appImage, appImageInstalled: false, packaged: false }))).toBe(
+      false,
+    )
+  })
+
+  it("is not yet a Windows or macOS build", () => {
+    for (const platform of ["win32", "darwin"] as const)
+      expect(portableOf(build({ platform, appImageInstalled: false }))).toBe(false)
+  })
+})
+
+describe("the date of a release", () => {
+  it("is an ISO date-time, however the release's date was written", () => {
+    expect(releasedAtOf("2026-10-01T11:30:00+02:00")).toBe("2026-10-01T09:30:00.000Z")
+    expect(releasedAtOf("2026-10-01")).toBe("2026-10-01T00:00:00.000Z")
+  })
+
+  it("is nothing for anything that is no date", () => {
+    for (const value of [undefined, 3, null, "soon", "", "x".repeat(100), new Date()])
+      expect(releasedAtOf(value)).toBeUndefined()
   })
 })
 
@@ -171,6 +236,17 @@ describe("telling pages of an update", () => {
     expect(first.sent).toEqual([[updateOfferChannel, offer]])
     expect(second.sent).toEqual([[updateOfferChannel, offer]])
     expect(offers.current()).toEqual(offer)
+  })
+
+  it("carries the release date when it is one", () => {
+    const open = page()
+    const offers = trackOffer(() => [open])
+    offers.offer("available", "1.2.3", [], "2026-10-01T09:30:00Z")
+    offers.offer("available", "1.2.4", [], "soon")
+    expect(open.sent.map(([, offer]) => offer)).toEqual([
+      { kind: "available", version: "1.2.3", notes: [], releasedAt: "2026-10-01T09:30:00.000Z" },
+      { kind: "available", version: "1.2.4", notes: [] },
+    ])
   })
 
   it("tells a page that asks later, and nothing before there is an offer", () => {
@@ -436,6 +512,7 @@ describe("checking for updates", () => {
   ) => {
     const updater = new FakeUpdater()
     const offered: [string, string, readonly string[]][] = []
+    const released: unknown[] = []
     const failed: string[] = []
     const logged: string[] = []
     const checks = checkForUpdates(updater as unknown as Updater, {
@@ -443,11 +520,14 @@ describe("checking for updates", () => {
       channel: options.channel ?? "stable",
       failedVersion: options.failedVersion,
       native: options.native,
-      offer: (kind, version, notes) => void offered.push([kind, version, notes]),
+      offer: (kind, version, notes, releasedAt) => {
+        offered.push([kind, version, notes])
+        released.push(releasedAt)
+      },
       installFailed: (version) => void failed.push(version),
       log: (message) => void logged.push(message),
     })
-    return { updater, offered, failed, logged, ...checks }
+    return { updater, offered, released, failed, logged, ...checks }
   }
 
   it("installs on quitting in install mode, and asks for each download itself", () => {
@@ -660,6 +740,15 @@ describe("checking for updates", () => {
         ["available", "1.2.3", ["Faster."]],
         ["available", "1.3.0", []],
       ])
+    })
+
+    it("hands on the date the release was published", () => {
+      const { updater, released } = checking({ mode: "tell" })
+      updater.emit("update-available", {
+        version: "1.2.3",
+        releaseDate: "2026-10-01T09:30:00.000Z",
+      })
+      expect(released).toEqual(["2026-10-01T09:30:00.000Z"])
     })
 
     it("keeps checking, so a newer release replaces the offer", async () => {

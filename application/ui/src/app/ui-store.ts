@@ -8,12 +8,13 @@ import {
   type AgentFinish,
   type SeenEnd,
 } from "../model/agent-finish"
+import type { PortableState } from "../model/portable"
 import { orderedTiles } from "../model/roster"
 import type { SandboxState } from "../model/sandbox"
 import { activeProject } from "../model/state"
 import { createStore, type MutableStore, type Store } from "../model/store"
 import type { PreferencesValue, TerminalMetadata, Workspace } from "../model/types"
-import { updateKey, type UpdateOffer } from "../model/update"
+import { noticeRaised, portableNagged, type UpdateOffer } from "../model/update"
 import { writePreferences } from "../preferences/preferences-storage"
 import { noArrangement, type ProjectArrangement } from "../projects/project-arrangement"
 import { writeProjectArrangement } from "../projects/project-arrangement-storage"
@@ -80,6 +81,9 @@ export type UiState = {
   readonly sandbox: SandboxState | null
   // Whether its notice is open. It and the update's share a place, so one open closes the other.
   readonly sandboxOpen: boolean
+  // Whether the desktop app is a portable copy, as the host said at startup; null until it
+  // has, and where it says nothing.
+  readonly portable: PortableState | null
   // Whether the page has the person's focus: its window focused and showing.
   readonly pageFocused: boolean
   // The terminals whose agent finished while the person looked elsewhere.
@@ -136,6 +140,7 @@ export const initialUi = ({
   updateSeen,
   sandbox: null,
   sandboxOpen: false,
+  portable: null,
   pageFocused: true,
   unread: noUnread,
   answering: noTerminalAnswers,
@@ -256,15 +261,50 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
 
 // The update the backend offers, kept for the footer; a later offer replaces the last.
 // One for a version not yet shown opens its notice, which waits while the footer is
-// hidden.
+// hidden; so does a stale one for a portable copy (`noticeRaised`).
 export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => void) =>
   updates?.onOffer((update) =>
     ui.update((state) => ({
       ...state,
       update,
-      updateOpen: state.updateOpen || updateKey(update) !== state.updateSeen,
+      updateOpen:
+        state.updateOpen ||
+        noticeRaised(update, {
+          seen: state.updateSeen,
+          portable: state.portable?.portable === true,
+          known: state.update !== null && sameOffer(state.update, update),
+          now: Date.now(),
+        }),
     })),
   ) ?? (() => {})
+
+const sameOffer = (a: UpdateOffer, b: UpdateOffer): boolean =>
+  a.kind === b.kind && a.version === b.version
+
+// Asks the backend once whether the app is a portable copy, and keeps the answer for the
+// footer. An offer heard before the answer, for a copy found stale, raises its notice now.
+// A host that fails to say is taken as not saying.
+export const watchPortable = (portable: Backend["portable"], ui: UiStore): (() => void) => {
+  let live = true
+  void portable?.state().then(
+    (portableState) => {
+      if (!live) return
+      ui.update((state) => ({
+        ...state,
+        portable: portableState,
+        updateOpen:
+          state.updateOpen ||
+          (portableState.portable &&
+            state.update !== null &&
+            portableNagged(state.update, Date.now())),
+      }))
+    },
+    () => undefined,
+  )
+  return () => {
+    live = false
+  }
+}
 
 // Asks the backend once whether the app runs in its security sandbox, and keeps the
 // answer for the footer. A host that fails to say is taken as not saying.

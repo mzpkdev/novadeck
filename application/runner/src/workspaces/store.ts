@@ -259,6 +259,14 @@ const schemaDifference = (database: DatabaseSync): string | undefined => {
   return undefined
 }
 
+/** The database was written by a newer runner, so this one must leave it alone. */
+export class WorkspaceTooNewError extends Error {
+  constructor() {
+    super("The workspace database schema is newer than this runner supports")
+    this.name = "WorkspaceTooNewError"
+  }
+}
+
 /**
  * Creates the schema in a new database, and refuses one written by a newer runner, or by
  * an earlier build whose tables differ: Novadeck has no migrations before its first
@@ -269,7 +277,7 @@ const prepareSchema = (database: DatabaseSync, path: string): void => {
   try {
     const version = database.prepare("PRAGMA user_version").get()?.user_version
     if (typeof version !== "number" || version > schemaVersion) {
-      throw new Error("The workspace database schema is newer than this runner supports")
+      throw new WorkspaceTooNewError()
     }
     if (version === 0) database.exec(`${schema} PRAGMA user_version = ${schemaVersion};`)
     database.exec(extras)

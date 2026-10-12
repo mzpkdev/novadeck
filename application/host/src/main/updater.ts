@@ -38,6 +38,8 @@ export type UpdateBuild = {
   readonly signed: boolean
   /** Whether the folder holding the AppImage file can be written to. */
   readonly appImageWritable: boolean
+  /** Whether the AppImage file is at an installed place; see `isInstalledImage`. */
+  readonly appImageInstalled: boolean
 }
 
 /** The kind of build, which decides the electron-updater class that serves it. */
@@ -49,7 +51,16 @@ export type UpdaterKind = "nsis" | "mac" | "appimage"
  */
 export type UpdateMode = "install" | "tell"
 
-export type UpdatePlan = { readonly kind: UpdaterKind; readonly mode: UpdateMode }
+/**
+ * How a build updates. A `portable` build runs from wherever it was put and is never
+ * installed: it does not install updates itself, though it still looks for them, so the
+ * page can offer to install the app that does.
+ */
+export type UpdatePlan = {
+  readonly kind: UpdaterKind
+  readonly mode: UpdateMode
+  readonly portable: boolean
+}
 
 // Whether `file` lies inside the folder `directory`, both absolute POSIX paths.
 const isInside = (directory: string, file: string): boolean => {
@@ -74,6 +85,20 @@ const updaterKind = ({ platform, execPath, env }: UpdateBuild): UpdaterKind | un
   return undefined
 }
 
+// Whether a build looks for updates at all, before asking which kind it is.
+const looksForUpdates = ({ packaged, version, env }: UpdateBuild): boolean =>
+  packaged && version !== "0.0.0" && env.NOVADECK_UPDATES !== "off"
+
+/**
+ * Whether a build is portable: one that runs from wherever it was put, and is meant to
+ * lead the person to the installed app instead of updating itself. On Linux that is an
+ * AppImage anywhere but the places the installer puts it. The Windows ZIP and macOS
+ * outside Applications are not yet told apart, so they are not portable; neither is a
+ * build that looks for no updates, as a portable offers to install the current release.
+ */
+export const portableOf = (build: UpdateBuild): boolean =>
+  looksForUpdates(build) && updaterKind(build) === "appimage" && !build.appImageInstalled
+
 /**
  * How a build updates, or undefined when it does not look for updates at all. Local and
  * pull request builds carry version 0.0.0 and never look; neither does a development run,
@@ -81,23 +106,24 @@ const updaterKind = ({ platform, execPath, env }: UpdateBuild): UpdaterKind | un
  * reaches the network. Nor does a Linux build that is not an AppImage, as none is released.
  * Every other build either installs updates itself or tells of them:
  *
- * - The Windows installer installs. Windows has no portable build.
+ * - The Windows installer installs.
  * - macOS installs when the app bundle is Developer ID signed, as Squirrel.Mac refuses
  *   to install into any other, and tells otherwise.
- * - An AppImage installs by replacing its own file, which takes write access to the
- *   folder it sits in, and tells otherwise.
+ * - An installed AppImage, one at a place the installer puts it, installs by replacing
+ *   its own file, which takes write access to the folder it sits in, and tells otherwise.
+ * - A portable AppImage, one anywhere else, only tells; see `portableOf`.
  *
  * A release whose install failed, say because the installer failed, is told of
  * rather than installed; see `checkForUpdates`.
  */
 export const updatePlan = (build: UpdateBuild): UpdatePlan | undefined => {
-  const { packaged, version, env } = build
-  if (!packaged || version === "0.0.0" || env.NOVADECK_UPDATES === "off") return undefined
+  if (!looksForUpdates(build)) return undefined
   const kind = updaterKind(build)
   if (kind === undefined) return undefined
+  const portable = portableOf(build)
   const installable =
     kind === "mac" ? build.signed : kind === "appimage" ? build.appImageWritable : true
-  return { kind, mode: installable ? "install" : "tell" }
+  return { kind, mode: installable && !portable ? "install" : "tell", portable }
 }
 
 /** The app bundle a macOS executable, `novadeck.app/Contents/MacOS/novadeck`, runs from. */
@@ -115,6 +141,18 @@ export const developerIdSigned = (output: string): boolean =>
 export const updateVersionOf = (value: unknown): string | undefined =>
   typeof value === "string" && updateVersionPattern.test(value) ? value : undefined
 
+/**
+ * The date of an update's release as an ISO 8601 string, when `value` is a date the page
+ * may be told: text that parses to one. electron-updater reads it from the release's
+ * `latest*.yml`, where it is the ISO text the publisher wrote; anything else, such as
+ * text that is no date, gives undefined, and the offer goes without one.
+ */
+export const releasedAtOf = (value: unknown): string | undefined => {
+  if (typeof value !== "string" || value.length > 64) return undefined
+  const time = Date.parse(value)
+  return Number.isNaN(time) ? undefined : new Date(time).toISOString()
+}
+
 // The part of a window that telling it of an update uses.
 type Page = { send(channel: string, offer: UpdateOffer): void }
 
@@ -129,10 +167,16 @@ export const trackOffer = <P extends Page>(pages: () => readonly P[]) => {
   let last: UpdateOffer | undefined
   return {
     current: (): UpdateOffer | undefined => last,
-    offer: (kind: UpdateOffer["kind"], value: unknown, notes: readonly string[]): void => {
+    offer: (
+      kind: UpdateOffer["kind"],
+      value: unknown,
+      notes: readonly string[],
+      released?: unknown,
+    ): void => {
       const version = updateVersionOf(value)
       if (version === undefined || (last?.kind === kind && last.version === version)) return
-      last = { kind, version, notes }
+      const releasedAt = releasedAtOf(released)
+      last = { kind, version, notes, ...(releasedAt === undefined ? {} : { releasedAt }) }
       for (const page of pages()) page.send(updateOfferChannel, last)
     },
     request: (page: P): void => {
@@ -286,6 +330,7 @@ export type Updater = {
       readonly version: string
       readonly releaseName?: unknown
       readonly releaseNotes?: unknown
+      readonly releaseDate?: unknown
     }) => void,
   ): unknown
   on(event: "error", listener: (error: Error) => void): unknown
@@ -350,7 +395,12 @@ export const checkForUpdates = (
     /** The version installing failed on in an earlier launch, if it did. */
     readonly failedVersion?: string | undefined
     readonly native?: NativeUpdater | undefined
-    readonly offer: (kind: UpdateOffer["kind"], version: string, notes: readonly string[]) => void
+    readonly offer: (
+      kind: UpdateOffer["kind"],
+      version: string,
+      notes: readonly string[],
+      releasedAt?: unknown,
+    ) => void
     readonly installFailed: (version: string) => void
     readonly log: (message: string, error: unknown) => void
   },
@@ -362,7 +412,9 @@ export const checkForUpdates = (
   // Quiet: failures are reported through `log`, and routine progress is not worth a line.
   updater.logger = { info: () => {}, warn: () => {}, error: () => {} }
 
-  let downloaded: { readonly version: string; readonly notes: readonly string[] } | undefined
+  let downloaded:
+    | { readonly version: string; readonly notes: readonly string[]; readonly released: unknown }
+    | undefined
   // Once an install has begun the app is on its way out, so the mark never goes back.
   let installing = false
   let staging = false
@@ -388,15 +440,16 @@ export const checkForUpdates = (
     staging = false
     updater.autoInstallOnAppQuit = false
     installFailed(downloaded.version)
-    offer("available", downloaded.version, downloaded.notes)
+    offer("available", downloaded.version, downloaded.notes, downloaded.released)
   })
   updater.on("update-available", (info) => {
-    if (mode === "tell") return offer("available", info.version, updateNotesLines(info))
+    if (mode === "tell")
+      return offer("available", info.version, updateNotesLines(info), info.releaseDate)
     // An update is downloaded, so the schedule has ended: a late check must not replace
     // the `ready` offer, or empty the folder the download waits in.
     if (downloaded !== undefined || ended) return
     if (info.version === failedVersion)
-      return offer("available", info.version, updateNotesLines(info))
+      return offer("available", info.version, updateNotesLines(info), info.releaseDate)
     // A failed download is reported through the error event, which logs it. While one is
     // under way electron-updater returns that download's promise, so a second check
     // finding the same release does not download it twice.
@@ -405,10 +458,10 @@ export const checkForUpdates = (
   updater.on("update-downloaded", (info) => {
     stop()
     const notes = updateNotesLines(info)
-    downloaded = { version: info.version, notes }
+    downloaded = { version: info.version, notes, released: info.releaseDate }
     const ready = (): void => {
       staging = false
-      offer("ready", info.version, notes)
+      offer("ready", info.version, notes, info.releaseDate)
     }
     // electron-updater reports the download just before it hands the file to Squirrel,
     // so listening now is in time for the native event that follows.

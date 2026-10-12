@@ -48,7 +48,9 @@ canvas. Keep related work together and switch between sessions from the sidebar.
   curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh -s -- --sandbox
   ```
 
-Every build keeps itself up to date. Those links point to the latest stable release; until
+Every installed build keeps itself up to date. An AppImage run from anywhere other than the
+install path is portable: it only looks for new releases and offers to install the app from
+itself (see [docs/auto-update.md](docs/auto-update.md)). Those links point to the latest stable release; until
 the first one is promoted, Novadeck's builds are prereleases on the
 [Releases page](https://github.com/mzpkdev/novadeck/releases). See
 [docs/auto-update.md](docs/auto-update.md) for how updates work.
@@ -668,7 +670,9 @@ given), as a spec does that must act on the screen before the turn ends.
 - **Startup:** boot again from the splash. "Splash hold" keeps it until you press
   Escape; "Slow attach" counts terminals attaching over about 3 s; each "Boot
   failure" fails the first attempt as the runner would, so a transient one retries
-  on its own and the others wait for Retry (an incompatible runner only for Quit).
+  on its own and the others wait for Retry (an incompatible runner, or a workspace a
+  newer Novadeck has used, only for Quit). The `outdated` failure (`WORKSPACE_TOO_NEW`)
+  is what an older Novadeck shows once a newer one has used the workspace.
   "Welcome dialog" opens the first-run dialog for connecting agents again. "No sandbox"
   boots as a host running without Electron's sandbox, for the footer's No sandbox chip
   and its fix command; "No sandbox, no command" as one with no command to offer; and
@@ -695,6 +699,19 @@ given), as a spec does that must act on the screen before the turn ends.
   off set the channel Preferences' Updates switch shows once Preferences is reopened.
   `?demo=update` and `?demo=update-available` open variants that already have one
   waiting, for specs.
+- **Portable:** boot again as a portable copy, which never updates itself and is the way to
+  install the app that does. "Portable" shows the quiet Install Novadeck chip (Install when
+  narrow), which never opens by itself; its panel offers Later and Install Novadeck.
+  "Portable, update available" adds a release from two days ago: the chip reads Update
+  available and its notice, raised once per version, installs rather than downloads.
+  "Portable, stale update" is 20 days behind a release, so the notice comes up at every
+  boot. "Portable, installing", "Portable, newer installed" and "Portable, install fails"
+  arm what pressing Install Novadeck ends in: Installing… in the chip, a panel saying a
+  newer Novadeck is already installed with Open Novadeck, or a panel giving the reason with
+  Install Novadeck kept to retry. "Not portable" boots as an installed copy. With "No
+  sandbox" set under Startup, the No sandbox chip stays away on a portable and the install
+  panel adds a line about it. `?portable=on` (with `&install=newer` or `&install=failed`,
+  and `&update=available&released=recent` or `old`) opens variants for specs.
 - **Sessions:** mark the selected terminal running, then start a fresh session, to see
   the sessions panel count it.
 - **Another project:** make the agent in the first terminal of another project wait
@@ -1038,7 +1055,7 @@ Artifacts go to `application/host/release/`:
 
 None of the names carries a version, so `releases/latest/download/<name>` is always the
 newest stable build. The ZIP and the AppImage are not advertised: `install.sh` installs
-the AppImage, which replaces itself in place, and the app from the ZIP.
+the AppImage, which replaces itself in place once installed, and the app from the ZIP.
 
 Local builds are unsigned, so Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
 Releases are signed and notarized once the signing credentials are set up; see

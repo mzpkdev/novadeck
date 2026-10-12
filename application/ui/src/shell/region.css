@@ -282,6 +282,12 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.update-text {
+  margin: 0;
+}
+.update-error {
+  color: var(--color-danger-fg);
+}
 .update-actions {
   display: flex;
   flex-shrink: 0;

@@ -4,13 +4,14 @@ import { dirname, join } from "node:path"
 
 import { CompanionItems } from "./companions/items.js"
 import { createHarnesses, type HarnessesOptions } from "./harnesses/service.js"
+import { createRefusal } from "./refusal.js"
 import { createRouter, type Connection } from "./router.js"
 import { installShellFiles } from "./shell/install.js"
 import { Terminals, type TerminalOptions } from "./terminals/index.js"
 import { Uploads } from "./terminals/uploads.js"
 import { Voice } from "./voice/service.js"
 import { Projects } from "./workspaces/projects.js"
-import { WorkspaceStore } from "./workspaces/store.js"
+import { WorkspaceStore, WorkspaceTooNewError } from "./workspaces/store.js"
 
 export type RunnerOptions = {
   /** SQLite file for project and session metadata; in memory when omitted. */
@@ -50,7 +51,7 @@ export type RunnerOptions = {
 export type Runner = {
   /** Identifies this runner lifetime; terminal cursors are only valid within it. */
   readonly id: string
-  readonly router: ReturnType<typeof createRouter>
+  readonly router: ReturnType<typeof createRouter> | ReturnType<typeof createRefusal>
   /** The largest initial snapshot, which transports allow for in their send buffers. */
   readonly snapshotBytes: number
   /**
@@ -152,8 +153,43 @@ export const wire = (options: RunnerOptions) => {
   return { store, shellFiles, agents, terminals, items, projects, uploads, voice }
 }
 
-/** Owns shells and workspace metadata, independent of how clients reach it. */
+/**
+ * What stands in for a runner whose workspace a newer Novadeck wrote: it owns nothing, and
+ * tells every client that proves itself why (`WORKSPACE_TOO_NEW`).
+ */
+const refusingRunner = (): Runner => ({
+  id: randomUUID(),
+  router: createRefusal(),
+  snapshotBytes: 0,
+  connect: (transport) => ({
+    ...transport,
+    id: randomUUID(),
+    clientId: undefined,
+    authenticated: false,
+    closed: false,
+    calls: 0,
+  }),
+  disconnect: (connection) => {
+    connection.closed = true
+  },
+  persist: () => {},
+  close: () => Promise.resolve(),
+})
+
+/**
+ * Owns shells and workspace metadata, independent of how clients reach it. Over a workspace
+ * database a newer runner wrote, it refuses every client instead (see `refusingRunner`).
+ */
 export const createRunner = (options: RunnerOptions = {}): Runner => {
+  try {
+    return startRunner(options)
+  } catch (error) {
+    if (error instanceof WorkspaceTooNewError) return refusingRunner()
+    throw error
+  }
+}
+
+const startRunner = (options: RunnerOptions): Runner => {
   const id = randomUUID()
   const { store, terminals, items, agents, projects, uploads, voice } = wire(options)
   const clients = new Map<string, Connection>()

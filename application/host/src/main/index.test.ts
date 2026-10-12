@@ -79,8 +79,31 @@ describe("compiled desktop host", () => {
       expect(preload).toContain("novadeck:install-update")
       expect(preload).toContain("novadeck:open-update-page")
       expect(preload).toContain("novadeck:set-update-channel")
-      // The portable Windows build is gone, and its variable is not read.
+      // electron-builder's portable Windows target is not shipped, and its variable is not read.
       expect(main).not.toContain("PORTABLE_EXECUTABLE_DIR")
+    })
+
+    it("takes the single-instance lock before anything starts, and brings the window forward for a second launch", async () => {
+      const main = await read("main/index.js")
+
+      expect(main).toContain("requestSingleInstanceLock()")
+      expect(main).toContain('app.on("second-instance"')
+      // A relaunch lets go of the lock first, so the new process can take it.
+      expect(main.indexOf("releaseSingleInstanceLock()")).toBeLessThan(
+        main.indexOf("app.exit(0)", main.indexOf("releaseSingleInstanceLock()")),
+      )
+      expect(main.indexOf("requestSingleInstanceLock()")).toBeLessThan(main.indexOf("whenReady()"))
+    })
+
+    it("tells a portable copy of a newer installed one before the runner starts, and offers the install to the page", async () => {
+      const main = await read("main/index.js")
+      const preload = await read("preload/index.cjs")
+
+      expect(main.indexOf("leaveForNewerInstalled(")).toBeLessThan(main.indexOf("startRunner("))
+      expect(main).toContain("registerPortableIpc(")
+      expect(preload).toContain("novadeck:portable")
+      expect(preload).toContain("novadeck:install-app")
+      expect(preload).toContain("novadeck:open-installed")
     })
 
     it("offers a move to Applications before the windows and the runner start, and opens release pages only from app-update.yml", async () => {

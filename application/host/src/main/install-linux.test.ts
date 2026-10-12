@@ -1,0 +1,306 @@
+import { execFileSync } from "node:child_process"
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { afterEach, beforeEach } from "vitest"
+
+import { context, describe, expect, it } from "../test"
+import {
+  desktopEntry,
+  execQuote,
+  failureReason,
+  findInstalled,
+  imageVersionOf,
+  installAppImage,
+  installLayout,
+  newerCopy,
+  readImageVersion,
+  type Extract,
+} from "./install-linux"
+
+let root: string
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), "novadeck-install-test-"))
+})
+afterEach(async () => {
+  await rm(root, { recursive: true, force: true })
+})
+
+// The install script's own exec_quote, taken out of the file so that the port is held to it.
+const shellQuote = (path: string): string => {
+  const script = execFileSync(
+    "cat",
+    [new URL("../../../../scripts/install/install.sh", import.meta.url).pathname],
+    {
+      encoding: "utf8",
+    },
+  )
+  const definition = /^exec_quote\(\) \{\n[\s\S]*?\n\}$/mu.exec(script)?.[0]
+  if (!definition) throw new Error("install.sh has no exec_quote")
+  return execFileSync("sh", ["-c", `${definition}\nexec_quote "$1"`, "sh", path], {
+    encoding: "utf8",
+  }).replace(/\n$/u, "")
+}
+
+describe("the quoted path of a menu entry", () => {
+  it("escapes quotes, backticks, dollars, backslashes and percent signs as the install script does", () => {
+    expect(execQuote("/home/me/plain")).toBe("/home/me/plain")
+    expect(execQuote('a"b')).toBe('a\\\\"b')
+    expect(execQuote("a`b")).toBe("a\\\\`b")
+    expect(execQuote("a$b")).toBe("a\\\\$b")
+    expect(execQuote("a\\b")).toBe("a\\\\\\\\b")
+    expect(execQuote("100%")).toBe("100%%")
+  })
+
+  it("matches the install script's exec_quote on awkward paths", () => {
+    for (const path of [
+      "/home/me/.local/share/novadeck/novadeck.AppImage",
+      "/home/me/my apps/n.AppImage",
+      '/home/"quoted"/n.AppImage',
+      "/home/$HOME/`x`/n.AppImage",
+      "/home/back\\slash/100%/n.AppImage",
+      '/home/\\\\"$`%/n.AppImage',
+    ])
+      expect(execQuote(path)).toBe(shellQuote(path))
+  })
+})
+
+describe("the menu entry", () => {
+  it("is what the install script writes, with the icon when there is one", () => {
+    expect(
+      desktopEntry("/home/me/.local/share/novadeck/novadeck.AppImage", "/home/me/icon.png"),
+    ).toBe(
+      [
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=novadeck.",
+        "Comment=A workspace for parallel terminals.",
+        'Exec="/home/me/.local/share/novadeck/novadeck.AppImage" %U',
+        "Icon=/home/me/icon.png",
+        "Terminal=false",
+        "Categories=Utility;",
+        "StartupWMClass=dev.mzpk.novadeck",
+        "",
+      ].join("\n"),
+    )
+  })
+
+  it("names the icon novadeck without one", () => {
+    expect(desktopEntry("/x/n.AppImage", undefined)).toContain("\nIcon=novadeck\n")
+  })
+})
+
+describe("the version an AppImage reports", () => {
+  it("is the X-AppImage-Version of its menu entry", () => {
+    expect(imageVersionOf("[Desktop Entry]\nX-AppImage-Version=0.0.71\nName=x\n")).toBe("0.0.71")
+    expect(imageVersionOf("X-AppImage-Version=1.2.3-beta.1\n")).toBe("1.2.3-beta.1")
+  })
+
+  it("is nothing when the entry names none, or one a release cannot have", () => {
+    expect(imageVersionOf("Name=x\n")).toBeUndefined()
+    expect(imageVersionOf("X-AppImage-Version=latest\n")).toBeUndefined()
+    expect(imageVersionOf("X-AppImage-Version=\n")).toBeUndefined()
+  })
+})
+
+// An AppImage as `--appimage-extract` leaves it: what it holds under squashfs-root.
+const extractFrom =
+  (contents: Readonly<Record<string, string>>): Extract =>
+  async (_image, pattern, into) => {
+    const files = Object.entries(contents).filter(([name]) =>
+      pattern === "*.desktop" ? name.endsWith(".desktop") && !name.includes("/") : name === pattern,
+    )
+    await Promise.all(
+      files.map(async ([name, text]) => {
+        const path = join(into, "squashfs-root", name)
+        await mkdir(join(path, ".."), { recursive: true })
+        await writeFile(path, text)
+      }),
+    )
+  }
+
+const icon = "usr/share/icons/hicolor/512x512/apps/novadeck.png"
+const appImage = (version: string): Record<string, string> => ({
+  "dev.mzpk.novadeck.desktop": `[Desktop Entry]\nX-AppImage-Version=${version}\n`,
+  [icon]: "png",
+})
+
+const notAnAppImage: Extract = () => Promise.reject(new Error("not an AppImage"))
+
+describe("reading an AppImage's version", () => {
+  it("extracts its menu entry and reads it, leaving nothing behind", async () => {
+    expect(await readImageVersion("/x.AppImage", extractFrom(appImage("0.0.71")))).toBe("0.0.71")
+  })
+
+  it("is nothing when the AppImage has no entry or will not extract", async () => {
+    expect(await readImageVersion("/x.AppImage", extractFrom({}))).toBeUndefined()
+    expect(await readImageVersion("/x.AppImage", notAnAppImage)).toBeUndefined()
+  })
+})
+
+describe("the AppImages already installed", () => {
+  const env = {}
+  const layout = (): ReturnType<typeof installLayout> => installLayout({ env, home: root })
+
+  it("are those of the installer and of Homebrew that exist, with their versions", async () => {
+    const { image } = layout()
+    await mkdir(join(image, ".."), { recursive: true })
+    await writeFile(image, "one")
+    await mkdir(join(root, "Applications"), { recursive: true })
+    await writeFile(join(root, "Applications", "novadeck.AppImage"), "two")
+    const versions = new Map([
+      ["one", "0.0.5"],
+      ["two", "0.0.9"],
+    ])
+    const extract: Extract = async (path, pattern, into) =>
+      extractFrom(appImage(versions.get(await readFile(path, "utf8"))!))(path, pattern, into)
+    expect(await findInstalled({ env, home: root }, extract)).toEqual([
+      { image, version: "0.0.5" },
+      { image: join(root, "Applications", "novadeck.AppImage"), version: "0.0.9" },
+    ])
+  })
+
+  it("are none where nothing is installed, and one where Homebrew's links to the installer's", async () => {
+    expect(await findInstalled({ env, home: root }, extractFrom(appImage("1.0.0")))).toEqual([])
+    const { image } = layout()
+    await mkdir(join(image, ".."), { recursive: true })
+    await writeFile(image, "one")
+    await mkdir(join(root, "Applications"), { recursive: true })
+    await symlink(image, join(root, "Applications", "novadeck.AppImage"))
+    expect(await findInstalled({ env, home: root }, extractFrom(appImage("1.0.0")))).toEqual([
+      { image, version: "1.0.0" },
+    ])
+  })
+})
+
+const copy = (version: string | undefined, image = "/i") => ({ image, version })
+
+describe("the installed copy that is newer", () => {
+  it("is the newest of those newer than the running one", () => {
+    expect(
+      newerCopy([copy("1.2.0", "/a"), copy("1.3.0", "/b"), copy("0.9.0", "/c")], "1.0.0"),
+    ).toEqual(copy("1.3.0", "/b"))
+  })
+
+  it("is nothing when each is the same, older, or reports no version", () => {
+    expect(newerCopy([copy("1.0.0"), copy("0.9.0"), copy(undefined)], "1.0.0")).toBeUndefined()
+    expect(newerCopy([], "1.0.0")).toBeUndefined()
+  })
+})
+
+describe("installing an AppImage", () => {
+  const layout = (): ReturnType<typeof installLayout> => installLayout({ env: {}, home: root })
+  const source = (): string => join(root, "Downloads", "novadeck.AppImage")
+  const write = async (): Promise<void> => {
+    await mkdir(join(root, "Downloads"), { recursive: true })
+    await writeFile(source(), "the app", { mode: 0o644 })
+  }
+
+  it("puts the file, command, icon and menu entry where the install script does", async () => {
+    await write()
+    const result = await installAppImage(source(), layout(), extractFrom(appImage("1.0.0")))
+    const { image, link, desktop, icon: iconFile } = layout()
+    expect(result).toEqual({ kind: "installed", image })
+    expect(image).toBe(join(root, ".local/share/novadeck/novadeck.AppImage"))
+    expect(await readFile(image, "utf8")).toBe("the app")
+    expect((await stat(image)).mode & 0o111).not.toBe(0)
+    expect(await readlink(link)).toBe(image)
+    expect(await readFile(iconFile, "utf8")).toBe("png")
+    expect(await readFile(desktop, "utf8")).toBe(desktopEntry(image, iconFile))
+    expect(await readdir(join(image, ".."))).toEqual(["novadeck.AppImage"])
+  })
+
+  it("writes only the file when replacing a copy elsewhere, such as Homebrew's", async () => {
+    await write()
+    const target = join(root, "Applications", "novadeck.AppImage")
+    await mkdir(join(target, ".."), { recursive: true })
+    await writeFile(target, "old")
+    const result = await installAppImage(source(), layout(), extractFrom(appImage("1.0.0")), target)
+    expect(result).toEqual({ kind: "installed", image: target })
+    expect(await readFile(target, "utf8")).toBe("the app")
+    expect(await readdir(join(target, ".."))).toEqual(["novadeck.AppImage"])
+    expect(await readdir(root)).toEqual(["Applications", "Downloads"])
+  })
+
+  it("follows XDG_DATA_HOME", async () => {
+    await write()
+    const data = join(root, "data")
+    const result = await installAppImage(
+      source(),
+      installLayout({ env: { XDG_DATA_HOME: data }, home: root }),
+      extractFrom(appImage("1.0.0")),
+    )
+    expect(result).toEqual({ kind: "installed", image: join(data, "novadeck/novadeck.AppImage") })
+    expect(await stat(join(data, "applications/dev.mzpk.novadeck.desktop"))).toBeTruthy()
+  })
+
+  it("replaces an installed file and an old command", async () => {
+    await write()
+    const { image, link } = layout()
+    await mkdir(join(image, ".."), { recursive: true })
+    await mkdir(join(link, ".."), { recursive: true })
+    await writeFile(image, "old")
+    await writeFile(link, "not a link")
+    await installAppImage(source(), layout(), extractFrom(appImage("1.0.0")))
+    expect(await readFile(image, "utf8")).toBe("the app")
+    expect((await lstat(link)).isSymbolicLink()).toBe(true)
+  })
+
+  context("when the AppImage has no icon", () => {
+    it("writes an entry without one and still installs", async () => {
+      await write()
+      const result = await installAppImage(source(), layout(), extractFrom({}))
+      expect(result.kind).toBe("installed")
+      expect(await readFile(layout().desktop, "utf8")).toContain("\nIcon=novadeck\n")
+    })
+  })
+
+  context("when the file cannot be copied", () => {
+    it("fails with a reason and leaves the installed file and no partial copy", async () => {
+      const { image } = layout()
+      await mkdir(join(image, ".."), { recursive: true })
+      await writeFile(image, "old")
+      const result = await installAppImage(source(), layout(), extractFrom({}))
+      expect(result).toMatchObject({ kind: "failed" })
+      expect(await readFile(image, "utf8")).toBe("old")
+      expect(await readdir(join(image, ".."))).toEqual(["novadeck.AppImage"])
+    })
+  })
+
+  it("fails for an install path with a line break", async () => {
+    await write()
+    const result = await installAppImage(
+      source(),
+      { ...layout(), image: join(root, "a\nb.AppImage") },
+      extractFrom({}),
+    )
+    expect(result).toEqual({ kind: "failed", reason: "The install path is not valid." })
+  })
+})
+
+const error = (code: string): Error => Object.assign(new Error(code), { code })
+
+describe("why an install failed", () => {
+  it("says so for a full disk and a folder that cannot be written", () => {
+    expect(failureReason(error("ENOSPC"), "/x")).toBe("There is no space left on the disk.")
+    for (const code of ["EACCES", "EPERM", "EROFS"])
+      expect(failureReason(error(code), "/x")).toBe("Novadeck cannot write to /x.")
+  })
+
+  it("gives the error's own message otherwise", () => {
+    expect(failureReason(new Error("boom"), "/x")).toBe("Installing failed: boom")
+    expect(failureReason("odd", "/x")).toBe("Installing failed.")
+  })
+})

@@ -1,9 +1,11 @@
 import { createBootRehearsals } from "../backend/boot-rehearsal"
 import { createDemoBackend } from "../backend/demo"
 import { createContentDemo } from "../backend/demo/content"
+import { createDemoPortable } from "../backend/demo/debug/portable"
 import { createDemoSandbox, sampleFix } from "../backend/demo/debug/sandbox"
 import { createDemoUpdates, sampleNotes } from "../backend/demo/debug/updates"
 import type { BackendSelection, ConnectBackend } from "../backend/port"
+import type { InstallResult } from "../model/portable"
 import type { SandboxState } from "../model/sandbox"
 import type { UpdateOffer } from "../model/update"
 
@@ -55,7 +57,19 @@ const requestedUpdate = (): UpdateOffer | undefined => {
       : demo === "update-available" || query.get("update") === "available"
         ? "available"
         : undefined
-  return kind && { kind, version: "0.0.80", notes: sampleNotes }
+  // `&released=recent` or `&released=old` dates the release, two or twenty days back.
+  const released = query.get("released")
+  const days = released === "recent" ? 2 : released === "old" ? 20 : undefined
+  const releasedAt =
+    days === undefined ? undefined : new Date(Date.now() - days * 86_400_000).toISOString()
+  return (
+    kind && {
+      kind,
+      version: "0.0.80",
+      notes: sampleNotes,
+      ...(releasedAt ? { releasedAt } : {}),
+    }
+  )
 }
 
 const demoWithUpdate = (update: UpdateOffer): ReturnType<typeof createDemoBackend> => {
@@ -74,12 +88,27 @@ const requestedSandbox = (): SandboxState | undefined => {
   return undefined
 }
 
+// Specs open the demo on a portable copy with `?portable=on`, and choose how installing
+// ends with `&install=newer` or `&install=failed`; it never ends otherwise.
+const requestedInstall = (): InstallResult | undefined => {
+  const query = new URLSearchParams(window.location.hash.split("?")[1] ?? "")
+  if (query.get("portable") !== "on") return undefined
+  const install = query.get("install")
+  if (install === "newer") return { kind: "newer", version: "0.0.99" }
+  if (install === "failed") return { kind: "failed", reason: "There is no space left." }
+  return { kind: "installing" }
+}
+
 const testBackend = (): ReturnType<typeof createDemoBackend> => {
   if (showcaseRequested()) return createContentDemo()
   const update = requestedUpdate()
   const sandbox = requestedSandbox()
+  const install = requestedInstall()
   const demo = update ? demoWithUpdate(update) : createDemoBackend()
-  return sandbox ? { ...demo, sandbox: createDemoSandbox(sandbox) } : demo
+  const withSandbox = sandbox ? { ...demo, sandbox: createDemoSandbox(sandbox) } : demo
+  return install
+    ? { ...withSandbox, portable: createDemoPortable({ install }).portable }
+    : withSandbox
 }
 
 export const selectBackend: BackendSelection =
