@@ -281,8 +281,9 @@ export const unsuffixedClaudeItem = /^Claude Code(?!.*-[0-9a-f]{8}$)/
 /**
  * On macOS, a `security` of the sandbox's own, on its PATH before the system's, as Claude
  * Code calls it by name (`keychain-guard.sh`): it writes each service asked for to `log`,
- * whether given as `-s`, joined as `-sName` or, as Claude Code writes its items, on the
- * input of `security -i`, and answers "not found" (exit 44), passing nothing on, where one
+ * whether given as `-s`, joined as `-sName` or, as Claude Code writes its items, anywhere
+ * on the input of `security -i` (an interactive `-i` read among the global options, as
+ * getopt does), and answers "not found" (exit 44), passing nothing on, where one
  * is a Claude Code item with no folder's suffix, the person's own, such as its fixed
  * `Claude Code-device-keys`; the rest goes to `real`. Claude Code is then never given the
  * person's items, nor can it overwrite them, and its test fails, in CI too, which holds

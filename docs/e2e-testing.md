@@ -195,10 +195,12 @@ network:
     never sees the developer's. Not every item: its device key store may use a fixed
     `Claude Code-device-keys`, which the suite was never seen to reach (2.1.287, every
     Claude Code scenario on a Mac). The sandbox's own `security`, on its PATH before the
-    system's, refuses it any item with no such suffix, read by argument or written on the
-    input of `security -i`, as Claude Code writes, so it can never read or overwrite the
-    developer's, and the test fails should one be asked for (`keychainGuard` in
-    `sandbox.ts`), in CI too.
+    system's, refuses it any item with no such suffix, named by argument (`-s`, `-sName`)
+    or anywhere on the input of `security -i`, as Claude Code writes, whatever its spacing
+    or quotes, passing nothing on, so the developer's is neither read nor overwritten
+    through it, and the test fails should one be asked for (`keychainGuard` in
+    `sandbox.ts`), in CI too. It sees only `security` called by name, as Claude Code
+    calls it.
   - Codex is told to keep its login in a file, as everywhere.
   - Antigravity's go-keyring asks `/usr/bin/security` for service `gemini`, account
     `antigravity`, a name the sandbox can't change. A test of Antigravity refuses to

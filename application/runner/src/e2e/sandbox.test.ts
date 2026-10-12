@@ -57,6 +57,30 @@ describe.skipIf(process.platform === "win32")("the sandbox's security", () => {
     ])
   })
 
+  it("refuses the person's own item on security -i's input whatever its layout", ({
+    resources,
+  }) => {
+    const guard = guarded(resources)
+    const layouts = [
+      "add-generic-password -a me -s\t'Claude Code-device-keys' -X 00\n",
+      'add-generic-password -s  "Claude Code-credentials" -X 00\n',
+      'add-generic-password -s"Claude Code-credentials" -X 00\n',
+      "add-generic-password -s Claude\\ Code-credentials -X 00\n",
+    ]
+
+    for (const input of layouts) expect(guard.run(["-i"], input)).toBe(44)
+    expect(guard.run(["-qi"], 'add-generic-password -s "Claude Code-credentials" -X 00\n')).toBe(44)
+    expect(guard.reached()).toBeUndefined()
+  })
+
+  it("reads -i only as a global option, never as an option's value", ({ resources }) => {
+    const guard = guarded(resources)
+
+    // As `-a -i` would, were it read as interactive: waiting on an input that never ends.
+    expect(guard.run(["find-generic-password", "-a", "-i", "-s", "gemini"])).toBe(0)
+    expect(guard.reached()).toBe("find-generic-password|-a|-i|-s|gemini|\n")
+  })
+
   it("passes on what the sandbox's Claude Code asks for, its input as it came", ({ resources }) => {
     const guard = guarded(resources)
     const input = 'add-generic-password -U -a "me" -s "Claude Code-credentials-1a2b3c4d" -X "00"\n'

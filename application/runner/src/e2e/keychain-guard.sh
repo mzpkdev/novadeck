@@ -13,15 +13,37 @@ asked() {
   return 0
 }
 
+# The text tools read bytes, whatever the sandbox's locale: a byte that isn't valid UTF-8
+# can't break a match.
+export LC_ALL=C
+
 refused=
+
+# Interactive (-i) only among the global options before the subcommand, as getopt reads
+# them: combined as -qi too, and never an -i that is an option's value, as in `-a -i`.
 interactive=
+skip=
+for argument in "$@"; do
+  if [ -n "$skip" ]; then
+    skip=
+    continue
+  fi
+  case "$argument" in
+    -p) skip=1 ;;
+    -p*) ;;
+    --) break ;;
+    -*i*) interactive=1 ;;
+    -*) ;;
+    *) break ;;
+  esac
+done
+
 previous=
 for argument in "$@"; do
   if [ "$previous" = "-s" ]; then
     asked "$argument" || refused=1
   else
     case "$argument" in
-      -i) interactive=1 ;;
       # A service joined to its flag, as `-sName`.
       -s?*) asked "${argument#-s}" || refused=1 ;;
     esac
@@ -29,16 +51,18 @@ for argument in "$@"; do
   previous=$argument
 done
 
-# With -i, the commands come on its input, as Claude Code writes its items: each line's
-# service, quoted or not, is asked for alike, and the input passed on as it came.
+# With -i, the commands come on its input, as Claude Code writes its items. Every Claude
+# Code item the input names counts, whatever its layout (spaces, tabs, either quote, none,
+# `Claude\ Code`): a hex value or an account can't hold "Claude Code" with its space. The
+# input is passed on as it came.
 if [ -n "$interactive" ]; then
   input=$(cat; printf x)
   input=${input%x}
-  services=$(printf '%s' "$input" | sed -n -e 's/.* -s "\([^"]*\)".*/\1/p' -e 's/.* -s \([^" ][^ ]*\).*/\1/p')
-  while IFS= read -r service; do
-    [ -n "$service" ] && { asked "$service" || refused=1; }
+  items=$(printf '%s' "$input" | grep -o "Claude\\\\\{0,1\} Code[^\"'[:space:]]*" | sed 's/\\ / /')
+  while IFS= read -r item; do
+    [ -n "$item" ] && { asked "$item" || refused=1; }
   done <<EOF
-$services
+$items
 EOF
   [ -n "$refused" ] && exit 44
   # A pipeline runs in a subshell of its own: its status is the script's, and it ends here.
