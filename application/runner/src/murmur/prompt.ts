@@ -159,22 +159,23 @@ const budget = {
   plan: 1500,
   // A reply is budgeted in tokens, estimated by `cost` as a ceiling, since a chat window of
   // 4096 tokens holds very different amounts of text by script: the system prompt (about 450),
-  // the answer (128) and a margin come out of it, and 3200 are left for the reply.
-  replyHead: 1600,
-  replyTail: 1600,
+  // the answer (128) and a margin come out of it, and 3100 are left for the reply.
+  replyHead: 1550,
+  replyTail: 1550,
 }
 
 // What text costs the model, in tokens, as a ceiling that does not undercount whatever the text
 // is. Measured on the engine's own tokenizer, per character: English words 0.27, digits 1.0,
 // hex and random letters and digits 0.7 to 0.9, symbols 0.7, common Chinese 0.5 to 1.7, random
 // Chinese and Korean up to 2.2, rare characters up to 3, emoji 2.6 to 2.9 and rare ones up to 4.
-// A plain word is counted at 0.6 a character, other ASCII at 0.9 and digits at 1.
-const plainWord = /^[!-/:-@[-`{-~]{0,2}[A-Za-z']+[!-/:-@[-`{-~]{0,3}$/
+// A plain word (lower case, or capitalised) is counted at 0.65 a character, as short random
+// words cost about that, and other ASCII and digits at 1.
+const plainWord = /^[!-/:-@[-`{-~]{0,2}[A-Z]?[a-z']+[!-/:-@[-`{-~]{0,3}$/
 const characterCost = (character: string): number => {
   const code = character.codePointAt(0) ?? 0
   if (code < 128) {
     if (code >= 48 && code <= 57) return 1
-    return code <= 32 ? 0.1 : 0.9
+    return code <= 32 ? 0.1 : 1
   }
   if (code >= 0x10000) return 4
   // Letters of Latin, Greek and Cyrillic, then Hebrew, Arabic, Indic scripts and Thai.
@@ -185,15 +186,19 @@ const characterCost = (character: string): number => {
   if (code >= 0xac00 && code <= 0xd7a3) return 2.4
   return 3
 }
-// One word or one run of white space.
-const pieceCost = (piece: string): number =>
-  plainWord.test(piece)
-    ? 0.6 * piece.length
+// One word or one run of white space. A word is at least a token, and so is each line
+// break, as short lines (versions, line numbers) cost one or two tokens apiece.
+const pieceCost = (piece: string): number => {
+  if (/^\s/.test(piece)) return [...piece].reduce((sum, c) => sum + (c === "\n" ? 1 : 0.1), 0)
+  const price = plainWord.test(piece)
+    ? 0.65 * piece.length
     : // A number takes the space before it as a token of its own.
       [...piece].reduce(
         (sum, character) => sum + characterCost(character),
         /^\d/.test(piece) ? 1 : 0,
       )
+  return Math.max(1, price)
+}
 
 // Words and the white space between them, in order.
 const pieces = (text: string): string[] => text.split(/(\s+)/).filter(Boolean)

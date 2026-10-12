@@ -167,6 +167,12 @@ describe("asking for a gist", () => {
       [make(4000, "\uAC00\uD7A3"), 2.2],
       ["The runner was fixed and all the checks pass again. ".repeat(160), 0.3],
       ["x".repeat(8000), 0.5],
+      // Short lines, each line break a token of its own.
+      [Array.from({ length: 1200 }, (_, index) => `v1.${index % 20}.${index % 7}\n`).join(""), 1],
+      [Array.from({ length: 1600 }, (_, index) => `L${index}\n`).join(""), 1],
+      [Array.from({ length: 1400 }, (_, index) => `ok ${index % 99}\n`).join(""), 0.83],
+      ["q ".repeat(4000), 0.51],
+      [Array.from({ length: 2000 }, (_, index) => `${"qZx'"[index % 4]}Kv\n`).join(""), 1],
     ]
 
     for (const [text, rate] of texts) {
@@ -180,7 +186,7 @@ describe("asking for a gist", () => {
   it("shows about as much as the window allows of plain English", () => {
     const shown = user(reply("The runner was fixed and all the checks pass again. ".repeat(400)))
 
-    expect(shown.length).toBeGreaterThan(6000)
+    expect(shown.length).toBeGreaterThan(5500)
   })
 
   it("shows a reply that fits whole, unmarked", () => {

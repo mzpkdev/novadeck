@@ -33,11 +33,11 @@ Notes are handed their own digests:
 - a gist: the agent's last reply, whole when short, else its first and last 4000 characters.
   The prompt strips what is no prose, after redaction (fenced code becomes `[code]`, link
   addresses and bare URLs go, table rows become their first row and `[table]`), then budgets
-  what is left by what it costs the model in tokens, as a ceiling that does not undercount: 3200 of
-  the 4096-token window. A plain word costs 0.6 a character, other ASCII 0.9, a digit 1 (and a
-  number its leading space), Chinese, Japanese and Korean 2 to 2.4, other scripts 1.5 to 3, and
+  what is left by what it costs the model in tokens, as a ceiling that does not undercount: 3100 of
+  the 4096-token window. A plain word costs 0.65 a character, other ASCII and a digit 1 (and a
+  number its leading space, and each line break 1), Chinese, Japanese and Korean 2 to 2.4, other scripts 1.5 to 3, and
   anything beyond the basic plane 4. It was measured on the engine's own tokenizer against random
-  digits, hex, base64, symbols, path lists, emoji and rare characters. That is about 3200
+  digits, hex, base64, symbols, path lists, emoji and rare characters. That is about 2900
   characters of English each at the start and the end, and far fewer of dense text. Fenced code
   is a line that begins with three or more backticks, up to a line of at least as many, so a
   stray ``` in a sentence is no fence. A request that is still too big for the context (the
