@@ -101,7 +101,8 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
       return {
         kind: "failed",
         reason:
-          "The installed copy could not be checked, so it was left as it is. Try again, or reinstall Novadeck with install.sh.",
+          "The installed copy could not be checked, so it was left as it is. " +
+          "Try again, or reinstall Novadeck with install.sh.",
       }
     }
     if (host.stopping()) return quitting

@@ -636,11 +636,15 @@ const launch = async (): Promise<void> => {
         shutdown: shutDown,
         install: () => {
           // On Linux electron-updater starts the new AppImage before it quits this process,
-          // which still holds the lock; a new process refused it would exit at once. Shutdown
-          // is done, so let go first, as `startAppImage` does. The install on quitting runs the
-          // new image with APPIMAGE_EXIT_AFTER_INSTALL and launches nothing, and the Windows
-          // installer and Squirrel.Mac wait for this process to end before they start the app.
-          if (process.platform === "linux") app.releaseSingleInstanceLock()
+          // which still holds the lock; a new process refused it would exit at once. It
+          // emits "before-quit-for-update" on Electron's autoUpdater only once the install
+          // went ahead, just before quitting, so let go then: after a quiet failure the lock
+          // stays with this process, which carries on until the fallback quits it. The new
+          // process needs far longer than a tick to ask for the lock. The install on quitting
+          // runs the new image with APPIMAGE_EXIT_AFTER_INSTALL and launches nothing, and the
+          // Windows installer and Squirrel.Mac wait for this process to end first.
+          if (process.platform === "linux")
+            nativeUpdater.once("before-quit-for-update", () => app.releaseSingleInstanceLock())
           updater?.quitAndInstall(true, true)
         },
         quit: () => app.quit(),

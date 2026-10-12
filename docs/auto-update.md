@@ -94,7 +94,11 @@ is written as the app exits, cannot race another change.
 
 Restarting saves every page and ends the shells before the updater installs. If the
 updater returns without ending the app, the app quits after 10 seconds (30 on macOS) rather
-than go on running without its shells.
+than go on running without its shells. On Linux electron-updater starts the new AppImage
+first and quits this process after, so the restart lets go of the single-instance lock just
+before quitting, when the updater emits `before-quit-for-update` on Electron's `autoUpdater`,
+which it does only once the install went ahead. The new version, which needs a second or more
+to ask for the lock, can then take it. After a quiet failure the lock stays held.
 
 ### Quitting by a signal on Linux
 
@@ -218,7 +222,8 @@ and offers to open that copy or quit.
 The host takes Electron's single-instance lock at startup. Chromium keys it on the data
 folder (`userData`), not on the executable, so a portable and an installed copy exclude each
 other. A second launch quits at once, before it starts anything, and the running window comes
-to the front. The packaged smoke test (`smoke.mjs`) and the Linux sandbox check in `release.yml` pass
+to the front. A Linux update restart is the exception: it lets go of the lock just before
+quitting, so the new version, which electron-updater starts first, can take it. The packaged smoke test (`smoke.mjs`) and the Linux sandbox check in `release.yml` pass
 `--user-data-dir`, so each gets its own lock. Every other launch shares the default folder and
 so its lock, which is fine as each is killed and waited for before the next starts.
 

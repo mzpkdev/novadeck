@@ -246,16 +246,22 @@ export type InstallOutcome =
   | { readonly kind: "installed"; readonly image: string }
   | { readonly kind: "failed"; readonly reason: string }
 
+// The most characters of an error's own message a reason carries.
+const maxReasonLength = 200
+
 /** A short sentence for the person about why `error` stopped an install into `folder`. */
 export const failureReason = (error: unknown, folder: string): string => {
   const code = (error as NodeJS.ErrnoException | undefined)?.code
   if (code === "ENOSPC") return "There is no space left on the disk."
   if (code === "EACCES" || code === "EPERM" || code === "EROFS")
     return `Novadeck cannot write to ${folder}.`
-  // The page puts "Could not install Novadeck:" before the reason, and filters long ones.
-  return error instanceof Error && error.message !== ""
-    ? error.message.slice(0, 200)
-    : "Something went wrong."
+  // The page puts "Could not install Novadeck:" before the reason and drops long ones, so
+  // cut a long message here, on a whole character.
+  if (!(error instanceof Error) || error.message === "") return "Something went wrong."
+  const characters = Array.from(error.message)
+  return characters.length <= maxReasonLength
+    ? error.message
+    : `${characters.slice(0, maxReasonLength - 1).join("")}…`
 }
 
 // The icon from inside the AppImage, copied to `target`, or undefined when it has none.

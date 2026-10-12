@@ -25,7 +25,8 @@ export const connectDemo = (rehearsals: BootRehearsals): ConnectBackend => {
   return async (signal, progress): Promise<BackendConnection> => {
     await rehearsals.beforeConnect(signal, unavailable)
     progress("loading")
-    // Each boot imitates a launch of the app: a stale release's notice, shown once per
+    // Each demo boot stands for a launch of the app, retries and variant switches too (the
+    // desktop app's retries are not launches): a stale release's notice, shown once per
     // launch, is not held back as already shown by the boot before.
     if (portable?.offer) clearUpdateRaised()
     // An abandoned attempt leaves the arming for the next.

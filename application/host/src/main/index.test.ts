@@ -116,8 +116,9 @@ describe("compiled desktop host", () => {
     it("lets go of the lock before electron-updater starts the new AppImage on a restart", async () => {
       const main = await read("main/index.js")
 
+      // The bundler may rename the imported `autoUpdater`.
       expect(main).toMatch(
-        /process\.platform === "linux"\) app\.releaseSingleInstanceLock\(\);\s*updater\?\.quitAndInstall\(true, true\)/u,
+        /process\.platform === "linux"\)\s*\w+\.once\("before-quit-for-update", \(\) => app\.releaseSingleInstanceLock\(\)\);\s*updater\?\.quitAndInstall\(true, true\)/u,
       )
     })
 

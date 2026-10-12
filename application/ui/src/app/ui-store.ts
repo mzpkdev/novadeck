@@ -265,7 +265,8 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
 // hidden; so does a stale one for a portable copy (`noticeRaised`).
 // What counts as already raised is what the person was shown in this run of the app, kept
 // beyond the page's life (`readUpdateRaised`, written as the notice shows), so a reload or
-// a new attempt at the backend does not raise it again, while a notice held back does.
+// a new attempt at the backend does not raise it again, while a notice held back does. (The
+// demo's boots stand for launches and clear it; the desktop app's retries do not.)
 export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => void) =>
   updates?.onOffer((update) => {
     const state = ui.getSnapshot()

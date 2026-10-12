@@ -469,7 +469,13 @@ describe("why an install failed", () => {
 
   it("gives the error's own message otherwise", () => {
     expect(failureReason(new Error("boom"), "/x")).toBe("boom")
-    expect(failureReason(new Error("x".repeat(500)), "/x")).toHaveLength(200)
+    const cut = failureReason(new Error("x".repeat(500)), "/x")
+    expect(cut).toBe(`${"x".repeat(199)}…`)
+    // A surrogate pair is never split at the cut.
+    const emoji = failureReason(new Error("😀".repeat(300)), "/x")
+    expect(Array.from(emoji)).toHaveLength(200)
+    expect(emoji.endsWith("😀…")).toBe(true)
+    expect(failureReason(new Error("y".repeat(200)), "/x")).toBe("y".repeat(200))
     expect(failureReason("odd", "/x")).toBe("Something went wrong.")
   })
 })
