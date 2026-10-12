@@ -1,6 +1,7 @@
 import { describe, expect, it } from "../test.js"
-import type { AgentDigest, ShellDigest } from "./describer.js"
-import { messages, responseFormat } from "./prompt.js"
+import type { AgentDigest, NoteDigest, ShellDigest } from "./describer.js"
+import { gistCharacters, headlineCharacters, titleCharacters } from "./description.js"
+import { formats, messages, responseFormat } from "./prompt.js"
 
 const agent: AgentDigest = {
   kind: "agent",
@@ -16,7 +17,8 @@ const agent: AgentDigest = {
   previous: { title: "Billing schema" },
 }
 
-const user = (digest: AgentDigest | ShellDigest): string => messages(digest)[1]?.content ?? ""
+const user = (digest: AgentDigest | ShellDigest | NoteDigest): string =>
+  messages(digest)[1]?.content ?? ""
 
 describe("asking for a title", () => {
   it("asks for a title alone", () => {
@@ -67,5 +69,115 @@ describe("asking for a title", () => {
     expect(text).not.toContain("Earlier prompts")
     expect(text).toContain("Migrating the billing tables")
     expect(text.trimEnd().split("\n").at(-1)).toMatch(/language of the agent's summary/)
+  })
+})
+
+describe("asking for a headline", () => {
+  const question: NoteDigest = {
+    kind: "question",
+    question: "Which database should the billing service use?",
+    choices: ["Postgres", "SQLite", "  "],
+  }
+
+  it("shows a question and its answers, and tells it to start with Asks", () => {
+    const chat = messages(question)
+    const text = chat[1]?.content ?? ""
+
+    expect(chat[0]?.content).toMatch(/starts with "Asks"/)
+    expect(text).toContain("Which database should the billing service use?")
+    expect(text).toContain("- Postgres\n- SQLite")
+    expect(text).not.toMatch(/- {2}$/m)
+    expect(text.trimEnd().split("\n").at(-1)).toMatch(/language of the question/)
+  })
+
+  it("leaves the answers out of a question that offers none", () => {
+    expect(user({ ...question, choices: [] })).not.toContain("The answers it offers")
+  })
+
+  it("shows the start of a plan, and tells it to start with Plan to", () => {
+    const chat = messages({ kind: "plan", plan: "1. Split billing" })
+
+    expect(chat[0]?.content).toMatch(/starts with "Plan to"/)
+    expect(chat[1]?.content).toContain("1. Split billing")
+  })
+
+  it("cuts a question, its answers and a plan to their budgets", () => {
+    const long = "x".repeat(3000)
+    const choices = Array.from({ length: 12 }, (_, index) => `${index}${long}`)
+
+    const asked = user({ kind: "question", question: long, choices }).split("\n")
+    const offered = asked.filter((line) => line.startsWith("- "))
+
+    expect(asked.some((line) => line.length > 600)).toBe(false)
+    expect(offered).toHaveLength(8)
+    expect(offered.every((line) => line.length <= 82)).toBe(true)
+    expect(
+      user({ kind: "plan", plan: long })
+        .split("\n")
+        .every((line) => line.length <= 1500),
+    ).toBe(true)
+  })
+
+  it("asks for a headline alone", () => {
+    const { responseFormat: format, maxTokens } = formats.headline
+
+    expect(format.json_schema.name).toBe("request_headline")
+    expect(format.json_schema.schema.required).toEqual(["headline"])
+    expect(maxTokens).toBe(96)
+  })
+})
+
+const reply = (text: string, failed = false): NoteDigest => ({
+  kind: "reply",
+  reply: text,
+  failed,
+})
+
+describe("asking for a gist", () => {
+  it("shows a short reply whole, and says when the turn failed", () => {
+    expect(user(reply("I fixed the build."))).toContain("I fixed the build.")
+    expect(user(reply("I fixed the build."))).not.toContain("ended with an error")
+    expect(user(reply("The build is broken.", true))).toContain("The turn ended with an error.")
+  })
+
+  it("shows the head and the tail of a long reply, not the middle", () => {
+    const text = `${"a".repeat(700)}${"MIDDLE".repeat(500)}${"z".repeat(1300)}`
+
+    const shown = user(reply(text))
+
+    expect(shown).toContain("a".repeat(500))
+    expect(shown).toContain("z".repeat(1000))
+    expect(shown).not.toContain("MIDDLE")
+    expect(shown.length).toBeLessThan(2200)
+  })
+
+  it("tells the model what asking is, and asks for asks first", () => {
+    const chat = messages(reply("Want me to add tests?"))
+    const { responseFormat: format, maxTokens } = formats.gist
+
+    expect(chat[0]?.content).toMatch(/asking the person to pick, decide or supply something/)
+    expect(chat[0]?.content).toMatch(/false for an offer to do more/)
+    expect(chat[0]?.content).toMatch(/in those words/)
+    expect(format.json_schema.name).toBe("reply_gist")
+    expect(Object.keys(format.json_schema.schema.properties)).toEqual(["asks", "gist"])
+    expect(format.json_schema.schema.required).toEqual(["asks", "gist"])
+    expect(maxTokens).toBe(128)
+  })
+
+  it("keeps the title's own format", () => {
+    expect(formats.title.responseFormat).toBe(responseFormat)
+    expect(formats.title.maxTokens).toBe(64)
+  })
+})
+
+const length = (format: { json_schema: { schema: { properties: object } } }, name: string) =>
+  (format.json_schema.schema.properties as Record<string, { maxLength: number }>)[name]
+    ?.maxLength ?? 0
+
+describe("the schemas' room", () => {
+  it("allows more than the parser does, so an overrun is refused and not cut", () => {
+    expect(length(responseFormat, "title")).toBeGreaterThan(titleCharacters)
+    expect(length(formats.headline.responseFormat, "headline")).toBeGreaterThan(headlineCharacters)
+    expect(length(formats.gist.responseFormat, "gist")).toBeGreaterThan(gistCharacters)
   })
 })

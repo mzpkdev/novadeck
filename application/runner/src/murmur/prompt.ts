@@ -1,8 +1,21 @@
 // What the model is told. It is a 2B model reading a few kilobytes: the prompt is short,
 // the person's current ask comes last where it weighs most, and every rule is one the
 // model was seen to break without it (see docs/murmur.md).
-import type { Digest } from "./describer.js"
-import { exampleTitles, titleCharacters, titleWords } from "./description.js"
+import type { Digest, Input, NoteDigest } from "./describer.js"
+import {
+  exampleGists,
+  exampleHeadlines,
+  exampleTitles,
+  gistCharacters,
+  gistWords,
+  headlineCharacters,
+  headlineWords,
+  titleCharacters,
+  titleWords,
+} from "./description.js"
+
+/** What murmur writes: a terminal's title, a headline for a question or plan, a reply's gist. */
+export type Task = "title" | "headline" | "gist"
 
 export type Message = { readonly role: "system" | "user"; readonly content: string }
 
@@ -30,19 +43,104 @@ Prompt "sprawdź, dlaczego testy się wywalają" gives:
 A shell running tail -f /var/log/nginx/access.log gives:
 {"title":"${exampleTitles[3]}"}`
 
+// The schemas allow more than the parser does. The engine's grammar cuts a string at the
+// schema's length, so a text that ran over would be cut mid-phrase and pass; with room above the
+// limit it comes out whole and is refused.
+const overrun = 32
+
 /** The schema for `response_format`, which keeps the reply to the title. */
 export const schema = {
   type: "object",
   additionalProperties: false,
   required: ["title"],
   properties: {
-    title: { type: "string", minLength: 3, maxLength: titleCharacters },
+    title: { type: "string", minLength: 3, maxLength: titleCharacters + overrun },
   },
 } as const
 
 export const responseFormat = {
   type: "json_schema",
   json_schema: { name: "terminal_title", strict: true, schema },
+} as const
+
+export const headlineSystem = `You write one line for a developer's notification list. You get a question an AI coding agent asks the person, or a plan it asks the person to review. Reply with a JSON object holding a headline.
+
+headline: ${headlineWords.min} to ${headlineWords.max} words, at most ${headlineCharacters} characters, saying what the agent wants decided.
+
+Rules:
+- A question always starts with "Asks" (or the same verb in the language of the question), then names the specific subject of the choice, such as the file, feature or tool, never just "which approach". Never start with a verb such as "Ship" or "Drop", nor with "Should", "Shall", "Can", "Could", "Would", "Will", "Do", "Does", "Did", "Is" or "Are": the headline reports that something is asked, it is not the question and not a decision.
+- A plan starts with "Plan to" (or the same in the language of the plan) and names what it will change.
+- Write in the language of the text, whatever language these instructions are in.
+- Use only facts in the text. Never answer the question and never pick one of its options.
+- Use no markdown, no quotation marks and no full stop.
+
+Examples of the reply, which show the shape only: never reuse their words for another text:
+Question "Which database should the billing service use? Options: Postgres, SQLite" gives:
+{"headline":"${exampleHeadlines[0]}"}
+Question "Którą bazę mam wybrać dla usługi rozliczeń?" gives:
+{"headline":"${exampleHeadlines[1]}"}
+A plan "1. Move invoicing out of the billing module 2. Add a queue between them" gives:
+{"headline":"${exampleHeadlines[2]}"}`
+
+export const gistSystem = `You write one line for a developer's notification list. You get the reply an AI coding agent ended its turn with. Reply with a JSON object holding asks and a gist, in that order.
+
+asks: true when the reply ends by asking the person to pick, decide or supply something the agent needs to go on, with or without a question mark: "Which direction appeals to you?", "Tell me where it downloaded". false for an offer to do more, such as "Want me to add tests?", "Should I also update the docs?" or "Let me know if you need anything else".
+gist: ${gistWords.min} to ${gistWords.max} words, at most ${gistCharacters} characters, a complete phrase naming what the agent did or found. Never copy a sentence from the reply.
+
+Rules:
+- The gist is a statement, never a question and never the reply's own question: asks carries that.
+- Write in the language of the reply, whatever language these instructions are in.
+- Use only facts in the reply. Never say tests pass, CI is green or something works unless the reply says so in those words.
+- When the turn ended with an error, say what failed if the reply says so.
+- Use no markdown, no quotation marks and no full stop.
+
+Examples of the reply, which show the shape only: never reuse their words for another reply:
+A reply that rounds checkout totals per line and ends "Which rounding mode should I keep?" gives:
+{"asks":true,"gist":"${exampleGists[0]}"}
+A reply that adds the validation and ends "Want me to add more?" gives:
+{"asks":false,"gist":"${exampleGists[1]}"}
+A reply that ends on a build error and "Tell me which Node version CI uses" gives:
+{"asks":true,"gist":"${exampleGists[2]}"}`
+
+/** The schema for `response_format`, which keeps the reply to the headline. */
+const headlineSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["headline"],
+  properties: {
+    headline: { type: "string", minLength: 3, maxLength: headlineCharacters + overrun },
+  },
+} as const
+
+// `asks` comes first because the engine's grammar writes properties in this order, so the
+// model has decided it before it writes a gist that might otherwise talk around it.
+const gistSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["asks", "gist"],
+  properties: {
+    asks: { type: "boolean" },
+    gist: { type: "string", minLength: 3, maxLength: gistCharacters + overrun },
+  },
+} as const
+
+/** What each task asks of the engine: the shape of the reply and how many tokens it may take. */
+export const formats = {
+  title: { responseFormat, maxTokens: 64 },
+  headline: {
+    responseFormat: {
+      type: "json_schema",
+      json_schema: { name: "request_headline", strict: true, schema: headlineSchema },
+    },
+    maxTokens: 96,
+  },
+  gist: {
+    responseFormat: {
+      type: "json_schema",
+      json_schema: { name: "reply_gist", strict: true, schema: gistSchema },
+    },
+    maxTokens: 128,
+  },
 } as const
 
 // Rough budgets in characters, to keep a job inside the model's 4096-token window. The
@@ -55,6 +153,12 @@ const budget = {
   summary: 600,
   row: 160,
   rows: 30,
+  question: 600,
+  choices: 8,
+  choice: 80,
+  plan: 1500,
+  replyHead: 600,
+  replyTail: 1200,
 }
 
 const head = (text: string, limit: number): string =>
@@ -70,8 +174,48 @@ const previous = (digest: Digest): string[] =>
     ? []
     : ["", `Previous title (keep it unless the work clearly changed): ${digest.previous.title}`]
 
-/** The chat that asks the model to label `digest`; the digest should already be redacted. */
-export const messages = (digest: Digest): Message[] => {
+// The chat for a note. The text is cut here, after redaction, so a cut never splits a secret
+// that redaction would have caught whole.
+const noteMessages = (input: NoteDigest): Message[] => {
+  const lines: string[] = []
+  if (input.kind === "question") {
+    lines.push(
+      "The agent asks the person this question:",
+      head(input.question.trim(), budget.question),
+    )
+    const choices = input.choices.filter((choice) => choice.trim() !== "")
+    if (choices.length > 0) {
+      lines.push("", "The answers it offers:")
+      for (const choice of choices.slice(0, budget.choices))
+        lines.push(`- ${head(choice.trim(), budget.choice)}`)
+    }
+    lines.push("", "Write the headline in the language of the question.")
+  } else if (input.kind === "plan") {
+    lines.push(
+      "The agent asks the person to review this plan:",
+      head(input.plan.trim(), budget.plan),
+    )
+    lines.push("", "Write the headline in the language of the plan.")
+  } else {
+    const reply = input.reply.trim()
+    const whole = reply.length <= budget.replyHead + budget.replyTail
+    if (input.failed) lines.push("The turn ended with an error.", "")
+    lines.push(
+      "The agent's reply:",
+      whole ? reply : `${head(reply, budget.replyHead)}\n${tail(reply, budget.replyTail)}`,
+    )
+    lines.push("", "Write the gist in the language of the reply.")
+  }
+  return [
+    { role: "system", content: input.kind === "reply" ? gistSystem : headlineSystem },
+    { role: "user", content: lines.join("\n") },
+  ]
+}
+
+/** The chat that asks the model to write about `input`; it should already be redacted. */
+export const messages = (digest: Input): Message[] => {
+  if (digest.kind === "question" || digest.kind === "plan" || digest.kind === "reply")
+    return noteMessages(digest)
   const lines: string[] = []
   if (digest.kind === "agent") {
     lines.push(`Terminal: a ${digest.harness} agent session`)
