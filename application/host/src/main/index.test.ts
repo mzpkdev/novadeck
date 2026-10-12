@@ -118,7 +118,7 @@ describe("compiled desktop host", () => {
       const handler = main.slice(main.indexOf('app.on("second-instance"'))
 
       expect(handler.slice(0, handler.indexOf("\n});"))).toMatch(
-        /bringForward\(window\);\s*else if \(server\) createWindow\(server\.origin\);\s*if \(process\.platform === "darwin"\) app\.focus\(\{ steal: true \}\)/u,
+        /bringForward\(window\);\s*else if \(server && !stopping\) createWindow\(server\.origin\);\s*if \(process\.platform === "darwin"\) app\.focus\(\{ steal: true \}\)/u,
       )
     })
 

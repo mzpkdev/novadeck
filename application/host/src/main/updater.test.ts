@@ -867,10 +867,12 @@ describe("electron-updater's restart", () => {
     // without the new version starting, or a failed install may leave the lock released.
     const require = createRequire(import.meta.url)
     const file = join(dirname(require.resolve("electron-updater")), "BaseUpdater.js")
-    const source = await readFile(file, "utf8")
+    const source = (await readFile(file, "utf8")).replaceAll("\r\n", "\n")
     const start = source.search(/quitAndInstall\(isSilent = false, isForceRunAfter = false\)\s*\{/u)
     expect(start, "BaseUpdater.quitAndInstall").toBeGreaterThanOrEqual(0)
-    const body = source.slice(start, source.indexOf("\n    }\n", start))
+    const end = source.indexOf("\n    }\n", start)
+    expect(end, "the end of BaseUpdater.quitAndInstall").toBeGreaterThan(start)
+    const body = source.slice(start, end)
     const steps = [
       /const isInstalled = this\.install\(/u,
       /if \(isInstalled\)\s*\{/u,

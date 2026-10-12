@@ -756,8 +756,9 @@ const bringForward = (window: BrowserWindow): void => {
 app.on("second-instance", () => {
   const [window] = BrowserWindow.getAllWindows()
   if (window) bringForward(window)
-  // On macOS the app lives on with no window, so a second launch has none to show.
-  else if (server) createWindow(server.origin)
+  // On macOS the app lives on with no window, so a second launch has none to show; one
+  // that is quitting opens none.
+  else if (server && !stopping) createWindow(server.origin)
   if (process.platform === "darwin") app.focus({ steal: true })
 })
 
@@ -796,7 +797,7 @@ app.whenReady().then(() => {
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      if (server) createWindow(server.origin)
+      if (server && !stopping) createWindow(server.origin)
     }
   })
 })
