@@ -1,5 +1,5 @@
 /**
- * A terminal's screen as the doorbell and prompts read it: its rows' text, with what a
+ * A terminal's screen as the runner's doorbell and prompts read it: its rows' text, with what a
  * harness's input box needs of it, and its paste mode.
  */
 export type ScreenText = {

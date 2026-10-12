@@ -2,8 +2,8 @@ import type { AgentName } from "@novadeck/protocol"
 
 /**
  * What an agent hook forwards: the event its agent reported in a terminal, with a
- * bounded copy of the agent's payload. The agent's harness decodes the payload (see
- * `harnesses/<id>/decode.ts`); nothing here reads it.
+ * bounded copy of the agent's payload. The agent's harness decodes the payload (its
+ * adapter's `decode.ts`); nothing here reads it.
  */
 export type Report = {
   readonly terminalId: string

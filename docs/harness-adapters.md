@@ -115,11 +115,15 @@ application/runner/src/harnesses/
 An adapter imports only `@novadeck/harness-core` and `@novadeck/protocol`, never the
 runner's own modules.
 
+`@novadeck/harness-core` builds to `dist`, which builds, packaging and `tsc` use. Its
+exports also name its sources under the `development` condition, which vitest, the
+runner's `pnpm dev` (`tsx --conditions=development`) and the host's `pnpm dev`
+(`electron.vite.config.ts`) resolve, so an edit to it reaches them without a build.
+
 Split a harness into more files (a transcript reader, say) only when its
 `index.ts` gets hard to read. `shell/` keeps shell-specific
-startup/quoting; it no longer assembles harness manifests. This does not need a
-new npm package. Public data types live in `application/protocol`, with no imports
-back into provider implementations.
+startup/quoting; it no longer assembles harness manifests. Public data types live in
+`application/protocol`, with no imports back into provider implementations.
 
 ## Agent model
 

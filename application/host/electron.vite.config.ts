@@ -2,8 +2,11 @@ import { resolve } from "node:path"
 
 import { defineConfig } from "electron-vite"
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   main: {
+    // In development, workspace packages that offer it (@novadeck/harness-core) load from
+    // their sources, so an edit to them reaches `pnpm dev` without building them first.
+    resolve: { conditions: command === "serve" ? ["development"] : [] },
     ssr: {
       resolve: {
         // @xterm/headless's module field points at a browser entry it does not ship.
@@ -35,4 +38,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

@@ -271,7 +271,8 @@ export type MessagingProfile = {
   /**
    * Where its hooks name no prompt (as Antigravity's, whose every turn decodes as
    * harness-started), what one line of its transcript records as typed into its box, if
-   * that is what it records: from it `typed-prompts.ts` tells a root turn's prompt.
+   * that is what it records: from it the runner's `typed-prompts.ts` tells a root turn's
+   * prompt.
    */
   readonly typedEntry?: (line: string) => UserEntry | undefined
 }
