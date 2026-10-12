@@ -123,8 +123,12 @@ type Scenario = {
     running?: "installed" | "elsewhere" | "lookalike"
     /** The name of the folder that stands in for /Applications. */
     systemName?: string
-    /** Which renames fail: moving the old app aside, the new one in, or that and putting the old one back. */
-    mv?: "aside" | "forward" | "both"
+    /**
+     * Which renames fail: moving the old app aside, the new one in, or that and putting the
+     * old one back; or "interrupted", where every rename works but the first is followed by
+     * an interrupt, a hangup, a quit and a termination, as Ctrl-C or a closed terminal sends.
+     */
+    mv?: "aside" | "forward" | "both" | "interrupted"
     /** Whether removing the folder the new app was unpacked in fails. */
     rmFails?: boolean
     /** Whether this account may write to /Applications; it may when unset. */
@@ -224,7 +228,14 @@ ${mac.empty ? 'mkdir -p "$4"' : `mkdir -p "$4/novadeck.app/Contents/MacOS" && cp
       forward: "*/.novadeck-install.*/novadeck.app",
       both: "*/.novadeck-install.*/*.app",
     }
-    if (mac.mv) {
+    if (mac.mv === "interrupted") {
+      shim(
+        bin,
+        "mv",
+        `${real("mv")} "$@" || exit
+case "$2" in */previous.app) for signal in INT HUP QUIT TERM; do kill -s $signal $PPID; done ;; esac`,
+      )
+    } else if (mac.mv) {
       shim(
         bin,
         "mv",
@@ -818,6 +829,13 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       const kept = /which is now (\S+)\.$/m.exec(result.stderr)?.[1]
       expect(kept).toBeDefined()
       expect(readFileSync(join(kept!, "Contents/MacOS/novadeck"), "utf8")).toBe("old")
+    })
+
+    it("finishes replacing the app when interrupted between its renames", () => {
+      const result = run({ mac: { existing: "system", mv: "interrupted" } })
+      expect(result.status).toBe(0)
+      expect(readFileSync(executable(result.applications), "utf8")).toBe(archive)
+      expect(readdirSync(result.applications)).toEqual(["novadeck.app"])
     })
 
     it("succeeds when it cannot remove the copy it replaced, and the next run does too", () => {

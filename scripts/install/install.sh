@@ -383,7 +383,7 @@ install_mac() {
   [ -d "$staging/novadeck.app" ] || fail "novadeck-mac-universal.zip holds no novadeck.app."
   # Between the two renames the old copy is only in the folder the exit removes, so an
   # interrupt waits until both are done.
-  trap '' INT HUP TERM
+  trap '' INT HUP QUIT TERM
   if [ -e "$app" ] && ! mv "$app" "$staging/previous.app"; then
     say "If macOS said your terminal was prevented from modifying apps, allow it under System"
     say "Settings > Privacy & Security > App Management, then run this again."
@@ -398,7 +398,7 @@ install_mac() {
     fi
     fail "could not move Novadeck into $folder."
   fi
-  trap - INT HUP TERM
+  trap - INT HUP QUIT TERM
   # What is left there, such as the copy it replaced, costs only space.
   if ! rm -rf "$staging" 2> /dev/null; then
     say "Could not remove $staging; delete it by hand."
