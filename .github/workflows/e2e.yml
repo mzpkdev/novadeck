@@ -8,6 +8,7 @@ on:
       - application/protocol/**
       - application/relay/**
       - application/runner/**
+      - harnesses/**
       - scripts/e2e/**
       - package.json
       - pnpm-lock.yaml
@@ -117,8 +118,8 @@ jobs:
           key: e2e-harnesses-${{ runner.os }}-agy-${{ steps.pins.outputs.agy }}-${{ hashFiles('application/runner/src/e2e/install.ts') }}
 
       # With the network, as the relay's build may install the Rust it names.
-      - name: Build Protocol and Relay
-        run: pnpm --filter @novadeck/protocol --filter @novadeck/relay build
+      - name: Build Protocol, Harness Core and Relay
+        run: pnpm --filter @novadeck/protocol --filter @novadeck/harness-core --filter @novadeck/relay build
 
       # Installed here, with the network; the tests then run without any.
       - name: Install Harnesses
@@ -277,8 +278,8 @@ jobs:
             !${{ env.NOVADECK_E2E_CACHE }}/*.tmp
           key: e2e-harnesses-${{ runner.os }}-${{ matrix.setup.agents }}-${{ steps.pins.outputs[matrix.setup.agents] }}-${{ hashFiles('application/runner/src/e2e/install.ts') }}
 
-      - name: Build Protocol and Relay
-        run: pnpm --filter @novadeck/protocol --filter @novadeck/relay build
+      - name: Build Protocol, Harness Core and Relay
+        run: pnpm --filter @novadeck/protocol --filter @novadeck/harness-core --filter @novadeck/relay build
 
       - name: Install Harnesses
         run: node scripts/e2e/install/main.ts

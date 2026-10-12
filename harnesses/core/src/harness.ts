@@ -10,11 +10,11 @@ import {
   type TranscriptItem,
 } from "@novadeck/protocol"
 
-import type { Report } from "../shell/reports.js"
 import type { BoxProfile } from "./box.js"
 import type { DialogAdapter } from "./dialogs.js"
 import type { HarnessEvent, PlanSource, PromptShown } from "./events.js"
 import type { Dialect } from "./hook-command.js"
+import type { Report } from "./report.js"
 
 /** Where a harness lives on this machine, as its setup and inspection need it. */
 export type Install = {
