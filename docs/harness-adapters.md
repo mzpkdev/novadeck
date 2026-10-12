@@ -128,6 +128,28 @@ own `development` condition in electron-vite's dev build) resolve, so an edit to
 reaches them without a build. `tsc` and the editor still read the built types: rebuild
 a package (`pnpm --filter @novadeck/harness-core build`) after changing its contract.
 
+What every harness is, as data, is one row of `application/protocol/src/harnesses.ts`:
+its id (also its program's name), its names, the script a Node CLI runs, the variables
+its sessions set on their children and the paths of its secrets. The protocol's
+`agentName` comes from it, and so do the lists and labels the UI and the runner show, so
+the UI reads it without loading any adapter.
+
+Adding a harness:
+
+1. Its row in `application/protocol/src/harnesses.ts`.
+2. Its package, `harnesses/<id>` (`@novadeck/harness-<id>`), shaped like the others, with
+   its probes in `src/fixtures/`.
+3. Its line in `application/runner/src/harnesses/registry.ts` (a compile error until
+   then) and the runner's dependency on its package.
+4. Its lint fence: an override for its folder in `.oxlintrc.json`, and its name in the
+   other adapters' and harness-core's (`scripts/harnesses/fence.test.ts` fails until
+   then).
+5. Its end-to-end setup, pin and CI rows (see `docs/e2e-testing.md`, "Adding a harness").
+6. What stays by hand: its icon in the UI's welcome dialog (a type error until then) and
+   its process profile (`terminals/processes/profiles.ts`), its coverage in
+   `docs/harness-coverage.md`, and any variable of its hooks' environment the runner's
+   `shell/hook.ts` tells nested agents apart by.
+
 Split a harness into more files (a transcript reader, say) only when its
 `index.ts` gets hard to read. `shell/` keeps shell-specific
 startup/quoting; it no longer assembles harness manifests. Public data types live in
@@ -576,7 +598,7 @@ Antigravity has none: its `PreInvocation` asks before every model call, so its
 `tool` event keeps the short one.
 
 The terminal manager follows each terminal's root session as its profile's `root`
-says (`harnesses/roots.ts`): the bound session; or, for `status-line`, a guess (the
+says (`application/runner/src/harnesses/roots.ts`): the bound session; or, for `status-line`, a guess (the
 session that bound, then that of the first model call after it bound, or of one
 messages wait for) until the status line names the root conversation, which alone
 names another. Messaging reads the root from there. The doorbell knows nothing of how a

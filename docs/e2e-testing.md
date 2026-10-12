@@ -804,7 +804,7 @@ probe output, and keep their own loader.
 
 1. Pin it in `harnesses.json` (an npm package, or an archive with its SHA-512) and make
    sure `installHarness` can install it. Its name must be one of the protocol's
-   `agentName`s.
+   `agentName`s, a row of its harness table (`application/protocol/src/harnesses.ts`).
 2. Write its API's dialect in `src/e2e/model/`, unless it speaks one already there: it
    parses requests into `Call`s and encodes `Reply`s the way the harness reads them. It
    also answers the side endpoints the harness calls on the way to its prompt. To find
@@ -846,7 +846,8 @@ probe output, and keep their own loader.
    - The requests' traits: `rewind`, what Esc-Esc opens at its idle prompt and whether
      it swallows a paste; and `popup`, a popup it raises by itself after its Stop, which
      a reply's `usage` or `limits` (and the `popup` seed) can bring about.
-4. Add the setup to `setups` in `src/e2e/agents/index.ts`. That one list drives the
+4. Add the setup to `byAgent` in `src/e2e/agents/index.ts` (a compile error until then),
+   whose `setups` lists them in the protocol's order. That one list drives the
    messaging scenarios and the tripwire, so every scenario runs for it and its home is
    watched. A gap it shows goes in `known-gaps.ts`, with the test that pins it.
 5. Add it to the CI matrix in `.github/workflows/e2e.yml`, with its display name.

@@ -1400,7 +1400,7 @@ again.
    checks, and `open_terminal(agent, message)`. Touches no UI. Built: the checks in
    `application/runner/src/terminals/ring.ts`, the ring in `terminals/doorbell.ts`, the
    person's keys in `terminals/keys.ts`, Antigravity's typed prompts in
-   `harnesses/typed-prompts.ts`, and the Ringing state and the untouched rule in
+   `application/runner/src/harnesses/typed-prompts.ts`, and the Ringing state and the untouched rule in
    `messaging/delivery.ts`.
 3. **UI:** badges, the Messages view and the pause switch. Built: `messages.watch` in
    `application/runner/src/terminals/manager.ts` over `Messaging.subscribe`, the
@@ -1419,7 +1419,7 @@ again.
 
 5. **Ringing a new session at its prompt:** the Ready state. Built: `atPrompt` in Claude
    Code's decoder (`harnesses/claude/src/decode.ts`), `ready` on a new root
-   (`harnesses/roots.ts`), and the state and its untouched rule in
+   (`application/runner/src/harnesses/roots.ts`), and the state and its untouched rule in
    `messaging/delivery.ts`. A `resume` and a `fork` count too, so a Claude Code the
    runner restores is rung like one started anew. For parity, Codex and Antigravity
    tell their prompt the same way before any session binds (`prompt-shown`): Codex's
