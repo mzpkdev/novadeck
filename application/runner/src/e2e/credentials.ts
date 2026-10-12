@@ -9,7 +9,9 @@ export const loginStore =
 /**
  * Whether the user's Keychain holds a generic password of the service and account,
  * asked by its attributes alone: `security` reads no secret without `-w`, so this never
- * asks the person to allow access.
+ * asks the person to allow access. It fails closed, as Windows' `cmdkey` does: only
+ * `security`'s "not found" (exit 44) says it isn't there; a locked keychain, a timeout or
+ * a missing `security` throws.
  */
 const inKeychain = ({ service, account }: KeychainItem): boolean => {
   try {
@@ -18,39 +20,39 @@ const inKeychain = ({ service, account }: KeychainItem): boolean => {
       timeout: 10_000,
     })
     return true
-  } catch {
-    return false
+  } catch (error) {
+    if ((error as { status?: unknown }).status === 44) return false
+    throw new Error(`Couldn't ask the macOS Keychain for ${service}:${account}`, {
+      cause: error,
+    })
   }
 }
 
 /**
- * The targets this system's login store holds for this user, by name only, never a
- * secret. On Windows, what `cmdkey /list` prints after `target=` (`gemini:antigravity`).
- * On macOS, where only asking for an item tells, those of the setups' `keychain` items
- * the Keychain holds, named as Windows names them (`service:account`). Empty elsewhere.
- */
-export const credentialTargets = (
-  setups: readonly Pick<AgentSetup, "keychain">[],
-  holds: (item: KeychainItem) => boolean = inKeychain,
-): readonly string[] => {
-  if (process.platform === "darwin")
-    return setups
-      .flatMap((setup) => setup.keychain ?? [])
-      .filter(holds)
-      .map(({ service, account }) => `${service}:${account}`)
-  if (process.platform !== "win32") return []
-  const listed = execFileSync("cmdkey", ["/list"], { encoding: "utf8", windowsHide: true })
-  return [...listed.matchAll(/target=([^\r\n]+)/gi)].map((match) => match[1]!.trim())
-}
-
-/**
- * The logins the setups' harnesses keep in this system's login store, as each setup's
- * `credentials` names them, among `targets`.
+ * The logins the setups' harnesses keep in this system's login store, by name only, never
+ * a secret. On Windows, the targets `cmdkey /list` prints after `target=`
+ * (`gemini:antigravity`) that a setup's `credentials` names. On macOS, where only asking
+ * for an item tells, those of the setups' `keychain` items the Keychain holds, named as
+ * Windows names them (`service:account`). None elsewhere.
  */
 export const harnessLogins = (
   setups: readonly Pick<AgentSetup, "credentials" | "keychain">[],
-  targets: readonly string[] = credentialTargets(setups),
-): readonly string[] =>
-  targets.filter((target) =>
+  platform: NodeJS.Platform = process.platform,
+  store: { readonly targets?: () => readonly string[]; readonly holds?: typeof inKeychain } = {},
+): readonly string[] => {
+  if (platform === "darwin")
+    return setups
+      .flatMap((setup) => setup.keychain ?? [])
+      .filter(store.holds ?? inKeychain)
+      .map(({ service, account }) => `${service}:${account}`)
+  if (platform !== "win32") return []
+  return (store.targets ?? cmdkeyTargets)().filter((target) =>
     setups.some((setup) => setup.credentials?.some((pattern) => pattern.test(target))),
   )
+}
+
+// What the Credential Manager holds for this user, by target name only.
+const cmdkeyTargets = (): readonly string[] => {
+  const listed = execFileSync("cmdkey", ["/list"], { encoding: "utf8", windowsHide: true })
+  return [...listed.matchAll(/target=([^\r\n]+)/gi)].map((match) => match[1]!.trim())
+}
