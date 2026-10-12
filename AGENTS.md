@@ -19,14 +19,16 @@ is a blocker to raise with the person, not an exception to record and move past.
 
 Every state a feature adds to the UI MUST be reachable on the demo backend, so it can be
 seen and checked in isolation without a runner: through normal use, a `?demo=` variant,
-or the demo's debug panel (`pnpm dev:previews`, the bug button at the bottom right).
+or the demo's debug panel (`pnpm dev:previews`, the bug handle at the bottom middle).
 When the demo can't produce a new state yet — a dialog, an error, a badge, a tab or
 window phase, a backend field it never sets — add it in the same change:
 
 - Terminal, agent, notification and picker states go in `application/ui/src/backend/demo/debug/states.ts`,
   with pure action builders in `debug/terminals.ts`. A new tab or window phase also
   joins the "Every state at once" gallery there.
-- Startup, connection and crash-loop states go in `application/ui/src/backend/demo/debug/shell-groups.ts`.
+- Startup, boot-failure, runner (connection, crash loop) and sandbox states go in `application/ui/src/backend/demo/debug/shell-groups.ts`.
+- Every group names its `section` (Terminals, Agents or App), and an action that boots
+  the demo again sets `reboots: true` instead of saying so in its hint.
 - Give each action a hint that names what appears, and keep README "Debug panel"
   current.
 

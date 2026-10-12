@@ -153,17 +153,16 @@ describe("demo states", () => {
   it("groups its actions, each with a hint", () => {
     const { states } = panel("04")
     expect(states.groups.map((group) => group.title)).toEqual([
-      "All at once",
-      "Notification center",
       "Selected terminal",
-      "Agent",
-      "Another project",
       "New terminals",
-      "Notices",
-      "Update",
-      "Agents",
-      "Chat",
-      "Folders",
+      "Projects and sessions",
+      "Selected agent",
+      "Agent turns",
+      "Another project",
+      "Notifications",
+      "Chat: next send or Stop fails",
+      "Agent connections",
+      "Updates",
     ])
     for (const action of states.groups.flatMap((group) => group.actions))
       expect(action.hint).not.toBe("")
@@ -186,7 +185,7 @@ describe("demo states", () => {
       expect(otherTerminal()).toMatchObject({ agent: { attention: { kind: "permission" } } })
       expect(terminal("04")).not.toHaveProperty("agent")
 
-      await action("Turn completed").run(actionContext)
+      await action("Completed").run(actionContext)
       vi.runAllTimers()
       expect(otherTerminal()).toMatchObject({ agent: { lastTurn: { outcome: "completed" } } })
     })
@@ -195,7 +194,7 @@ describe("demo states", () => {
   context("with no terminal selected", () => {
     it("asks for one instead of acting", () => {
       const { run, notes, terminal } = panel(undefined)
-      run("Exited · code 3")
+      run("Exit code 3")
       run("Working")
       expect(notes).toEqual(["Select a terminal first.", "Select a terminal first."])
       expect(terminal("04")).toMatchObject({ state: "running", process: "zsh" })
@@ -205,7 +204,7 @@ describe("demo states", () => {
   context("with a terminal selected", () => {
     it("ends its shell as the action says", () => {
       const { run, terminal } = panel("04")
-      run("Killed · SIGKILL")
+      run("Killed (SIGKILL)")
       expect(terminal("04")).toMatchObject({ state: "exited", signal: "SIGKILL" })
     })
 
@@ -217,7 +216,7 @@ describe("demo states", () => {
 
     it("ends an agent's turn after it works", () => {
       const { run, terminal } = panel("04")
-      run("Turn failed")
+      run("Failed")
       expect(terminal("04")).toMatchObject({ agent: { working: true } })
       vi.advanceTimersByTime(3000)
       expect(terminal("04")).toMatchObject({ agent: { lastTurn: { outcome: "failed" } } })
@@ -225,8 +224,8 @@ describe("demo states", () => {
 
     it("leaves a turn unended once the terminal is back at its shell", () => {
       const { run, terminal } = panel("04")
-      run("Turn completed")
-      run("Back at the prompt")
+      run("Completed")
+      run("At the prompt")
       vi.advanceTimersByTime(3000)
       expect(terminal("04")).toMatchObject({ process: "zsh", state: "idle" })
       expect(terminal("04")).not.toHaveProperty("agent")
@@ -242,7 +241,7 @@ describe("demo states", () => {
   context("when an agent finishes elsewhere", () => {
     it("ends the turn of another terminal, not the selected one", () => {
       const { run, terminal } = panel("04")
-      run("Agent finishes elsewhere")
+      run("Finish elsewhere")
       const other = ["01", "02", "03", "05", "06"].find(
         (slot) => terminal(slot)?.process === "claude",
       )!
@@ -256,13 +255,13 @@ describe("demo states", () => {
   context("with the notification center", () => {
     it("asks for the terminal on screen first", () => {
       const { run, notes } = panel(undefined)
-      run("Fill the notification center")
+      run("Fill notifications")
       expect(notes).toEqual(["Select a terminal first."])
     })
 
     it("fills it with every kind, across projects, past the badge's cap", () => {
       const { run, asks } = panel("04")
-      run("Fill the notification center")
+      run("Fill notifications")
       vi.advanceTimersByTime(3000)
       const all = asks()
       expect(all).toHaveLength(12)
@@ -277,7 +276,7 @@ describe("demo states", () => {
 
     it("gives the second round of kinds murmur's headlines and gists, and the rest none", () => {
       const { run, actionContext } = panel("04")
-      run("Fill the notification center")
+      run("Fill notifications")
       vi.advanceTimersByTime(3000)
       const agents = actionContext
         .workspace()!
@@ -306,7 +305,7 @@ describe("demo states", () => {
 
     it("adds what it needs without selecting it, so every finish lands elsewhere", () => {
       const { run, onScreen, plus, added, asks } = panel("04", { keeping: 3 })
-      run("Fill the notification center")
+      run("Fill notifications")
       vi.advanceTimersByTime(3000)
       expect(added.length).toBeGreaterThan(0)
       // Not through the app's "+", which selects the terminal and shows the Terminals panel.
@@ -319,7 +318,7 @@ describe("demo states", () => {
 
     it("does not bring back a terminal that ended before its finish", () => {
       const { run, actionContext, asks } = panel("04")
-      run("Fill the notification center")
+      run("Fill notifications")
       const found = actionContext
         .workspace()!
         .projects.flatMap((each) =>
@@ -352,7 +351,7 @@ describe("demo states", () => {
 
     it("empties it again", () => {
       const { run, asks } = panel("04")
-      run("Fill the notification center")
+      run("Fill notifications")
       vi.advanceTimersByTime(3000)
       expect(asks()).not.toEqual([])
       run("Clear notifications")
@@ -362,7 +361,7 @@ describe("demo states", () => {
 
     it("calls off the finishes still pending when cleared", () => {
       const { run, asks } = panel("04")
-      run("Fill the notification center")
+      run("Fill notifications")
       vi.advanceTimersByTime(1000)
       run("Clear notifications")
       vi.advanceTimersByTime(3000)
@@ -372,7 +371,7 @@ describe("demo states", () => {
     it("keeps the pending finishes of one panel when another clears", () => {
       const { run, asks } = panel("04")
       const other = panel("04")
-      run("Fill the notification center")
+      run("Fill notifications")
       other.run("Clear notifications")
       vi.advanceTimersByTime(3000)
       expect(asks()).toHaveLength(12)
@@ -380,7 +379,7 @@ describe("demo states", () => {
 
     it("has an agent work at a prompt that may hold an unread finish, then leave", () => {
       const { run, worked, actionContext } = panel("04")
-      run("Fill the notification center")
+      run("Fill notifications")
       vi.advanceTimersByTime(3000)
       const at = key("02")
       actionContext.dispatch!(backToPrompt(at))
@@ -419,7 +418,7 @@ describe("demo states", () => {
 
   it("restarts an ended terminal with a fresh shell", () => {
     const { states, run, actionContext, terminal } = panel("04")
-    run("Exited · code 3")
+    run("Exit code 3")
     states.restart(key("04"), actionContext.dispatch!)
     expect(terminal("04")).toMatchObject({ state: "idle", process: "zsh" })
   })

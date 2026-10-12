@@ -46,13 +46,22 @@ export type DemoActionContext = {
 }
 
 export type DemoAction = {
+  // Short and unique within its group, as "Exited · code 3".
   readonly label: string
-  // What should appear once it runs.
+  // What should appear once it runs, in a line, as "Ending bar with Restart".
   readonly hint: string
+  // Boots the demo again to show it; the panel marks it so its hint needn't say so.
+  readonly reboots?: true
   readonly run: (context: DemoActionContext) => void | Promise<void>
 }
 
+// Where a group sits in the panel, in this order: what the selected or a new terminal
+// can be in, what its agent can be in, and the app around them.
+export const demoSections = ["Terminals", "Agents", "App"] as const
+export type DemoSection = (typeof demoSections)[number]
+
 export type DemoActionGroup = {
+  readonly section: DemoSection
   readonly title: string
   readonly actions: readonly DemoAction[]
 }

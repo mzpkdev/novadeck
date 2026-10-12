@@ -68,6 +68,8 @@ const noticeMs = 4000
 const murmured = (index: number): boolean =>
   index >= terminalAsks.length && index < 2 * terminalAsks.length
 
+const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
 const later = (ms: number, run: () => void): void => void setTimeout(run, ms)
 
 // An action on the selected terminal, or the note that asks for one.
@@ -171,7 +173,7 @@ const elsewhereAgent = (label: string, hint: string, status: AgentStatus): DemoA
 const elsewhereEnding = (outcome: "completed" | "failed", label: string): DemoAction =>
   inAnotherProject(
     label,
-    `Works, then ${outcome === "completed" ? "done" : "failed"}: the switcher marks it until you look`,
+    `Works, then ${outcome === "completed" ? "done" : "failed"}; switcher marks it until seen`,
     (key, context) => {
       context.dispatch(agentIn(key, terminalOf(context.workspace(), key), working))
       endLater(key, outcome, context)
@@ -214,7 +216,7 @@ const gallery: readonly {
   { name: "Running a program", actions: (key) => runProgram(key, "sleep") },
   { name: "Starting", actions: (key) => starting(key) },
   { name: "Idle", actions: () => [] },
-  { name: "Exited · code 3", actions: (key) => exitedWithCode(key, 3) },
+  { name: "Exit code 3", actions: (key) => exitedWithCode(key, 3) },
   { name: "Killed", actions: (key) => killedBy(key, "SIGKILL") },
   { name: "Failed to start", actions: (key) => failedToStart(key, "Folder not found") },
   { name: "Needs permission", actions: (key) => agentIn(key, undefined, asking("permission", 1)) },
@@ -222,7 +224,7 @@ const gallery: readonly {
 
 const everyState: DemoAction = {
   label: "Every state at once",
-  hint: `Adds ${gallery.length} terminals, each tab and window in its own state: attention, done, error, ended and more`,
+  hint: `${gallery.length} terminals, one per state`,
   run: ({ addTerminal, dispatch }) => {
     if (!dispatch) return
     // Added first, so each finish lands while the person looks at the last one.
@@ -240,8 +242,8 @@ const everyState: DemoAction = {
 // An agent finishes in a terminal other than the one on screen: the app marks it unread
 // and, with the Preferences switch on, notifies.
 const finishElsewhere = (outcome: "completed" | "failed"): DemoAction => ({
-  label: outcome === "completed" ? "Agent finishes elsewhere" : "Agent fails elsewhere",
-  hint: "Another terminal's agent works, then ends its turn: unread mark and notice, if Preferences notifies",
+  label: outcome === "completed" ? "Finish elsewhere" : "Fail elsewhere",
+  hint: `Another terminal's agent ${outcome === "completed" ? "finishes" : "fails"}: unread, notice`,
   run: ({ selected, workspace, dispatch, note }) => {
     const current = selected()
     if (!current) return note("Select a terminal first.")
@@ -264,8 +266,8 @@ const createNotificationActions = (): readonly [DemoAction, DemoAction] => {
   // the person doesn't view. Takes up to `crowd` terminals, adding some to the session on screen when the workspace has fewer,
   // without selecting them or leaving the panel the person is on.
   const fillNotifications: DemoAction = {
-    label: "Fill the notification center",
-    hint: `${crowd} terminals across every project ask: questions, permissions, plans, and done and failed finishes (after 3 s); the rail badge reads 9+. The second round of kinds has murmur's headlines and gists`,
+    label: "Fill notifications",
+    hint: `${crowd} terminals ask or finish; badge reads 9+`,
     run: ({ selected, workspace, addInBackground, dispatch, note }) => {
       const viewed = selected()
       if (!viewed) return note("Select a terminal first.")
@@ -304,7 +306,7 @@ const createNotificationActions = (): readonly [DemoAction, DemoAction] => {
   // may hold a finish unread too, so an agent works there for a moment and leaves again.
   const clearNotifications: DemoAction = {
     label: "Clear notifications",
-    hint: "Every request is answered and every finish read: the center is empty",
+    hint: "Answers and reads everything; center empties",
     run: ({ workspace, dispatch }) => {
       if (!dispatch) return
       fills++
@@ -358,148 +360,62 @@ export const createDemoStates = (): DemoStates => {
     )
   }
   const groups: readonly DemoActionGroup[] = [
-    { title: "All at once", actions: [everyState] },
     {
-      title: "Notification center",
-      actions: notificationActions,
-    },
-    {
+      section: "Terminals",
       title: "Selected terminal",
       actions: [
-        onSelected("Clean exit", "The tile closes", (key, { dispatch }) =>
-          dispatch(cleanExit(key)),
+        onSelected("Starting shell", "Tab and screen show it starting", (key, { dispatch }) =>
+          dispatch(starting(key)),
         ),
-        onSelected("Exited · code 3", "Ending bar with Restart", (key, { dispatch }) =>
-          dispatch(exitedWithCode(key, 3)),
+        onSelected("Loading output", "Briefly, as after a reconnect", (key) =>
+          showScreen(key, { attaching: true }, attachMs),
         ),
-        onSelected("Exited, no code", "Ending bar without a reason", (key, { dispatch }) =>
-          dispatch(exitedWithCode(key, null)),
-        ),
-        onSelected("Killed · SIGKILL", "Ending bar in the danger tone", (key, { dispatch }) =>
-          dispatch(killedBy(key, "SIGKILL")),
-        ),
-        onSelected(
-          "Failed to start · Folder not found",
-          "Ending bar, tab marked failed",
-          (key, { dispatch }) => dispatch(failedToStart(key, "Folder not found")),
-        ),
-        onSelected(
-          "Starting shell",
-          "Tab shows it starting; Starting shell… over the output",
-          (key, { dispatch }) => dispatch(starting(key)),
-        ),
-        onSelected(
-          "Loading output",
-          "Loading output… over the output for a moment, as after a reconnection",
-          (key) => showScreen(key, { attaching: true }, attachMs),
-        ),
-        onSelected("Paste fails", "A notice at the top for a moment", (key) =>
-          showScreen(key, { notice: "Novadeck can't read the clipboard" }, noticeMs),
-        ),
-        onSelected("Back at the prompt", "A shell, idle", (key, { dispatch }) =>
+        onSelected("At the prompt", "Idle shell", (key, { dispatch }) =>
           dispatch(backToPrompt(key)),
         ),
-        onSelected(
-          "Run a long program",
-          "Footer counts 1 running; closing asks first",
-          (key, { dispatch }) => dispatch(runProgram(key, "sleep")),
+        onSelected("Long program", "Counts as running; closing asks first", (key, { dispatch }) =>
+          dispatch(runProgram(key, "sleep")),
         ),
-        onSelected("Run Claude Code", "The window takes Claude's body", (key, { dispatch }) =>
+        onSelected("Claude Code", "Window switches to Claude", (key, { dispatch }) =>
           dispatch(runAgent(key, "claude")),
         ),
-        onSelected("Run Codex", "The window takes Codex's body", (key, { dispatch }) =>
+        onSelected("Codex", "Window switches to Codex", (key, { dispatch }) =>
           dispatch(runAgent(key, "codex")),
         ),
-      ],
-    },
-    {
-      title: "Agent",
-      actions: [
-        agentAction("Working", "Tab shows it running", () => working),
-        agentAction("Planning", "Working in plan mode", () => planning),
-        agentAction("Needs permission", "One request waits", () => asking("permission", 1)),
-        agentAction("Asks a question", "One question waits", () => asking("question", 1)),
-        agentAction("Plan ready for review", "One plan waits", () => asking("plan", 1)),
-        agentAction("3 permissions waiting", "Count in the tab and tooltip", () =>
-          asking("permission", 3),
+        onSelected("Paste fails", "Brief notice at the top", (key) =>
+          showScreen(key, { notice: "Novadeck can't read the clipboard" }, noticeMs),
         ),
-        agentAction("3 questions waiting", "Count in the tab and tooltip", () =>
-          asking("question", 3),
+        onSelected("Clean exit", "Tile closes", (key, { dispatch }) => dispatch(cleanExit(key))),
+        onSelected("Exit code 3", "Ending bar with Restart", (key, { dispatch }) =>
+          dispatch(exitedWithCode(key, 3)),
         ),
-        agentAction("3 plans waiting", "Count in the tab and tooltip", () => asking("plan", 3)),
-        agentAction("Subagents", "Three subagents while it works", () => withSubagents),
-        agentAction(
-          "Finishing subagents",
-          "Two subagents run, mid-turn or after it; it works until they finish",
-          () => finishingSubagents,
+        onSelected("Exit, no code", "Ending bar, no reason", (key, { dispatch }) =>
+          dispatch(exitedWithCode(key, null)),
         ),
-        agentAction(
-          "Background work",
-          "Turn over, 1 agent · 2 tasks run on without it",
-          () => backgroundWork,
+        onSelected("Killed (SIGKILL)", "Ending bar, danger tone", (key, { dispatch }) =>
+          dispatch(killedBy(key, "SIGKILL")),
         ),
-        agentAction(
-          "Background work, uncounted",
-          "Turn over, its harness only says work runs on",
-          () => uncountedWork,
-        ),
-        agentAction("Context and limits", "Usage in its tooltip and status", withUsage),
-        agentAction("Context, size unknown", "ctx in tokens, no limits", () => contextOnly),
-        endingAction("completed", "Turn completed", "Works, then done when you look elsewhere"),
-        endingAction("failed", "Turn failed", "Works, then failed when you look elsewhere"),
-        endingAction("interrupted", "Turn interrupted", "Works, then rests; no unread mark"),
-        endingAction("unknown", "Turn ended, unknown", "Works, then goes idle with no reply"),
-        onSelected(
-          "Unheard agent",
-          "Claude Code with no word from its hooks",
-          (key, { dispatch }) => dispatch(unheardAgent(key, "claude")),
+        onSelected("Failed to start", "Folder not found; tab marked failed", (key, { dispatch }) =>
+          dispatch(failedToStart(key, "Folder not found")),
         ),
       ],
     },
     {
-      title: "Another project",
-      actions: [
-        elsewhereAgent(
-          "Needs permission",
-          "The switcher's dot and row show !",
-          asking("permission", 1),
-        ),
-        elsewhereAgent(
-          "Asks a question",
-          "The switcher's dot and row show ?",
-          asking("question", 1),
-        ),
-        elsewhereAgent(
-          "Plan ready for review",
-          "The switcher's dot and row show !",
-          asking("plan", 1),
-        ),
-        elsewhereEnding("completed", "Turn completed"),
-        elsewhereEnding("failed", "Turn failed"),
-        elsewhereAgent("Working", "A spinner on its row; no dot", working),
-        inAnotherProject("Back at the prompt", "Its mark clears", (key, { dispatch }) =>
-          dispatch(backToPrompt(key)),
-        ),
-      ],
-    },
-    {
+      section: "Terminals",
       title: "New terminals",
       actions: [
+        everyState,
         failingTerminal(
           "Quick failure",
-          "A new terminal fails right after starting",
+          "Fails right after starting",
           "Exited right after starting",
           quickFailMs,
         ),
-        failingTerminal("Spawn failure", "A new terminal's folder is missing", "Folder not found"),
-        failingTerminal(
-          "Terminal limit reached",
-          "A new terminal is refused",
-          "Terminal limit reached",
-        ),
+        failingTerminal("Spawn failure", "Its folder is missing", "Folder not found"),
+        failingTerminal("Terminal limit", "New terminal refused", "Terminal limit reached"),
         {
           label: `Burst of ${burst}`,
-          hint: "Thirty terminals at once",
+          hint: `${burst} terminals at once`,
           run: ({ addTerminal }) => {
             for (let count = 0; count < burst; count += 1) addTerminal()
           },
@@ -507,11 +423,100 @@ export const createDemoStates = (): DemoStates => {
       ],
     },
     {
-      title: "Notices",
+      section: "Terminals",
+      title: "Projects and sessions",
       actions: [
         {
-          label: "Show a notice",
-          hint: "A notification for the selected terminal; click it to reveal the terminal",
+          label: "Fresh session, process running",
+          hint: "Sessions panel counts 1 running",
+          run: async ({ selected, dispatch, note, startFresh }) => {
+            const key = selected()
+            if (!key || !dispatch) return note("Select a terminal first.")
+            const target = { projectId: key.projectId, workspaceSessionId: key.workspaceSessionId }
+            dispatch([
+              {
+                type: "terminal/status",
+                target,
+                terminalId: key.terminalId,
+                status: { state: "running" },
+              },
+              { type: "terminal/process", target, terminalId: key.terminalId, process: "sleep" },
+            ])
+            await pause(1_000)
+            startFresh()
+          },
+        },
+        {
+          label: "Folder pick fails",
+          hint: "Next Open folder rejects without asking",
+          run: failPick,
+        },
+      ],
+    },
+    {
+      section: "Agents",
+      title: "Selected agent",
+      actions: [
+        agentAction("Working", "Tab shows it running", () => working),
+        agentAction("Planning", "Working in plan mode", () => planning),
+        agentAction("Needs permission", "1 request waiting", () => asking("permission", 1)),
+        agentAction("Asks a question", "1 question waiting", () => asking("question", 1)),
+        agentAction("Plan ready", "1 plan waiting", () => asking("plan", 1)),
+        agentAction("3 permissions", "Count in tab and tooltip", () => asking("permission", 3)),
+        agentAction("3 questions", "Count in tab and tooltip", () => asking("question", 3)),
+        agentAction("3 plans", "Count in tab and tooltip", () => asking("plan", 3)),
+        agentAction("Subagents", "3 subagents while working", () => withSubagents),
+        agentAction(
+          "Finishing subagents",
+          "Works until its 2 subagents finish",
+          () => finishingSubagents,
+        ),
+        agentAction("Background work", "Turn over; 1 agent · 2 tasks run on", () => backgroundWork),
+        agentAction(
+          "Background work, no count",
+          "Turn over; work runs on, uncounted",
+          () => uncountedWork,
+        ),
+        agentAction("Context and limits", "Usage in tooltip and status", withUsage),
+        agentAction("Context, no size", "Tokens only, no limits", () => contextOnly),
+      ],
+    },
+    {
+      section: "Agents",
+      title: "Agent turns",
+      actions: [
+        endingAction("completed", "Completed", "Works, then done; marked once you look away"),
+        endingAction("failed", "Failed", "Works, then failed; marked once you look away"),
+        endingAction("interrupted", "Interrupted", "Works, then rests; no unread mark"),
+        endingAction("unknown", "Unknown ending", "Works, then idles with no reply"),
+        onSelected("Unheard agent", "Claude Code, its hooks silent", (key, { dispatch }) =>
+          dispatch(unheardAgent(key, "claude")),
+        ),
+      ],
+    },
+    {
+      section: "Agents",
+      title: "Another project",
+      actions: [
+        elsewhereAgent("Needs permission", "Switcher shows !", asking("permission", 1)),
+        elsewhereAgent("Asks a question", "Switcher shows ?", asking("question", 1)),
+        elsewhereAgent("Plan ready", "Switcher shows !", asking("plan", 1)),
+        elsewhereEnding("completed", "Completed"),
+        elsewhereEnding("failed", "Failed"),
+        elsewhereAgent("Working", "Spinner on its row, no dot", working),
+        inAnotherProject("At the prompt", "Mark clears", (key, { dispatch }) =>
+          dispatch(backToPrompt(key)),
+        ),
+      ],
+    },
+    {
+      section: "Agents",
+      title: "Notifications",
+      actions: [
+        ...notificationActions,
+        {
+          label: "Show notice",
+          hint: "For this terminal; clicking reveals it",
           run: ({ selected, note }) => {
             const key = selected()
             if (!key) return note("Select a terminal first.")
@@ -526,12 +531,35 @@ export const createDemoStates = (): DemoStates => {
         finishElsewhere("failed"),
       ],
     },
+    { section: "Agents", title: "Chat: next send or Stop fails", actions: chat.actions },
     {
-      title: "Update",
+      section: "Agents",
+      title: "Agent connections",
       actions: [
         {
-          label: "Update ready",
-          hint: "A notice above the footer's Update ready chip: Novadeck is ready, four notes, Release notes, Restart now and Later; each press is a newer version, so it comes up again",
+          label: "Connect fails",
+          hint: "Next switch in Preferences errors",
+          run: failAgents,
+        },
+        {
+          label: "Refresh",
+          hint: "Rechecks agents; errors clear",
+          run: () => agents.refresh(),
+        },
+        {
+          label: "Antigravity limited",
+          hint: "Connected, with a warning in Preferences",
+          run: limitAntigravity,
+        },
+      ],
+    },
+    {
+      section: "App",
+      title: "Updates",
+      actions: [
+        {
+          label: "Ready",
+          hint: "4 notes, Restart now, Later",
           run: () =>
             offer({
               kind: "ready",
@@ -540,13 +568,13 @@ export const createDemoStates = (): DemoStates => {
             }),
         },
         {
-          label: "Update ready, no notes",
-          hint: "The same notice without notes: the title, Release notes, Restart now and Later",
+          label: "Ready, no notes",
+          hint: "Same notice, no notes",
           run: () => offer({ kind: "ready", version: nextVersion(), notes: [] }),
         },
         {
-          label: "Update available",
-          hint: "A notice above the footer's Update available chip: Novadeck is available, four notes, Download and Later; Download opens no page in the demo",
+          label: "Available",
+          hint: "4 notes, Download, Later",
           run: () =>
             offer({
               kind: "available",
@@ -555,8 +583,8 @@ export const createDemoStates = (): DemoStates => {
             }),
         },
         {
-          label: "Update with long notes",
-          hint: "A notice with twelve 200-character notes: two lines each, the list scrolling, “and 7 more”, and the buttons always in view",
+          label: "Long notes",
+          hint: "12 long notes; list scrolls, “and 7 more”",
           run: () =>
             offer({
               kind: "ready",
@@ -565,8 +593,8 @@ export const createDemoStates = (): DemoStates => {
             }),
         },
         {
-          label: "Newer update replaces it",
-          hint: "A newer ready update replaces an open or dismissed one: the notice names the new version and comes up again after Later; the chip stays",
+          label: "Newer update",
+          hint: "Replaces the open or dismissed one",
           run: () =>
             offer({
               kind: "ready",
@@ -576,55 +604,24 @@ export const createDemoStates = (): DemoStates => {
         },
         {
           label: "Install failed",
-          hint: "The update waiting turns from ready to available: the chip reads Update available and its notice comes up again, with Download",
+          hint: "Ready turns to Available, with Download",
           run: failInstall,
         },
         {
           label: "Early builds on",
-          hint: "Preferences > General > Updates: Early builds is on, after reopening Preferences",
+          hint: "Shows in Preferences once reopened",
           run: () => updates.channel?.set("early"),
         },
         {
           label: "Early builds off",
-          hint: "Preferences > General > Updates: Early builds is off, after reopening Preferences",
+          hint: "Shows in Preferences once reopened",
           run: () => updates.channel?.set("stable"),
         },
         {
           label: "Finish restart",
-          hint: "Reloads the demo, as the app comes back on the new version, without the update",
+          reboots: true,
+          hint: "Reloads on the new version; update gone",
           run: finish,
-        },
-      ],
-    },
-    {
-      title: "Agents",
-      actions: [
-        {
-          label: "Next connect fails",
-          hint: "The next switch in Preferences ends in an error",
-          run: failAgents,
-        },
-        {
-          label: "Refresh",
-          hint: "Looks at the agents again; errors clear",
-          run: () => agents.refresh(),
-        },
-        {
-          label: "Antigravity limited",
-          hint: "Antigravity shows connected, with a warning under its name in Preferences: its own status line keeps messages from waking it until it has been sent a prompt",
-          run: limitAntigravity,
-        },
-        { label: "Welcome", hint: "Opens the first-run dialog", run: openWelcome },
-      ],
-    },
-    { title: "Chat", actions: chat.actions },
-    {
-      title: "Folders",
-      actions: [
-        {
-          label: "Next folder pick fails",
-          hint: "Open folder rejects instead of asking",
-          run: failPick,
         },
       ],
     },
