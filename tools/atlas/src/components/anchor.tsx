@@ -1,0 +1,63 @@
+import { ExternalLink } from "lucide-react"
+
+import { atlas } from "../atlas-data.ts"
+import type { Anchor } from "../atlas.ts"
+
+export const blobUrl = (file: string, line?: number | null) =>
+  `${atlas.repository}/blob/${atlas.commit}/${file}${line ? `#L${line}` : ""}`
+
+export const AnchorLink = ({ anchor }: { anchor: Anchor }) => {
+  const { file, line } = anchor
+  if (line === null) {
+    return (
+      <span
+        className="font-mono text-[12px] text-bad line-through"
+        title="Anchor text no longer found"
+      >
+        {file}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      <a
+        href={blobUrl(file, line)}
+        target="_blank"
+        rel="noreferrer"
+        className="font-mono text-[12px] no-underline hover:underline"
+      >
+        {file}:{line}
+      </a>
+      <a
+        href={`vscode://file/${atlas.root}/${file}:${line}`}
+        className="text-muted hover:text-fg"
+        title="Open in VS Code"
+      >
+        <ExternalLink size={11} />
+      </a>
+    </span>
+  )
+}
+
+const unique = (anchors: Anchor[]) => [
+  ...new Map(anchors.map((a) => [`${a.file}:${a.line}`, a])).values(),
+]
+
+export const AnchorList = ({ anchors }: { anchors: Anchor[] }) => (
+  <span className="inline-flex flex-wrap gap-x-3 gap-y-0.5">
+    {unique(anchors).map((a) => (
+      <AnchorLink key={`${a.file}:${a.line}`} anchor={a} />
+    ))}
+  </span>
+)
+
+export const DocLink = ({ file }: { file: string }) => (
+  <a
+    href={blobUrl(file)}
+    target="_blank"
+    rel="noreferrer"
+    className="font-mono text-[12px] no-underline hover:underline"
+  >
+    {file}
+  </a>
+)
