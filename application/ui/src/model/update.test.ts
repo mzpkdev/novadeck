@@ -34,12 +34,12 @@ describe("a stale release", () => {
 describe("a notice's raising", () => {
   const raised = (
     offer: UpdateOffer,
-    options: { seen?: string | null; portable?: boolean; known?: boolean },
+    options: { seen?: string | null; portable?: boolean; shownThisRun?: boolean },
   ): boolean =>
     noticeRaised(offer, {
       seen: null,
       portable: false,
-      known: false,
+      shownThisRun: false,
       now,
       ...options,
     })
@@ -63,8 +63,8 @@ describe("a notice's raising", () => {
       expect(raised(dated(20 * day), { seen, portable: true })).toBe(true)
     })
 
-    it("is not raised again within a run that has heard the offer", () => {
-      expect(raised(dated(20 * day), { seen, portable: true, known: true })).toBe(false)
+    it("is not raised again within a run that has shown its notice", () => {
+      expect(raised(dated(20 * day), { seen, portable: true, shownThisRun: true })).toBe(false)
     })
 
     it("is not raised for a stale offer with no date", () => {

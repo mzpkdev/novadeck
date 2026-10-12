@@ -149,7 +149,7 @@ describe("installing from a portable copy", () => {
     })
     expect(await portableInstaller(host).install()).toEqual({
       kind: "failed",
-      reason: "Installing failed.",
+      reason: "Something went wrong.",
     })
     expect(logged).toEqual(["Installing failed."])
   })
@@ -301,6 +301,20 @@ describe("opening the installed copy found newer", () => {
     installer.openInstalled()
     await settle()
     expect(calls).toEqual(["shutdown", "start /n/novadeck.AppImage"])
+  })
+
+  it("does nothing while the app is already quitting, so a shutdown is not run twice", async () => {
+    let quitting = false
+    const { host, calls } = hosting({
+      find: async () => [copy("1.1.0")],
+      stopping: () => quitting,
+    })
+    const installer = portableInstaller(host)
+    await installer.install()
+    quitting = true
+    installer.openInstalled()
+    await settle()
+    expect(calls).toEqual([])
   })
 
   it("does nothing before one was found", async () => {

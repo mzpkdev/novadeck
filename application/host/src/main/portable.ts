@@ -60,8 +60,9 @@ const quitting: InstallResult = {
  * should it somehow still be running `fallbackMs` after the installed copy started. An
  * installed copy that could not be looked at is not replaced, nor is anything installed
  * while the app is quitting; either answers `failed`. A failed install says why and
- * changes nothing. A second request while one is under way, or after the copy began leaving,
- * answers `installing` and does nothing more. A copy that is not portable installs
+ * changes nothing. A second request while one is under way gets that one's answer, which may
+ * be `newer` or `failed`, and does nothing more; once the copy began leaving, it answers
+ * `installing`. A copy that is not portable installs
  * nothing.
  */
 export const portableInstaller = (host: PortableHost): PortableInstaller => {
@@ -125,7 +126,7 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
       under ??= run()
         .catch((error: unknown): InstallResult => {
           host.log("Installing failed.", error)
-          return { kind: "failed", reason: "Installing failed." }
+          return { kind: "failed", reason: "Something went wrong." }
         })
         .finally(() => {
           under = undefined
@@ -133,7 +134,7 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
       return under
     },
     openInstalled: () => {
-      if (newer !== undefined) leave(newer)
+      if (newer !== undefined && !host.stopping()) leave(newer)
     },
   }
 }

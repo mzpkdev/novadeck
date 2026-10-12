@@ -60,7 +60,7 @@ export const desktopNotices = (host: DesktopHost | undefined): Backend["notices"
   }
 }
 
-// The longest release date the page takes, an ISO 8601 date-time.
+// The longest outdated-since date the page takes, an ISO 8601 date-time.
 const maxDateLength = 40
 const dated = (text: string): boolean => Number.isFinite(Date.parse(text))
 
@@ -155,7 +155,7 @@ export const hostPortable = (state: unknown): PortableState => {
 // How an install went, as the page takes it. An answer that is none of the three is a
 // failure, with a reason the person can read.
 export const hostInstall = (result: unknown): InstallResult => {
-  const unknown: InstallResult = { kind: "failed", reason: "Novadeck could not be installed." }
+  const unknown: InstallResult = { kind: "failed", reason: "Something went wrong." }
   if (typeof result !== "object" || result === null) return unknown
   const { kind, version, reason } = result as Record<string, unknown>
   if (kind === "installing") return { kind }

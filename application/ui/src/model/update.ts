@@ -34,19 +34,20 @@ export const portableNagged = (offer: UpdateOffer, now: number): boolean =>
 
 // Whether an offer's notice comes up as the offer is heard. It does once per version and
 // kind (`seen` is what was shown last). A portable copy, which can't update itself, is
-// asked again at every launch once its release is stale: `known` is whether this run has
-// heard the offer already, so a repeated offer does not bring the notice back after Later.
+// asked again at every launch once its release is stale: `shownThisRun` is whether this
+// run has shown the offer's notice already, so a repeated offer does not bring it back
+// after Later.
 export const noticeRaised = (
   offer: UpdateOffer,
   {
     seen,
     portable,
-    known,
+    shownThisRun,
     now,
   }: {
     readonly seen: string | null
     readonly portable: boolean
-    readonly known: boolean
+    readonly shownThisRun: boolean
     readonly now: number
   },
-): boolean => updateKey(offer) !== seen || (portable && !known && portableNagged(offer, now))
+): boolean => updateKey(offer) !== seen || (portable && !shownThisRun && portableNagged(offer, now))

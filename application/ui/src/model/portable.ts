@@ -1,7 +1,7 @@
 // Whether the desktop app is a portable copy: one that runs from wherever it was put,
 // never installs updates itself, and can install the app that does. `version` is this
-// build's. The model layer can't import the protocol, so this mirrors its `PortableState`,
-// which backend/runner/desktop-host.test.ts checks it fits.
+// build's, for display and diagnostics; nothing compares it with an offer. The model
+// layer can't import the protocol, so this mirrors its `PortableState`, which backend/runner/desktop-host.test.ts checks it fits.
 export type PortableState =
   | { readonly portable: false }
   | { readonly portable: true; readonly version: string }

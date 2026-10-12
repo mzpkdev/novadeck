@@ -150,6 +150,8 @@ page whether the copy is portable, and `installApp` installs from it (`portable.
 
 - It installs from the running file, with no download: the AppImage is copied beside the
   install path as `.new` and renamed over it, so a failed copy leaves nothing half-written
+  (a quit in the middle of the copy can leave `<image>.new` behind, which the next install
+  overwrites)
   and nothing else changed. Only then is the icon extracted with `--appimage-extract` (no FUSE
   needed); `~/.local/bin/novadeck` linked to the image; and the menu entry
   `dev.mzpk.novadeck.desktop` written, as `scripts/install/install.sh` does, with the same
@@ -167,7 +169,7 @@ page whether the copy is portable, and `installApp` installs from it (`portable.
     `exec`s the image. Chromium leaves about seventy open to a child, files inside the
     portable's FUSE mount among them, which would keep that mount and its `/tmp/.mount_*`
     alive for as long as the installed app runs. Bash is needed, as dash cannot name
-    descriptors above 9; without `/bin/bash` the image is spawned directly.
+    descriptors above 9; without bash at `/bin` or `/usr/bin` the image is spawned directly.
   - Its environment lacks `APPIMAGE`, `APPDIR`, `OWD` and `ARGV0`, which are the portable's,
     and every entry of `PATH`, `LD_LIBRARY_PATH`, `XDG_DATA_DIRS` and `GSETTINGS_SCHEMA_DIR`
     that is or lies under the portable's mount (`APPDIR`, as named and as resolved), which
@@ -216,7 +218,9 @@ and offers to open that copy or quit.
 The host takes Electron's single-instance lock at startup. Chromium keys it on the data
 folder (`userData`), not on the executable, so a portable and an installed copy exclude each
 other. A second launch quits at once, before it starts anything, and the running window comes
-to the front. The smoke tests pass `--user-data-dir`, so each gets its own lock.
+to the front. The packaged smoke test (`smoke.mjs`) and the Linux sandbox check in `release.yml` pass
+`--user-data-dir`, so each gets its own lock. Every other launch shares the default folder and
+so its lock, which is fine as each is killed and waited for before the next starts.
 
 ## Moving to Applications
 

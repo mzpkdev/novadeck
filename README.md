@@ -491,7 +491,8 @@ pnpm dev
 
 `pnpm dev` launches the Electron desktop application. Development launches keep their own
 data (database, settings, agent launchers) in `novadeck-dev`, beside and apart
-from an installed Novadeck's `novadeck` folder. An agent's Novadeck tools always come from the Novadeck whose terminal it runs in, through the relay of the build that connected it. On Linux and macOS, once you disconnect and connect each agent after upgrading, an agent in any Novadeck's terminal starts that Novadeck's own relay (`NOVADECK_MCP`), so a build that changed or removed its relay doesn't affect the others; on Windows it starts the connecting build's relay. To run the UI and runner in a browser
+from an installed Novadeck's `novadeck` folder. Two `pnpm dev` runs share `novadeck-dev`, so
+the second exits at once (the single-instance lock); pass `--user-data-dir` to run another. An agent's Novadeck tools always come from the Novadeck whose terminal it runs in, through the relay of the build that connected it. On Linux and macOS, once you disconnect and connect each agent after upgrading, an agent in any Novadeck's terminal starts that Novadeck's own relay (`NOVADECK_MCP`), so a build that changed or removed its relay doesn't affect the others; on Windows it starts the connecting build's relay. To run the UI and runner in a browser
 instead:
 
 ```sh

@@ -124,7 +124,7 @@ const installReasonLength = 300
 const installResultOf = (value: unknown): InstallResult => {
   const unknown: InstallResult = {
     kind: "failed",
-    reason: "Installing failed.",
+    reason: "Something went wrong.",
   }
   if (typeof value !== "object" || value === null) return unknown
   const { kind, version, reason } = value as Record<string, unknown>

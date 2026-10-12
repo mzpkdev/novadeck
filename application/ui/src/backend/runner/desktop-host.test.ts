@@ -283,7 +283,7 @@ describe("a host's portable copy", () => {
   it("takes any other answer for a failure the person can read", () => {
     const unknown = {
       kind: "failed",
-      reason: "Novadeck could not be installed.",
+      reason: "Something went wrong.",
     }
     expect(hostInstall(undefined)).toEqual(unknown)
     expect(hostInstall({ kind: "newer", version: "soon" })).toEqual(unknown)

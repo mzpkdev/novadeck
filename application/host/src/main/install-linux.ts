@@ -252,9 +252,10 @@ export const failureReason = (error: unknown, folder: string): string => {
   if (code === "ENOSPC") return "There is no space left on the disk."
   if (code === "EACCES" || code === "EPERM" || code === "EROFS")
     return `Novadeck cannot write to ${folder}.`
+  // The page puts "Could not install Novadeck:" before the reason, and filters long ones.
   return error instanceof Error && error.message !== ""
-    ? `Installing failed: ${error.message}`
-    : "Installing failed."
+    ? error.message.slice(0, 200)
+    : "Something went wrong."
 }
 
 // The icon from inside the AppImage, copied to `target`, or undefined when it has none.
@@ -285,7 +286,8 @@ export type InstallFiles = { readonly copyFile: typeof copyFile }
  * command linked to it, and the menu entry. A file with no icon gets an entry without
  * one. The icon is copied only once the file is in place, so a failed install changes
  * nothing. Running it again repairs a step that failed, so a failure after the file moved
- * is reported, though the new copy is in place. The installed copy updates itself from
+ * is reported, though the new copy is in place. A quit in the middle of the copy can leave
+ * `<image>.new` behind, which the next install overwrites. The installed copy updates itself from
  * there; this needs no network.
  *
  * `target` is the file to write, the installed copy being replaced; it defaults to the

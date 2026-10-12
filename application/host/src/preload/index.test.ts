@@ -352,7 +352,7 @@ describe("installing the app from a portable copy", () => {
   })
 
   it("is a failure when the host answers anything else", async () => {
-    const failed = { kind: "failed", reason: "Installing failed." }
+    const failed = { kind: "failed", reason: "Something went wrong." }
     const answers = [
       undefined,
       "installing",

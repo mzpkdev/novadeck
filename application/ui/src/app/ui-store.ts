@@ -1,4 +1,5 @@
 import type { Backend } from "../backend/port"
+import { readUpdateRaised, writeUpdateRaised } from "../backend/update-raised"
 import {
   agentWorking,
   finishGraceMs,
@@ -19,13 +20,7 @@ import { writePreferences } from "../preferences/preferences-storage"
 import { noArrangement, type ProjectArrangement } from "../projects/project-arrangement"
 import { writeProjectArrangement } from "../projects/project-arrangement-storage"
 import { initialShell, resetPresentation, type ShellState } from "../shell/shell-state"
-import {
-  readUpdateRaised,
-  writeSidebarCollapsed,
-  writeUpdateRaised,
-  writeUpdateSeen,
-  writeWindowedView,
-} from "../shell/shell-storage"
+import { writeSidebarCollapsed, writeUpdateSeen, writeWindowedView } from "../shell/shell-storage"
 import {
   chatKept,
   keepChatDrafts,
@@ -277,7 +272,7 @@ export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => v
     const raise = noticeRaised(update, {
       seen: state.updateSeen,
       portable: state.portable?.portable === true,
-      known: raisedThisRun(update),
+      shownThisRun: raisedThisRun(update),
       now: Date.now(),
     })
     ui.update((current) => ({ ...current, update, updateOpen: current.updateOpen || raise }))

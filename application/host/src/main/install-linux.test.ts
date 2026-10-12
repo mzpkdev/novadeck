@@ -56,6 +56,8 @@ const shellQuote = (path: string): string => {
 }
 
 // What runs sh, sets file modes or links files: the Linux install, which Windows never runs.
+// "Reading an AppImage's version" also points TMPDIR at a missing folder, which Windows'
+// os.tmpdir ignores.
 const posix = describe.skipIf(process.platform === "win32")
 
 posix("the quoted path of a menu entry", () => {
@@ -466,7 +468,8 @@ describe("why an install failed", () => {
   })
 
   it("gives the error's own message otherwise", () => {
-    expect(failureReason(new Error("boom"), "/x")).toBe("Installing failed: boom")
-    expect(failureReason("odd", "/x")).toBe("Installing failed.")
+    expect(failureReason(new Error("boom"), "/x")).toBe("boom")
+    expect(failureReason(new Error("x".repeat(500)), "/x")).toHaveLength(200)
+    expect(failureReason("odd", "/x")).toBe("Something went wrong.")
   })
 })

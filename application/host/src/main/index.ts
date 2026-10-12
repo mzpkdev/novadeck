@@ -634,7 +634,15 @@ const launch = async (): Promise<void> => {
           orderlyQuit = true
         },
         shutdown: shutDown,
-        install: () => updater?.quitAndInstall(true, true),
+        install: () => {
+          // On Linux electron-updater starts the new AppImage before it quits this process,
+          // which still holds the lock; a new process refused it would exit at once. Shutdown
+          // is done, so let go first, as `startAppImage` does. The install on quitting runs the
+          // new image with APPIMAGE_EXIT_AFTER_INSTALL and launches nothing, and the Windows
+          // installer and Squirrel.Mac wait for this process to end before they start the app.
+          if (process.platform === "linux") app.releaseSingleInstanceLock()
+          updater?.quitAndInstall(true, true)
+        },
         quit: () => app.quit(),
         fallbackMs: installFallbackMs(process.platform),
       }),

@@ -113,6 +113,14 @@ describe("compiled desktop host", () => {
       expect(main.match(/app\.relaunch\(/gu)).toHaveLength(1)
     })
 
+    it("lets go of the lock before electron-updater starts the new AppImage on a restart", async () => {
+      const main = await read("main/index.js")
+
+      expect(main).toMatch(
+        /process\.platform === "linux"\) app\.releaseSingleInstanceLock\(\);\s*updater\?\.quitAndInstall\(true, true\)/u,
+      )
+    })
+
     it("tells a portable copy of a newer installed one before the runner starts, and offers the install to the page", async () => {
       const main = await read("main/index.js")
       const preload = await read("preload/index.cjs")
