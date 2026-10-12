@@ -16,8 +16,9 @@ canvas. Keep related work together and switch between sessions from the sidebar.
   Run it as yourself, not with `sudo`, and quit Novadeck first. It checks the download
   against the release's `SHA256SUMS` and puts the app in `/Applications`, or in
   `~/Applications` when your account cannot write to `/Applications`. Run again, it
-  upgrades the copy already there, preferring `/Applications`; a copy another account put
-  in `/Applications` is left for that account to upgrade. You can also download
+  upgrades the copy already there, preferring `/Applications`. If another account put
+  Novadeck in `/Applications`, the script stops and leaves that copy for the account that
+  installed it. You can also download
   [`novadeck-mac-universal.dmg`](https://github.com/mzpkdev/novadeck/releases/latest/download/novadeck-mac-universal.dmg)
   and drag the app to Applications.
 
@@ -31,15 +32,17 @@ canvas. Keep related work together and switch between sessions from the sidebar.
 
   Run it as yourself, not with `sudo`. It puts the AppImage in `~/.local/share/novadeck`
   with a menu entry and a `novadeck` command in `~/.local/bin`, checks every download
-  against the release's `SHA256SUMS`, and upgrades when run again. The AppImage needs
-  FUSE 3 (the `fuse3` package).
+  against the release's `SHA256SUMS`, and upgrades when run again. The AppImage needs FUSE
+  (the `fuse3` package), but not libfuse2.
 
   On systems that block unprivileged user namespaces, as Ubuntu does from 24.04, Electron's
   sandbox starts only with an AppArmor profile, so the script asks for your password once
-  to write `/etc/apparmor.d/novadeck-appimage-<uid>`, which lets only your installed
-  AppImage use user namespaces. Without it Novadeck still runs, without its sandbox, and
-  says so in the footer. To write the profile later, or for the AppImage a Homebrew cask
-  puts in `~/Applications`, run the script with `--sandbox`:
+  to write `/etc/apparmor.d/novadeck-appimage-<uid>`. The profile lets a program at your
+  install's path, or at `~/Applications/novadeck.AppImage`, use user namespaces, and so
+  does everything Novadeck starts, including the programs run in its terminals. Both paths
+  are yours to write, so any program running as you could use them too. Without the
+  profile Novadeck still runs, without its sandbox, and says so in the footer. To write the
+  profile later, or for an AppImage in `~/Applications`, run the script with `--sandbox`:
 
   ```sh
   curl -fsSL https://github.com/mzpkdev/novadeck/releases/latest/download/install.sh | sh -s -- --sandbox

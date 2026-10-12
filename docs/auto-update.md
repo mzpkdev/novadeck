@@ -169,9 +169,9 @@ uploaded asset exactly:
 | `install.sh`                                       | The Linux and macOS install script                |
 
 `latest-linux.yml` must list the AppImage. The AppImage is built on the static type2
-runtime (`toolsets.appimage` in `electron-builder.yml`), so it needs FUSE 3's
-`fusermount3` and `/dev/fuse` rather than libfuse2; `install.sh` names the `fuse3` package
-when they are missing. The workflow must not change a package after builder wrote it, as
+runtime (`toolsets.appimage` in `electron-builder.yml`), so it needs a setuid
+`fusermount3`, or FUSE 2's `fusermount`, and `/dev/fuse`, rather than libfuse2;
+`install.sh` names the `fuse3` package when they are missing. The workflow must not change a package after builder wrote it, as
 the metadata carries its checksum.
 
 Names carry no version. For the AppImage that is deliberate: electron-updater renames the

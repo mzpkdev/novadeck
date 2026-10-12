@@ -82,13 +82,10 @@ check_platform() {
   printf 'linux\n'
 }
 
-# The path of a tool on the PATH or in the system folders a user's PATH often lacks, or
-# nothing when it is nowhere.
+# The path of a system tool: the one in the system folders, which a user's PATH often
+# lacks, else the one on the PATH, or nothing when it is nowhere. The system folders come
+# first, as the tool may run as root, and a folder early on the PATH may be the user's.
 find_tool() {
-  if has "$1"; then
-    command -v "$1"
-    return 0
-  fi
   # shellcheck disable=SC2086
   for dir in ${NOVADECK_INSTALL_SBIN_DIRS:-/sbin /usr/sbin}; do
     if [ -x "$dir/$1" ]; then
@@ -96,6 +93,9 @@ find_tool() {
       return 0
     fi
   done
+  if has "$1"; then
+    command -v "$1"
+  fi
 }
 
 download() {
@@ -167,6 +167,13 @@ image_path() {
   printf '%s\n' "$(data_home)/novadeck/novadeck.AppImage"
 }
 
+# A path as the inside of a quoted Exec argument in a desktop entry. The spec escapes ",
+# `, $ and \ with a backslash, and then, as Exec is a string, every backslash again; a
+# percent sign is doubled, as it starts a field code.
+exec_quote() {
+  printf '%s\n' "$1" | sed -e 's/\\/\\\\\\\\/g' -e 's/["`$]/\\\\&/g' -e 's/%/%%/g'
+}
+
 install_appimage() {
   base="$1"
   data="$(data_home)"
@@ -200,7 +207,7 @@ install_appimage() {
 Type=Application
 Name=novadeck.
 Comment=A workspace for parallel terminals.
-Exec="$image" %U
+Exec="$(exec_quote "$image")" %U
 Icon=${icon:-novadeck}
 Terminal=false
 Categories=Utility;
@@ -309,23 +316,24 @@ setup_sandbox() {
         ;;
     esac
   done
-  write_profile "$uid" "$location" "$brew" > profile
+  profile="$work/profile"
+  write_profile "$uid" "$location" "$brew" > "$profile"
   # AppArmor 3 and earlier lack the abi file, and fail here before anything is installed.
-  if ! "$parser" --skip-kernel-load --debug profile > /dev/null 2>&1; then
+  if ! "$parser" --skip-kernel-load --debug "$profile" > /dev/null 2>&1; then
     sandbox_warning "this system's AppArmor rejected the profile." "$base"
     return 0
   fi
   brewname="$name-brew"
-  if cmp -s profile "$target" && profile_loaded "$name" && { [ "$location" = "$brew" ] || profile_loaded "$brewname"; }; then
+  if cmp -s "$profile" "$target" && profile_loaded "$name" && { [ "$location" = "$brew" ] || profile_loaded "$brewname"; }; then
     say "Novadeck's sandbox is already set up."
     return 0
   fi
   say "Writing an AppArmor profile so Novadeck's sandbox works on this system."
   # Loaded before it is saved, so a profile that will not load never replaces a working one
   # and never loads at the next boot.
-  if ! as_root "$parser" --replace profile > /dev/null; then
+  if ! as_root "$parser" --replace "$profile" > /dev/null; then
     sandbox_warning "the profile could not be loaded as root." "$base"
-  elif as_root cp profile "$target"; then
+  elif as_root cp "$profile" "$target"; then
     say "Novadeck's sandbox is set up."
   else
     say "Novadeck's sandbox works until the next restart, as the profile could not be saved."
@@ -398,7 +406,8 @@ install_mac() {
     fi
     fail "could not move Novadeck into $folder."
   fi
-  trap - INT HUP QUIT TERM
+  trap 'exit 130' INT HUP TERM
+  trap - QUIT
   # What is left there, such as the copy it replaced, costs only space.
   if ! rm -rf "$staging" 2> /dev/null; then
     say "Could not remove $staging; delete it by hand."
@@ -447,6 +456,8 @@ main() {
   work="$(mktemp -d)" || fail "could not create a temporary folder."
   staging=""
   trap 'rm -rf "$work" ${staging:+"$staging"}' EXIT
+  # Not every shell runs the exit trap when a signal ends it, so an interrupt exits instead.
+  trap 'exit 130' INT HUP TERM
   cd "$work" || fail "could not enter $work."
 
   if [ "$sandbox_only" = true ] && [ "$platform" = mac ]; then

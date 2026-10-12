@@ -41,6 +41,7 @@ const tools = [
   "mv",
   "readlink",
   "rm",
+  "sed",
   "sha256sum",
 ]
 
@@ -51,6 +52,9 @@ const archive = "zip of novadeck.app"
 
 // Where the host keeps a real tool.
 const real = (tool: string) => ["/usr/bin", "/bin"].map((d) => join(d, tool)).find(existsSync)!
+
+// This system's apparmor_parser, to check the profiles against, when it has one.
+const parser = ["/usr/sbin/apparmor_parser", "/sbin/apparmor_parser"].find(existsSync)
 
 // Root may write anywhere, so the tests of folders it cannot write to do not apply.
 const asRoot = process.getuid?.() === 0
@@ -80,7 +84,7 @@ type Scenario = {
   uname?: { system?: string; machine?: string }
   root?: boolean
   /** Whether sudo exists, or "denied" when it does but refuses to run anything. */
-  sudo?: boolean | "denied" | "no-copy"
+  sudo?: boolean | "denied" | "no-copy" | "interrupted"
   /** Replaces the content a download is checked against, to fake a corrupt file. */
   tamper?: string
   script?: string
@@ -279,11 +283,16 @@ cp "${served}/\${url##*/}" "$out"`,
   const sudo = scenario.sudo ?? true
   if (sudo === "denied") shim(bin, "sudo", `echo "sudo denied" >> "${log}"; exit 1`)
   else if (sudo === "no-copy") shim(bin, "sudo", `[ "$1" = cp ] && exit 1\nSUDO=sudo "$@"`)
+  // As Ctrl-C at the password prompt: the script is interrupted, and sudo gives up.
+  else if (sudo === "interrupted") shim(bin, "sudo", `kill -s INT $PPID; exit 1`)
   else if (sudo) shim(bin, "sudo", `SUDO=sudo "$@"`)
 
   // The system folders the script searches are the test's own, so the host's tools never leak in.
   const sbin = join(root, "sbin")
   mkdirSync(sbin)
+  // The temporary folder, which every run must leave empty.
+  const temporary = join(root, "tmp")
+  mkdirSync(temporary)
   for (const name of scenario.extra ?? []) shim(bin, name, `echo "${name} $*" >> "${log}"`)
   for (const name of scenario.sbin ?? []) shim(sbin, name, `echo "${name} $*" >> "${log}"`)
   if (scenario.parser) {
@@ -331,6 +340,7 @@ esac`,
         ...(scenario.home === "unset" ? {} : { HOME: scenario.home ? join(root, "gone") : home }),
         ...(scenario.sudoUid ? { SUDO_UID: scenario.sudoUid } : {}),
         NOVADECK_INSTALL_SBIN_DIRS: sbin,
+        TMPDIR: temporary,
         NOVADECK_INSTALL_USERNS_SYSCTL: sysctl,
         NOVADECK_INSTALL_APPARMOR_DIR: apparmor,
         NOVADECK_INSTALL_FUSE_DEVICE: device,
@@ -354,6 +364,7 @@ esac`,
     commands: lines.filter((line) => !line.startsWith("curl")),
     profile: existsSync(profile) ? readFileSync(profile, "utf8") : undefined,
     profilePath: profile,
+    leftovers: () => readdirSync(temporary),
     profiles,
     log: () => readFileSync(log, "utf8").split("\n").filter(Boolean),
     again: start,
@@ -395,6 +406,24 @@ describe.skipIf(!linux)("install.sh", () => {
       writeFileSync(target, "old")
       expect(result.again().status).toBe(0)
       expect(readFileSync(target, "utf8")).toBe(appImage)
+    })
+
+    it("escapes the AppImage's path in the menu entry's Exec line", () => {
+      const result = run({ xdg: 'a$b 100% "c" \\d' })
+      const entry = readFileSync(
+        join(result.data, "applications/dev.mzpk.novadeck.desktop"),
+        "utf8",
+      )
+      const escaped = join(result.data, "novadeck", image)
+        .replaceAll("\\", "\\\\\\\\")
+        .replace(/["`$]/g, "\\\\$&")
+        .replaceAll("%", "%%")
+      expect(entry).toContain(`Exec="${escaped}" %U`)
+    })
+
+    it("leaves its temporary folder empty", () => {
+      expect(run().leftovers()).toEqual([])
+      expect(run({ mac: {} }).leftovers()).toEqual([])
     })
 
     it("installs under XDG_DATA_HOME when it is set", () => {
@@ -440,7 +469,7 @@ describe.skipIf(!linux)("install.sh", () => {
       expect(result.stdout).toContain("so Novadeck's sandbox works on this system")
       expect(result.commands).toHaveLength(2)
       expect(result.commands[0]).toMatch(/^apparmor_parser --skip-kernel-load --debug \S+$/)
-      expect(result.commands[1]).toBe("sudo apparmor_parser --replace profile")
+      expect(result.commands[1]).toMatch(/^sudo apparmor_parser --replace \/\S+\/profile$/)
       expect(basename(result.profilePath)).toBe("novadeck-appimage-1000")
       expect(result.profile).toBe(`abi <abi/4.0>,
 include <tunables/global>
@@ -460,8 +489,22 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
     it("names the profile for root's uid and skips sudo for root", () => {
       const result = run({ ...restricted, root: true, sudo: false })
       expect(basename(result.profilePath)).toBe("novadeck-appimage-0")
-      expect(result.commands[1]).toBe("apparmor_parser --replace profile")
+      expect(result.commands[1]).toMatch(/^apparmor_parser --replace \/\S+\/profile$/)
       expect(result.profile).toContain("profile novadeck-appimage-0 ")
+    })
+
+    it("prefers the system folders' apparmor_parser to one on the PATH, as it runs as root", () => {
+      // The one on the PATH rejects every profile; the system's accepts it.
+      const result = run({ restrict: "1", parser: "invalid", sbin: ["apparmor_parser"] })
+      expect(result.commands.every((line) => !line.startsWith("sudo"))).toBe(true)
+      expect(result.profile).toContain("userns,")
+    })
+
+    it("leaves nothing behind when interrupted at the password prompt", () => {
+      const result = run({ ...restricted, sudo: "interrupted" })
+      expect(result.status).toBe(130)
+      expect(result.leftovers()).toEqual([])
+      expect(result.profile).toBeUndefined()
     })
 
     it("finds apparmor_parser in the system folders when the PATH lacks it", () => {
@@ -542,7 +585,7 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       const result = run({ ...restricted, sudo: "no-copy" })
       expect(result.status).toBe(0)
       expect(result.profile).toBeUndefined()
-      expect(result.commands[1]).toBe("sudo apparmor_parser --replace profile")
+      expect(result.commands[1]).toMatch(/^sudo apparmor_parser --replace \/\S+\/profile$/)
       expect(result.stdout).toContain("works until the next restart")
       expect(result.stdout).toContain("--sandbox")
       expect(result.stdout).not.toContain("without its sandbox")
@@ -573,11 +616,44 @@ profile novadeck-appimage-1000-brew "${join(result.home, "Applications/novadeck.
       expect(result.stdout).toContain("without its sandbox")
     })
 
-    it("warns instead of writing a profile for a path it cannot name", () => {
-      const result = run({ ...restricted, xdg: "odd{path" })
-      expect(result.status).toBe(0)
-      expect(result.profile).toBeUndefined()
-      expect(result.stdout).toContain("without its sandbox")
+    it.each(["{", "}", '"', "\\", "*", "?", "[", "^", ","])(
+      "warns instead of writing a profile for a path with %s, which it cannot name",
+      (character) => {
+        const result = run({ ...restricted, xdg: `odd${character}path` })
+        expect(result.status).toBe(0)
+        expect(result.profile).toBeUndefined()
+        expect(result.stdout).toContain("without its sandbox")
+      },
+    )
+
+    it.skipIf(!parser)("writes profiles this system's apparmor_parser accepts", () => {
+      const functions = ["profile_block", "write_profile"]
+        .map((name) => script.match(new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?^\\}`, "m"))![0])
+        .join("\n")
+      const folder = mkdtempSync(join(tmpdir(), "novadeck-profile-"))
+      folders.push(folder)
+      const profile = join(folder, "profile")
+      const pairs: [string, string][] = [
+        [
+          "/home/a b/.local/share/novadeck/novadeck.AppImage",
+          "/home/a b/Applications/novadeck.AppImage",
+        ],
+        ["/home/józef $x @y #z/novadeck.AppImage", "/home/józef $x @y #z/novadeck.AppImage"],
+      ]
+      for (const [one, other] of pairs) {
+        const written = spawnSync(
+          "/bin/sh",
+          ["-c", `${functions}\nwrite_profile 1000 "$1" "$2" > "$3"`, "sh", one, other, profile],
+          { encoding: "utf8" },
+        )
+        expect(written.status).toBe(0)
+        const parsed = spawnSync(parser!, ["--skip-kernel-load", "--debug", profile], {
+          encoding: "utf8",
+        })
+        expect(parsed.status).toBe(0)
+        // One line per profile: one profile when both paths are the same.
+        expect(parsed.stderr).toBe("Mode: unconfined\n".repeat(one === other ? 1 : 2))
+      }
     })
 
     it("writes nothing when loading fails, and keeps a profile that was already there", () => {

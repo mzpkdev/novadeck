@@ -555,6 +555,7 @@ jobs:
 
           browser_ns=""
           browser_args=""
+          browser_label=""
           renderers=()
           for pid in $(pgrep -f -- "--user-data-dir=$data"); do
             args="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2> /dev/null)" || continue
@@ -564,11 +565,18 @@ jobs:
               # The Electron binary inside the AppImage's mount, which AppRun starts.
               browser_ns="$(sudo readlink "/proc/$pid/ns/user")"
               browser_args="$args"
-              echo "browser $pid: $browser_ns $args"
+              browser_label="$(cat "/proc/$pid/attr/apparmor/current" 2> /dev/null || cat "/proc/$pid/attr/current" 2> /dev/null || true)"
+              echo "browser $pid: $browser_ns ($browser_label) $args"
             fi
           done
           if [[ -z "$browser_ns" ]]; then
             echo "::error::Found no browser process of the installed AppImage."
+            exit 1
+          fi
+          # The label the app reads to tell its own profile from none, in the form it expects
+          # (sandbox.ts), so the footer offers no fix where the profile is in place.
+          if [[ ! "$browser_label" =~ ^novadeck-appimage-$(id -u)\ \( ]]; then
+            echo "::error::The installed AppImage runs as AppArmor label '$browser_label', not this user's novadeck-appimage profile."
             exit 1
           fi
           if [[ "$browser_args" == *"--no-sandbox"* ]]; then
@@ -798,10 +806,10 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      # The installer for Linux, with this repository in it, so a moved repository needs no
+      # The installer for Linux and macOS, with this repository in it, so a moved repository needs no
       # edit. It is a release asset to be covered by the checksums, their signature and the
       # attestation like the packages it downloads.
-      - name: Render Linux Installer
+      - name: Render Installer
         env:
           REPOSITORY: ${{ github.repository }}
         run: |
