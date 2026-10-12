@@ -3427,18 +3427,19 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       const terminal = await create(manager, shell)
       await shell.until(manager, terminal.id, "$ ")
       // A program that, as full-screen ones do, draws a secret on the alternate screen and leaves
-      // it before it exits.
+      // it before it exits. Not a shell's own: where only the foreground's name is told (macOS),
+      // `sh -c` runs as bash, and a program with the shell's name is read as its prompt.
       manager.write(
         {
           terminalId: terminal.id,
-          data: 'sh -c \'printf "\\033[?1049h"; echo ALT$((1))SECRET; sleep 3; printf "\\033[?1049l"; echo BACK$((1))ON\'\r',
+          data: `perl -e '$| = 1; print "\\e[?1049h", "ALT", 1, "SECRET\\n"; sleep 3; print "\\e[?1049l", "BACK", 1, "ON\\n"'\r`,
         },
         "owner",
       )
       await expect.poll(() => describer.jobs.length, { timeout: 30_000 }).toBeGreaterThan(0)
       expect(describer.digests[0]).toMatchObject({
         kind: "shell",
-        command: expect.stringContaining("sleep"),
+        command: expect.stringContaining("perl"),
         screen: [],
       })
       expect(JSON.stringify(describer.digests)).not.toContain("ALT1SECRET")
