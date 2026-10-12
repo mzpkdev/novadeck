@@ -11,15 +11,17 @@ import {
 } from "@xyflow/react"
 import { clsx } from "clsx"
 import { useMemo, useState } from "react"
-import { Link, useSearchParams } from "react-router"
+import { Link, useNavigate, useSearchParams } from "react-router"
 
 import { areaById, atlas, nodeById, nodeTitle } from "../atlas-data.ts"
 import type { RuntimeEdge, RuntimeNode } from "../atlas.ts"
-import { AnchorLink } from "../components/anchor.tsx"
-import { Badge, Empty, Mono } from "../components/ui.tsx"
+import { AnchorIcon } from "../components/anchor.tsx"
+import { squarify } from "../components/treemap.ts"
+import { Badge } from "../components/ui.tsx"
+import { compact, Dot, hue } from "../components/viz.tsx"
 import { areaPath } from "../links.ts"
 
-type NodeData = { node: RuntimeNode }
+type NodeData = { node: RuntimeNode; width: number; body: number }
 type FlowNode = Node<NodeData, "atlas">
 
 const sides = [
@@ -29,25 +31,96 @@ const sides = [
   { position: Position.Left, name: "left" },
 ] as const
 
+const HEADER = 26
+const linesOf = (node: RuntimeNode) =>
+  node.areas.reduce((sum, id) => sum + (areaById.get(id)?.lines ?? 0), 0)
+const maxLines = Math.max(1, ...atlas.runtime.nodes.map(linesOf))
+
+// Box size grows with the square root of the node's lines, within fixed bounds.
+const sizeOf = (node: RuntimeNode) => {
+  const lines = linesOf(node)
+  if (lines === 0) return { width: 150, body: 0 }
+  const s = Math.sqrt(lines / maxLines)
+  return { width: Math.round(150 + 230 * s), body: Math.round(44 + 130 * s) }
+}
+
 const AtlasNode = ({ data, selected }: NodeProps<FlowNode>) => {
-  const { node } = data
+  const { node, width, body } = data
+  const navigate = useNavigate()
+  const [hover, setHover] = useState<string | null>(null)
+  const lines = linesOf(node)
+  const hovered = hover ? areaById.get(hover) : undefined
+  const blocks = useMemo(
+    () =>
+      squarify(
+        node.areas.flatMap((id) => {
+          const area = areaById.get(id)
+          return area ? [{ item: area, value: area.lines }] : []
+        }),
+        0,
+        0,
+        width - 8,
+        body - 8,
+      ),
+    [node, width, body],
+  )
   return (
     <div
+      style={{ width }}
       className={clsx(
-        // Graphite keeps the accent for what is selected; kinds differ by line alone.
-        "w-48 rounded-sm border bg-panel px-3 py-2",
+        "rounded-sm border bg-panel",
         node.kind === "external"
           ? "border-dashed border-[var(--color-line-strong)]"
           : "border-solid border-[var(--color-outline)]",
-        node.kind === "binary" && "border-l-4 border-l-[var(--color-line-strong)]",
-        node.kind === "server" && "bg-raised",
         selected
           ? "border-accent shadow-lg outline outline-1 outline-accent"
           : "shadow-[var(--shadow-control)]",
       )}
     >
-      <div className="font-mono text-[10px] uppercase tracking-wider text-muted">{node.kind}</div>
-      <div className="text-[13px] font-medium leading-5">{node.title}</div>
+      <div
+        className="flex items-center gap-1.5 px-2 text-[12px] font-medium"
+        style={{ height: HEADER }}
+      >
+        <Dot node={node.id} />
+        <span className="truncate">{hovered ? hovered.title : node.title}</span>
+        <span className="ml-auto font-mono text-[11px] font-normal text-muted">
+          {compact(hovered ? hovered.lines : lines)}
+        </span>
+      </div>
+      {body > 0 ? (
+        <div className="relative mx-1 mb-1" style={{ height: body - 8 }}>
+          {blocks.map(({ item, x, y, w, h }) => (
+            <button
+              key={item.id}
+              type="button"
+              onMouseEnter={() => setHover(item.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={(event) => {
+                event.stopPropagation()
+                navigate(areaPath(item.id))
+              }}
+              className={clsx(
+                "nodrag nopan absolute cursor-pointer overflow-hidden border text-left text-[10px] leading-3",
+                hover === item.id
+                  ? "z-10 border-accent text-[var(--color-paper)]"
+                  : "border-[var(--color-paper)]",
+                hover && hover !== item.id && "opacity-50",
+              )}
+              style={{
+                left: x,
+                top: y,
+                width: w,
+                height: h,
+                background: hover === item.id ? "var(--accent)" : hue(node.id).fill,
+              }}
+            >
+              {w > 52 && h > 16 ? (
+                <span className="block truncate px-1 pt-0.5">{item.title}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {sides.map((s) => (
         <span key={s.name}>
           <Handle id={`in-${s.name}`} type="target" position={s.position} className="!opacity-0" />
@@ -67,68 +140,60 @@ const sideFor = (from: RuntimeNode, to: RuntimeNode) => {
   return dy >= 0 ? ["bottom", "top"] : ["top", "bottom"]
 }
 
+// "Utility process + MessagePort" -> "MessagePort"; "PTY (node-pty)" -> "PTY".
+const shortChannel = (channel: string) =>
+  channel
+    .replace(/\s*\(.*\)/, "")
+    .replace(/^.*\+\s*/, "")
+    .replace(/ over .*$/, "")
+
 type Selection = { type: "node" | "edge"; id: string } | null
 
-const NodePanel = ({ node, onEdge }: { node: RuntimeNode; onEdge: (id: string) => void }) => {
-  const edges = atlas.runtime.edges.filter((e) => e.from === node.id || e.to === node.id)
+const Eyebrow = ({ children }: { children: string }) => (
+  <div className="font-mono text-[10px] uppercase tracking-wider text-muted">{children}</div>
+)
+
+const NodePanel = ({ node }: { node: RuntimeNode }) => {
   return (
     <>
-      <div className="font-mono text-[10px] uppercase tracking-wider text-muted">{node.kind}</div>
-      <h2 className="text-base font-semibold">{node.title}</h2>
-      <p className="mt-2 text-muted">{node.summary}</p>
-      <div className="mt-2 text-[12px]">
-        <AnchorLink anchor={node.anchor} />
+      <Eyebrow>{node.kind}</Eyebrow>
+      <div className="flex items-center gap-2">
+        <h2 className="text-base font-semibold">{node.title}</h2>
+        <AnchorIcon anchor={node.anchor} />
       </div>
-      <h3 className="mt-4 mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
-        Areas
-      </h3>
-      {node.areas.length === 0 ? <Empty>None.</Empty> : null}
-      <ul>
-        {node.areas.map((id) => (
-          <li key={id}>
-            <Link to={areaPath(id)}>{areaById.get(id)?.title ?? id}</Link>
-          </li>
-        ))}
-      </ul>
-      <h3 className="mt-4 mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
-        Edges
-      </h3>
-      {edges.length === 0 ? <Empty>None.</Empty> : null}
-      <ul className="space-y-3">
-        {edges.map((e) => (
-          <li key={e.id}>
-            <button
-              type="button"
-              onClick={() => onEdge(e.id)}
-              className="cursor-pointer text-left hover:underline"
+      <p className="mt-1 line-clamp-2 text-[12px] text-muted">{node.summary}</p>
+      {node.areas.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {node.areas.map((id) => (
+            <Link
+              key={id}
+              to={areaPath(id)}
+              className="inline-flex items-center gap-1 rounded-sm border border-line px-1.5 text-[11px] leading-5 text-fg no-underline hover:border-accent"
+              title={`${areaById.get(id)?.lines ?? 0} lines`}
             >
-              {nodeTitle(e.from)} to {nodeTitle(e.to)}
-            </button>{" "}
-            <Badge>{e.channel}</Badge>
-            <p className="text-muted">{e.summary}</p>
-            <div className="text-[12px]">
-              <AnchorLink anchor={e.anchor} />
-            </div>
-          </li>
-        ))}
-      </ul>
+              <Dot node={node.id} size={6} />
+              {areaById.get(id)?.title ?? id}
+            </Link>
+          ))}
+        </div>
+      ) : null}
     </>
   )
 }
 
 const EdgePanel = ({ edge }: { edge: RuntimeEdge }) => (
   <>
-    <div className="font-mono text-[10px] uppercase tracking-wider text-muted">edge</div>
-    <h2 className="text-base font-semibold">
-      {nodeTitle(edge.from)} to {nodeTitle(edge.to)}
-    </h2>
+    <Eyebrow>edge</Eyebrow>
+    <div className="flex items-center gap-2">
+      <h2 className="text-base font-semibold">
+        {nodeTitle(edge.from)} {"->"} {nodeTitle(edge.to)}
+      </h2>
+      <AnchorIcon anchor={edge.anchor} />
+    </div>
     <div className="mt-1">
       <Badge accent>{edge.channel}</Badge>
     </div>
-    <p className="mt-2 text-muted">{edge.summary}</p>
-    <div className="mt-2 text-[12px]">
-      <AnchorLink anchor={edge.anchor} />
-    </div>
+    <p className="mt-2 line-clamp-3 text-[12px] text-muted">{edge.summary}</p>
   </>
 )
 
@@ -152,8 +217,8 @@ export const MapPage = () => {
       atlas.runtime.nodes.map((node) => ({
         id: node.id,
         type: "atlas",
-        position: node.position,
-        data: { node },
+        position: { x: node.position.x * 1.25, y: node.position.y * 1.15 },
+        data: { node, ...sizeOf(node) },
         selected: selection?.type === "node" && selection.id === node.id,
       })),
     [selection],
@@ -164,15 +229,16 @@ export const MapPage = () => {
         const from = nodeById.get(edge.from)
         const to = nodeById.get(edge.to)
         const [a, b] = from && to ? sideFor(from, to) : ["right", "left"]
-        const selected = selection?.type === "edge" && selection.id === edge.id
+        const selected =
+          selection?.type === "edge" && [edge, ...more].some((each) => each.id === selection.id)
         return {
           id: edge.id,
           source: edge.from,
           target: edge.to,
           sourceHandle: `out-${a}`,
           targetHandle: `in-${b}`,
-          label: [edge, ...more].map((each) => each.channel).join(" · "),
-          selected: selected || more.some((each) => selection?.id === each.id),
+          label: [edge, ...more].map((each) => shortChannel(each.channel)).join(" · "),
+          selected,
           markerEnd: {
             type: MarkerType.ArrowClosed,
             color: selected ? "var(--accent)" : "var(--color-line-strong)",
@@ -180,7 +246,7 @@ export const MapPage = () => {
           style: selected
             ? { stroke: "var(--accent)", strokeWidth: 2 }
             : { stroke: "var(--color-line-strong)" },
-          labelStyle: { fill: "var(--fg)", fontSize: 11, fontFamily: "var(--font-mono)" },
+          labelStyle: { fill: "var(--fg)", fontSize: 10, fontFamily: "var(--font-mono)" },
           labelBgStyle: { fill: "var(--panel)", stroke: "var(--line)" },
           labelBgPadding: [4, 2],
         }
@@ -193,42 +259,35 @@ export const MapPage = () => {
     selection?.type === "edge" ? atlas.runtime.edges.find((e) => e.id === selection.id) : undefined
 
   return (
-    <div className="flex h-full">
-      <div className="workspace relative min-w-0 flex-1">
-        {atlas.runtime.nodes.length === 0 ? (
-          <div className="p-6">
-            <Empty>No runtime nodes extracted yet.</Empty>
-          </div>
-        ) : (
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
-            colorMode="system"
-            fitView
-            nodesDraggable={false}
-            nodesConnectable={false}
-            proOptions={{ hideAttribution: true }}
-            onNodeClick={(_, n) => setSelection({ type: "node", id: n.id })}
-            onEdgeClick={(_, e) => setSelection({ type: "edge", id: e.id })}
-            onPaneClick={() => setSelection(null)}
-          >
-            <Background color="var(--accent)" gap={18} size={1.4} />
-            <Controls showInteractive={false} />
-          </ReactFlow>
-        )}
+    <div className="relative h-full">
+      <div className="workspace absolute inset-0">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          colorMode="system"
+          fitView
+          fitViewOptions={{ padding: 0.12 }}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          proOptions={{ hideAttribution: true }}
+          onNodeClick={(_, n) => setSelection({ type: "node", id: n.id })}
+          onEdgeClick={(_, e) => {
+            const group = parallel.find(([first]) => first.id === e.id)
+            setSelection({ type: "edge", id: group?.[0].id ?? e.id })
+          }}
+          onPaneClick={() => setSelection(null)}
+        >
+          <Background color="var(--accent)" gap={18} size={1.4} />
+          <Controls showInteractive={false} />
+        </ReactFlow>
       </div>
-      <aside className="w-96 shrink-0 overflow-auto border-l border-line bg-panel p-4">
-        {node ? (
-          <NodePanel node={node} onEdge={(id) => setSelection({ type: "edge", id })} />
-        ) : null}
-        {edge ? <EdgePanel edge={edge} /> : null}
-        {!node && !edge ? (
-          <p className="text-muted">
-            Select a node or an edge. <Mono>Ctrl K</Mono> searches everything.
-          </p>
-        ) : null}
-      </aside>
+      {node || edge ? (
+        <aside className="absolute top-3 right-3 w-72 rounded-sm border border-[var(--color-outline)] bg-panel p-3 shadow-lg">
+          {node ? <NodePanel node={node} /> : null}
+          {edge ? <EdgePanel edge={edge} /> : null}
+        </aside>
+      ) : null}
     </div>
   )
 }

@@ -1,150 +1,38 @@
 import { Link, useParams } from "react-router"
 
-import { atlas, nodeTitle } from "../atlas-data.ts"
-import type { Flow } from "../atlas.ts"
-import { AnchorLink } from "../components/anchor.tsx"
-import { Empty, Mono, Page, Section } from "../components/ui.tsx"
+import { atlas } from "../atlas-data.ts"
+import { Page } from "../components/ui.tsx"
 import { flowPath } from "../links.ts"
+import { Sequence } from "./flows/sequence.tsx"
+import { Thumb, actorsOf } from "./flows/thumb.tsx"
+
+import "./visual-tokens.css"
 
 export const FlowsPage = () => (
-  <Page
-    title="Flows"
-    subtitle="Traced paths through the system, as messages between runtime nodes."
-  >
-    {atlas.flows.length === 0 ? <Empty>No flows yet.</Empty> : null}
-    <ul className="space-y-3">
+  <div className="p-5">
+    <h1 className="mb-4 text-lg font-semibold">Flows</h1>
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
       {atlas.flows.map((f) => (
-        <li key={f.id}>
-          <Link to={flowPath(f.id)} className="font-medium">
-            {f.title}
-          </Link>
-          <p className="text-muted">{f.summary}</p>
-        </li>
+        <Link
+          key={f.id}
+          to={flowPath(f.id)}
+          title={f.summary}
+          className="group block rounded-sm border border-[var(--color-outline)] bg-panel p-3 text-fg no-underline hover:border-accent hover:text-fg"
+        >
+          <div className="mb-2 flex h-[150px] items-start overflow-hidden">
+            <Thumb flow={f} />
+          </div>
+          <div className="flex items-baseline justify-between gap-2 border-t border-line pt-2">
+            <span className="text-[13px] font-medium group-hover:text-accent">{f.title}</span>
+            <span className="shrink-0 font-mono text-[10px] text-muted">
+              {actorsOf(f).length}x{f.steps.length}
+            </span>
+          </div>
+        </Link>
       ))}
-    </ul>
-  </Page>
-)
-
-const COL = 210
-const TOP = 56
-const ROW = 64
-const LEFT = 20
-const CHAR = 6.4
-
-const wrap = (text: string, width: number) => {
-  const max = Math.max(12, Math.floor(width / CHAR))
-  const lines: string[] = []
-  let line = ""
-  for (const word of text.split(/\s+/)) {
-    if (line && line.length + word.length + 1 > max) {
-      lines.push(line)
-      line = word
-    } else line = line ? `${line} ${word}` : word
-  }
-  if (line) lines.push(line)
-  return lines.length > 3 ? [...lines.slice(0, 2), `${lines[2]}…`] : lines
-}
-
-const Sequence = ({ flow }: { flow: Flow }) => {
-  const actors = [...new Set([...flow.actors, ...flow.steps.flatMap((s) => [s.from, s.to])])]
-  const x = (id: string) => LEFT + COL / 2 + actors.indexOf(id) * COL
-  const width = LEFT * 2 + actors.length * COL
-  const height = TOP + flow.steps.length * ROW + 20
-  return (
-    <div className="overflow-auto rounded-sm border border-line bg-panel">
-      <svg
-        width={width}
-        height={height}
-        className="block font-sans text-[12px]"
-        role="img"
-        aria-label={flow.title}
-      >
-        <defs>
-          <marker
-            id="arrow"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="7"
-            markerHeight="7"
-            orient="auto-start-reverse"
-          >
-            <path d="M0 0L10 5L0 10z" fill="var(--fg)" />
-          </marker>
-        </defs>
-        {actors.map((id) => (
-          <g key={id}>
-            <line
-              x1={x(id)}
-              x2={x(id)}
-              y1={36}
-              y2={height - 8}
-              stroke="var(--line)"
-              strokeDasharray="4 4"
-            />
-            <rect
-              x={x(id) - 80}
-              y={8}
-              width={160}
-              height={28}
-              fill="var(--raised)"
-              stroke="var(--line)"
-              rx={2}
-            />
-            <text x={x(id)} y={26} textAnchor="middle" fill="var(--fg)" fontWeight={600}>
-              {nodeTitle(id)}
-            </text>
-          </g>
-        ))}
-        {flow.steps.map((step, i) => {
-          const y = TOP + i * ROW + 30
-          const a = x(step.from)
-          const b = x(step.to)
-          const self = step.from === step.to
-          const label = `${i + 1}. ${step.text}`
-          if (self) {
-            const lines = wrap(label, COL - 70)
-            return (
-              <g key={`${step.from}-${step.to}-${step.text}`}>
-                <path
-                  d={`M${a} ${y - 10}H${a + 36}V${y + 10}H${a + 3}`}
-                  fill="none"
-                  stroke="var(--fg)"
-                  markerEnd="url(#arrow)"
-                />
-                <text x={a + 44} y={y - 8} fill="var(--fg)">
-                  {lines.map((l, j) => (
-                    <tspan key={l} x={a + 44} dy={j === 0 ? 0 : 14}>
-                      {l}
-                    </tspan>
-                  ))}
-                </text>
-              </g>
-            )
-          }
-          const lines = wrap(label, Math.abs(b - a) - 16)
-          return (
-            <g key={`${step.from}-${step.to}-${step.text}`}>
-              <line x1={a} x2={b} y1={y} y2={y} stroke="var(--fg)" markerEnd="url(#arrow)" />
-              <text
-                x={(a + b) / 2}
-                y={y - 6 - (lines.length - 1) * 14}
-                textAnchor="middle"
-                fill="var(--fg)"
-              >
-                {lines.map((l, j) => (
-                  <tspan key={l} x={(a + b) / 2} dy={j === 0 ? 0 : 14}>
-                    {l}
-                  </tspan>
-                ))}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
     </div>
-  )
-}
+  </div>
+)
 
 export const FlowPage = () => {
   const { id = "" } = useParams()
@@ -157,37 +45,23 @@ export const FlowPage = () => {
     )
   }
   return (
-    <Page title={flow.title} subtitle={flow.summary}>
-      <nav className="flex flex-wrap gap-3 text-[12px]">
-        <Link to="/flows">All flows</Link>
-        {atlas.flows
-          .filter((f) => f.id !== flow.id)
-          .map((f) => (
-            <Link key={f.id} to={flowPath(f.id)}>
-              {f.title}
-            </Link>
-          ))}
-      </nav>
-      <Sequence flow={flow} />
-      <Section title="Steps" count={flow.steps.length}>
-        <ol className="space-y-1">
-          {flow.steps.map((s, i) => (
-            <li
-              key={`${s.from}-${s.to}-${s.text}`}
-              className="grid grid-cols-[1.5rem_1fr_auto] gap-2"
-            >
-              <Mono className="text-muted">{i + 1}</Mono>
-              <span>
-                <span className="text-muted">
-                  {nodeTitle(s.from)} to {nodeTitle(s.to)}:
-                </span>{" "}
-                {s.text}
-              </span>
-              <AnchorLink anchor={s.anchor} />
-            </li>
-          ))}
-        </ol>
-      </Section>
-    </Page>
+    <div className="p-5">
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <Link to="/flows" className="text-[12px]">
+          Flows
+        </Link>
+        <h1 className="text-lg font-semibold">{flow.title}</h1>
+        <span className="ml-auto flex flex-wrap gap-x-3 text-[12px]">
+          {atlas.flows
+            .filter((f) => f.id !== flow.id)
+            .map((f) => (
+              <Link key={f.id} to={flowPath(f.id)}>
+                {f.title}
+              </Link>
+            ))}
+        </span>
+      </div>
+      <Sequence key={flow.id} flow={flow} />
+    </div>
   )
 }

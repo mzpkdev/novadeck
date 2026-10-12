@@ -1,128 +1,138 @@
-import { Link } from "react-router"
+import { Eye, FileText, Monitor, Send, SquarePlus, SquareX, Users, Wrench, X } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
+import { useEffect, useState } from "react"
 
-import { areaById, atlas, groupBy } from "../atlas-data.ts"
+import { atlas, toolByName } from "../atlas-data.ts"
 import type { McpTool } from "../atlas.ts"
-import { AnchorLink } from "../components/anchor.tsx"
+import { AnchorIcon, AnchorLink } from "../components/anchor.tsx"
 import { SchemaView } from "../components/schema.tsx"
-import { Badge, Card, Empty, Mono, Page, Section, Table, Td, Th } from "../components/ui.tsx"
 import { useFocus } from "../components/use-focus.ts"
-import { areaPath } from "../links.ts"
+import { Lifecycle } from "./agents/lifecycle.tsx"
+import { HarnessMatrix } from "./agents/matrix.tsx"
+import { AreaChip, Label } from "./api/shared.tsx"
 
-const ToolCard = ({ tool }: { tool: McpTool }) => {
-  const { ref, focused } = useFocus(`tool:${tool.name}`)
+import "./visual-tokens.css"
+
+const icons: Record<string, LucideIcon> = {
+  show: Monitor,
+  showing: Eye,
+  close: X,
+  open_terminal: SquarePlus,
+  close_terminal: SquareX,
+  send: Send,
+  agents: Users,
+  summarize: FileText,
+}
+
+const firstSentence = (text: string) => /^.*?[.!?](?=\s|$)/s.exec(text.trim())?.[0] ?? text.trim()
+
+const Chip = ({
+  tool,
+  selected,
+  onSelect,
+}: {
+  tool: McpTool
+  selected: boolean
+  onSelect: (n: string) => void
+}) => {
+  const { ref, focused } = useFocus<HTMLButtonElement>(`tool:${tool.name}`)
+  useEffect(() => {
+    if (focused) onSelect(tool.name)
+  }, [focused, onSelect, tool.name])
+  const Icon = icons[tool.name] ?? Wrench
+  return (
+    <button
+      ref={ref}
+      id={`tool:${tool.name}`}
+      type="button"
+      onClick={() => onSelect(tool.name)}
+      title={firstSentence(tool.description)}
+      className={`flex cursor-pointer items-center gap-1.5 rounded-sm border bg-panel px-2 py-1 font-mono text-[12px] ${selected ? "border-accent text-accent" : "border-[var(--color-outline)] hover:border-accent"}`}
+    >
+      <Icon size={13} />
+      {tool.name}
+    </button>
+  )
+}
+
+const ToolPanel = ({ tool }: { tool: McpTool }) => {
+  const [more, setMore] = useState(false)
+  const first = firstSentence(tool.description)
+  const rest = tool.description.trim().slice(first.length).trim()
   const owner = atlas.areas.find((a) => a.tools.includes(tool.name))
   return (
-    <div ref={ref} id={`tool:${tool.name}`} data-focused={focused}>
-      <Card className="px-3 py-2">
-        <div className="flex flex-wrap items-center gap-3">
-          <Mono className="font-medium">{tool.name}</Mono>
-          {owner ? (
-            <Link to={areaPath(owner.id)} className="text-[12px]">
-              {areaById.get(owner.id)?.title}
-            </Link>
-          ) : null}
-          <span className="ml-auto flex gap-4 text-[12px] text-muted">
-            <span>
-              def <AnchorLink anchor={tool.anchor} />
-            </span>
-            {tool.handler ? (
-              <span>
-                handler <AnchorLink anchor={tool.handler} />
-              </span>
-            ) : null}
+    <div className="mt-3 space-y-3 rounded-sm border border-[var(--color-outline)] bg-panel p-3">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[13px] font-medium">{tool.name}</span>
+        <AreaChip id={owner?.id ?? null} />
+        <span className="flex items-center gap-1 text-[11px] text-muted">
+          def <AnchorIcon anchor={tool.anchor} />
+        </span>
+        {tool.handler ? (
+          <span className="flex items-center gap-1 text-[11px] text-muted">
+            handler <AnchorIcon anchor={tool.handler} />
           </span>
-        </div>
-        <p className="mt-1 text-muted">{tool.description}</p>
-        <details className="mt-1">
-          <summary className="cursor-pointer text-[12px] text-muted hover:text-fg">
-            input schema
-          </summary>
-          <div className="mt-1">
-            <SchemaView schema={tool.input} />
-          </div>
-        </details>
-      </Card>
+        ) : null}
+        {tool.handler ? (
+          <span className="ml-auto text-[11px]">
+            <AnchorLink anchor={tool.handler} />
+          </span>
+        ) : null}
+      </div>
+      <p className="text-[13px]">
+        {first}{" "}
+        {rest ? (
+          <button
+            type="button"
+            onClick={() => setMore(!more)}
+            className="cursor-pointer text-[11px] text-muted hover:text-fg"
+          >
+            {more ? "less" : "more"}
+          </button>
+        ) : null}
+      </p>
+      {more ? <p className="whitespace-pre-wrap text-[12px] text-muted">{rest}</p> : null}
+      <div>
+        <Label>Input</Label>
+        <SchemaView schema={tool.input} />
+      </div>
     </div>
   )
 }
 
+const H = ({ children }: { children: string }) => (
+  <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">{children}</h2>
+)
+
 export const AgentsPage = () => {
-  const { tools, hooks, contract, harnesses } = atlas.agents
+  const [selected, setSelected] = useState<string | null>(null)
+  const tool = selected ? toolByName.get(selected) : undefined
   return (
-    <Page title="Agents" subtitle="Novadeck as an agent inside a terminal sees it.">
-      <Section title="MCP tools" count={tools.length}>
-        {tools.length === 0 ? <Empty>No tools extracted yet.</Empty> : null}
-        <div className="space-y-3">
-          {tools.map((t) => (
-            <ToolCard key={t.name} tool={t} />
+    <div className="space-y-7 p-5">
+      <h1 className="text-lg font-semibold">Agents</h1>
+      <div className="grid items-start gap-8 xl:grid-cols-[auto_1fr]">
+        <section>
+          <H>Harness parity</H>
+          <div className="rounded-sm border border-[var(--color-outline)] bg-panel p-3">
+            <HarnessMatrix />
+          </div>
+        </section>
+        <section className="min-w-0">
+          <H>Hook lifecycle</H>
+          <div className="overflow-auto rounded-sm border border-[var(--color-outline)] bg-panel p-3">
+            <Lifecycle />
+          </div>
+        </section>
+      </div>
+      <section>
+        <H>MCP tools</H>
+        <div className="flex flex-wrap gap-2">
+          {atlas.agents.tools.map((t) => (
+            <Chip key={t.name} tool={t} selected={selected === t.name} onSelect={setSelected} />
           ))}
         </div>
-      </Section>
-      <Section title="Hooks" count={hooks.length}>
-        {hooks.length === 0 ? <Empty>None.</Empty> : null}
-        {groupBy(hooks, (h) => h.harness).map(([harness, items]) => (
-          <div key={harness} className="mb-4">
-            <h3 className="mb-1 font-mono text-[12px] font-medium">{harness}</h3>
-            <Table>
-              <thead>
-                <tr>
-                  <Th>Event</Th>
-                  <Th>Summary</Th>
-                  <Th>Defined</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((h) => (
-                  <tr key={h.event}>
-                    <Td>
-                      <Mono>{h.event}</Mono>
-                    </Td>
-                    <Td className="text-muted">{h.summary}</Td>
-                    <Td>
-                      <AnchorLink anchor={h.anchor} />
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          </div>
-        ))}
-      </Section>
-      <Section title="Harness matrix" count={harnesses.length}>
-        {contract.length === 0 || harnesses.length === 0 ? (
-          <Empty>No harness contract extracted yet.</Empty>
-        ) : (
-          <Table>
-            <thead>
-              <tr>
-                <Th>Contract member</Th>
-                {harnesses.map((h) => (
-                  <Th key={h.id} className="text-center">
-                    <span title={h.package}>{h.title}</span>
-                  </Th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {contract.map((m) => (
-                <tr key={m.name}>
-                  <Td>
-                    <span title={m.summary} className="inline-flex items-center gap-2">
-                      <Mono>{m.name}</Mono>
-                      {m.optional ? <Badge>optional</Badge> : null}
-                    </span>
-                  </Td>
-                  {harnesses.map((h) => (
-                    <Td key={h.id} className="text-center font-mono">
-                      {h.implements.includes(m.name) ? "✓" : <span className="text-muted">—</span>}
-                    </Td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
-      </Section>
-    </Page>
+        {tool ? <ToolPanel tool={tool} /> : null}
+      </section>
+    </div>
   )
 }

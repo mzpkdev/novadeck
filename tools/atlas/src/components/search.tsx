@@ -77,7 +77,7 @@ export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }
         <input
           ref={input}
           value={query}
-          placeholder="Jump to area, procedure, table, setting, tool, flow"
+          placeholder="Jump to…"
           className="w-full border-b border-line bg-transparent px-3 py-2 outline-none"
           onChange={(e) => {
             setQuery(e.target.value)

@@ -26,18 +26,12 @@ const nav = [
 const Banner = () => {
   if (atlas.broken.length === 0) return null
   return (
-    <div className="shrink-0 border-b border-warn bg-[var(--color-warning)] px-4 py-2 text-[12px] text-warn">
-      <div className="flex items-center gap-2 font-medium">
-        <TriangleAlert size={14} />
-        {atlas.broken.length} curated anchor{atlas.broken.length === 1 ? "" : "s"} no longer resolve
-      </div>
-      <ul className="mt-1 max-h-24 overflow-auto font-mono">
-        {atlas.broken.map((b) => (
-          <li key={`${b.where}:${b.file}:${b.text}`}>
-            {b.where}: {b.file} / {b.text}
-          </li>
-        ))}
-      </ul>
+    <div
+      className="flex shrink-0 items-center gap-2 border-b border-warn bg-[var(--color-warning)] px-4 py-1 text-[12px] text-warn"
+      title={atlas.broken.map((b) => `${b.where}: ${b.file} / ${b.text}`).join("\n")}
+    >
+      <TriangleAlert size={13} />
+      {atlas.broken.length} broken anchor{atlas.broken.length === 1 ? "" : "s"}
     </div>
   )
 }

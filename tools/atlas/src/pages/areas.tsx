@@ -1,47 +1,91 @@
-import { Link, useParams } from "react-router"
+import { Blocks, Network } from "lucide-react"
+import { FileText } from "lucide-react"
+import { useState } from "react"
+import { Link, useParams, useSearchParams } from "react-router"
 
-import { areaById, atlas, groupBy, nodeTitle } from "../atlas-data.ts"
-import { AnchorList, DocLink } from "../components/anchor.tsx"
-import { Badge, Empty, Mono, Page, Section, Table, Td, Th } from "../components/ui.tsx"
-import { areaPath, nodePath, procedurePath, tablePath, toolPath } from "../links.ts"
+import { areaById, atlas, nodeTitle } from "../atlas-data.ts"
+import { AnchorIcon, blobUrl } from "../components/anchor.tsx"
+import { Empty, Page } from "../components/ui.tsx"
+import { compact, Dot, hue, KindSample, Segmented } from "../components/viz.tsx"
+import { nodePath, procedurePath, tablePath, toolPath } from "../links.ts"
+import { EgoGraph } from "./areas/ego.tsx"
+import { GraphView } from "./areas/graph-view.tsx"
+import { TreemapView } from "./areas/treemap-view.tsx"
+
+type View = "treemap" | "graph"
 
 export const AreasPage = () => {
-  const groups = groupBy(atlas.areas, (a) => a.node)
+  const [params, setParams] = useSearchParams()
+  const view: View = params.get("view") === "graph" ? "graph" : "treemap"
+  if (atlas.areas.length === 0) {
+    return (
+      <Page title="Areas">
+        <Empty>No areas extracted yet.</Empty>
+      </Page>
+    )
+  }
   return (
-    <Page
-      title="Areas"
-      subtitle="Slices of the code with one job, grouped by the runtime node they run in."
-    >
-      {groups.length === 0 ? <Empty>No areas extracted yet.</Empty> : null}
-      {groups.map(([node, areas]) => (
-        <Section key={node} title={nodeTitle(node)} count={areas.length}>
-          <Table>
-            <thead>
-              <tr>
-                <Th>Area</Th>
-                <Th>Purpose</Th>
-                <Th className="text-right">Files</Th>
-                <Th className="text-right">Lines</Th>
-                <Th className="text-right">Tests</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {areas.map((a) => (
-                <tr key={a.id}>
-                  <Td className="whitespace-nowrap">
-                    <Link to={areaPath(a.id)}>{a.title}</Link>
-                  </Td>
-                  <Td className="text-muted">{a.purpose}</Td>
-                  <Td className="text-right font-mono">{a.files}</Td>
-                  <Td className="text-right font-mono">{a.lines}</Td>
-                  <Td className="text-right font-mono">{a.tests}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </Section>
-      ))}
-    </Page>
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-3 px-4 py-2">
+        <h1 className="text-[15px] font-semibold">Areas</h1>
+        <Segmented
+          value={view}
+          onChange={(v) => setParams(v === "graph" ? { view: "graph" } : {})}
+          options={[
+            { id: "treemap", label: "Size", icon: <Blocks size={13} /> },
+            { id: "graph", label: "Links", icon: <Network size={13} /> },
+          ]}
+        />
+        {view === "treemap" ? (
+          <span className="flex items-center gap-2 text-[11px] text-muted">
+            area = lines
+            <span className="hatch inline-block h-3 w-5 border border-line" /> tests
+          </span>
+        ) : null}
+      </div>
+      <div className="min-h-0 flex-1 px-4 pb-4">
+        {view === "treemap" ? <TreemapView /> : <GraphView />}
+      </div>
+    </div>
+  )
+}
+
+const Owned = ({
+  label,
+  ids,
+  to,
+}: {
+  label: string
+  ids: string[]
+  to: (id: string) => string
+}) => {
+  const [open, setOpen] = useState(false)
+  if (ids.length === 0) return null
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="cursor-pointer rounded-sm border border-line px-2 py-0.5 text-[12px] hover:border-accent"
+        aria-expanded={open}
+      >
+        <span className="font-mono font-semibold">{ids.length}</span>{" "}
+        <span className="text-muted">{label}</span>
+      </button>
+      {open ? (
+        <div className="mt-2 flex max-w-2xl flex-wrap gap-1">
+          {ids.map((id) => (
+            <Link
+              key={id}
+              to={to(id)}
+              className="rounded-sm border border-line px-1.5 font-mono text-[11px] leading-5 no-underline"
+            >
+              {id}
+            </Link>
+          ))}
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -55,72 +99,88 @@ export const AreaPage = () => {
       </Page>
     )
   }
+  const maxLines = Math.max(...atlas.areas.map((a) => a.lines))
+  const share = area.files > 0 ? Math.min(1, area.tests / area.files) : 0
   return (
-    <Page title={area.title} subtitle={area.purpose}>
-      <Section title="Overview">
-        <dl className="grid grid-cols-[7rem_1fr] gap-y-1">
-          <dt className="text-muted">Id</dt>
-          <dd>
-            <Mono>{area.id}</Mono>
-          </dd>
-          <dt className="text-muted">Runs in</dt>
-          <dd>
-            <Link to={nodePath(area.node)}>{nodeTitle(area.node)}</Link>
-          </dd>
-          <dt className="text-muted">Size</dt>
-          <dd>
-            <Mono>
-              {area.files} files, {area.lines} lines, {area.tests} tests
-            </Mono>
-          </dd>
-          <dt className="text-muted">Globs</dt>
-          <dd className="flex flex-wrap gap-1">
-            {area.globs.map((g) => (
-              <Badge key={g}>{g}</Badge>
-            ))}
-          </dd>
-        </dl>
-      </Section>
-      <Section title="Entry points" count={area.entries.length}>
-        {area.entries.length ? <AnchorList anchors={area.entries} /> : <Empty>None.</Empty>}
-      </Section>
-      <Section title="Docs" count={area.docs.length}>
-        {area.docs.length ? (
-          <ul>
-            {area.docs.map((d) => (
-              <li key={d}>
-                <DocLink file={d} />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <Empty>None.</Empty>
-        )}
-      </Section>
-      <Section title="Procedures" count={area.procedures.length}>
-        <Owned ids={area.procedures} to={procedurePath} />
-      </Section>
-      <Section title="Tables" count={area.tables.length}>
-        <Owned ids={area.tables} to={tablePath} />
-      </Section>
-      <Section title="Agent tools" count={area.tools.length}>
-        <Owned ids={area.tools} to={toolPath} />
-      </Section>
-    </Page>
+    <div className="mx-auto max-w-4xl space-y-6 px-6 py-6">
+      <header>
+        <div className="flex items-center gap-2">
+          <Link to="/areas" className="text-[12px] text-muted no-underline hover:text-fg">
+            Areas /
+          </Link>
+          <Link
+            to={nodePath(area.node)}
+            className="flex items-center gap-1.5 text-[12px] text-muted no-underline hover:text-fg"
+          >
+            <Dot node={area.node} />
+            {nodeTitle(area.node)}
+          </Link>
+        </div>
+        <div className="mt-1 flex items-center gap-2">
+          <h1 className="text-xl font-semibold">{area.title}</h1>
+          {area.entries.map((e) => (
+            <AnchorIcon key={`${e.file}:${e.line}`} anchor={e} size={15} />
+          ))}
+          {area.docs.map((d) => (
+            <a
+              key={d}
+              href={blobUrl(d)}
+              target="_blank"
+              rel="noreferrer"
+              title={d}
+              className="inline-flex text-muted hover:text-accent"
+            >
+              <FileText size={15} />
+            </a>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <div
+            className="relative h-3 overflow-hidden rounded-sm bg-raised"
+            style={{ width: "min(100%, 28rem)" }}
+            title={`${area.lines.toLocaleString()} lines, ${area.files} files, ${area.tests} test files`}
+          >
+            <div
+              className="absolute inset-y-0 left-0"
+              style={{
+                width: `${(area.lines / maxLines) * 100}%`,
+                background: hue(area.node).ink,
+              }}
+            >
+              <div
+                className="hatch absolute inset-y-0 right-0"
+                style={{ width: `${share * 100}%` }}
+              />
+            </div>
+          </div>
+          <span className="font-mono text-[12px]">{compact(area.lines)}</span>
+          <span className="font-mono text-[11px] text-muted">
+            {area.files} files · {area.tests} tests
+          </span>
+        </div>
+        <p className="mt-3 max-w-2xl text-[12px] text-muted">{area.purpose}</p>
+      </header>
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted">
+          <span>depends on</span>
+          <span className="flex items-center gap-1">
+            <KindSample kind="import" /> import
+          </span>
+          <span className="flex items-center gap-1">
+            <KindSample kind="call" /> call
+          </span>
+          <span className="flex items-center gap-1">
+            <KindSample kind="data" /> data
+          </span>
+          <span className="ml-auto">used by</span>
+        </div>
+        <EgoGraph id={area.id} />
+      </section>
+      <section className="flex flex-wrap items-start gap-2">
+        <Owned label="procedures" ids={area.procedures} to={procedurePath} />
+        <Owned label="tables" ids={area.tables} to={tablePath} />
+        <Owned label="tools" ids={area.tools} to={toolPath} />
+      </section>
+    </div>
   )
 }
-
-const Owned = ({ ids, to }: { ids: string[]; to: (id: string) => string }) =>
-  ids.length ? (
-    <ul className="flex flex-wrap gap-x-4 gap-y-0.5">
-      {ids.map((id) => (
-        <li key={id}>
-          <Link to={to(id)} className="font-mono text-[12px]">
-            {id}
-          </Link>
-        </li>
-      ))}
-    </ul>
-  ) : (
-    <Empty>None.</Empty>
-  )
