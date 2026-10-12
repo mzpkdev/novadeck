@@ -1,6 +1,9 @@
 // What the E2E workflow runs, decided from what a pull request changed. Pure: `main.ts`
 // gathers the facts (the event, turbo's affected packages, git's changed files).
 
+// The table's source, which imports nothing, so the plan needs no package built first.
+import { harnesses } from "../../../application/protocol/src/harnesses.ts"
+
 /** The facts a decision rests on; `undefined` where they couldn't be had. */
 export type Facts = {
   /** The workflow's event (`pull_request`, `schedule`, `workflow_dispatch`). */
@@ -64,13 +67,9 @@ export type Quirk = {
   readonly autorun?: true
 }
 
-const names: Readonly<Record<string, string>> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  agy: "Antigravity",
-}
-
-const nameOf = (id: string): string => names[id] ?? id
+// A harness's display name, as the protocol's table has it; its id where the table has no
+// row for it yet.
+const nameOf = (id: string): string => harnesses.find((each) => each.id === id)?.name ?? id
 
 /**
  * The rows of the `e2e` job: each selected harness alone, then Mixed, which runs every
