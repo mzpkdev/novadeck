@@ -100,9 +100,9 @@ const requestedInstall = (): InstallResult | undefined => {
   return { kind: "installing" }
 }
 
-// `&answer=late` makes the host take 1.5 seconds to say it is a portable copy.
+// `&answer=late` makes the host take 4 seconds to say it is a portable copy.
 const answerDelay = (): number =>
-  new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("answer") === "late" ? 1500 : 0
+  new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("answer") === "late" ? 4000 : 0
 
 const testBackend = (): ReturnType<typeof createDemoBackend> => {
   if (showcaseRequested()) return createContentDemo()

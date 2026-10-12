@@ -130,16 +130,22 @@ export const imageVersionOf = (desktop: string): string | undefined => {
  */
 export type Extract = (image: string, pattern: string, into: string) => Promise<void>
 
-/** The extraction as a child process; a hung or failing AppImage ends it with an error. */
-export const extractWithProcess: Extract = (image, pattern, into) =>
-  new Promise((resolve, reject) => {
-    execFile(
-      image,
-      ["--appimage-extract", pattern],
-      { cwd: into, timeout: 20_000, maxBuffer: 1 << 20 },
-      (error) => (error ? reject(error) : resolve()),
-    )
-  })
+/**
+ * The extraction as a child process; a hung or failing AppImage ends it with an error.
+ * It runs with `env` alone, which is this copy's less what its own AppImage runtime set
+ * (see `installedEnvironment`), as the installed copy itself is started.
+ */
+export const extractWithProcess =
+  (env: Readonly<Record<string, string | undefined>>): Extract =>
+  (image, pattern, into) =>
+    new Promise((resolve, reject) => {
+      execFile(
+        image,
+        ["--appimage-extract", pattern],
+        { cwd: into, env, timeout: 20_000, maxBuffer: 1 << 20 },
+        (error) => (error ? reject(error) : resolve()),
+      )
+    })
 
 // Runs `work` in a temporary folder, which is gone afterwards however it went.
 const inTemporaryFolder = async <T>(work: (folder: string) => Promise<T>): Promise<T> => {

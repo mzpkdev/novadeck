@@ -20,6 +20,7 @@ import { context, describe, expect, it } from "../test"
 import {
   desktopEntry,
   execQuote,
+  extractWithProcess,
   failureReason,
   findInstalled,
   imageVersionOf,
@@ -477,5 +478,18 @@ describe("why an install failed", () => {
     expect(emoji.endsWith("😀…")).toBe(true)
     expect(failureReason(new Error("y".repeat(200)), "/x")).toBe("y".repeat(200))
     expect(failureReason("odd", "/x")).toBe("Something went wrong.")
+  })
+})
+
+posix("the extraction as a child process", () => {
+  it("runs the AppImage with the environment it is given and nothing else", async () => {
+    const program = join(root, "program.AppImage")
+    await writeFile(program, '#!/bin/sh\nenv > "$PWD/environment"\n', { mode: 0o755 })
+    const into = join(root, "into")
+    await mkdir(into)
+    await extractWithProcess({ KEPT: "yes" })(program, "*.desktop", into)
+    const seen = await readFile(join(into, "environment"), "utf8")
+    expect(seen).toContain("KEPT=yes")
+    expect(seen).not.toContain("HOME=")
   })
 })

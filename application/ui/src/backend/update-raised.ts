@@ -2,7 +2,7 @@
 // session storage, which outlasts a page reload but not a relaunch, so a stale portable
 // copy's every-launch reminder comes once per launch, not once per page. Without storage
 // it is kept in memory, and a reload is a launch.
-export const updateRaisedStorageKey = "novadeck.update-raised"
+const updateRaisedStorageKey = "novadeck.update-raised"
 let raisedInMemory: string | null = null
 export const readUpdateRaised = (): string | null => {
   try {

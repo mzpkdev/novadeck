@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events"
+import { readFile } from "node:fs/promises"
+import { createRequire } from "node:module"
+import { dirname, join } from "node:path"
 
 import type { UpdateChannel } from "@novadeck/protocol/bridge"
 import type { IpcMainEvent } from "electron"
@@ -853,5 +856,29 @@ describe("quitting by a signal", () => {
         () => false,
       )(),
     ).not.toThrow()
+  })
+})
+
+describe("electron-updater's restart", () => {
+  it("emits before-quit-for-update on Electron's autoUpdater only after a successful install; re-check the Linux lock release in index.ts if this fails", async () => {
+    // The host lets go of the single-instance lock on that event, so that the new AppImage,
+    // which electron-updater starts first, can take it (see installUpdate's callback in
+    // index.ts). If electron-updater changes when it emits, "Restart now" may end the app
+    // without the new version starting, or a failed install may leave the lock released.
+    const require = createRequire(import.meta.url)
+    const file = join(dirname(require.resolve("electron-updater")), "BaseUpdater.js")
+    const source = await readFile(file, "utf8")
+    const start = source.search(/quitAndInstall\(isSilent = false, isForceRunAfter = false\)\s*\{/u)
+    expect(start, "BaseUpdater.quitAndInstall").toBeGreaterThanOrEqual(0)
+    const body = source.slice(start, source.indexOf("\n    }\n", start))
+    const steps = [
+      /const isInstalled = this\.install\(/u,
+      /if \(isInstalled\)\s*\{/u,
+      /setImmediate\(\(\) => \{/u,
+      /require\("electron"\)\.autoUpdater\.emit\("before-quit-for-update"\)/u,
+      /this\.app\.quit\(\)/u,
+    ].map((step) => body.search(step))
+    expect(steps.every((at) => at >= 0)).toBe(true)
+    expect(steps).toEqual(steps.toSorted((a, b) => a - b))
   })
 })

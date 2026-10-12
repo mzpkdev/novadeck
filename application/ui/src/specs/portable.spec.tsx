@@ -209,8 +209,11 @@ describe("the sandbox chip on a portable copy", () => {
 
   it("does not flash while the host has yet to say it is a portable copy", async () => {
     await openWorkspace("/?portable=on&sandbox=off&answer=late")
+    // Still waiting for the answer: no install chip yet, and no sandbox chip either.
+    expect(install().query()).toBeNull()
     await expectStaysAbsent(sandbox(), { ms: 1000 })
-    await expect.element(install()).toBeVisible()
+    expect(install().query()).toBeNull()
+    await expect.element(install(), { timeout: 8000 }).toBeVisible()
     await expectStaysAbsent(sandbox())
   })
 

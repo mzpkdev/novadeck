@@ -51,6 +51,7 @@ import { notificationText, registerNoticeIpc, showNotices } from "./notices.js"
 import { attachPage, guardPage, lockPagesSession, pagesPartition, webAddress } from "./pages.js"
 import { limitPermissions, ownPage } from "./permissions.js"
 import {
+  installedEnvironment,
   leaveForNewerInstalled,
   portableInstaller,
   registerPortableIpc,
@@ -544,9 +545,13 @@ const alertNotStarted = async (image: string): Promise<void> => {
   })
 }
 
+// Reads the versions of installed AppImages with the environment they are started with.
+const installedExtract = () =>
+  extractWithProcess(installedEnvironment(process.env, appImageMounts()))
+
 // The AppImages installed on this machine, with their versions.
 const installedCopies = () =>
-  findInstalled({ env: process.env, home: homedir() }, extractWithProcess)
+  findInstalled({ env: process.env, home: homedir() }, installedExtract())
 
 const launch = async (): Promise<void> => {
   // A moved app starts again from Applications, and has nothing more to do here.
@@ -682,7 +687,7 @@ const launch = async (): Promise<void> => {
         installAppImage(
           source,
           installLayout({ env: process.env, home: homedir() }),
-          extractWithProcess,
+          installedExtract(),
           target,
         ),
       shutdown: () => {
@@ -751,6 +756,9 @@ const bringForward = (window: BrowserWindow): void => {
 app.on("second-instance", () => {
   const [window] = BrowserWindow.getAllWindows()
   if (window) bringForward(window)
+  // On macOS the app lives on with no window, so a second launch has none to show.
+  else if (server) createWindow(server.origin)
+  if (process.platform === "darwin") app.focus({ steal: true })
 })
 
 app.whenReady().then(() => {

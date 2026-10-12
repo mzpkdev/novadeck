@@ -222,10 +222,17 @@ and offers to open that copy or quit.
 The host takes Electron's single-instance lock at startup. Chromium keys it on the data
 folder (`userData`), not on the executable, so a portable and an installed copy exclude each
 other. A second launch quits at once, before it starts anything, and the running window comes
-to the front. A Linux update restart is the exception: it lets go of the lock just before
-quitting, so the new version, which electron-updater starts first, can take it. The packaged smoke test (`smoke.mjs`) and the Linux sandbox check in `release.yml` pass
-`--user-data-dir`, so each gets its own lock. Every other launch shares the default folder and
-so its lock, which is fine as each is killed and waited for before the next starts.
+to the front, or opens one on macOS, where the app lives on with no window. A Linux update
+restart is the exception: it lets go of the lock just before quitting, so the new version,
+which electron-updater starts first, can take it.
+
+The packaged smoke test (`smoke.mjs`) and the Linux sandbox check in `release.yml` pass
+`--user-data-dir`, so each gets its own lock. The other smoke launches share the default
+folder, so each is stopped before the next starts. The Linux ones, which `timeout` stops
+through `xvfb-run`, then wait up to 15 seconds for the process named by the folder's
+`SingletonLock` to be gone, and fail if it is not, as the next launch would otherwise hand
+off to it and exit. The macOS ones kill their process and wait for it, and the Windows ones
+kill the process tree and wait.
 
 ## Moving to Applications
 

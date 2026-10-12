@@ -113,6 +113,23 @@ describe("compiled desktop host", () => {
       expect(main.match(/app\.relaunch\(/gu)).toHaveLength(1)
     })
 
+    it("opens a window for a second launch when the app has none, as on macOS", async () => {
+      const main = await read("main/index.js")
+      const handler = main.slice(main.indexOf('app.on("second-instance"'))
+
+      expect(handler.slice(0, handler.indexOf("\n});"))).toMatch(
+        /bringForward\(window\);\s*else if \(server\) createWindow\(server\.origin\);\s*if \(process\.platform === "darwin"\) app\.focus\(\{ steal: true \}\)/u,
+      )
+    })
+
+    it("reads installed versions with the environment the installed copy gets", async () => {
+      const main = await read("main/index.js")
+
+      expect(main).toMatch(
+        /extractWithProcess\(installedEnvironment\(process\.env, appImageMounts\(\)\)\)/u,
+      )
+    })
+
     it("lets go of the lock before electron-updater starts the new AppImage on a restart", async () => {
       const main = await read("main/index.js")
 
