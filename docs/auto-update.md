@@ -203,7 +203,9 @@ page whether the copy is portable, and `installApp` installs from it (`portable.
     and any other failure.
   - At launch an unchecked copy is ignored, so a non-executable installed file, which cannot
     be version-checked, lets the launch carry on; the runner's `WORKSPACE_TOO_NEW` refusal is
-    the fallback if that copy had upgraded the data.
+    the fallback if that copy had upgraded the data. The runner refuses a database whose
+    schema version is higher than its own, or whose tables have every column it writes and
+    more, as a newer build can add a column without raising the version.
 - A failure, such as a full disk or a folder that cannot be written, is returned with a short
   reason, as is a request while the app is already quitting ("Novadeck is quitting.").
 

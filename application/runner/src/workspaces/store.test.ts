@@ -21,7 +21,7 @@ import type { ItemRecord } from "../companions/records.js"
 import { DomainError } from "../errors.js"
 import type { Message, Thread } from "../messaging/mailbox.js"
 import { describe, expect, it as base } from "../test.js"
-import { WorkspaceStore } from "./store.js"
+import { WorkspaceStore, WorkspaceTooNewError } from "./store.js"
 
 const it = base.extend<{
   directory: () => string
@@ -267,6 +267,24 @@ describe("workspace metadata", () => {
     try {
       expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(2)
       expect(database.prepare("SELECT value FROM future_data").get()?.value).toBe("saved")
+    } finally {
+      database.close()
+    }
+  })
+
+  it("counts a database with columns this runner doesn't know as a newer build's, and leaves it as it is", ({
+    directory,
+  }) => {
+    const path = join(directory(), "workspace.sqlite")
+    new WorkspaceStore(path).close()
+    const future = new DatabaseSync(path)
+    future.exec("ALTER TABLE terminals ADD COLUMN future_note TEXT")
+    future.close()
+    expect(() => new WorkspaceStore(path)).toThrow(WorkspaceTooNewError)
+    const database = new DatabaseSync(path)
+    try {
+      const columns = database.prepare("SELECT name FROM pragma_table_info('terminals')").all()
+      expect(columns).toContainEqual({ name: "future_note" })
     } finally {
       database.close()
     }

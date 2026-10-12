@@ -248,23 +248,30 @@ const describeColumn = ({ name, type, notnull }: Column): string =>
   `${name} ${type}${notnull ? " NOT NULL" : ""}`
 
 /**
- * How a database's tables differ from those this runner writes, as an earlier build's
- * would; undefined when they don't. Tables it doesn't know are left alone.
+ * How a database's tables differ from those this runner writes; undefined when they
+ * don't. Tables it doesn't know are left alone. `newer` when a table has every column
+ * this runner writes and more besides, as a newer build's would, which can add a column
+ * without raising the schema version; otherwise an earlier build wrote it.
  */
-const schemaDifference = (database: DatabaseSync): string | undefined => {
+const schemaDifference = (
+  database: DatabaseSync,
+): { readonly text: string; readonly newer: boolean } | undefined => {
   const actual = columnsOf(database)
   for (const [table, columns] of expectedColumns()) {
     const found = actual.get(table)
-    if (!found) return `it has no ${table} table`
+    if (!found) return { text: `it has no ${table} table`, newer: false }
     const want = columns.map(describeColumn).toSorted()
     const have = found.map(describeColumn).toSorted()
     const missing = want.filter((column) => !have.includes(column))
     const extra = have.filter((column) => !want.includes(column))
     if (missing.length > 0 || extra.length > 0)
-      return `its ${table} table differs (${[
-        ...missing.map((column) => `expects ${column}`),
-        ...extra.map((column) => `has ${column}`),
-      ].join(", ")})`
+      return {
+        text: `its ${table} table differs (${[
+          ...missing.map((column) => `expects ${column}`),
+          ...extra.map((column) => `has ${column}`),
+        ].join(", ")})`,
+        newer: missing.length === 0,
+      }
   }
   return undefined
 }
@@ -278,9 +285,10 @@ export class WorkspaceTooNewError extends Error {
 }
 
 /**
- * Creates the schema in a new database, and refuses one written by a newer runner, or by
- * an earlier build whose tables differ: Novadeck has no migrations before its first
- * release, so such a database is to be deleted, never changed here.
+ * Creates the schema in a new database, and refuses one written by a newer runner, by its
+ * version or by columns this one doesn't know, or by an earlier build whose tables
+ * differ: Novadeck has no migrations before its first release, so an earlier build's
+ * database is to be deleted, never changed here.
  */
 const prepareSchema = (database: DatabaseSync, path: string): void => {
   database.exec("BEGIN IMMEDIATE")
@@ -292,10 +300,11 @@ const prepareSchema = (database: DatabaseSync, path: string): void => {
     if (version === 0) database.exec(`${schema} PRAGMA user_version = ${schemaVersion};`)
     database.exec(extras)
     const difference = schemaDifference(database)
+    if (difference?.newer) throw new WorkspaceTooNewError()
     if (difference)
       throw new Error(
         `Novadeck's workspace database at ${path} was written by an earlier build: ` +
-          `${difference}. Novadeck has no migrations before its first release, so delete ` +
+          `${difference.text}. Novadeck has no migrations before its first release, so delete ` +
           `it and the files beside it named ${basename(path)}-wal and -shm (they hold your ` +
           "projects, sessions and kept terminals) and start again.",
       )
