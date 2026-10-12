@@ -81,7 +81,7 @@ export type DeckTerminal = {
    */
   readonly press: (keys: string) => void
   /**
-   * Waits until its screen has settled, as `confirm` does before its Enter (see `calm`):
+   * Waits until its screen has settled, as `confirm` does before its Enter (see `quiet`):
    * for keys that answer a dialog without Enter, which it may drop while still drawing.
    */
   readonly settled: () => Promise<void>
@@ -402,12 +402,12 @@ export const terminalsReport = (
 
 /**
  * Counts what the screen shows of `shows`, runs `trigger`, waits until the screen shows it
- * once more and has settled (see `calm`), and only then presses Enter: Enter follows only what
- * `trigger` was seen to bring, never what was there before it. Settled is two reads
- * `stillMs` apart alike, as Novadeck's own answers wait: Claude Code drops an Enter
- * pressed as its permission dialog first draws, while its PermissionRequest hook still
- * runs (seen 2026-10-11, 2.1.287, 25 ms after, on a fast Mac). Fails after the timeout,
- * with the screen.
+ * once more and has gone quiet (see `quiet`), and only then presses Enter: Enter follows
+ * only what `trigger` was seen to bring, never what was there before it. Claude Code drops
+ * an Enter pressed as its permission dialog first draws, while its PermissionRequest hook
+ * still runs (seen 2026-10-11, 2.1.287, 25 ms after, on a fast Mac). The deck can't see
+ * that hook end, so a quiet screen makes the race rare rather than ruling it out. Fails
+ * after the timeout, with the screen.
  */
 export const enterAfter = async (
   { handle, screen, enter, state, trail, fault }: Screen,
@@ -425,17 +425,18 @@ export const enterAfter = async (
   ).catch(async (error: unknown) => {
     throw await withScreen(error, screen, state, trail)
   })
-  await calm(screen)
+  await quiet(screen)
   enter()
 }
 
 /**
- * Waits until two reads of the screen `stillMs` apart are alike, as Novadeck's own answers
- * wait before their keys, or `calmMs` has passed: a dialog drawn whole goes still at once,
- * while a working agent's screen may never, and its keys then go anyway.
+ * Waits until two reads of the screen `stillMs` apart are alike, or `quietLongestMs` has passed:
+ * a dialog drawn whole goes still at once, while a working agent's screen may never, and
+ * its keys then go anyway. Unlike `calm` in `requests.e2e.ts`, which fails, it carries on.
+ * Novadeck's own answers wait alike, two reads 100 ms apart (`answers.ts`).
  */
-const calm = async (screen: () => Promise<string>): Promise<void> => {
-  const deadline = Date.now() + calmMs
+const quiet = async (screen: () => Promise<string>): Promise<void> => {
+  const deadline = Date.now() + quietLongestMs
   let last = await screen()
   while (Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop -- Reads again after the pause.
@@ -447,8 +448,8 @@ const calm = async (screen: () => Promise<string>): Promise<void> => {
   }
 }
 
-/** The longest `calm` waits for a screen to go still, in milliseconds. */
-const calmMs = 1_000
+/** The longest `quiet` waits for a screen to go still, in milliseconds. */
+const quietLongestMs = 1_000
 
 /** How far apart two reads of a screen that say it settled are, in milliseconds. */
 const stillMs = 150
@@ -735,7 +736,7 @@ export const createDeck = async (options: DeckOptions): Promise<Deck> => {
         await enterAfter(entered, text, async () => send(text))
       },
       confirm: (shows, trigger, { timeoutMs } = {}) => enterAfter(view, shows, trigger, timeoutMs),
-      settled: () => calm(look),
+      settled: () => quiet(look),
       press: (keys) => {
         refuseEnter(keys)
         send(keys)
