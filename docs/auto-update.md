@@ -208,8 +208,9 @@ page whether the copy is portable, and `installApp` installs from it (`portable.
     column it writes and some table has more, as a newer build can add a column without
     raising the version. A database of a lower version, or one lacking a column anywhere, is
     an earlier build's, which the runner asks the person to delete; so the version must rise
-    for any change but an added column (an added table, index or constraint goes unseen). A newer build that adds a column and changes
-    another without raising the version is still taken for an earlier build's.
+    for any change but an added column (an added table, index or constraint goes unseen). A
+    newer build that adds a column and changes another without raising the version is still
+    taken for an earlier build's.
 - A failure, such as a full disk or a folder that cannot be written, is returned with a short
   reason, as is a request while the app is already quitting ("Novadeck is quitting.").
 
