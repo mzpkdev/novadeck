@@ -1460,7 +1460,13 @@ describe.skipIf(process.platform === "win32")("terminal environment", () => {
   it.runIf(process.platform === "darwin")(
     "gives a shell on macOS a UTF-8 LANG where the runner has no locale, as an app opened from the Dock has none",
     async ({ terminals }) => {
-      const manager = terminals.manager({ baseEnv: { PATH: process.env.PATH }, env: { PS1: "" } })
+      // sh with no startup files: a developer's own rc can't set LANG for it.
+      const manager = terminals.manager({
+        shell: "/bin/sh",
+        shellArgs: [],
+        baseEnv: { PATH: process.env.PATH },
+        env: { PS1: "", ENV: "" },
+      })
       const terminal = await manager.create(
         { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
         "owner",
@@ -1473,7 +1479,7 @@ describe.skipIf(process.platform === "win32")("terminal environment", () => {
       )
       const printed = events.map((event) => ("data" in event ? event.data : "")).join("")
 
-      expect(printed).toMatch(/\[[a-z]{2}_[A-Z]{2}\.UTF-8\]/)
+      expect(printed).toMatch(/\[[a-z]{2,3}_[A-Z]{2}\.UTF-8\]/)
     },
   )
 })

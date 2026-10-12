@@ -3,6 +3,8 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 
+import { vi } from "vitest"
+
 import { describe, expect, it } from "../test.js"
 import {
   parseDarwinFolders,
@@ -175,10 +177,11 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
     resources.defer(() => rmSync(elsewhere, { recursive: true, force: true }))
     const sandbox = { root, home: join(root, "home"), started: Date.now() }
     // A shell of the sandbox's starts sleep elsewhere, deaf to SIGTERM, and leaves within
-    // the reaper's grace: sleep is the sandbox's only through the shell, found before it went.
+    // the reaper's 3 s grace, 2 s in, long enough for a slow first look to find it: sleep is
+    // the sandbox's only through the shell, found before it went.
     const shell = spawn(
       "/bin/sh",
-      ["-c", `(trap '' TERM; cd '${elsewhere}' && exec /bin/sleep 60) & /bin/sleep 1`],
+      ["-c", `(trap '' TERM; cd '${elsewhere}' && exec /bin/sleep 60) & /bin/sleep 2`],
       { cwd: root, env: {}, stdio: "ignore", detached: true },
     )
     resources.defer(() => {
@@ -195,7 +198,8 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
     const sleeping = leftovers.filter((one) => one.startsWith("sleep ("))
     expect(sleeping).toHaveLength(1)
     const pid = Number(/\((\d+)/.exec(sleeping[0]!)![1])
-    expect(() => process.kill(pid, 0)).toThrow()
+    // Gone once launchd has reaped it, which may take a moment after the SIGKILL.
+    await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 2_000 })
     expect(await reap(sandbox)).toEqual([])
   }, 30_000)
 })
