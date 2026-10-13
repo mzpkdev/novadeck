@@ -152,6 +152,11 @@ export const findInstalledWindows = async ({
   const folders = [recorded?.location, defaultFolder].filter(
     (folder): folder is string => folder !== undefined && folder !== "",
   )
+  // reg.exe writes the OEM code page, so a profile path with letters outside ASCII reaches
+  // here garbled, and the recorded folder then holds no executable. `DisplayVersion` is
+  // ASCII, and the default folder comes from the environment: it is the recorded copy.
+  const recordedThere =
+    recorded?.location === undefined || (await exists(win32.join(recorded.location, executable)))
   const unique = folders.filter(
     (folder, index) =>
       folders.findIndex((other) => folderKey(other) === folderKey(folder)) === index,
@@ -161,7 +166,11 @@ export const findInstalledWindows = async ({
       const image = win32.join(folder, executable)
       if (!(await exists(image))) return undefined
       const own =
-        recorded?.location !== undefined && folderKey(recorded.location) === folderKey(folder)
+        recorded?.location !== undefined &&
+        (folderKey(recorded.location) === folderKey(folder) ||
+          (!recordedThere &&
+            defaultFolder !== undefined &&
+            folderKey(defaultFolder) === folderKey(folder)))
       const version = own ? recorded?.version : undefined
       const known = version !== undefined && updateVersionPattern.test(version)
       return { image, version: known ? version : undefined, unchecked: !known }
@@ -259,41 +268,43 @@ export type SetupHost = {
  * Downloads the latest release's setup and checks it against `latest.yml` from the same
  * release, all while the app runs normally, so a failure changes nothing. The setup is
  * ready only if `latest.yml` lists it with a SHA-512 and the file matches; a mismatch
- * removes the file. A release older than this copy is refused, as installing it would put
- * an app that cannot open the workspace this one may have upgraded (an `early` copy newer
- * than the latest stable release). While there is no stable release (`latest` answers 404)
- * it falls back to this copy's own release, fetching both files from there; that one is
- * by definition not older, and the installed copy then updates itself.
+ * removes the file. A latest release older than this copy is not installed, as that would
+ * put an app that cannot open the workspace this one may have upgraded (an `early` copy
+ * newer than the latest stable release). While there is no stable release (`latest`
+ * answers 404), and in that older case, it uses this copy's own release instead, fetching
+ * both files from there; that one is by definition not older. The installed copy updates
+ * itself from there only once a release on its channel is newer.
  */
 export const prepareSetup = async (host: SetupHost): Promise<SetupOutcome> => {
   const { latest: latestBase, own } = host.downloads
   if (latestBase === undefined && own === undefined)
     return { kind: "failed", reason: "This copy does not know where Novadeck is released." }
-  let base = latestBase
-  let yaml: string | undefined
+  // The release to install from: `latest` unless it is missing or older than this copy,
+  // then this copy's own, which is never older. A network failure is not a reason to guess
+  // elsewhere.
+  let found: { readonly base: string; readonly yaml: string } | undefined
   try {
-    yaml = latestBase === undefined ? undefined : await host.text(`${latestBase}latest.yml`)
-    // Before a first stable release `latest` is a 404, and only then is this copy's own
-    // release tried; a network failure is not a reason to guess elsewhere.
-    if (yaml === undefined && own !== undefined) {
-      base = own
-      yaml = await host.text(`${own}latest.yml`)
+    if (latestBase !== undefined) {
+      const yaml = await host.text(`${latestBase}latest.yml`)
+      const version = yaml === undefined ? undefined : latestVersionOf(yaml)
+      if (yaml !== undefined && version !== undefined && isNewerVersion(host.version, version))
+        host.log("The latest release is older than this copy.", version)
+      else if (yaml !== undefined) found = { base: latestBase, yaml }
+    }
+    if (found === undefined && own !== undefined) {
+      const yaml = await host.text(`${own}latest.yml`)
+      if (yaml !== undefined) found = { base: own, yaml }
     }
   } catch (error) {
     host.log("The release information could not be fetched.", error)
     return { kind: "failed", reason: "The latest release could not be fetched. Are you online?" }
   }
-  if (yaml === undefined || base === undefined)
+  if (found === undefined)
     return { kind: "failed", reason: "No release with the Windows installer was found." }
+  const { base, yaml } = found
   const expected = sha512Of(yaml, setupName)
   if (expected === undefined)
-    return { kind: "failed", reason: "The latest release does not list the Windows installer." }
-  const latest = base === own ? undefined : latestVersionOf(yaml)
-  if (latest !== undefined && isNewerVersion(host.version, latest))
-    return {
-      kind: "failed",
-      reason: `The latest release, ${latest}, is older than this copy, ${host.version}.`,
-    }
+    return { kind: "failed", reason: "The release does not list the Windows installer." }
   let downloaded: { readonly file: string; readonly sha512: string }
   try {
     downloaded = await host.download(`${base}${setupName}`, maxSetupBytes)

@@ -194,6 +194,8 @@ describe("compiled desktop host", () => {
       expect(main).not.toContain("shell.openPath")
       // The Windows copy, unlike Linux's, lets go of the lock inside startDetached.
       expect(main).toContain("startWindowsCopy")
+      // Downloads go through Electron's network stack, which honours the system proxy.
+      expect(main).toContain("net.fetch(")
     })
 
     it("opens windows on the page's last ground and follows its appearance", async () => {

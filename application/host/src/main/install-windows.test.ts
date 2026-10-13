@@ -172,6 +172,31 @@ describe("finding the installed Windows copies", () => {
       ])
   })
 
+  it("trusts the recorded version for the default folder when the recorded path is garbled", async () => {
+    // reg.exe writes the OEM code page, which UTF-8 decoding turns into replacement
+    // characters; the recorded folder is then not there, while the default one is.
+    const garbled = "C:\\Users\\Zo\uFFFD\\AppData\\Local\\Programs\\novadeck"
+    const copies = await findInstalledWindows({
+      defaultFolder: folder,
+      executable: "novadeck.exe",
+      record: async () => ({ location: garbled, version: "1.1.0" }),
+      exists: async (path) => path.startsWith(folder),
+    })
+    expect(copies).toEqual([
+      { image: `${folder}\\novadeck.exe`, version: "1.1.0", unchecked: false },
+    ])
+  })
+
+  it("does not trust the record for the default folder while the recorded one exists", async () => {
+    const copies = await findInstalledWindows({
+      defaultFolder: folder,
+      executable: "novadeck.exe",
+      record: async () => ({ location: "E:\\Apps\\novadeck", version: "2.0.0" }),
+      exists: async () => true,
+    })
+    expect(copies[1]).toMatchObject({ unchecked: true })
+  })
+
   it("finds a copy in a recorded folder that is not the default", async () => {
     const copies = await find(async () => ({ location: "E:\\Apps\\novadeck", version: "2.0.0" }))
     expect(copies.map((copy) => copy.image)).toEqual([
@@ -310,13 +335,6 @@ describe("getting the setup ready", () => {
     }
   })
 
-  it("refuses a latest release older than this copy", async () => {
-    const { host, calls } = setup({ version: "1.3.0" })
-    const result = await prepareSetup(host)
-    expect(result).toMatchObject({ kind: "failed" })
-    expect(calls.some((call) => call.startsWith("download"))).toBe(false)
-  })
-
   it("falls back to this copy's own release when latest is a 404, from the same base", async () => {
     const own = "https://github.com/o/r/releases/download/v1.0.0/"
     const { host, calls } = setup({
@@ -362,10 +380,30 @@ describe("getting the setup ready", () => {
     expect(asked).toEqual(["https://github.com/o/r/releases/latest/download/latest.yml"])
   })
 
-  it("does not fall back when latest answers and is older than this copy", async () => {
-    const { host, calls } = setup({ version: "1.3.0" })
+  it("falls back to the own release when latest answers but is older than this copy", async () => {
+    const own = "https://github.com/o/r/releases/download/v1.0.0/"
+    const { host, calls } = setup({
+      version: "1.3.0",
+      text: async (url) => {
+        calls.push(`text ${url}`)
+        return latest(sha("setup"), url.startsWith(own) ? "1.3.0" : "1.2.0")
+      },
+    })
+    expect(await prepareSetup(host)).toMatchObject({ kind: "ready" })
+    expect(calls).toEqual([
+      "text https://github.com/o/r/releases/latest/download/latest.yml",
+      `text ${own}latest.yml`,
+      `download ${own}novadeck-win-x64-setup.exe`,
+    ])
+  })
+
+  it("fails when latest is older and the own release is a 404", async () => {
+    const { host, calls } = setup({
+      version: "1.3.0",
+      text: async (url) => (url.includes("/latest/") ? latest(sha("setup"), "1.2.0") : undefined),
+    })
     expect(await prepareSetup(host)).toMatchObject({ kind: "failed" })
-    expect(calls.filter((call) => call.startsWith("text"))).toHaveLength(1)
+    expect(calls.some((call) => call.startsWith("download"))).toBe(false)
   })
 
   it("fails where the repository is unknown", async () => {

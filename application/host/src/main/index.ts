@@ -16,6 +16,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  net,
   Notification,
   powerMonitor,
   session,
@@ -659,7 +660,7 @@ const alertNotStarted = async (image: string): Promise<void> => {
 // The text of `url`, fetched with a time limit; undefined for a 404, and a throw for
 // anything else but 200.
 const fetchText = async (url: string): Promise<string | undefined> => {
-  const response = await fetch(url, { signal: AbortSignal.timeout(20_000) })
+  const response = await net.fetch(url, { signal: AbortSignal.timeout(20_000) })
   if (response.status === 404) return undefined
   if (!response.ok) throw new Error(`${url} answered ${response.status}.`)
   return response.text()
@@ -668,6 +669,9 @@ const fetchText = async (url: string): Promise<string | undefined> => {
 // Where the setup is downloaded to: one folder in the user's temporary folder, emptied
 // before each download, so no more than one setup is ever kept.
 const setupFolder = (): string => join(app.getPath("temp"), "novadeck-setup")
+
+// How long a download may go without data before it is given up.
+const downloadStallMs = 60_000
 
 // Downloads `url` into the setup folder, hashing as it goes. The file is written by this
 // app, so it carries no Mark of the Web; the hash is what vouches for it.
@@ -679,12 +683,25 @@ const downloadSetup = async (
   await rm(folder, { recursive: true, force: true })
   await mkdir(folder, { recursive: true })
   const file = join(folder, setupName)
-  const response = await fetch(url, { signal: AbortSignal.timeout(10 * 60_000) })
+  // Through Electron's network stack, which honours the system and PAC proxies as the
+  // update check does. The download is given up only when no data comes for a while, so a
+  // slow link is not cut off.
+  const controller = new AbortController()
+  let stall: ReturnType<typeof setTimeout> | undefined
+  const alive = (): void => {
+    clearTimeout(stall)
+    stall = setTimeout(() => controller.abort(), downloadStallMs)
+  }
+  alive()
   const handle = await open(file, "w")
   try {
+    const response = await net.fetch(url, { signal: controller.signal })
     const sha512 = await hashBody(
       response as unknown as Parameters<typeof hashBody>[0],
-      (chunk) => handle.write(chunk).then(() => undefined),
+      (chunk) => {
+        alive()
+        return handle.write(chunk).then(() => undefined)
+      },
       maxBytes,
     )
     await handle.close()
@@ -693,6 +710,8 @@ const downloadSetup = async (
     await handle.close().catch(() => {})
     await rm(file, { force: true })
     throw error
+  } finally {
+    clearTimeout(stall)
   }
 }
 
@@ -808,6 +827,13 @@ const launch = async (): Promise<void> => {
     })
   )
     return
+  // The installed copy has no use for a setup the portable copy left; the installer that
+  // started this copy may still hold it for a moment, so this waits, and gives up quietly.
+  if (process.platform === "win32" && app.isPackaged && !portable)
+    setTimeout(
+      () => void rm(setupFolder(), { recursive: true, force: true }).catch(() => {}),
+      60_000,
+    ).unref()
   channel = updateState.read().channel
   await appearance.restore(nativeTheme)
   runner = startRunner({

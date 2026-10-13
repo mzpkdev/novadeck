@@ -312,8 +312,9 @@ and offers to open that copy or quit.
 The release carries `novadeck-win-x64.zip`, electron-builder's unpacked app (`win-unpacked`,
 zipped after signing, with `novadeck.exe` and `resources\` at its root), beside the per-user
 one-click installer `novadeck-win-x64-setup.exe`. The ZIP is not an update source: `latest.yml`
-names only the setup, and a ZIP copy does not update itself. Both copies use `%APPDATA%\novadeck`,
-so installing keeps the workspace.
+names only the setup, and a ZIP copy does not update itself. Both copies use `%APPDATA%\novadeck`
+(the name is `novadeck` in code; Windows ignores case, so this is also `Novadeck`), so installing
+keeps the workspace.
 
 - **Detection** (`installedByInstaller` in `install-windows.ts`). Nothing marks the ZIP, so the
   host tells an installed copy instead: it is installed if `Uninstall <executable name>.exe` sits
@@ -330,7 +331,10 @@ so installing keeps the workspace.
 - **Installed copies** are found from the registry keys the installer writes under the GUID
   electron-builder derives from the app id (UUID v5 of `dev.mzpk.novadeck`; `installerGuid`):
   `HKCU\Software\<guid>` `InstallLocation` and the Uninstall key's `DisplayVersion`, read with
-  `reg.exe query` (no native module), plus the default folder. A copy whose version is not in
+  `reg.exe query` (no native module), plus the default folder. reg.exe writes the OEM code page
+  while Node decodes UTF-8, so a profile path with letters outside ASCII reaches the host
+  garbled; when the recorded folder holds no executable but the default one does, the
+  (ASCII) `DisplayVersion` is trusted for the default folder. A copy whose version is not in
   the record (a missing or unreadable key) is `unchecked` and never replaced; the advice is to
   open the installed Novadeck from the Start menu or uninstall it in Windows Settings. A newer
   one is never overwritten: the answer is `newer`, and at launch the portable offers to open it
@@ -338,16 +342,21 @@ so installing keeps the workspace.
   shutdown and after letting go of the single-instance lock.
 - **Install.** While the app runs normally, it downloads `latest.yml` and
   `novadeck-win-x64-setup.exe` from `releases/latest/download/` of the repository
-  `app-update.yml` names (the host's own fetch, so the file carries no Mark of the Web), into
-  `%TEMP%\novadeck-setup`, emptied first. Until the first stable release there is no `latest`: its
-  `latest.yml` answers 404, and only then does the install fall back to this copy's own release,
-  `releases/download/v<this version>/`, fetching and checking both files from there (installing
-  the copy's own version is fine, as the installed copy then updates itself). A network error at
-  `latest` does not fall back. The "older than this copy" refusal applies to `latest` only. The SHA-512 of the file must equal the `sha512` that
-  `latest.yml` lists for it; a missing entry, a mismatch (the file is deleted), a network failure
-  or a latest release older than this copy (an `early` copy ahead of stable) answers `failed`
-  with a short reason and changes nothing. Only then: the shutdown every platform runs (pages
-  save, the runner ends its shells), the single-instance lock is let go, and the setup is
+  `app-update.yml` names, through Electron's `net.fetch` (so the system and PAC proxy are honoured
+  as the update check does, and the file carries no Mark of the Web), into
+  `%TEMP%\novadeck-setup`, emptied first. A download is given up after 60 seconds without data,
+  not after a fixed time. The installed (non-portable) copy removes that folder a minute after
+  launch, best effort. The release used is `latest`, unless it is missing or older than this copy
+  (an `early` copy ahead of stable): then this copy's own release,
+  `releases/download/v<this version>/`, supplies both files and is not compared, as it is
+  never older. `latest` is missing until the first stable release, when its `latest.yml`
+  answers 404. A network error or any other status at `latest` does not fall back. Installing the
+  copy's own version is fine, but the installed copy then updates itself only once a release on
+  its channel is newer: until a stable release is promoted, a default-channel install cannot
+  update. The SHA-512 of the file must equal the `sha512` that `latest.yml` lists for it; a missing
+  entry, a mismatch (the file is deleted), a network failure, or no usable release answers
+  `failed` with a short reason and changes nothing. Only then: the shutdown every platform runs
+  (pages save, the runner ends its shells), the single-instance lock is let go, and the setup is
   `spawn`ed detached with `/S --force-run` (never `shell.openPath`, which goes through
   SmartScreen), and this process exits as soon as the child has started. `--force-run` makes the
   installer start the installed app when it is done; `--updated` is left off, as this is not an
@@ -359,7 +368,8 @@ so installing keeps the workspace.
   install section) looks for running copies of `novadeck.exe`: with PowerShell available, only
   processes whose path starts with the install folder; otherwise (`tasklist`) every
   `novadeck.exe` of the current user. A copy found is asked to close, with the message box
-  answered "OK" in a silent run, then stopped with `taskkill`, forced after a second. Without
+  answered "OK" in a silent run, then stopped with `Stop-Process` on the PowerShell path (`taskkill`
+  on the fallback), forced after a second. Without
   `--updated` it adds no wait. The portable runs from another folder, so the PowerShell check
   ignores it; the `tasklist` fallback could match it, which is why the shutdown has finished and
   the process exits at the moment the setup starts: nothing is left to kill but an exiting
@@ -369,7 +379,9 @@ so installing keeps the workspace.
   unsigned installer and, once signing is in place, SmartScreen may still warn about a fresh
   publisher; see [release-signing.md](release-signing.md). The block happens when the setup is
   started, which is after the shutdown, so the person is left with a dialog and their saved
-  workspace rather than a running app. The setup is not watched past the spawn.
+  workspace rather than a running app. The setup is not watched
+  past the spawn: a silent setup that fails after the portable has exited (a locked file, a full
+  disk) leaves nothing running and shows no message.
 
 ## One instance per data folder
 
