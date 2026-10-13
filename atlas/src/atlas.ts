@@ -61,6 +61,8 @@ export type Dependency = {
   role: string | null
   // The shelf it sits on, as "UI", "Storage" or "Build"; null where uncurated.
   category: string | null
+  // Whether it defines the package's stack, where curated.
+  lead: boolean
 }
 
 // What runs, and how the pieces talk.

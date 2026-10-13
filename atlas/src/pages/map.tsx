@@ -16,6 +16,7 @@ import { areaById, atlas, nodeById, nodeTitle } from "../atlas-data.ts"
 import type { RuntimeEdge, RuntimeNode } from "../atlas.ts"
 import { AnchorIcon } from "../components/anchor.tsx"
 import { CanvasBackground, canvasPointer } from "../components/canvas-background.tsx"
+import { StackStrip, stackOfNode } from "../components/stack.tsx"
 import { squarify } from "../components/treemap.ts"
 import { Badge } from "../components/ui.tsx"
 import { compact, Dot, hue, Token } from "../components/viz.tsx"
@@ -164,6 +165,11 @@ const NodePanel = ({ node }: { node: RuntimeNode }) => {
         <AnchorIcon anchor={node.anchor} />
       </div>
       <p className="mt-1 line-clamp-2 text-[12px] text-muted">{node.summary}</p>
+      {stackOfNode(node.id) ? (
+        <div className="mt-3">
+          <StackStrip token={stackOfNode(node.id)!} max={2} fit />
+        </div>
+      ) : null}
       {node.areas.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-1">
           {node.areas.map((id) => (

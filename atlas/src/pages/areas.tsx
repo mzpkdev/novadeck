@@ -5,6 +5,7 @@ import { Link, useParams, useSearchParams } from "react-router"
 
 import { areaById, atlas, nodeTitle } from "../atlas-data.ts"
 import { AnchorIcon, blobUrl } from "../components/anchor.tsx"
+import { StackStrip } from "../components/stack.tsx"
 import { Empty, Ground, Page } from "../components/ui.tsx"
 import { compact, Dot, hue, KindSample, Segmented } from "../components/viz.tsx"
 import { areaPath, nodePath, procedurePath, tablePath, toolPath } from "../links.ts"
@@ -144,30 +145,33 @@ export const AreaPage = () => {
       }
       title={<TokenPath id={area.id} />}
       tools={
-        <span className="pane floating flex h-9 items-center gap-1 px-2">
-          <Link
-            to={nodePath(area.node)}
-            title="Runs in"
-            className="mr-2 flex items-center gap-1.5 text-control text-muted no-underline hover:text-fg"
-          >
-            <Dot node={area.node} />
-            {nodeTitle(area.node)}
-          </Link>
-          {area.entries.map((e) => (
-            <AnchorIcon key={`${e.file}:${e.line}`} anchor={e} size={15} />
-          ))}
-          {area.docs.map((d) => (
-            <a
-              key={d}
-              href={blobUrl(d)}
-              target="_blank"
-              rel="noreferrer"
-              title={d}
-              className="icon-button small"
+        <span className="flex items-center gap-3">
+          <StackStrip token={area.id} max={4} />
+          <span className="pane floating flex h-9 items-center gap-1 px-2">
+            <Link
+              to={nodePath(area.node)}
+              title="Runs in"
+              className="mr-2 flex items-center gap-1.5 text-control text-muted no-underline hover:text-fg"
             >
-              <FileText size={13} />
-            </a>
-          ))}
+              <Dot node={area.node} />
+              {nodeTitle(area.node)}
+            </Link>
+            {area.entries.map((e) => (
+              <AnchorIcon key={`${e.file}:${e.line}`} anchor={e} size={15} />
+            ))}
+            {area.docs.map((d) => (
+              <a
+                key={d}
+                href={blobUrl(d)}
+                target="_blank"
+                rel="noreferrer"
+                title={d}
+                className="icon-button small"
+              >
+                <FileText size={13} />
+              </a>
+            ))}
+          </span>
         </span>
       }
     >
