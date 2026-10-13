@@ -17,6 +17,15 @@ export const CanvasBackground = () => (
   </>
 )
 
+// The same ground for a page that is not a React Flow canvas: the grid and its spotlight
+// drawn as images, fixed behind content that scrolls over them.
+export const GroundDots = () => (
+  <>
+    <div aria-hidden="true" className="ground-dots canvas-grid absolute inset-0" />
+    <div aria-hidden="true" className="ground-dots canvas-grid-spotlight absolute inset-0" />
+  </>
+)
+
 const leave = (event: PointerEvent<HTMLElement>) => {
   delete event.currentTarget.dataset["pointerInside"]
 }

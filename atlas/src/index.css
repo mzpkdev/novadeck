@@ -306,6 +306,13 @@
   --xy-background-pattern-color: var(--color-strong);
   pointer-events: none;
 }
+.ground-dots {
+  background-image: radial-gradient(circle, var(--color-strong) 0.8px, transparent 0.8px);
+  background-size: 24px 24px;
+}
+.ground-dots.canvas-grid {
+  opacity: var(--canvas-dots-opacity);
+}
 .canvas-grid-spotlight {
   opacity: 0;
   mask-image: radial-gradient(

@@ -6,7 +6,7 @@ import { useLocation, useNavigate } from "react-router"
 import { areaById, atlas, groupBy, procedureById } from "../atlas-data.ts"
 import type { Procedure } from "../atlas.ts"
 import { AnchorLink } from "../components/anchor.tsx"
-import { Page } from "../components/ui.tsx"
+import { Ground } from "../components/ui.tsx"
 import { CodePane } from "./api/code.tsx"
 import { isEmpty } from "./api/model.ts"
 import { ParamsTable } from "./api/params.tsx"
@@ -226,7 +226,7 @@ const Reference = ({ p }: { p: Procedure }) => {
   const output = isEmpty(p.output) ? null : p.output
   const stream = p.kind === "stream"
   return (
-    <div className="mx-auto max-w-[760px] px-6 pb-16 pt-5">
+    <div className="mx-auto max-w-[760px] px-3 pb-16 pt-2">
       <header>
         <p className="m-0 text-[12.5px] text-muted">
           {stream
@@ -286,25 +286,27 @@ export const ApiPage = () => {
   const p = procedureById.get(wanted) ?? atlas.api.procedures[0]
   if (!p) return <div className="p-6 text-muted">No procedures.</div>
   return (
-    <Page
-      title={<span className="font-mono">{p.id}</span>}
-      tools={
-        <>
-          <AreaChip id={p.area} />
+    <Ground
+      title={
+        <span className="flex items-center gap-2.5">
+          <span className="font-mono">{p.id}</span>
           <KindBadge kind={p.kind} large />
-        </>
+          <AreaChip id={p.area} />
+        </span>
       }
       side={
         <Nav selected={p.id} onSelect={(id) => void navigate({ hash: id }, { replace: true })} />
       }
       flush
     >
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
         <div key={p.id} className="min-w-0 flex-1 overflow-auto">
           <Reference p={p} />
         </div>
-        <CodePane p={p} />
+        <div className="pane floating flex shrink-0 overflow-hidden">
+          <CodePane p={p} />
+        </div>
       </div>
-    </Page>
+    </Ground>
   )
 }

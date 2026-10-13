@@ -1,7 +1,7 @@
 import { Link, useParams } from "react-router"
 
 import { atlas } from "../atlas-data.ts"
-import { Page } from "../components/ui.tsx"
+import { Ground, Page } from "../components/ui.tsx"
 import { flowPath } from "../links.ts"
 import { Sequence } from "./flows/sequence.tsx"
 import { Thumb, actorsOf } from "./flows/thumb.tsx"
@@ -9,7 +9,10 @@ import { Thumb, actorsOf } from "./flows/thumb.tsx"
 import "./visual-tokens.css"
 
 export const FlowsPage = () => (
-  <Page title="Flows" tools={<span className="text-caption text-muted">actors x steps</span>}>
+  <Ground
+    title="Flows"
+    tools={<span className="pane floating px-2 py-1 text-caption text-muted">actors x steps</span>}
+  >
     <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
       {atlas.flows.map((f) => (
         <Link
@@ -30,7 +33,7 @@ export const FlowsPage = () => (
         </Link>
       ))}
     </div>
-  </Page>
+  </Ground>
 )
 
 export const FlowPage = () => {
@@ -44,7 +47,7 @@ export const FlowPage = () => {
     )
   }
   return (
-    <Page
+    <Ground
       crumbs={
         <>
           <Link to="/flows" className="text-muted no-underline hover:text-fg">
@@ -55,7 +58,7 @@ export const FlowPage = () => {
       }
       title={flow.title}
       tools={
-        <nav aria-label="Flows" className="segmented gap-0.5">
+        <nav aria-label="Flows" className="segmented gap-0.5 shadow-lg">
           {atlas.flows.map((f) => (
             <Link
               key={f.id}
@@ -70,6 +73,6 @@ export const FlowPage = () => {
       }
     >
       <Sequence key={flow.id} flow={flow} />
-    </Page>
+    </Ground>
   )
 }

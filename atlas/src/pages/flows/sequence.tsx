@@ -24,7 +24,7 @@ export const Sequence = ({ flow }: { flow: Flow }) => {
   const step = active === null ? null : flow.steps[active]
   return (
     <div className="space-y-3">
-      <div className="overflow-auto rounded-sm border border-[var(--color-outline)] bg-panel">
+      <div className="overflow-auto">
         <svg
           width={width}
           height={height}
@@ -52,7 +52,8 @@ export const Sequence = ({ flow }: { flow: Flow }) => {
                 x2={x(id)}
                 y1={40}
                 y2={height - 6}
-                stroke="var(--line)"
+                stroke="var(--color-line-strong)"
+                strokeOpacity={0.5}
                 strokeDasharray="4 4"
               />
               <rect
@@ -60,8 +61,8 @@ export const Sequence = ({ flow }: { flow: Flow }) => {
                 y={8}
                 width={156}
                 height={28}
-                fill="var(--raised)"
-                stroke="var(--color-outline)"
+                fill="var(--panel)"
+                stroke="var(--window-border-color)"
                 rx={2}
               />
               <text x={x(id)} y={26} textAnchor="middle" fill="var(--fg)" fontWeight={600}>
@@ -126,7 +127,7 @@ export const Sequence = ({ flow }: { flow: Flow }) => {
           })}
         </svg>
       </div>
-      <div className="min-h-14 rounded-sm border border-[var(--color-outline)] bg-panel px-3 py-2 text-[13px]">
+      <div className="pane floating min-h-14 max-w-3xl px-3 py-2 text-[13px]">
         {step ? (
           <div className="flex items-start gap-3">
             <span className="font-mono text-[12px] text-accent">{(active ?? 0) + 1}</span>

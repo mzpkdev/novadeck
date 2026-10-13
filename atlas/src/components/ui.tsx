@@ -1,6 +1,8 @@
 import { clsx } from "clsx"
 import type { ReactNode } from "react"
 
+import { canvasPointer, GroundDots } from "./canvas-background.tsx"
+
 // A page as one of Novadeck's windows: a pane on the recessed workspace, its heading
 // carrying the selection bar, an optional sidebar of the app's chrome to its left.
 export const Page = ({
@@ -38,6 +40,44 @@ export const Page = ({
           {flush ? children : <div className="px-5 py-5">{children}</div>}
         </div>
       </section>
+    </div>
+  </div>
+)
+
+// A page laid straight on the workspace, as the app's Canvas view lays out its windows:
+// the ground with its dot grid, a floating chip naming the page, controls beside it.
+export const Ground = ({
+  title,
+  crumbs,
+  tools,
+  side,
+  flush = false,
+  children,
+}: {
+  title: ReactNode
+  crumbs?: ReactNode
+  tools?: ReactNode
+  side?: ReactNode
+  // Content that lays itself out below the chip and scrolls itself.
+  flush?: boolean
+  children: ReactNode
+}) => (
+  <div className="flex min-h-0 min-w-0 flex-1">
+    {side}
+    <div className="workspace relative min-w-0 flex-1 overflow-hidden" {...canvasPointer}>
+      <GroundDots />
+      <div className={clsx("relative z-[1] flex h-full flex-col", !flush && "overflow-auto")}>
+        <div className="flex shrink-0 items-center justify-between gap-3 p-3">
+          <div className="pane floating flex h-9 min-w-0 items-center gap-1.5 px-3 text-body">
+            {crumbs ? (
+              <span className="flex shrink-0 items-center gap-1.5 text-muted">{crumbs}</span>
+            ) : null}
+            <h1 className="m-0 min-w-0 truncate text-body font-medium">{title}</h1>
+          </div>
+          {tools ? <div className="flex shrink-0 items-center gap-3">{tools}</div> : null}
+        </div>
+        {flush ? children : <div className="px-3 pb-3">{children}</div>}
+      </div>
     </div>
   </div>
 )
