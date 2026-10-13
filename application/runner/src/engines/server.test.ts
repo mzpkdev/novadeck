@@ -157,7 +157,11 @@ describe("a server", () => {
         starts += 1
         return {
           command: process.execPath,
-          args: ["-e", "console.error('error loading model'); process.exit(1)"],
+          // llama.cpp's client-side bind failure is not its server's port being taken.
+          args: [
+            "-e",
+            "console.error('Failed to bind IP address'); console.error('error loading model'); process.exit(1)",
+          ],
         }
       },
     })
