@@ -63,8 +63,18 @@ export const scrollLineToTop = (view: EditorView, at: number): void => {
   setTimeout(() => done.abort(), 2000)
 }
 
-// Where the pane is scrolled in the plan: the line at its top, and how far down that line.
+// Where the pane is scrolled in the plan: the line at its top, and how far down that line,
+// as a share of its height, which holds across a narrower or zoomed pane.
 export type PlanScroll = { readonly at: number; readonly into: number }
+
+// How far the pane's top is into the document, in the editor's own pixels: the page's
+// are scaled where Canvas zooms. The scale is the scroller's own, which holds before the
+// editor first measures it.
+const heightAtTop = (view: EditorView, scroller: HTMLElement): number => {
+  const box = scroller.getBoundingClientRect()
+  const scale = scroller.offsetHeight ? box.height / scroller.offsetHeight : 1
+  return (box.top - view.documentTop) / scale
+}
 
 // Follows where the pane is scrolled in the plan, while it's on screen; returns the stop.
 export const followScroll = (view: EditorView, on: (scroll: PlanScroll) => void): (() => void) => {
@@ -73,36 +83,46 @@ export const followScroll = (view: EditorView, on: (scroll: PlanScroll) => void)
   const note = (): void => {
     // Out of sight it has no size, and no place to note.
     if (!scroller.clientHeight) return
-    const height = scroller.getBoundingClientRect().top - view.documentTop
-    const line = view.lineBlockAtHeight(Math.max(0, height))
-    on({ at: line.from, into: height - line.top })
+    const height = Math.max(0, heightAtTop(view, scroller))
+    const line = view.lineBlockAtHeight(height)
+    on({ at: line.from, into: line.height ? (height - line.top) / line.height : 0 })
   }
   scroller.addEventListener("scroll", note, { passive: true })
   return () => scroller.removeEventListener("scroll", note)
 }
 
-// Scrolls the pane back to `scroll`, at once, and once more a frame after the editor
-// measured the lines that came into view.
-export const restoreScroll = (view: EditorView, scroll: PlanScroll): void => {
+// Scrolls the pane back to where `scroll` says, at once, then again each frame while the
+// editor measures the lines that came into view, whose heights it had only estimated, or
+// an edit moves the place; `done` once it holds still, or after a few frames.
+export const restoreScroll = (
+  view: EditorView,
+  scroll: () => PlanScroll | null,
+  done: () => void,
+): void => {
   const scroller = scrollerOf(view.dom)
-  if (!scroller) return
-  const target = (): number =>
-    Math.min(
-      Math.max(
-        0,
-        scroller.scrollTop +
-          view.documentTop +
-          view.lineBlockAt(Math.min(scroll.at, view.state.doc.length)).top +
-          scroll.into -
-          scroller.getBoundingClientRect().top,
-      ),
+  if (!scroller) return done()
+  const target = (): number | null => {
+    const now = scroll()
+    if (!now) return null
+    const line = view.lineBlockAt(Math.min(now.at, view.state.doc.length))
+    const height = line.top + now.into * line.height
+    return Math.min(
+      Math.max(0, scroller.scrollTop + height - heightAtTop(view, scroller)),
       scroller.scrollHeight - scroller.clientHeight,
     )
-  scroller.scrollTo({ top: target(), behavior: "instant" })
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      if (Math.abs(target() - scroller.scrollTop) >= 1)
-        scroller.scrollTo({ top: target(), behavior: "instant" })
-    }),
-  )
+  }
+  // Whether it moved.
+  const go = (): boolean => {
+    const top = target()
+    if (top === null || Math.abs(top - scroller.scrollTop) < 1) return false
+    scroller.scrollTo({ top, behavior: "instant" })
+    return true
+  }
+  go()
+  let frames = 0
+  const settle = (): void => {
+    if ((go() || frames === 0) && ++frames < 6) requestAnimationFrame(settle)
+    else done()
+  }
+  requestAnimationFrame(settle)
 }

@@ -5,10 +5,10 @@ import { EditorView, keymap } from "@codemirror/view"
 import { GFM, parser } from "@lezer/markdown"
 import { useEffect, useLayoutEffect, useRef } from "react"
 
+import { createKept } from "../kept"
 import type { Mark } from "../plan-doc"
 import { editorTheme } from "./editor-theme"
 import { currentAgentMarks, livePreview, setMarks } from "./live-preview"
-import { savedEditors } from "./saved"
 import { followScroll, restoreScroll, scrollLineToTop, type PlanScroll } from "./scroll"
 import { lineChanges } from "./sync"
 
@@ -24,13 +24,23 @@ const fromAgent = Annotation.define<boolean>()
 // What the reader can ask of the editor.
 export type PlanEditorHandle = { readonly jumpTo: (at: number) => void }
 
-type Listeners = {
-  readonly onChange: (text: string, marks: readonly Mark[]) => void
+// What follows an editor: its latest listeners, and where its pane is scrolled in the
+// plan, moved along with every change to it. A saved state outlives the editor that made
+// it, so its extensions reach these through the editor showing it now.
+type Followers = {
+  readonly listeners: {
+    readonly current: { readonly onChange: (text: string, marks: readonly Mark[]) => void }
+  }
+  scroll: PlanScroll | null
 }
+const followersOf = new WeakMap<EditorView, Followers>()
 
-// Each editor's latest listeners. A saved state outlives the editor that made it, so its
-// extensions reach the listeners through the editor showing it now.
-const listenersOf = new WeakMap<EditorView, { readonly current: Listeners }>()
+// What a plan's editor held when it closed, so the next one for that plan, as a view
+// switch or a tab Focus no longer keeps builds it again, opens as it was left: the parsed
+// file, its undo history and selection, and where it was scrolled. Kept here, so a hot
+// update of the editor starts over rather than reopening states the new code can't follow.
+type SavedEditor = { readonly state: EditorState; readonly scroll: PlanScroll | null }
+const savedEditors = createKept<SavedEditor>(12)
 
 // The editor's behaviour, fixed for a state's life: the pane remounts the editor, and
 // starts a new state, if the plan becomes writable or stops being so.
@@ -51,14 +61,19 @@ const extensions = (readOnly: boolean) => [
   livePreview,
   editorTheme,
   EditorView.updateListener.of((update) => {
+    const followers = followersOf.get(update.view)
+    if (!followers || !update.docChanged) return
+    const { scroll } = followers
+    if (scroll) followers.scroll = { ...scroll, at: update.changes.mapPos(scroll.at, -1) }
     if (
       update.transactions.some(
         (transaction) => transaction.docChanged && !transaction.annotation(fromAgent),
       )
     )
-      listenersOf
-        .get(update.view)
-        ?.current.onChange(update.state.doc.toString(), currentAgentMarks(update.state))
+      followers.listeners.current.onChange(
+        update.state.doc.toString(),
+        currentAgentMarks(update.state),
+      )
   }),
 ]
 
@@ -99,13 +114,20 @@ export const PlanEditor = ({
       parent: host.current!,
       state: reopened?.state ?? EditorState.create({ doc, extensions: extensions(locked) }),
     })
-    listenersOf.set(editor, latest)
+    const followers: Followers = { listeners: latest, scroll: reopened?.scroll ?? null }
+    followersOf.set(editor, followers)
     editor.dispatch({ effects: setMarks.of(latest.current.marks) })
-    let scroll: PlanScroll | null = reopened?.scroll ?? null
-    if (scroll) restoreScroll(editor, scroll)
-    const stopScroll = followScroll(editor, (at) => {
-      scroll = at
-    })
+    // Where the pane is scrolled counts once it's back where it was left.
+    let stopScroll = (): void => {}
+    let closed = false
+    const follow = (): void => {
+      if (closed) return
+      stopScroll = followScroll(editor, (at) => {
+        followers.scroll = at
+      })
+    }
+    if (followers.scroll) restoreScroll(editor, () => followers.scroll, follow)
+    else follow()
     view.current = editor
     latest.current.onReady({
       jumpTo: (at) => scrollLineToTop(editor, at),
@@ -113,8 +135,9 @@ export const PlanEditor = ({
     return () => {
       // Closing the pane leaves no empty note behind: none of the editor's updates follow.
       latest.current.onClose()
+      closed = true
       stopScroll()
-      savedEditors.keep(plan, { state: editor.state, scroll })
+      savedEditors.keep(plan, { state: editor.state, scroll: followers.scroll })
       editor.destroy()
     }
   }, [])

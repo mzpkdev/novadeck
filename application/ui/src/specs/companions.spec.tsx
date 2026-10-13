@@ -222,6 +222,7 @@ describe("Switching views", () => {
     await expect.poll(() => plan().scrollTop).toBe(200)
 
     await chooseView("Focus")
+    await chooseView("Canvas")
     await chooseView("Grid")
 
     await expect
@@ -231,6 +232,14 @@ describe("Switching views", () => {
     content().focus()
     await userEvent.keyboard("{Control>}z{/Control}")
     await expect.poll(() => content().textContent).not.toContain("Draft ")
+
+    // The undo reached the plan, not only the editor.
+    await chooseView("Focus")
+    await chooseView("Grid")
+    await expect
+      .poll(() => companionPane("Build Studio").element().querySelector(".cm-content"))
+      .not.toBeNull()
+    expect(content().textContent).not.toContain("Draft ")
   })
 })
 

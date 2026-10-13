@@ -16,6 +16,16 @@ describe("what the companion keeps", () => {
     expect(kept.get("plan")).toBe("second")
   })
 
+  it("lets go of what was used longest ago past its limit, reading it counting as use", () => {
+    const kept = createKept<string>(2)
+    kept.keep("a", "a")
+    kept.keep("b", "b")
+    kept.get("a")
+    kept.keep("c", "c")
+    expect(kept.get("b")).toBeUndefined()
+    expect(kept.get("a")).toBe("a")
+  })
+
   it("lets go of what was kept longest ago past its limit", () => {
     const kept = createKept<string>(2)
     kept.keep("a", "a")
