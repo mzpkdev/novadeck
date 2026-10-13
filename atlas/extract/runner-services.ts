@@ -20,11 +20,21 @@ export const servicesOf = (anchors: Anchors, router: string): Service[] => {
     anchors.report("router services", routerFile, 'expected "createRouter"')
     return []
   }
-  // Only the options block, up to where the function's body starts.
-  const end = router.indexOf("}) =>", at)
-  const options = router.slice(at, end === -1 ? undefined : end)
+  // Only the options type: from the `{` after `options:` to the brace that closes it,
+  // counted by depth, so a function-typed option with an object parameter can't end it early.
+  const open = router.indexOf("{", router.indexOf("options:", at))
+  let end = -1
+  if (open !== -1)
+    for (let i = open, depth = 0; i < router.length; i += 1) {
+      if (router[i] === "{") depth += 1
+      else if (router[i] === "}" && --depth === 0) {
+        end = i
+        break
+      }
+    }
   if (end === -1)
-    anchors.report("router services", routerFile, 'expected "}) =>" after createRouter\'s options')
+    anchors.report("router services", routerFile, "expected createRouter's `options: { … }` type")
+  const options = end === -1 ? "" : router.slice(open, end)
   const services = [...options.matchAll(/^\s+(\w+): (\w+)$/gm)].flatMap((match) => {
     const file = imports.get(match[2]!)
     // An option typed by a class or type the scan can't find the import of has lost its
