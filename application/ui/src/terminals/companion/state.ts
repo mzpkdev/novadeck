@@ -391,7 +391,7 @@ const reconcile = (session: Session, workspace: Workspace): void => {
     if (!found) unfollow(session, id)
     else if (entry.plan && !found.plan) {
       entry.plan = false
-      if (entry.watchers === 0) release(session, id)
+      linger(session, id, entry)
     }
   }
   const planned = new Set([
