@@ -38,8 +38,8 @@
   color: var(--deck-word-fg, var(--color-ink));
 }
 
-/* Assembling: the cursor lights first (about 0.45s in) and blinks once, then the chevrons fire outward
-   from it into place, a beat apart, and the letters rise. The cursor ends lit. */
+/* Assembling: the cursor lights first (about 0.45s in) and blinks once, then the chevrons
+   fire outward from it into place, a beat apart, and the letters rise. The cursor ends lit. */
 @media (prefers-reduced-motion: no-preference) {
   .nova-mark.animated .nova-cursor {
     animation: nova-cursor 0.9s step-end 0.3s both;
