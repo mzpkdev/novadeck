@@ -30,6 +30,7 @@ import {
   saveBeforeQuitChannel,
   setUpdateChannelChannel,
   updateChannelChannel,
+  versionChannel,
   updateOfferChannel,
   updateRequestChannel,
 } from "../bridge.js"
@@ -212,6 +213,13 @@ const bridge = {
   // Only a known channel crosses; the main process checks it again.
   setUpdateChannel: (channel) => {
     if (updateChannels.includes(channel)) ipcRenderer.send(setUpdateChannelChannel, channel)
+  },
+  version: async () => {
+    const version: unknown = await ipcRenderer.invoke(versionChannel)
+    if (typeof version !== "string" || !updateVersionPattern.test(version)) {
+      throw new Error("Unknown version")
+    }
+    return version
   },
   sandbox: async () => sandboxOf(await ipcRenderer.invoke(sandboxChannel)),
   portable: async () => portableStateOf(await ipcRenderer.invoke(portableChannel)),

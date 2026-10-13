@@ -73,6 +73,10 @@ export type DesktopBridge = {
    */
   setUpdateChannel?(channel: UpdateChannel): void
   /**
+   * The version of the app, as a release is named. Absent from hosts that came before it.
+   */
+  version?(): Promise<string>
+  /**
    * Whether Electron's sandbox is on for this window. Absent from hosts that came
    * before it. See `SandboxState`.
    */

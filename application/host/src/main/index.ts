@@ -30,6 +30,7 @@ import {
   directoryPickerChannel,
   noticeClickChannel,
   runnerPortChannel,
+  versionChannel,
 } from "../bridge.js"
 import { keepAppearance, registerAppearanceIpc } from "./appearance.js"
 import {
@@ -751,6 +752,8 @@ const launch = async (): Promise<void> => {
         realpath: realpathOrUndefined,
       }),
   })
+  // Only the app's own pages learn the version it runs.
+  ipcMain.handle(versionChannel, (event) => (appWindow(event) ? app.getVersion() : ""))
   ipcMain.handle(directoryPickerChannel, async (event) => {
     const window = appWindow(event)
     if (!window) return null

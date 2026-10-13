@@ -19,6 +19,7 @@ import {
   updateChannelChannel,
   updateOfferChannel,
   updateRequestChannel,
+  versionChannel,
 } from "../bridge.js"
 import { context, describe, expect, it } from "../test"
 
@@ -294,6 +295,23 @@ describe("the update channel", () => {
     for (const value of ["nightly", undefined, {}, 3, "Early"])
       electron.exposed.setUpdateChannel!(value as never)
     expect(electron.sent).toEqual([])
+  })
+})
+
+describe("the version", () => {
+  it("is what the host answers, when it looks like a release's", async () => {
+    electron.answer = "0.4.2"
+    expect(await electron.exposed.version!()).toBe("0.4.2")
+    expect(electron.sent).toEqual([versionChannel])
+  })
+
+  it("is refused when the host answers anything else", async () => {
+    const answers = [undefined, "", "latest", "0.4.2\n<b>", { version: "0.4.2" }, 3]
+    const asked = answers.map((answer) => {
+      electron.answer = answer
+      return electron.exposed.version!()
+    })
+    await Promise.all(asked.map((each) => expect(each).rejects.toThrow("Unknown version")))
   })
 })
 

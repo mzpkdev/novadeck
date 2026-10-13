@@ -124,6 +124,20 @@ export const desktopUpdates = (host: DesktopHost | undefined): Backend["updates"
   }
 }
 
+// The host's version, where it gives one: what crosses the bridge must look like a
+// release's, so the page shows nothing else.
+export const desktopVersion = (host: DesktopHost | undefined): Backend["version"] => {
+  const ask = host?.version
+  if (!ask) return undefined
+  return async () => {
+    const version = await ask()
+    if (typeof version !== "string" || !updateVersionPattern.test(version)) {
+      throw new Error("Unknown version")
+    }
+    return version
+  }
+}
+
 // The host's account of its sandbox, where it gives one: what crosses the bridge is
 // checked, and a fix that is not a single plain line, which the person would paste into a
 // terminal, is dropped, leaving the notice without a command.

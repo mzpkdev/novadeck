@@ -20,6 +20,7 @@ import {
   preferencesTabs,
   settingRowClasses,
   settingsCardClasses,
+  versionText,
   type PreferencesTab,
 } from "./settings"
 import { VoiceInput, type VoiceAddon } from "./VoiceInput"
@@ -102,6 +103,7 @@ export const Preferences = ({
   voice,
   murmur,
   updates,
+  version,
   notices = false,
   chat = false,
 }: {
@@ -137,6 +139,8 @@ export const Preferences = ({
     readonly early: boolean | undefined
     readonly onChange: (early: boolean) => void
   }
+  // The desktop app's version; absent where the backend has none to give.
+  version?: string
 }): React.JSX.Element => {
   const dialog = useRef<HTMLDivElement>(null)
   const panels = useRef<HTMLDivElement>(null)
@@ -386,6 +390,16 @@ export const Preferences = ({
                       describedBy="early-builds-description"
                       disabled={updates.early === undefined}
                     />
+                  </div>
+                </div>
+              </Section>
+            )}
+            {version && (
+              <Section title="About">
+                <div className={settingsCardClasses}>
+                  <div className={`preference-row ${settingRowClasses}`}>
+                    <span>Version</span>
+                    <span className="select-text">{versionText(version)}</span>
                   </div>
                 </div>
               </Section>

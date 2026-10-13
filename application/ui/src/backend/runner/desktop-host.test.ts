@@ -14,6 +14,7 @@ import {
   desktopPortable,
   desktopSandbox,
   desktopUpdates,
+  desktopVersion,
   hostInstall,
   hostNotice,
   hostPortable,
@@ -114,6 +115,30 @@ const updater = (channel: unknown = "stable") => {
     set,
   }
 }
+
+const asking = (answer: unknown) =>
+  ({ version: () => Promise.resolve(answer) }) as unknown as DesktopHost
+
+describe("desktop version", () => {
+  it("is absent in a host that does not say", () => {
+    expect(desktopVersion(undefined)).toBeUndefined()
+    expect(desktopVersion({} as DesktopHost)).toBeUndefined()
+  })
+
+  it("is what the host answers, when it looks like a release's", async () => {
+    expect(await desktopVersion(asking("0.4.2"))!()).toBe("0.4.2")
+    expect(await desktopVersion(asking("1.2.3-beta.1"))!()).toBe("1.2.3-beta.1")
+  })
+
+  it("refuses anything else", async () => {
+    const answers = ["latest", "0.4.2\n<b>", "", null, 3]
+    await Promise.all(
+      answers.map((answer) =>
+        expect(desktopVersion(asking(answer))!()).rejects.toThrow("Unknown version"),
+      ),
+    )
+  })
+})
 
 describe("desktop updates", () => {
   context("in a host that has them", () => {

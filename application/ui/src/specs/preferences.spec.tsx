@@ -73,6 +73,17 @@ const outputStyle = (property: "fontVariantLigatures" | "fontFamily"): string =>
       .element(),
   )[property]
 
+describe("Preferences' version", () => {
+  it("shows the version the backend gives, to copy", async () => {
+    await openWorkspace()
+    await openPreferences()
+    const about = preferencesDialog().getByRole("region", { name: "About" })
+    await expect.element(about.getByText("Version")).toBeVisible()
+    await expect.element(about.getByText("0.0.79")).toBeVisible()
+    expect(getComputedStyle(about.getByText("0.0.79").element()).userSelect).toBe("text")
+  })
+})
+
 describe("Preferences", () => {
   context("when choosing whether terminals keep transcripts", () => {
     it("keeps them by default, says they may hold secrets, and turns them off", async () => {
