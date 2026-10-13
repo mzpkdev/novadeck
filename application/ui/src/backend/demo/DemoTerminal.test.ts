@@ -135,6 +135,25 @@ describe("a demo terminal's scroll across a remount", () => {
     expect(open().output.scrollTop).toBe(1200)
   })
 
+  it("takes a fraction short of the bottom, as a zoomed page leaves it, as the bottom", () => {
+    metrics(1000)
+    const { open } = session()
+    const first = open()
+    scrollTo(first.output, 598.6)
+    first.view.unmount()
+    metrics(1200)
+    expect(open().output.scrollTop).toBe(1200)
+  })
+
+  it("keeps a place a few pixels above the bottom", () => {
+    metrics(1000)
+    const { open } = session()
+    const first = open()
+    scrollTo(first.output, 595)
+    first.view.unmount()
+    expect(open().output.scrollTop).toBe(595)
+  })
+
   it("keeps the place of a terminal the person scrolled up", () => {
     metrics(1000)
     const { open } = session()

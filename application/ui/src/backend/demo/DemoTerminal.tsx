@@ -179,8 +179,9 @@ const DemoTerminalSurface = ({
       onScroll={(event) => {
         const { scrollTop, scrollHeight, clientHeight } = event.currentTarget
         // A narrower layout can clamp the offset on its way out, so what is kept is that
-        // it sat at the bottom, not how far down that was.
-        savedScroll.current = scrollHeight - clientHeight - scrollTop <= 1 ? "end" : scrollTop
+        // it sat at the bottom, not how far down that was. Within two pixels counts, as a
+        // zoomed page rounds its heights but not its offset.
+        savedScroll.current = scrollHeight - clientHeight - scrollTop <= 2 ? "end" : scrollTop
         onScrollChange(savedScroll.current)
       }}
     >

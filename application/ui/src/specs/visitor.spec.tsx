@@ -154,7 +154,7 @@ describe("the visitor build", () => {
       const views = "Switch to Grid, then Canvas"
       await chooseView("Grid")
       await narrowAndWiden()
-      // Only Canvas is on screen now; Grid was seen before the app unmounted.
+      // Grid is on screen again, and was seen before the app unmounted: Canvas is still to do.
       await expect.element(hint(views)).toHaveAttribute("data-done", "false")
       await chooseView("Canvas")
       await expect.element(hint(views)).toHaveAttribute("data-done", "true")
