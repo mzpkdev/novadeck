@@ -304,7 +304,15 @@ export const watchPortable = (portable: Backend["portable"], ui: UiStore): (() =
   void portable?.state().then(
     (portableState) => {
       if (!live) return
-      const { update } = ui.getSnapshot()
+      const { update, updateOpen, updateSeen } = ui.getSnapshot()
+      // A notice already open when the answer comes was shown before the run was known.
+      if (
+        portableState.portable &&
+        update !== null &&
+        updateOpen &&
+        updateSeen === updateKey(update)
+      )
+        noteUpdateShown(portableState, updateSeen)
       const raise =
         portableState.portable &&
         update !== null &&

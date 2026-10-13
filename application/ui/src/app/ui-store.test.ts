@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, vi } from "vitest"
 
-import { clearUpdateRaised } from "../backend/update-raised"
+import { clearUpdateRaised, readUpdateRaised } from "../backend/update-raised"
 import { createWorkspaceStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
 import { updateKey, type UpdateOffer } from "../model/update"
@@ -596,6 +596,28 @@ describe("a portable copy", () => {
     watchUpdates(second.updates, late)
     second.report(stale())
     expect(late.getSnapshot().updateOpen).toBe(true)
+  })
+
+  it("marks a notice shown before the host named the run, once it does", async () => {
+    const { updates, report } = updateHost()
+    // A release not yet seen opens its notice at once, before any portable answer.
+    const ui = createUiStore(initial())
+    watchUpdates(updates, ui)
+    report(stale())
+    expect(ui.getSnapshot().updateOpen).toBe(true)
+    // The footer shows it, as the command `updateShown` records, with the run unknown.
+    ui.update((state) => ({ ...state, updateSeen: updateKey(stale()) }))
+    noteUpdateShown(ui.getSnapshot().portable, updateKey(stale()))
+    expect(readUpdateRaised(here.run)).toBeNull()
+    watchPortable(
+      {
+        state: () => Promise.resolve(here),
+        install: () => Promise.resolve({ kind: "installing" }),
+        openInstalled: () => {},
+      },
+      ui,
+    )
+    await vi.waitFor(() => expect(readUpdateRaised(here.run)).toBe(updateKey(stale())))
   })
 
   it("does not raise the notice again for a stale release it already heard", async () => {

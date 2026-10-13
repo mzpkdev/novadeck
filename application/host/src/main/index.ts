@@ -474,11 +474,16 @@ const createWindow = (origin: string): BrowserWindow => {
   return window
 }
 
-// The bundles of this app in the Applications folders, the one Electron moves it to first.
+// The copy of this app in /Applications that Electron's move writes: named as the running
+// bundle is, which Finder may have renamed.
 const applicationsCopy = (): string => join("/Applications", basename(bundleOf(app.getPath("exe"))))
-const installedBundles = (): string[] => [
-  applicationsCopy(),
-  join(homedir(), "Applications", basename(bundleOf(app.getPath("exe")))),
+
+// The bundle names an installed copy may have: the running one's, and the packaged name,
+// which is the executable's (`executableName` in electron-builder.yml) and survives a
+// rename of the bundle.
+const installedNames = (): string[] => [
+  basename(bundleOf(app.getPath("exe"))),
+  `${basename(app.getPath("exe"))}.app`,
 ]
 
 // The version of the copy of this app already in Applications, if its Info.plist can be read.
@@ -569,7 +574,8 @@ const installedExtract = () =>
 const installedCopies = () =>
   process.platform === "darwin"
     ? findInstalledApps({
-        bundles: installedBundles(),
+        folders: ["/Applications", join(homedir(), "Applications")],
+        names: installedNames(),
         exists: (path) =>
           access(path).then(
             () => true,

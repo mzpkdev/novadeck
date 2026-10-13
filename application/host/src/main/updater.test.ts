@@ -47,7 +47,7 @@ const build = (overrides: Partial<UpdateBuild> = {}): UpdateBuild => ({
   execPath: "/opt/novadeck/novadeck",
   env: {},
   signed: false,
-  inApplications: true,
+  inApplications: false,
   appImageWritable: true,
   appImageInstalled: true,
   ...overrides,
@@ -151,15 +151,17 @@ describe("how a build updates", () => {
 
   context("on macOS", () => {
     it("installs when the app is Developer ID signed", () => {
-      expect(updatePlan(build({ platform: "darwin", signed: true }))).toEqual({
-        kind: "mac",
-        mode: "install",
-        portable: false,
-      })
+      expect(updatePlan(build({ platform: "darwin", signed: true, inApplications: true }))).toEqual(
+        {
+          kind: "mac",
+          mode: "install",
+          portable: false,
+        },
+      )
     })
 
     it("only tells of updates when it is not", () => {
-      expect(updatePlan(build({ platform: "darwin" }))).toEqual({
+      expect(updatePlan(build({ platform: "darwin", inApplications: true }))).toEqual({
         kind: "mac",
         mode: "tell",
         portable: false,
@@ -205,7 +207,9 @@ describe("whether a build is portable", () => {
     it("is a packaged app anywhere but an Applications folder, signed or not", () => {
       expect(portableOf(build(outside))).toBe(true)
       expect(portableOf(build({ ...outside, signed: true }))).toBe(true)
-      expect(portableOf(build({ platform: "darwin", signed: true }))).toBe(false)
+      expect(portableOf(build({ platform: "darwin", signed: true, inApplications: true }))).toBe(
+        false,
+      )
     })
 
     it("is not a build that looks for no updates", () => {

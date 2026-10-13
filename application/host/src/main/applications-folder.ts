@@ -79,8 +79,9 @@ const reasonOf = (error: unknown): string => {
 
 /**
  * Moves the app to Applications with Electron's `moveToApplicationsFolder`, passed as
- * `move`. On success Electron has copied the app, moved the original to the Trash unless it
- * runs from a disk image, started a script that opens the copy once this process ends,
+ * `move`. On success Electron has copied the app, deleted the original (or trashed it where
+ * deleting fails; a read-only translocated copy stays, and a disk image's is never touched),
+ * started a script that opens the copy once this process ends,
  * and called `app.quit()` itself, all before `move` returns true (see
  * `ElectronBundleMover::Move`); the quit runs the app's own shutdown, so nothing here quits.
  * The move is made before any shutdown on purpose: it can fail, and the person's shells
@@ -131,8 +132,14 @@ export const moveToApplications = ({
 
 /** What finding the copies installed in Applications folders looks at of the machine. */
 export type InstalledAppsHost = {
-  /** The app bundles to look at, in the order a copy is replaced. */
-  readonly bundles: readonly string[]
+  /** The Applications folders to look in, in the order a copy is replaced. */
+  readonly folders: readonly string[]
+  /**
+   * The bundle names to look for in each folder, the running copy's first: Finder may have
+   * renamed a portable copy (`novadeck 2.app`), and the installed one keeps the packaged name.
+   * A name given twice is looked for once.
+   */
+  readonly names: readonly string[]
   readonly exists: (path: string) => Promise<boolean>
   readonly readFile: (path: string) => Promise<string>
 }
@@ -144,7 +151,8 @@ export type InstalledAppsHost = {
  * known to be newer.
  */
 export const findInstalledApps = async ({
-  bundles,
+  folders,
+  names,
   exists,
   readFile,
 }: InstalledAppsHost): Promise<InstalledCopy[]> => {
@@ -158,7 +166,8 @@ export const findInstalledApps = async ({
       return { image, version: undefined, unchecked: true }
     }
   }
-  const copies = await Promise.all(bundles.map(copy))
+  const bundles = new Set(folders.flatMap((folder) => names.map((name) => `${folder}/${name}`)))
+  const copies = await Promise.all([...bundles].map(copy))
   return copies.filter((each) => each !== undefined)
 }
 

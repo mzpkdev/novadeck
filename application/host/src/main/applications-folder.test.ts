@@ -169,9 +169,13 @@ describe("moving the app to Applications", () => {
 describe("the copies installed in Applications", () => {
   const plist = (version: string): string =>
     `<key>CFBundleShortVersionString</key><string>${version}</string>`
-  const finding = (files: Record<string, string | Error>, bundles = ["/A/n.app", "/H/n.app"]) =>
+  const finding = (
+    files: Record<string, string | Error>,
+    { folders = ["/A", "/H"], names = ["n.app"] } = {},
+  ) =>
     findInstalledApps({
-      bundles,
+      folders,
+      names,
       exists: async (path) => Object.keys(files).some((file) => file.startsWith(`${path}/`)),
       readFile: async (path) => {
         const file = files[path]
@@ -192,18 +196,31 @@ describe("the copies installed in Applications", () => {
     ])
   })
 
+  it("finds the packaged name beside a renamed running copy, the running name first, once", async () => {
+    const files = {
+      "/A/n.app/Contents/Info.plist": plist("0.6.0"),
+      "/A/n 2.app/Contents/Info.plist": plist("0.4.0"),
+    }
+    expect(await finding(files, { folders: ["/A"], names: ["n 2.app", "n.app"] })).toEqual([
+      { image: "/A/n 2.app", version: "0.4.0", unchecked: false },
+      { image: "/A/n.app", version: "0.6.0", unchecked: false },
+    ])
+    // The running copy has the packaged name: it is looked for once.
+    expect(await finding(files, { folders: ["/A"], names: ["n.app", "n.app"] })).toHaveLength(1)
+  })
+
   it("lists none where there is no bundle", async () => {
     expect(await finding({})).toEqual([])
   })
 
   it("has no version for a plist that names none a release has, and is not unchecked", async () => {
     expect(
-      await finding({ "/A/n.app/Contents/Info.plist": plist("latest") }, ["/A/n.app"]),
+      await finding({ "/A/n.app/Contents/Info.plist": plist("latest") }, { folders: ["/A"] }),
     ).toEqual([{ image: "/A/n.app", version: undefined, unchecked: false }])
   })
 
   it("marks a bundle whose plist cannot be read as unchecked", async () => {
-    expect(await finding({ "/A/n.app/Contents/MacOS/n": "" }, ["/A/n.app"])).toEqual([
+    expect(await finding({ "/A/n.app/Contents/MacOS/n": "" }, { folders: ["/A"] })).toEqual([
       { image: "/A/n.app", version: undefined, unchecked: true },
     ])
   })

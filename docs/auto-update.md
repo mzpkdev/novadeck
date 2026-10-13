@@ -263,8 +263,9 @@ On macOS the install is Electron's `app.moveToApplicationsFolder()`, which the h
 without a shutdown first (`moveToApplications` in `applications-folder.ts`). In Electron's
 source (`shell/browser/ui/cocoa/electron_bundle_mover.mm`) a successful call has copied
 the bundle to `/Applications` (asking for authorization when the folder is not writable),
-moved the original to the Trash unless it runs from a disk image (which it unmounts after
-five seconds), started a shell script that waits for this process to end, clears the
+deleted the original (`DeleteOrTrash` removes it outright and trashes it only where removal
+fails, so a read-only translocated copy stays; a copy on a disk image is never deleted, and
+the image is unmounted after five seconds), started a shell script that waits for this process to end, clears the
 quarantine attribute of the copy and opens it, and called `Browser::Quit()` itself, all
 before it returns true. That quit is the app's ordinary one: `before-quit` runs the shutdown
 (pages save, the runner ends its shells) before the process ends, so nothing is lost, and the
@@ -280,6 +281,14 @@ copies share the data folder. The installed copies, `/Applications` first and th
 install; one whose plist cannot be read is not replaced. Opening a newer installed copy
 shuts down the same way and then relaunches into its executable. Electron's move installs
 only into `/Applications`, so an older copy kept in `~/Applications` stays beside it.
+Electron's move writes only to `/Applications/<the running bundle's name>`. A portable copy
+Finder renamed (`novadeck 2.app`) is still checked against the installed copy: the guard and
+the launch check look for the running name and for the packaged one, `novadeck.app` (the
+executable's name plus `.app`), in both Applications folders.
+Authorization limits: an account that cannot write `/Applications` gets an administrator
+prompt, and the install fails (with Electron's message as the reason) if it is cancelled; once
+authorized, Electron replaces a copy in `/Applications` that another account owns; a copy in
+`~/Applications` is never upgraded by the move.
 Unsigned builds are portable too: Gatekeeper on macOS 15 and later makes them rough to
 open, and the installed copy only tells of updates until the app is signed.
 

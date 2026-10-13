@@ -17,7 +17,7 @@ export type DemoPortable = {
 // The version of the portable copy the demo plays.
 export const portableVersion = "0.0.70"
 
-// The run the demo plays: the page's own, so a reload within it is no new launch.
+// The run the demo plays: new at each load of the page, so a reload is a new launch.
 export const portableRun = crypto.randomUUID()
 
 // The browser's stand-in for the desktop host's portable copy: it says it is one, and
