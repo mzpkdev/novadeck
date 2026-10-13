@@ -15,7 +15,7 @@ export const HarnessMatrix = () => {
             <div key={h.id} className="w-24 text-center" title={h.package}>
               <div className="text-[12px] font-medium">{h.title.replace(" Code", "")}</div>
               <div
-                className="mx-auto mt-1 h-1 w-14 bg-raised"
+                className="mx-auto mt-1 h-1 w-14 bg-[var(--color-soft)]"
                 title={`${have} of ${required.length} required`}
               >
                 <div
@@ -38,7 +38,7 @@ export const HarnessMatrix = () => {
           <div
             key={m.name}
             title={m.summary}
-            className={`flex h-[22px] items-center border-b border-line/60 ${gap ? "bg-[var(--color-warning)]" : mixed ? "bg-raised" : ""}`}
+            className={`flex h-[22px] items-center border-b border-line ${gap ? "bg-[var(--color-warning)]" : mixed ? "bg-[var(--color-soft)]" : ""}`}
           >
             <div
               className={`flex w-56 items-center gap-1.5 pl-1 font-mono text-[11px] ${m.optional ? "text-muted" : ""}`}

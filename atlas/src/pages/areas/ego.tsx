@@ -47,7 +47,7 @@ export const EgoGraph = ({ id }: { id: string }) => {
           height={BOX_H}
           rx={3}
           fill="var(--panel)"
-          stroke={hover === area ? "var(--accent)" : "var(--color-outline)"}
+          stroke={hover === area ? "var(--accent)" : "var(--window-border-color)"}
         />
         <rect x={x} y={y - BOX_H / 2} width={4} height={BOX_H} fill={hue(a?.node ?? "").ink} />
         <text x={x + 12} y={y + 4} fontSize={12} fill="var(--fg)">
@@ -105,7 +105,7 @@ export const EgoGraph = ({ id }: { id: string }) => {
           width={BOX_W}
           height={BOX_H + 4}
           rx={3}
-          fill="var(--raised)"
+          fill="var(--panel)"
           stroke="var(--accent)"
           strokeWidth={1.5}
         />

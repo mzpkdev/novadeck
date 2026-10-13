@@ -41,12 +41,15 @@ export const Segmented = <T extends string>({
   value,
   options,
   onChange,
+  floating = false,
 }: {
   value: T
   options: { id: T; label: string; icon?: ReactNode }[]
   onChange: (id: T) => void
+  // Standing on the workspace rather than in a pane, it lifts off it.
+  floating?: boolean
 }) => (
-  <div className="segmented gap-0.5">
+  <div className={floating ? "segmented gap-0.5 shadow-lg" : "segmented gap-0.5"}>
     {options.map((o) => (
       <button
         key={o.id}

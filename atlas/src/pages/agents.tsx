@@ -6,7 +6,7 @@ import { atlas, toolByName } from "../atlas-data.ts"
 import type { McpTool } from "../atlas.ts"
 import { AnchorIcon, AnchorLink } from "../components/anchor.tsx"
 import { SchemaView } from "../components/schema.tsx"
-import { Page, SectionLabel } from "../components/ui.tsx"
+import { Ground, Window } from "../components/ui.tsx"
 import { useFocus } from "../components/use-focus.ts"
 import { Lifecycle } from "./agents/lifecycle.tsx"
 import { HarnessMatrix } from "./agents/matrix.tsx"
@@ -48,7 +48,8 @@ const Chip = ({
       type="button"
       onClick={() => onSelect(tool.name)}
       title={firstSentence(tool.description)}
-      className={`flex cursor-pointer items-center gap-1.5 rounded-sm border bg-panel px-2 py-1 font-mono text-[12px] ${selected ? "border-accent text-accent" : "border-[var(--color-outline)] hover:border-accent"}`}
+      data-selected={selected}
+      className="item flex items-center gap-1.5 border-[var(--window-border-color)] px-2 py-1 font-mono text-[12px] data-[selected=true]:text-accent"
     >
       <Icon size={13} />
       {tool.name}
@@ -62,7 +63,7 @@ const ToolPanel = ({ tool }: { tool: McpTool }) => {
   const rest = tool.description.trim().slice(first.length).trim()
   const owner = atlas.areas.find((a) => a.tools.includes(tool.name))
   return (
-    <div className="mt-3 space-y-3 rounded-sm border border-line p-3">
+    <div className="mt-3 space-y-3 border-t border-dashed border-line pt-3">
       <div className="flex items-center gap-2">
         <span className="font-mono text-[13px] font-medium">{tool.name}</span>
         <AreaChip id={owner?.id ?? null} />
@@ -101,38 +102,34 @@ const ToolPanel = ({ tool }: { tool: McpTool }) => {
   )
 }
 
-const H = ({ children }: { children: string }) => <SectionLabel>{children}</SectionLabel>
-
 export const AgentsPage = () => {
   const [selected, setSelected] = useState<string | null>(null)
   const tool = selected ? toolByName.get(selected) : undefined
   return (
-    <Page title="Agents">
-      <div className="space-y-7">
-        <div className="grid items-start gap-8 xl:grid-cols-[auto_1fr]">
-          <section>
-            <H>Harness parity</H>
-            <div className="rounded-sm border border-line p-3">
-              <HarnessMatrix />
-            </div>
-          </section>
-          <section className="min-w-0">
-            <H>Hook lifecycle</H>
-            <div className="overflow-auto rounded-sm border border-line p-3">
-              <Lifecycle />
-            </div>
-          </section>
+    <Ground title="Agents">
+      <div className="space-y-3">
+        <div className="grid items-start gap-3 xl:grid-cols-[auto_1fr]">
+          <Window title="Harness parity">
+            <HarnessMatrix />
+          </Window>
+          <Window title="Hook lifecycle">
+            <Lifecycle />
+          </Window>
         </div>
-        <section>
-          <H>MCP tools</H>
+        <Window
+          title="MCP tools"
+          tools={
+            <span className="font-mono text-caption text-muted">{atlas.agents.tools.length}</span>
+          }
+        >
           <div className="flex flex-wrap gap-2">
             {atlas.agents.tools.map((t) => (
               <Chip key={t.name} tool={t} selected={selected === t.name} onSelect={setSelected} />
             ))}
           </div>
           {tool ? <ToolPanel tool={tool} /> : null}
-        </section>
+        </Window>
       </div>
-    </Page>
+    </Ground>
   )
 }

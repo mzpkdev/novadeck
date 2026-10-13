@@ -1,5 +1,4 @@
 import {
-  Background,
   Controls,
   Handle,
   MarkerType,
@@ -43,10 +42,7 @@ type LabelNode = Node<{ label: string }, "label">
 
 const AreaCard = ({ data }: NodeProps<AreaNode>) => (
   <div
-    className={clsx(
-      "rounded-sm border border-[var(--color-outline)] bg-panel px-2 py-0.5 shadow-[var(--shadow-control)] transition-opacity",
-      data.dim && "opacity-25",
-    )}
+    className={clsx("pane px-2 py-0.5 transition-opacity", data.dim && "opacity-25")}
     style={{ width: NODE_W, borderLeft: `3px solid ${hue(data.area.node).ink}` }}
   >
     <div className="truncate text-[12px] leading-4">{data.area.title}</div>
@@ -162,10 +158,9 @@ export const GraphView = () => {
         onNodeMouseEnter={(_, n) => n.type === "area" && setHover(n.id)}
         onNodeMouseLeave={() => setHover(null)}
       >
-        <Background color="var(--accent)" gap={18} size={1.4} />
         <Controls showInteractive={false} />
       </ReactFlow>
-      <div className="segmented absolute top-3 left-3 items-center gap-0.5">
+      <div className="segmented absolute top-0 left-3 items-center gap-0.5 shadow-lg">
         {kinds.map((k) => (
           <button
             key={k}

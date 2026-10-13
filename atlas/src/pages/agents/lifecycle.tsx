@@ -51,8 +51,8 @@ export const Lifecycle = () => {
               y={0}
               width={W}
               height={height}
-              fill="var(--raised)"
-              opacity={0.5}
+              fill="var(--color-soft)"
+              opacity={0.6}
             />
           ) : null}
           <text x={LABEL + i * W + W / 2} y={20} textAnchor="middle" fill="var(--muted)">

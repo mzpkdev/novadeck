@@ -4,11 +4,13 @@ import { useNavigate } from "react-router"
 import { atlas, groupBy, nodeTitle } from "../../atlas-data.ts"
 import type { Area } from "../../atlas.ts"
 import { squarify } from "../../components/treemap.ts"
-import { compact, hue, useSize } from "../../components/viz.tsx"
+import { compact, Dot, hue, useSize } from "../../components/viz.tsx"
 import { areaPath } from "../../links.ts"
 
-const GAP = 3
-const HEAD = 16
+// Groups stand apart on the workspace as windows; areas tile each window's body.
+const SPACE = 6
+const PAD = 4
+const HEAD = 26
 
 // The whole codebase: a rect per runtime node, a rect per area inside it, area = lines.
 // Hatching along the bottom of an area is its share of test files.
@@ -29,35 +31,46 @@ export const TreemapView = () => {
       0,
       w,
       h,
-    ).map((g) => ({
-      ...g,
-      cells: squarify(
-        g.item.areas.map((a) => ({ item: a, value: a.lines })),
-        g.x + GAP,
-        g.y + GAP + HEAD,
-        g.w - GAP * 2,
-        g.h - GAP * 2 - HEAD,
-      ),
-    }))
+    )
+      .map((g) => ({
+        ...g,
+        x: g.x + SPACE,
+        y: g.y + SPACE,
+        w: g.w - SPACE * 2,
+        h: g.h - SPACE * 2,
+      }))
+      .map((g) => ({
+        ...g,
+        cells: squarify(
+          g.item.areas.map((a) => ({ item: a, value: a.lines })),
+          g.x + PAD,
+          g.y + HEAD + PAD,
+          g.w - PAD * 2,
+          g.h - HEAD - PAD * 2,
+        ),
+      }))
   }, [w, h])
 
   return (
-    <div ref={ref} className="relative h-full w-full overflow-hidden">
+    <div ref={ref} className="relative h-full w-full">
       {groups.map((g) => (
         <div
           key={g.item.node}
-          className="absolute rounded-sm border border-[var(--color-outline)] bg-panel"
+          className="pane absolute"
           style={{ left: g.x, top: g.y, width: g.w, height: g.h }}
         >
-          {g.w > 60 ? (
-            <div
-              className="absolute left-1 flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted"
-              style={{ top: 2 }}
-            >
-              <span className="truncate">{nodeTitle(g.item.node)}</span>
-              <span>{compact(g.item.lines)}</span>
-            </div>
-          ) : null}
+          <div
+            className="pane-heading quiet flex items-center gap-1.5 px-2 text-[12px] font-medium"
+            style={{ height: HEAD }}
+          >
+            <Dot node={g.item.node} />
+            {g.w > 70 ? <span className="truncate">{nodeTitle(g.item.node)}</span> : null}
+            {g.w > 130 ? (
+              <span className="ml-auto font-mono text-[11px] font-normal text-muted">
+                {compact(g.item.lines)}
+              </span>
+            ) : null}
+          </div>
         </div>
       ))}
       {groups.flatMap((g) =>
@@ -95,7 +108,7 @@ export const TreemapView = () => {
       )}
       {hover ? (
         <div
-          className="pointer-events-none fixed z-20 rounded-sm border border-[var(--color-outline)] bg-panel px-2 py-1 text-[12px] shadow-lg"
+          className="pane floating pointer-events-none fixed z-20 px-2 py-1 text-[12px]"
           style={{ left: hover.x + 12, top: hover.y + 12 }}
         >
           <div className="font-medium">{hover.area.title}</div>

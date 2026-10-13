@@ -82,6 +82,27 @@ export const Ground = ({
   </div>
 )
 
+// A window standing on the workspace: a pane with a quiet heading.
+export const Window = ({
+  title,
+  tools,
+  className,
+  children,
+}: {
+  title: ReactNode
+  tools?: ReactNode
+  className?: string
+  children: ReactNode
+}) => (
+  <section className={clsx("pane flex min-w-0 flex-col", className)}>
+    <header className="pane-heading quiet flex h-10 shrink-0 items-center gap-2 px-3">
+      <h2 className="m-0 min-w-0 truncate text-body font-medium">{title}</h2>
+      {tools ? <div className="ml-auto flex items-center gap-2">{tools}</div> : null}
+    </header>
+    <div className="min-h-0 flex-1 overflow-auto p-3">{children}</div>
+  </section>
+)
+
 // The app's sidebar: a grained ground, a panel labelled in small capitals.
 export const Sidebar = ({
   title,
@@ -107,14 +128,6 @@ export const Sidebar = ({
     {footer}
   </aside>
 )
-
-export const SectionLabel = ({
-  children,
-  className,
-}: {
-  children: ReactNode
-  className?: string
-}) => <h2 className={clsx("section-label m-0 mb-2.5", className)}>{children}</h2>
 
 export const Section = ({
   title,

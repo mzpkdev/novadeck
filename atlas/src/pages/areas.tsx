@@ -5,7 +5,7 @@ import { Link, useParams, useSearchParams } from "react-router"
 
 import { areaById, atlas, nodeTitle } from "../atlas-data.ts"
 import { AnchorIcon, blobUrl } from "../components/anchor.tsx"
-import { Empty, Page } from "../components/ui.tsx"
+import { Empty, Ground, Page } from "../components/ui.tsx"
 import { compact, Dot, hue, KindSample, Segmented } from "../components/viz.tsx"
 import { nodePath, procedurePath, tablePath, toolPath } from "../links.ts"
 import { EgoGraph } from "./areas/ego.tsx"
@@ -25,18 +25,19 @@ export const AreasPage = () => {
     )
   }
   return (
-    <Page
+    <Ground
       title="Areas"
       flush
       tools={
         <>
           {view === "treemap" ? (
-            <span className="flex items-center gap-2 text-caption text-muted">
+            <span className="pane floating flex h-9 items-center gap-2 px-3 text-caption text-muted">
               area = lines
               <span className="hatch inline-block h-3 w-5 border border-line" /> tests
             </span>
           ) : null}
           <Segmented
+            floating
             value={view}
             onChange={(v) => setParams(v === "graph" ? { view: "graph" } : {})}
             options={[
@@ -47,10 +48,10 @@ export const AreasPage = () => {
         </>
       }
     >
-      <div className={view === "treemap" ? "min-h-0 flex-1 p-3" : "min-h-0 flex-1"}>
+      <div className={view === "treemap" ? "min-h-0 flex-1 px-1.5 pb-1.5" : "min-h-0 flex-1"}>
         {view === "treemap" ? <TreemapView /> : <GraphView />}
       </div>
-    </Page>
+    </Ground>
   )
 }
 
@@ -70,7 +71,7 @@ const Owned = ({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="cursor-pointer rounded-sm border border-line px-2 py-0.5 text-[12px] hover:border-accent"
+        className="pane cursor-pointer px-2 py-0.5 text-[12px] hover:border-accent"
         aria-expanded={open}
       >
         <span className="font-mono font-semibold">{ids.length}</span>{" "}
@@ -82,7 +83,7 @@ const Owned = ({
             <Link
               key={id}
               to={to(id)}
-              className="rounded-sm border border-line px-1.5 font-mono text-[11px] leading-5 no-underline"
+              className="rounded-sm border border-[var(--window-border-color)] bg-panel px-1.5 font-mono text-[11px] leading-5 no-underline"
             >
               {id}
             </Link>
@@ -106,7 +107,7 @@ export const AreaPage = () => {
   const maxLines = Math.max(...atlas.areas.map((a) => a.lines))
   const share = area.files > 0 ? Math.min(1, area.tests / area.files) : 0
   return (
-    <Page
+    <Ground
       crumbs={
         <>
           <Link to="/areas" className="text-muted no-underline hover:text-fg">
@@ -125,7 +126,7 @@ export const AreaPage = () => {
       }
       title={area.title}
       tools={
-        <span className="flex items-center gap-1">
+        <span className="pane floating flex h-9 items-center gap-1 px-2">
           {area.entries.map((e) => (
             <AnchorIcon key={`${e.file}:${e.line}`} anchor={e} size={15} />
           ))}
@@ -145,7 +146,7 @@ export const AreaPage = () => {
       }
     >
       <div className="mx-auto max-w-4xl space-y-6">
-        <header>
+        <header className="pane p-4">
           <div className="flex items-center gap-3">
             <div
               className="relative h-3 overflow-hidden rounded-sm bg-raised"
@@ -194,6 +195,6 @@ export const AreaPage = () => {
           <Owned label="tools" ids={area.tools} to={toolPath} />
         </section>
       </div>
-    </Page>
+    </Ground>
   )
 }
