@@ -3725,7 +3725,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       writeFileSync(join(bin, "claude"), '#!/bin/sh\nexec agent claude "$@"\n')
       chmodSync(join(bin, "claude"), 0o755)
       const opener = await create(manager, shell)
-      const { start, step } = driver(shell, manager)
+      const { queue, start, step } = driver(shell, manager)
       await start(opener.id, "claude", "s-opener")
       const steps = join(shell.home, "steps-opened")
       mkdirSync(steps)
@@ -3768,8 +3768,15 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           (JSON.parse(await step(opener.id, { call: "agents", request: {} })) as { text: string })
             .text
         // An Enter the person pressed meanwhile, as at a trust screen, doesn't make it theirs.
+        // Its hook fires from that Enter, so the Enter is always within the window.
+        const submitted = queue(opened, {
+          hook: "UserPromptSubmit",
+          payload: { prompt: "fix-the-build" },
+          enter: true,
+        })
+        await shell.until(manager, opened, `enter ${submitted.name}`)
         manager.write({ terminalId: opened, data: "\r" }, "client")
-        await step(opened, { hook: "UserPromptSubmit", payload: { prompt: "fix-the-build" } })
+        await shell.until(manager, opened, `done ${submitted.name}`)
         expect(shell.store.terminal(opened)?.work).toMatchObject({
           first: "fix-the-build",
           firstByPerson: false,
