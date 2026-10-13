@@ -2044,6 +2044,11 @@ export class Terminals {
     this.messaging.forgetProject(projectId)
   }
 
+  /** The project stays after all, as its removal failed: terminals start in it again. */
+  projectKept(sessionIds: readonly string[]): void {
+    for (const sessionId of sessionIds) this.closingSessions.delete(sessionId)
+  }
+
   /** Closes every terminal of the sessions, running or kept, whoever controls them. */
   private async closeSessions(sessions: ReadonlySet<string>): Promise<void> {
     const running = [...this.records.values()].filter(({ summary }) =>

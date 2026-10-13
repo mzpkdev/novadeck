@@ -1415,6 +1415,19 @@ describe("project closing", () => {
       manager.restart({ terminalId: id, cols: 80, rows: 24 }, "owner"),
     ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
   })
+
+  it("starts no terminal in a closed project's sessions, unless the project stays", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    await manager.closeProject("project", ["session"])
+    const create = () =>
+      manager.create({ id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
+    await expect(create()).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+    // Its removal failed after the close: terminals start in it again.
+    manager.projectKept(["session"])
+    await expect(create()).resolves.toMatchObject({ sessionId: "session" })
+  })
 })
 
 describe.skipIf(process.platform === "win32")("terminal environment", () => {
