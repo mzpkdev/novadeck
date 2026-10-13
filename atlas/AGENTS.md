@@ -1,7 +1,7 @@
 # Atlas
 
 A dev-only map of what Novadeck is built of, read from the code: the runtime, the areas,
-the API, the data, the agent surface, traced flows, and lenses into the UI and the runner.
+the API, the data, the agent surface, hand-written flows, and lenses into the UI and the runner.
 People read it as a web app (`pnpm atlas`); agents read it as briefs.
 
 # Architecture Briefs
@@ -20,7 +20,7 @@ pnpm -s atlas:brief state              # how UI state and calls are wired
 
 `node atlas/brief/main.ts <subject>` is the same without pnpm. A brief is short Markdown,
 read fresh from the source on every call (it builds `@novadeck/protocol` first if that is
-missing or stale), with `file:line` anchors to open next.
+missing or stale; the same goes for `extract` and `check`), with `file:line` anchors to open next.
 
 - Subjects: an area token, a procedure (`namespace.name`), a UI action (`prefix/name`), a
   table, an MCP tool or a flow. Prefix a kind (`area:`, `procedure:`, `action:`, `table:`,
@@ -60,9 +60,16 @@ extract`, for `jq`; it is large, so prefer briefs.
   source under `application/`, `harnesses/` or `engines/` belongs to no area, or when a
   note names an area that no longer exists. A new folder becomes a token on its own; give
   it a purpose in `content/areas.ts`. A new package needs a root there.
+- Every structure an extractor depends on (a type, a class, a marker line) is expected, not
+  assumed: when it is gone, or a scan that must find something finds nothing, the extractor
+  reports it as broken (`anchors.expect` / `anchors.report`) and `check` fails. Add the same
+  for any new extractor.
+- Sources are read with LF endings and paths are posix, so Windows checkouts trace the same.
 - Where a trace is unsure, show it as unsure: a hollow or dashed mark on the page, a plain
   sentence in a brief. Never let an untraced path look complete.
 - The look replicates Novadeck's Graphite theme and chrome (`src/index.css`,
   `src/chrome.css`) rather than importing `@novadeck/ui`; copy again when those change.
 - Atlas has no build script and never ships. Checks: `pnpm --filter @novadeck/atlas check`,
-  `typecheck` and `test`, plus the repository's `oxlint` and `oxfmt`.
+  `typecheck` (it runs `extract` first, because `src/generated/atlas.json` is gitignored) and
+  `test`, plus the repository's `oxlint` and `oxfmt`. `atlas/turbo.json` turns off turbo's cache
+  for `test` and `typecheck`: they read the whole repository, which turbo does not hash.

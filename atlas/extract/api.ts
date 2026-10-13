@@ -3,9 +3,9 @@ import { z } from "zod"
 import type { Api, ApiError, Anchor, JsonSchema, Procedure } from "../src/atlas.ts"
 import type { Anchors } from "./anchors.ts"
 import { sourceFiles } from "./files.ts"
+import { findDefinition, routerFile, servicesOf, type Service } from "./runner-services.ts"
 
 const contractFile = "application/protocol/src/contract.ts"
-const routerFile = "application/runner/src/router.ts"
 
 type Definition = { inputSchema?: unknown; outputSchema?: unknown }
 
@@ -40,52 +40,9 @@ const toJson = (schema: unknown): JsonSchema | null => {
   }
 }
 
-// `terminals.create` → the line in the router that implements it, and the call it makes.
-type Service = { name: string; file: string }
-
-const services = (router: string): Service[] => {
-  const imports = new Map(
-    [...router.matchAll(/import type \{ (\w+) \} from "\.\/([^"]+)\.js"/g)].map((match) => [
-      match[1]!,
-      `application/runner/src/${match[2]}.ts`,
-    ]),
-  )
-  const options = router.slice(router.indexOf("createRouter"))
-  return [...options.matchAll(/^\s+(\w+): (\w+)$/gm)].flatMap((match) => {
-    const file = imports.get(match[2]!)
-    return file ? [{ name: match[1]!, file }] : []
-  })
-}
-
-const definitionOf = (
-  repo: string,
-  anchors: Anchors,
-  runnerFiles: string[],
-  service: Service,
-  method: string,
-): Anchor | null => {
-  const dir = service.file.slice(0, service.file.lastIndexOf("/"))
-  const pattern = new RegExp(`^\\s*(?:(?:async|get|static)\\s+)*\\*?${method}\\s*(?:[(<:=])`, "m")
-  const siblings = runnerFiles
-    .filter((file) => file.startsWith(`${dir}/`))
-    .toSorted((a, b) => Number(/manager|service/.test(b)) - Number(/manager|service/.test(a)))
-  const candidates = [service.file, ...siblings]
-  for (const file of new Set(candidates)) {
-    const source = anchors.read(file)
-    const match = source === null ? null : pattern.exec(source)
-    if (source !== null && match) {
-      return {
-        file,
-        line: source.slice(0, match.index).split("\n").length + (match[0].startsWith("\n") ? 1 : 0),
-      }
-    }
-  }
-  void repo
-  return null
-}
-
+// `terminals.create` → the line of the service method the router calls for it, else the
+// router's own handler.
 const handlerOf = (
-  repo: string,
   anchors: Anchors,
   runnerFiles: string[],
   router: string,
@@ -103,9 +60,9 @@ const handlerOf = (
     (call[2] === id.split(".").at(-1) ? 0 : 2) + (call[1] === "store" ? 1 : 0)
   const calls = [...body.matchAll(/\b(\w+)\.(\w+)\(/g)].toSorted((a, b) => rank(a) - rank(b))
   for (const call of calls) {
-    const service = known.find((each) => each.name === call[1])
+    const service = known.find((each) => each.field === call[1])
     if (!service) continue
-    const found = definitionOf(repo, anchors, runnerFiles, service, call[2]!)
+    const found = findDefinition(anchors, runnerFiles, service, call[2]!)
     if (found) return found
   }
   return { file: routerFile, line }
@@ -171,7 +128,7 @@ const errorsOf = (
 }
 
 const callersOf = (anchors: Anchors, uiFiles: string[], id: string): Anchor[] => {
-  const pattern = new RegExp(`\\.${id.replace(".", "\\.")}\\(`)
+  const pattern = new RegExp(`\\.${id.replaceAll(".", "\\.")}\\(`)
   return uiFiles.flatMap((file) => {
     const lines = anchors.read(file)?.split("\n") ?? []
     const index = lines.findIndex((text) => pattern.test(text))
@@ -180,6 +137,9 @@ const callersOf = (anchors: Anchors, uiFiles: string[], id: string): Anchor[] =>
 }
 
 const extractErrors = (anchors: Anchors, source: string): ApiError[] => {
+  const from = anchors.expect(contractFile, "export const errors = {", "api errors")
+  const to = anchors.expect(contractFile, "const procedure =", "api errors")
+  if (from === null || to === null) return []
   const body = source.slice(
     source.indexOf("export const errors"),
     source.indexOf("const procedure ="),
@@ -195,7 +155,6 @@ const extractErrors = (anchors: Anchors, source: string): ApiError[] => {
       note = []
     }
   }
-  void anchors
   return found
 }
 
@@ -204,7 +163,7 @@ export const extractApi = async (repo: string, anchors: Anchors): Promise<Api> =
   const { contract } = await import("@novadeck/protocol")
   const source = anchors.read(contractFile) ?? ""
   const router = anchors.read(routerFile) ?? ""
-  const routed = services(router)
+  const routed = servicesOf(anchors, router)
   const runnerFiles = sourceFiles(repo, "application/runner/src")
   // The protocol's own client calls some procedures (write, resize, ack) for the UI.
   const callerFiles = [
@@ -213,6 +172,10 @@ export const extractApi = async (repo: string, anchors: Anchors): Promise<Api> =
   ]
 
   const apiErrors = extractErrors(anchors, source)
+  if (apiErrors.length === 0 && source !== "")
+    anchors.report("api errors", contractFile, "found 0 errors in `export const errors`")
+  anchors.expect(contractFile, "export const contract", "api procedures")
+  anchors.expect(routerFile, "const authorized", "api router middleware")
   const known = new Set(apiErrors.map((each) => each.code))
   // What the `authorized` middleware raises for every procedure behind it.
   const middleware = blockFrom(router, router.indexOf("const authorized"), "(")
@@ -222,7 +185,7 @@ export const extractApi = async (repo: string, anchors: Anchors): Promise<Api> =
     const id = path.join(".")
     const name = path[path.length - 1]!
     const stream = streamed(definition.outputSchema)
-    const handler = handlerOf(repo, anchors, runnerFiles, router, routed, id)
+    const handler = handlerOf(anchors, runnerFiles, router, routed, id)
     return {
       id,
       namespace: path.slice(0, -1).join("."),
@@ -238,6 +201,23 @@ export const extractApi = async (repo: string, anchors: Anchors): Promise<Api> =
     }
   })
 
+  if (procedures.length === 0)
+    anchors.report("api procedures", contractFile, "found 0 procedures in the contract")
+  for (const procedure of procedures)
+    if (
+      !router.includes(`authorized.${procedure.id}.handler(`) &&
+      !router.includes(`api.${procedure.id}.handler(`)
+    )
+      anchors.report("api handlers", routerFile, `no router handler for ${procedure.id}`)
+  const resolved = procedures.filter(
+    (procedure) => procedure.handler !== null && procedure.handler.file !== routerFile,
+  ).length
+  if (resolved * 2 < procedures.length)
+    anchors.report(
+      "api handlers",
+      routerFile,
+      `only ${resolved} of ${procedures.length} handlers resolve to a service method`,
+    )
   return { procedures, errors: apiErrors }
 }
 

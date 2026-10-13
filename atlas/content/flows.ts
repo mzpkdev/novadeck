@@ -7,7 +7,8 @@ const runnerSrc = "application/runner/src"
 const ui = "application/ui/src"
 const relay = "application/relay/src"
 
-// Paths traced by hand through the code. `pnpm check` fails when an anchor stops resolving.
+// Paths written by hand from the code. `pnpm --filter @novadeck/atlas check` fails when an anchor stops resolving; the steps
+// themselves are not traced, so a flow can go stale while its anchors still resolve.
 export const flows: (Omit<Flow, "steps"> & { steps: CuratedStep[] })[] = [
   {
     id: "boot",

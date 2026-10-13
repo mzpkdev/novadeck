@@ -94,8 +94,19 @@ export const extractAreas = (
     const source = anchors.read(file)
     if (source !== null) area.lines += source.split("\n").length - (source.endsWith("\n") ? 1 : 0)
   }
+  // An area stays when it holds files or something under it does.
+  const live = (id: string): boolean =>
+    areas.some((area) => area.files > 0 && (area.id === id || area.id.startsWith(`${id}/`)))
   for (const id of Object.keys(notes))
-    if (!byId.has(id)) problems.push({ where: "note for a missing area", file: id, text: "" })
+    if (!live(id)) problems.push({ where: "note for a missing area", file: id, text: "" })
+  for (const root of roots)
+    if (!files.some((file) => file.startsWith(`${root.dir}/`)))
+      problems.push({
+        where: "package root without files",
+        file: root.dir,
+        text: `no tracked source under ${root.dir} for \`${root.token}\``,
+        reason: "no tracked source files",
+      })
 
   const own = (file: string | undefined, id: string, into: "procedures" | "tables" | "tools") => {
     if (file === undefined) return
@@ -105,9 +116,7 @@ export const extractAreas = (
   for (const procedure of owned.api.procedures)
     own(procedure.handler?.file, procedure.id, "procedures")
   for (const table of owned.data.tables) own(table.anchor.file, table.name, "tables")
-  for (const tool of owned.agents.tools) {
-    own(tool.handler?.file, tool.name, "tools")
-    own(tool.anchor.file, tool.name, "tools")
-  }
+  // A tool belongs to the area that defines it; its handler lives elsewhere.
+  for (const tool of owned.agents.tools) own(tool.anchor.file, tool.name, "tools")
   return { areas: areas.filter((area) => area.files > 0), problems }
 }

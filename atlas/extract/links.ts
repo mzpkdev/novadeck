@@ -1,16 +1,18 @@
 import { execFileSync } from "node:child_process"
-import { dirname, join, normalize } from "node:path"
+import { posix } from "node:path"
 
 import type { Api, Area, AreaLink, Data } from "../src/atlas.ts"
 import type { Anchors } from "./anchors.ts"
 import { areaOf } from "./areas.ts"
+
+const { dirname, join, normalize } = posix
 
 type Kind = AreaLink["kind"]
 type Exports = { prefix: string; target: string }[]
 
 const roots = ["application", "harnesses", "engines"]
 const sourcePattern = /\.(?:tsx?|rs)$/
-const skipPattern = /\.(?:test|spec|e2e)\.|\/(?:e2e|testing|fixtures)\//
+const skipPattern = /\.(?:test|spec|e2e)\.|\/(?:e2e|testing|test|fixtures)\/|\/testing\.tsx?$/
 const specifierPattern =
   /(?:import|export)\s[^'"`;]*?from\s*["']([^"']+)["']|import\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g
 const suffixes = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"]

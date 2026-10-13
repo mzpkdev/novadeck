@@ -85,6 +85,25 @@ const usage = (anchors: Anchors, files: string[], tables: Table[]): void => {
   }
 }
 
+// A write that says `RETURNING` also reads the row it wrote; the statement spans lines, so
+// it is found from the keyword back to the write that opened it.
+const returning = (anchors: Anchors, files: string[], tables: Table[]): void => {
+  for (const file of files) {
+    const source = anchors.read(file) ?? ""
+    for (const match of source.matchAll(/\bRETURNING\b/g)) {
+      const before = source.slice(Math.max(0, match.index - 800), match.index)
+      const statement = before.slice(Math.max(before.lastIndexOf("`"), before.lastIndexOf('"')) + 1)
+      const write = [
+        ...statement.matchAll(
+          /\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE(?:\s+OR\s+\w+)?|DELETE\s+FROM)\s+(\w+)/gi,
+        ),
+      ].at(-1)
+      const table = tables.find((each) => each.name === write?.[1])
+      if (table) table.readers.push({ file, line: lineAt(source, match.index) })
+    }
+  }
+}
+
 const schemasFile = "application/protocol/src/schemas.ts"
 
 const typeName = (schema: z.core.JSONSchema.JSONSchema): string => {
@@ -142,6 +161,9 @@ export const extractData = (repo: string, anchors: Anchors): Data => {
   const runnerFiles = sourceFiles(repo, "application/runner/src")
   const tables = runnerFiles.flatMap((file) => tablesIn(file, anchors.read(file) ?? ""))
   usage(anchors, runnerFiles, tables)
+  returning(anchors, runnerFiles, tables)
+  if (tables.length === 0)
+    anchors.report("data tables", "application/runner/src", "found 0 `CREATE TABLE` statements")
   return {
     tables,
     settings: settingsIn(anchors),

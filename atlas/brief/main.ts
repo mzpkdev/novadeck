@@ -1,7 +1,3 @@
-import { execFileSync } from "node:child_process"
-import { existsSync, readdirSync, statSync } from "node:fs"
-import { join, resolve } from "node:path"
-
 import type { Atlas } from "../src/atlas.ts"
 import {
   renderAction,
@@ -20,27 +16,6 @@ import {
 
 // `pnpm -s atlas:brief [subject]`: a short Markdown brief of a part of the code, read
 // fresh from the source on every call. See atlas/AGENTS.md.
-
-const repo = resolve(import.meta.dirname, "../..")
-const protocol = join(repo, "application/protocol")
-
-const newest = (dir: string): number =>
-  readdirSync(dir, { withFileTypes: true }).reduce((latest, entry) => {
-    const path = join(dir, entry.name)
-    return Math.max(latest, entry.isDirectory() ? newest(path) : statSync(path).mtimeMs)
-  }, 0)
-
-// The extractor reads the contract from the built protocol package; build it when it is
-// missing or older than its source.
-const ensureProtocol = () => {
-  const built = join(protocol, "dist/index.js")
-  if (existsSync(built) && statSync(built).mtimeMs >= newest(join(protocol, "src"))) return
-  process.stderr.write("atlas: building @novadeck/protocol…\n")
-  execFileSync("pnpm", ["--filter", "@novadeck/protocol", "build"], {
-    cwd: repo,
-    stdio: ["ignore", "ignore", "inherit"],
-  })
-}
 
 type Subject = { kind: string; name: string; render: () => string }
 
@@ -117,7 +92,6 @@ export const brief = (
 }
 
 if (import.meta.main) {
-  ensureProtocol()
   const { build } = await import("../extract/main.ts")
   const { text, found } = brief(await build(), process.argv[2])
   process.stdout.write(`${text}\n`)

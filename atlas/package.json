@@ -10,7 +10,7 @@
     "extract": "node extract/main.ts",
     "check": "node extract/main.ts --strict",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "node extract/main.ts && tsc --noEmit -p tsconfig.json",
     "brief": "node brief/main.ts"
   },
   "dependencies": {

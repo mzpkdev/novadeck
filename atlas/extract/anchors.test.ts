@@ -19,6 +19,13 @@ describe("createAnchors", () => {
     expect(anchors.broken()).toEqual([])
   })
 
+  it("reads CRLF sources as LF, so line-based extractors see the same text", () => {
+    writeFileSync(join(repo, "crlf.ts"), "one\r\ntwo\r\nthree\r\n")
+    const anchors = createAnchors(repo)
+    expect(anchors.read("crlf.ts")).toBe("one\ntwo\nthree\n")
+    expect(anchors.find("crlf.ts", "three")).toBe(3)
+  })
+
   it("records text that is gone as broken", () => {
     const anchors = createAnchors(repo)
     expect(anchors.resolve({ file: "a.ts", text: "four" }, "flow x")).toEqual({

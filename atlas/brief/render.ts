@@ -3,8 +3,9 @@ import { matchesGlob } from "node:path"
 import type { Anchor, Area, Atlas, JsonSchema, Procedure, Table } from "../src/atlas.ts"
 
 // Briefs: the atlas as short Markdown for an agent to read before it works in a part of
-// the code. Each keeps to what fits in a glance (the index ~2k tokens, a brief under ~1k),
-// names areas by their tokens, and says plainly where the static trace stops.
+// the code. Each keeps to what fits in a glance (the index under 8000 characters, every
+// other brief under 6000, about 1.5k tokens; brief.test.ts enforces both), names areas by
+// their tokens, and says plainly where the static trace stops.
 
 const at = (anchor: Anchor | null) =>
   anchor === null ? "?" : anchor.line === null ? anchor.file : `${anchor.file}:${anchor.line}`
@@ -212,7 +213,7 @@ export const renderProcedure = (atlas: Atlas, procedure: Procedure): string => {
               ? "; and every commit"
               : ""
           }`
-        : "Not reached from a store commit (boot-time or reply call).",
+        : "No path from a store commit was found by the static scan.",
     )
   }
 
@@ -259,10 +260,12 @@ export const renderAction = (atlas: Atlas, type: string): string => {
       out.push(
         `- \`${d.area}\` ${d.fn ? `${d.fn}()` : "?"} ${at(d.anchor)}${
           d.callers
-            ? ` (called from ${d.callers.files} file${d.callers.files === 1 ? "" : "s"} in ${list(
-                d.callers.areas.map((a) => `\`${a}\``),
-                6,
-              )})`
+            ? d.callers.files === 0
+              ? " (no caller found in files that reach its module; used inside it, or through wiring the scan does not follow)"
+              : ` (used in ${d.callers.files} file${d.callers.files === 1 ? "" : "s"} that reach its module, in ${list(
+                  d.callers.areas.map((a) => `\`${a}\``),
+                  6,
+                )})`
             : ""
         }`,
       )
@@ -276,7 +279,9 @@ export const renderAction = (atlas: Atlas, type: string): string => {
     )
   out.push("", "Reaches the runner:")
   if (action.effects.length === 0)
-    out.push("- nothing specific found; it only rides the effects every commit has (below)")
+    out.push(
+      "- no runner call found by the static scan for this action (below: calls on the commit path)",
+    )
   for (const effect of action.effects)
     out.push(
       `- ${list(effect.procedures.map((p) => `\`${p}\``))} via ${effect.via} ${at(effect.anchor)} — ${
@@ -285,11 +290,15 @@ export const renderAction = (atlas: Atlas, type: string): string => {
           : `inferred from the state diff: ${effect.trigger ?? "?"}`
       }`,
     )
-  out.push(
-    `Every commit, any action: ${list(
-      [...new Set(atlas.ui.everyCommit.flatMap((e) => e.procedures))].map((p) => `\`${p}\``),
-    )}`,
+  const onCommit = atlas.ui.everyCommit.map(
+    (e) =>
+      `${list(e.procedures.map((p) => `\`${p}\``))} via ${e.via} (${e.trigger === null || e.trigger === "any commit" ? "trigger not found" : e.trigger}) ${at(e.anchor)}`,
   )
+  if (onCommit.length > 0)
+    out.push(
+      "On the commit path, not tied to this action; whether a given commit runs them depends on conditions the scan did not read:",
+      ...onCommit.map((line) => `- ${line}`),
+    )
   if (action.returns.length > 0)
     out.push(`Comes back from streams: ${list(action.returns.map((s) => `\`${s}\``))}`)
   if (action.untraced) out.push(`Not traced: ${action.untraced}`)
@@ -328,8 +337,16 @@ export const renderTable = (atlas: Atlas, table: Table): string => {
   const areas = (anchors: Anchor[]) => [
     ...new Set(anchors.map((a) => areaOfFile(atlas, a.file) ?? a.file)),
   ]
-  out.push("", `Read in: ${list(areas(table.readers).map((a) => `\`${a}\``))}`)
-  out.push(`Written in: ${list(areas(table.writers).map((a) => `\`${a}\``))}`)
+  const found = (anchors: Anchor[]) => {
+    const names = areas(anchors).map((a) => `\`${a}\``)
+    return names.length === 0 ? "none found" : list(names)
+  }
+  out.push("", `Read in: ${found(table.readers)}`)
+  out.push(`Written in: ${found(table.writers)}`)
+  out.push(
+    "Found by matching SQL text in single lines and statements (`RETURNING` counts as a read); SQL built another way is invisible. " +
+      'Before you act on an absence ("nothing writes this table"), check the source.',
+  )
   return out.join("\n")
 }
 
@@ -354,6 +371,8 @@ export const renderFlow = (atlas: Atlas, id: string): string => {
     `# Flow \`${flow.id}\`: ${flow.title}`,
     "",
     flow.summary,
+    "",
+    "Hand-written path: each anchor is checked to exist, the steps themselves are not traced by Atlas.",
     "",
     ...flow.steps.map(
       (s, i) =>
@@ -410,7 +429,7 @@ export const renderState = (atlas: Atlas): string => {
     "# UI state and calls",
     "",
     `${totals.actions} workspace actions: ${totals.dispatchedFromUi} dispatched by the UI, ${totals.dispatchedFromAdapter} by the runner adapter.`,
-    `${totals.reachingBackend} reach the runner (${totals.byAction} tested by type, ${totals.byDiff} inferred from a state diff); the rest ride every commit's effects.`,
+    `${totals.reachingBackend} reach the runner (${totals.byAction} tested by type, ${totals.byDiff} inferred from a state diff); the rest have no runner call found by the scan.`,
     `${totals.procedures} procedures called, ${totals.streams} streams, ${totals.streamsToStore} of them traced into a store.`,
     "",
     "Wiring:",
@@ -445,7 +464,9 @@ export const renderState = (atlas: Atlas): string => {
 
 export const renderFlows = (atlas: Atlas): string =>
   [
-    "# Flows: traced end-to-end paths",
+    "# Flows: hand-written end-to-end paths",
+    "",
+    "Written by hand in atlas/content/flows.ts; each step's anchor is checked to still exist in the code, but the steps are not traced by Atlas.",
     "",
     ...atlas.flows.map((f) => `- \`${f.id}\` ${f.title}: ${clip(f.summary, 120)}`),
     "",

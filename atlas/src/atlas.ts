@@ -89,7 +89,6 @@ export type RuntimeEdge = {
   anchor: Anchor
 }
 
-// A slice of the code with one job: a package, a runner subsystem, a UI layer.
 // A slice of the code named by a token that mirrors where it lives, as
 // `runner/terminals` or `ui/backend/runner`: its package, then a segment per folder.
 export type Area = {
@@ -99,7 +98,8 @@ export type Area = {
   node: string
   // What it is for; empty where nobody has said yet.
   purpose: string
-  // The files it owns; where two match, the earlier area wins.
+  // The files it owns; where several areas match a file, the first one wins (see `areaOf`),
+  // so the more specific areas come first.
   globs: string[]
   files: number
   lines: number
@@ -226,4 +226,6 @@ export type FlowStep = {
   anchor: Anchor
 }
 
-export type BrokenAnchor = { where: string; file: string; text: string }
+// An anchor whose text is gone, or (with `reason`) a structure an extractor could not find
+// or a count it expected to be above zero; `text` then repeats the reason.
+export type BrokenAnchor = { where: string; file: string; text: string; reason?: string }

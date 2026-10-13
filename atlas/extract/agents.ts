@@ -1,3 +1,6 @@
+import { existsSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+
 import type {
   AgentSurface,
   Anchor,
@@ -32,10 +35,16 @@ const lineOf = (source: string | null, pattern: RegExp): number | null => {
 
 // Each `const <tool>: Tool<…> = {…}` literal in the MCP server, evaluated for its name,
 // description and input schema; the arrow functions inside it are never called.
-const extractTools = (anchors: Anchors): McpTool[] => {
+const extractTools = (anchors: Anchors, adapters: Adapter[]): McpTool[] => {
   const source = anchors.read(mcpFile)
-  if (source === null) return []
-  const listed = /const tools: readonly Tool<unknown>\[\] = \[([^\]]*)\]/.exec(source)?.[1] ?? ""
+  if (source === null) {
+    anchors.report("mcp tools", mcpFile, "file not found")
+    return []
+  }
+  const listing = /const tools: readonly Tool<unknown>\[\] = \[([^\]]*)\]/.exec(source)
+  if (!listing)
+    anchors.report("mcp tools", mcpFile, "expected `const tools: readonly Tool<unknown>[] = [`")
+  const listed = listing?.[1] ?? ""
   const variables = listed
     .split(",")
     .map((name) => name.trim())
@@ -46,7 +55,10 @@ const extractTools = (anchors: Anchors): McpTool[] => {
   const manager = anchors.read(managerFile)
   return variables.flatMap((variable) => {
     const start = source.indexOf(`const ${variable}: Tool<`)
-    if (start === -1) return []
+    if (start === -1) {
+      anchors.report("mcp tools", mcpFile, `expected "const ${variable}: Tool<"`)
+      return []
+    }
     const end = source.indexOf("\n}\n", start)
     const literal = source.slice(source.indexOf("= {", start) + 2, end + 2)
     try {
@@ -63,18 +75,22 @@ const extractTools = (anchors: Anchors): McpTool[] => {
         inputSchema: JsonSchema
       }
       const tool = evaluate(
-        ["claude", "codex", "agy"],
-        [
-          { id: "claude", name: "Claude Code" },
-          { id: "codex", name: "Codex" },
-          { id: "agy", name: "Antigravity" },
-        ],
+        adapters.map((each) => each.id),
+        adapters.map((each) => ({ id: each.id, name: each.title })),
       )
       const method = handlers[tool.name]
       const line =
         method === undefined
           ? null
           : lineOf(manager, new RegExp(`^  (?:private |async )*${method}\\(`, "m"))
+      if (method === undefined)
+        anchors.report("mcp tools", mcpFile, `no manager method is mapped to tool ${tool.name}`)
+      else if (line === null)
+        anchors.report(
+          "mcp tools",
+          managerFile,
+          `expected a method \`${method}(\` for tool ${tool.name}`,
+        )
       const handler: Anchor | null = line === null ? null : { file: managerFile, line }
       return [
         {
@@ -85,17 +101,44 @@ const extractTools = (anchors: Anchors): McpTool[] => {
           handler,
         },
       ]
-    } catch {
+    } catch (error) {
+      anchors.report(
+        "mcp tools",
+        mcpFile,
+        `could not evaluate ${variable}: ${error instanceof Error ? error.message : String(error)}`,
+      )
       return []
     }
   })
 }
 
-const adapters = [
-  { id: "claude", title: "Claude Code" },
-  { id: "codex", title: "Codex" },
-  { id: "agy", title: "Antigravity" },
-]
+type Adapter = { id: string; title: string; package: string }
+
+// What each agent is called; a new harness package without a name here is flagged.
+const titles: Record<string, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  agy: "Antigravity",
+}
+
+// Every `harnesses/*` package but the shared core is an adapter.
+const findAdapters = (repo: string, anchors: Anchors): Adapter[] => {
+  const dir = join(repo, "harnesses")
+  const ids = existsSync(dir)
+    ? readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && entry.name !== "core")
+        .map((entry) => entry.name)
+        .toSorted()
+    : []
+  if (ids.length === 0) anchors.report("harness adapters", "harnesses", "found 0 adapter packages")
+  return ids.map((id) => {
+    const manifest = `harnesses/${id}/package.json`
+    const name = (JSON.parse(anchors.read(manifest) ?? "{}") as { name?: string }).name
+    if (titles[id] === undefined)
+      anchors.report("harness adapters", manifest, `no display name for ${id} in extract/agents.ts`)
+    return { id, title: titles[id] ?? id, package: name ?? `@novadeck/harness-${id}` }
+  })
+}
 
 const hookSummaries: Record<string, string> = {
   SessionStart: "A session begins, resumes or restarts; binds it to the terminal.",
@@ -115,43 +158,80 @@ const hookSummaries: Record<string, string> = {
   StatusLine: "The status line refreshes; Novadeck passes on the person's own.",
 }
 
-const hookEvents = (source: string, id: string): string[] => {
-  const list = /^const events = \[([^\]]*)\]/m.exec(source)?.[1]
-  if (list !== undefined) {
-    return [...list.matchAll(/"(\w+)"/g)]
-      .map(([, event]) => event ?? "")
-      .concat(id === "claude" ? ["StatusLine"] : [])
+// The events a harness registers, and where in its source they are written.
+const hookEvents = (source: string, id: string): { events: string[]; from: number } => {
+  const list = /^const events = \[([^\]]*)\]/m.exec(source)
+  if (list?.[1] !== undefined) {
+    return {
+      events: [...list[1].matchAll(/"(\w+)"/g)]
+        .map(([, event]) => event ?? "")
+        .concat(id === "claude" ? ["StatusLine"] : []),
+      from: list.index,
+    }
   }
   const from = source.indexOf('path: "hooks.json"')
+  if (from === -1) return { events: [], from: 0 }
   const body = source.slice(from, source.indexOf("settings:", from))
-  return [...new Set([...body.matchAll(/\b([A-Z]\w+): \[/g)].map(([, event]) => event ?? ""))]
+  return {
+    events: [...new Set([...body.matchAll(/\b([A-Z]\w+): \[/g)].map(([, event]) => event ?? ""))],
+    from,
+  }
 }
 
-const extractAdapters = (anchors: Anchors): { harnesses: Harness[]; hooks: Hook[] } => {
+const lineFrom = (source: string, needle: string, from: number): number | null => {
+  const index = source.indexOf(needle, from)
+  return index === -1 ? null : source.slice(0, index).split("\n").length
+}
+
+const extractAdapters = (
+  anchors: Anchors,
+  adapters: Adapter[],
+): { harnesses: Harness[]; hooks: Hook[] } => {
   const harnesses: Harness[] = []
   const hooks: Hook[] = []
-  for (const { id, title } of adapters) {
+  for (const { id, title, package: pkg } of adapters) {
     const file = `harnesses/${id}/src/index.ts`
     const source = anchors.read(file)
-    if (source === null) continue
+    if (source === null) {
+      anchors.report("harness adapters", file, "file not found")
+      continue
+    }
     const start = source.indexOf(`export const ${id} = {`)
     const end = source.indexOf("} satisfies Harness", start)
-    const members = [...source.slice(start, end).matchAll(/^ {2}(\w+)\s*[:,(]/gm)].map(
-      ([, name]) => name ?? "",
-    )
+    if (start === -1) anchors.report("harness adapters", file, `expected "export const ${id} = {"`)
+    if (end === -1) anchors.report("harness adapters", file, 'expected "} satisfies Harness"')
+    const members =
+      start === -1 || end === -1
+        ? []
+        : [...source.slice(start, end).matchAll(/^ {2}(\w+)\s*[:,(]/gm)].map(
+            ([, name]) => name ?? "",
+          )
     harnesses.push({
       id,
       title,
-      package: `@novadeck/harness-${id}`,
+      package: pkg,
       implements: [...new Set(members)],
       anchor: { file, line: anchors.find(file, `export const ${id} = {`) },
     })
-    for (const event of hookEvents(source, id)) {
+    const { events, from } = hookEvents(source, id)
+    if (events.length === 0)
+      anchors.report(
+        "harness adapters",
+        file,
+        "found 0 hook events (`const events = [` or hooks.json)",
+      )
+    for (const event of events) {
       hooks.push({
         harness: id,
         event,
         summary: hookSummaries[event] ?? "A hook Novadeck registers.",
-        anchor: { file, line: anchors.find(file, `"${event}"`) ?? anchors.find(file, event) },
+        anchor: {
+          file,
+          line:
+            lineFrom(source, `"${event}"`, from) ??
+            lineFrom(source, `${event}:`, from) ??
+            anchors.find(file, event),
+        },
       })
     }
   }
@@ -166,10 +246,16 @@ const memberNotes: Record<string, string> = {
 // The members of `type Harness` in harnesses/core, with their doc comments' first sentence.
 const extractContract = (anchors: Anchors): ContractMember[] => {
   const source = anchors.read(contractFile)
-  if (source === null) return []
+  if (source === null) {
+    anchors.report("harness contract", contractFile, "file not found")
+    return []
+  }
   const lines = source.split("\n")
   const first = lines.findIndex((line) => line.startsWith("export type Harness = {"))
-  if (first === -1) return []
+  if (first === -1) {
+    anchors.report("harness contract", contractFile, 'expected "export type Harness = {"')
+    return []
+  }
   const members: ContractMember[] = []
   let doc: string[] = []
   for (let index = first + 1; index < lines.length; index++) {
@@ -201,11 +287,16 @@ const extractContract = (anchors: Anchors): ContractMember[] => {
       doc = []
     }
   }
+  if (members.length === 0)
+    anchors.report("harness contract", contractFile, "found 0 members in `Harness`")
   return members
 }
 
 // Novadeck as an agent sees it: MCP tools, hooks, the harness contract and its adapters.
-export const extractAgents = (_repo: string, anchors: Anchors): AgentSurface => {
-  const { harnesses, hooks } = extractAdapters(anchors)
-  return { tools: extractTools(anchors), hooks, contract: extractContract(anchors), harnesses }
+export const extractAgents = (repo: string, anchors: Anchors): AgentSurface => {
+  const adapters = findAdapters(repo, anchors)
+  const { harnesses, hooks } = extractAdapters(anchors, adapters)
+  const tools = extractTools(anchors, adapters)
+  if (tools.length === 0) anchors.report("mcp tools", mcpFile, "found 0 tools")
+  return { tools, hooks, contract: extractContract(anchors), harnesses }
 }

@@ -11,6 +11,7 @@ import { extractApi } from "./api.ts"
 import { areaOf, extractAreas } from "./areas.ts"
 import { extractData } from "./data.ts"
 import { extractLinks } from "./links.ts"
+import { ensureProtocol } from "./protocol.ts"
 import { extractRunnerLens } from "./runner-lens.ts"
 import { extractStacks } from "./stack.ts"
 import { extractUiLens } from "./ui-lens.ts"
@@ -41,6 +42,7 @@ const resolveFlows = (anchors: Anchors): Flow[] =>
   }))
 
 export const build = async (): Promise<Atlas> => {
+  ensureProtocol(repo)
   const anchors = createAnchors(repo)
   const api = await extractApi(repo, anchors)
   const data = extractData(repo, anchors)
@@ -58,6 +60,19 @@ export const build = async (): Promise<Atlas> => {
     areaOf: (file: string) => areaOf(areas, file),
   }
 
+  const runner = extractRunnerLens(lens)
+  const ui = extractUiLens(lens)
+
+  // The adapter calls some procedures through an alias (`runner.install(`) that a search for
+  // `.voice.install(` cannot see; the UI lens resolved those. One caller per file.
+  const procedures = api.procedures.map((procedure) => {
+    const sites = ui.procedures.find((each) => each.id === procedure.id)?.sites ?? []
+    const callers = [...procedure.callers]
+    for (const site of sites) if (!callers.some((c) => c.file === site.file)) callers.push(site)
+    return { ...procedure, callers, area: owner(procedure.handler?.file) }
+  })
+  const callerApi = { ...api, procedures }
+
   return {
     generatedAt: new Date().toISOString(),
     commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim(),
@@ -65,22 +80,16 @@ export const build = async (): Promise<Atlas> => {
     root: repo,
     runtime: resolveRuntime(anchors, areas),
     areas,
-    links: extractLinks(repo, anchors, areas, { api, data }),
-    api: {
-      ...api,
-      procedures: api.procedures.map((procedure) => ({
-        ...procedure,
-        area: owner(procedure.handler?.file),
-      })),
-    },
+    links: extractLinks(repo, anchors, areas, { api: callerApi, data }),
+    api: callerApi,
     data: {
       ...data,
       tables: data.tables.map((table) => ({ ...table, area: owner(table.anchor.file) })),
     },
     agents,
     flows: resolveFlows(anchors),
-    runner: extractRunnerLens(lens),
-    ui: extractUiLens(lens),
+    runner,
+    ui,
     stacks: extractStacks(repo, anchors, areas),
     broken: [...anchors.broken(), ...problems],
   }
@@ -97,9 +106,11 @@ if (import.meta.main) {
   )
   for (const broken of atlas.broken) {
     console.warn(
-      broken.text
-        ? `broken anchor: ${broken.where}: "${broken.text}" not in ${broken.file}`
-        : `broken: ${broken.where}: ${broken.file}`,
+      broken.reason
+        ? `broken: ${broken.where}: ${broken.file}: ${broken.reason}`
+        : broken.text
+          ? `broken anchor: ${broken.where}: "${broken.text}" not in ${broken.file}`
+          : `broken: ${broken.where}: ${broken.file}`,
     )
   }
   if (process.argv.includes("--strict") && atlas.broken.length > 0) process.exitCode = 1

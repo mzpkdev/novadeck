@@ -148,6 +148,8 @@ export const extractUiLens = (input: LensInput): UiLens => {
   const unionStart = stateLines.findIndex((line) =>
     line.startsWith("export type WorkspaceAction ="),
   )
+  if (unionStart === -1)
+    anchors.report("ui actions", stateFile, 'expected "export type WorkspaceAction ="')
   const unionEnd = stateLines.findIndex(
     (line, i) => i > unionStart && /^export (const|type) /.test(line),
   )
@@ -157,6 +159,8 @@ export const extractUiLens = (input: LensInput): UiLens => {
       if (!declared.has(match[1]!)) declared.set(match[1]!, i + 1)
   }
   const known = new Set(declared.keys())
+  if (unionStart !== -1 && declared.size === 0)
+    anchors.report("ui actions", stateFile, "found 0 actions in `WorkspaceAction`")
 
   const reducerStart = stateLines.findIndex((line) =>
     line.startsWith("export const workspaceReducer"),
@@ -166,6 +170,10 @@ export const extractUiLens = (input: LensInput): UiLens => {
     const match = /^ {4}case "([a-z]+\/[a-z-]+)":/.exec(stateLines[i]!)
     if (match && !caseLines.has(match[1]!)) caseLines.set(match[1]!, i + 1)
   }
+  if (reducerStart === -1)
+    anchors.report("ui reducer", stateFile, 'expected "export const workspaceReducer"')
+  else if (caseLines.size === 0)
+    anchors.report("ui reducer", stateFile, "found 0 `case` lines in `workspaceReducer`")
   const reducerText = (type: string): string => {
     const line = caseLines.get(type)
     if (!line) return ""
@@ -236,6 +244,10 @@ export const extractUiLens = (input: LensInput): UiLens => {
       }
     })
   }
+
+  if (!backend) anchors.report("ui adapter", backendFile, "file not found")
+  if (sites.length === 0)
+    anchors.report("ui adapter", adapterDir, "found 0 procedure call sites in the runner adapter")
 
   // ---- reachability ------------------------------------------------------------------
   const factoryCalls = (name: string): { file: string; line: number }[] =>
@@ -358,6 +370,7 @@ export const extractUiLens = (input: LensInput): UiLens => {
 
   // ---- the commit path ---------------------------------------------------------------
   const commitFn = backend?.fns.find((fn) => fn.name === "commit" && !fn.member)
+  if (!commitFn) anchors.report("ui commit path", backendFile, "expected a function named `commit`")
   const commitReach = commitFn ? reach([commitFn], 5) : []
   const reachedBy = new Map(commitReach.map((each) => [each.fn, each]))
 
@@ -496,12 +509,30 @@ export const extractUiLens = (input: LensInput): UiLens => {
   )
 
   // ---- who dispatches ----------------------------------------------------------------
-  const callersOf = (name: string, except: string): { files: number; areas: string[] } => {
+  // Files that import the module `defining`, or a module that does (the app hands its
+  // commands around through a context), and use `name`: the name alone is too common a word
+  // (`add`) to count every file that mentions it.
+  const importsCache = new Map<string, Map<string, string>>()
+  const importsOf = (file: string): Map<string, string> => {
+    const cached = importsCache.get(file)
+    if (cached) return cached
+    const made = imports(file)
+    importsCache.set(file, made)
+    return made
+  }
+  const reaches = (file: string, target: string, hops: number): boolean => {
+    const next = new Set(importsOf(file).values())
+    return (
+      next.has(target) || (hops > 1 && [...next].some((each) => reaches(each, target, hops - 1)))
+    )
+  }
+  const callersOf = (name: string, defining: string): { files: number; areas: string[] } => {
     const pattern = new RegExp(`(?:\\.${name}\\b|(?<![.\\w])${name}\\()`)
     const hits = allSources.filter(
       (src) =>
-        src.file !== except &&
+        src.file !== defining &&
         !src.file.startsWith(adapterDir) &&
+        reaches(src.file, defining, 2) &&
         src.lines.some((line) => !isComment(line) && pattern.test(line)),
     )
     return { files: hits.length, areas: [...new Set(hits.map((hit) => area(hit.file)))].toSorted() }
@@ -692,10 +723,10 @@ export const extractUiLens = (input: LensInput): UiLens => {
   const uiWrites = scan(/\b(?:ui\.update|updateShell)\(/g, (f) => !f.startsWith(`${ui}/backend/`))
   const featureStores = scan(/\bcreateStore\s*(?:<[^(]*>)?\(/g, (f) => f !== `${ui}/model/store.ts`)
 
-  const uiStateStart = (source(`${ui}/app/ui-store.ts`)?.lines ?? []).findIndex((l) =>
-    l.startsWith("export type UiState"),
-  )
   const uiStateLines = source(`${ui}/app/ui-store.ts`)?.lines ?? []
+  const uiStateStart = uiStateLines.findIndex((l) => l.startsWith("export type UiState"))
+  if (uiStateStart === -1)
+    anchors.report("ui store", `${ui}/app/ui-store.ts`, 'expected "export type UiState"')
   const uiSlices: BoxItem[] = []
   for (
     let i = uiStateStart + 1;
@@ -706,12 +737,17 @@ export const extractUiLens = (input: LensInput): UiLens => {
     if (match) uiSlices.push(item(match[1]!, `${ui}/app/ui-store.ts`, i + 1))
   }
 
+  if (uiStateStart !== -1 && uiSlices.length === 0)
+    anchors.report("ui store", `${ui}/app/ui-store.ts`, "found 0 slices in `UiState`")
+
   const prefixes = new Map<string, UiAction[]>()
   for (const action of actions)
     prefixes.set(action.prefix, [...(prefixes.get(action.prefix) ?? []), action])
 
   const portLines = source(portFile)?.lines ?? []
   const backendStart = portLines.findIndex((l) => l.startsWith("export type Backend = {"))
+  if (backendStart === -1)
+    anchors.report("ui backend port", portFile, 'expected "export type Backend = {"')
   const portMembers: BoxItem[] = []
   for (let i = backendStart + 1; i < portLines.length && !portLines[i]!.startsWith("}"); i++) {
     const match = /^ {2}readonly (\w+)\??[:=]/.exec(portLines[i]!)
@@ -725,22 +761,23 @@ export const extractUiLens = (input: LensInput): UiLens => {
         ),
       )
   }
+  if (backendStart !== -1 && portMembers.length === 0)
+    anchors.report("ui backend port", portFile, "found 0 members in `Backend`")
   portMembers.sort((a, b) => Number(b.label === "commit") - Number(a.label === "commit"))
 
-  const sinkTypes = (() => {
-    const out: BoxItem[] = []
-    portLines.forEach((line, i) => {
-      if (i < 40 || i > 90) return
-      const match = /^\s*\| "([a-z]+\/[a-z-]+)"/.exec(line) ?? /type:\s*$/.exec(line)
-      if (match?.[1]) out.push(item(match[1], portFile, i + 1))
-    })
-    const block = portLines.findIndex((l) => l.startsWith("export type BackendAction"))
-    const list: BoxItem[] = []
-    for (let i = block; i < portLines.length && i < block + 20; i++)
-      for (const match of portLines[i]!.matchAll(/"([a-z]+\/[a-z-]+)"/g))
-        list.push(item(match[1]!, portFile, i + 1))
-    return list.length ? list : out
-  })()
+  // The action types the adapter may dispatch back: the quoted types in `BackendAction`.
+  const sinkTypes: BoxItem[] = []
+  const sinkStart = portLines.findIndex((l) => l.startsWith("export type BackendAction"))
+  if (sinkStart === -1)
+    anchors.report("ui backend port", portFile, 'expected "export type BackendAction"')
+  for (let i = sinkStart + 1; i < portLines.length; i++) {
+    if (sinkStart === -1) break
+    if (/^(?:>|\}|export )/.test(portLines[i]!)) break
+    for (const match of portLines[i]!.matchAll(/"([a-z]+\/[a-z-]+)"/g))
+      sinkTypes.push(item(match[1]!, portFile, i + 1))
+  }
+  if (sinkStart !== -1 && sinkTypes.length === 0)
+    anchors.report("ui backend port", portFile, "found 0 action types in `BackendAction`")
 
   const adapterHits = new Map<string, { count: number; first: number }>()
   for (const site of sites) {
