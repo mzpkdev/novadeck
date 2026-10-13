@@ -177,11 +177,18 @@ describe("installing from a portable copy", () => {
       }
     })
 
-    it("answers installing for a request that comes once the move began", async () => {
+    it("answers installing for a request that comes once the move began, though Electron is quitting", async () => {
       vi.useFakeTimers()
       try {
+        let quitting = false
         const installer = portableInstaller(
-          hosting({ install: async () => ({ kind: "leaving" }), stopping: () => true }).host,
+          hosting({
+            install: async () => {
+              quitting = true
+              return { kind: "leaving" }
+            },
+            stopping: () => quitting,
+          }).host,
         )
         expect(await installer.install()).toEqual({ kind: "installing" })
         expect(await installer.install()).toEqual({ kind: "installing" })
