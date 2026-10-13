@@ -20,7 +20,12 @@ export const servicesOf = (anchors: Anchors, router: string): Service[] => {
     anchors.report("router services", routerFile, 'expected "createRouter"')
     return []
   }
-  const services = [...router.slice(at).matchAll(/^\s+(\w+): (\w+)$/gm)].flatMap((match) => {
+  // Only the options block, up to where the function's body starts.
+  const end = router.indexOf("}) =>", at)
+  const options = router.slice(at, end === -1 ? undefined : end)
+  if (end === -1)
+    anchors.report("router services", routerFile, 'expected "}) =>" after createRouter\'s options')
+  const services = [...options.matchAll(/^\s+(\w+): (\w+)$/gm)].flatMap((match) => {
     const file = imports.get(match[2]!)
     // An option typed by a class or type the scan can't find the import of has lost its
     // service, and every handler that calls it would quietly fall back to the router.
