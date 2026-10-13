@@ -14,7 +14,7 @@ export const App = () => (
       <Route element={<Layout />}>
         <Route index element={<MapPage />} />
         <Route path="areas" element={<AreasPage />} />
-        <Route path="areas/:id" element={<AreaPage />} />
+        <Route path="areas/*" element={<AreaPage />} />
         <Route path="api" element={<ApiPage />} />
         <Route path="data" element={<DataPage />} />
         <Route path="agents" element={<AgentsPage />} />

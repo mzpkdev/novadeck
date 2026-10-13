@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router"
 
-import { atlas, groupBy, nodeTitle } from "../../atlas-data.ts"
+import { atlas, groupBy } from "../../atlas-data.ts"
 import type { Area } from "../../atlas.ts"
 import { squarify } from "../../components/treemap.ts"
-import { compact, Dot, hue, useSize } from "../../components/viz.tsx"
+import { compact, hue, Token, useSize } from "../../components/viz.tsx"
 import { areaPath } from "../../links.ts"
 
 // Groups stand apart on the workspace as windows; areas tile each window's body.
@@ -12,7 +12,8 @@ const SPACE = 6
 const PAD = 4
 const HEAD = 26
 
-// The whole codebase: a rect per runtime node, a rect per area inside it, area = lines.
+// The whole codebase: a window per top-level token (`runner`, `ui`, `harness`…), a rect per
+// area inside it, area = lines.
 // Hatching along the bottom of an area is its share of test files.
 export const TreemapView = () => {
   const { ref, w, h } = useSize<HTMLDivElement>()
@@ -20,8 +21,8 @@ export const TreemapView = () => {
   const [hover, setHover] = useState<{ area: Area; x: number; y: number } | null>(null)
 
   const groups = useMemo(() => {
-    const nodes = groupBy(atlas.areas, (a) => a.node).map(([node, areas]) => ({
-      node,
+    const nodes = groupBy(atlas.areas, (a) => a.id.split("/")[0] ?? a.id).map(([top, areas]) => ({
+      top,
       areas,
       lines: areas.reduce((sum, a) => sum + a.lines, 0),
     }))
@@ -55,7 +56,7 @@ export const TreemapView = () => {
     <div ref={ref} className="relative h-full w-full">
       {groups.map((g) => (
         <div
-          key={g.item.node}
+          key={g.item.top}
           className="pane absolute"
           style={{ left: g.x, top: g.y, width: g.w, height: g.h }}
         >
@@ -63,8 +64,7 @@ export const TreemapView = () => {
             className="pane-heading quiet flex items-center gap-1.5 px-2 text-[12px] font-medium"
             style={{ height: HEAD }}
           >
-            <Dot node={g.item.node} />
-            {g.w > 70 ? <span className="truncate">{nodeTitle(g.item.node)}</span> : null}
+            {g.w > 40 ? <span className="truncate font-mono">{g.item.top}</span> : null}
             {g.w > 130 ? (
               <span className="ml-auto font-mono text-[11px] font-normal text-muted">
                 {compact(g.item.lines)}
@@ -84,7 +84,7 @@ export const TreemapView = () => {
               onMouseMove={(e) => setHover({ area: a, x: e.clientX, y: e.clientY })}
               onMouseLeave={() => setHover(null)}
               className="absolute cursor-pointer overflow-hidden border border-[var(--color-paper)] text-left hover:border-accent hover:outline hover:outline-1 hover:outline-accent"
-              style={{ left: x, top: y, width: cw, height: ch, background: hue(g.item.node).fill }}
+              style={{ left: x, top: y, width: cw, height: ch, background: hue(a.node).fill }}
             >
               {share > 0 ? (
                 <span
@@ -94,7 +94,7 @@ export const TreemapView = () => {
               ) : null}
               {cw > 56 && ch > 22 ? (
                 <span className="relative block truncate px-1.5 pt-1 text-[11px] leading-3.5">
-                  {a.title}
+                  <Token id={a.id} within={g.item.top} />
                   {cw > 90 && ch > 36 ? (
                     <span className="block font-mono text-[10px] text-muted">
                       {compact(a.lines)}
@@ -111,7 +111,10 @@ export const TreemapView = () => {
           className="pane floating pointer-events-none fixed z-20 px-2 py-1 text-[12px]"
           style={{ left: hover.x + 12, top: hover.y + 12 }}
         >
-          <div className="font-medium">{hover.area.title}</div>
+          <Token id={hover.area.id} className="font-medium" />
+          {hover.area.purpose ? (
+            <div className="max-w-80 text-[12px] text-muted">{hover.area.purpose}</div>
+          ) : null}
           <div className="font-mono text-[11px] text-muted">
             {hover.area.lines.toLocaleString()} lines · {hover.area.files} files ·{" "}
             {hover.area.tests} tests

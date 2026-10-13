@@ -2,7 +2,8 @@ import { X } from "lucide-react"
 import type { ReactNode } from "react"
 import { Link } from "react-router"
 
-import { areaById, atlas } from "../../atlas-data.ts"
+import { atlas } from "../../atlas-data.ts"
+import { Token } from "../../components/viz.tsx"
 import { areaPath } from "../../links.ts"
 
 const toRegex = (glob: string) =>
@@ -26,16 +27,11 @@ export const areaOfFile = (file: string): string | null => {
   return best?.id ?? null
 }
 
-export const groupOfArea = (id: string) =>
-  id.startsWith("ui-")
-    ? "ui"
-    : id.startsWith("runner-")
-      ? "runner"
-      : id === "protocol"
-        ? "protocol"
-        : id.startsWith("host-")
-          ? "host"
-          : "other"
+const groups = new Set(["ui", "runner", "protocol", "host"])
+export const groupOfArea = (id: string) => {
+  const top = id.split("/")[0] ?? ""
+  return groups.has(top) ? top : "other"
+}
 
 export const groupColor = (id: string) => `var(--g-${groupOfArea(id)})`
 
@@ -72,6 +68,6 @@ export const AreaChip = ({ id }: { id: string | null }) =>
       className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border border-line px-1.5 text-[11px] leading-5 text-fg no-underline hover:border-accent"
     >
       <span className="size-1.5 rounded-full" style={{ background: groupColor(id) }} />
-      {areaById.get(id)?.title ?? id}
+      <Token id={id} />
     </Link>
   ) : null

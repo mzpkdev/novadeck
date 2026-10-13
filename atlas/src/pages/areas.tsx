@@ -7,7 +7,7 @@ import { areaById, atlas, nodeTitle } from "../atlas-data.ts"
 import { AnchorIcon, blobUrl } from "../components/anchor.tsx"
 import { Empty, Ground, Page } from "../components/ui.tsx"
 import { compact, Dot, hue, KindSample, Segmented } from "../components/viz.tsx"
-import { nodePath, procedurePath, tablePath, toolPath } from "../links.ts"
+import { areaPath, nodePath, procedurePath, tablePath, toolPath } from "../links.ts"
 import { EgoGraph } from "./areas/ego.tsx"
 import { GraphView } from "./areas/graph-view.tsx"
 import { TreemapView } from "./areas/treemap-view.tsx"
@@ -55,6 +55,32 @@ export const AreasPage = () => {
   )
 }
 
+// A token with each part that is an area of its own linking to it: `ui` / `backend` /
+// `runner`.
+const TokenPath = ({ id }: { id: string }) => {
+  const parts = id.split("/")
+  return (
+    <span className="font-mono">
+      {parts.map((part, i) => {
+        const upTo = parts.slice(0, i + 1).join("/")
+        const last = i === parts.length - 1
+        return (
+          <span key={upTo}>
+            {i > 0 ? <span className="text-muted">/</span> : null}
+            {!last && areaById.has(upTo) ? (
+              <Link to={areaPath(upTo)} className="text-muted no-underline hover:text-fg">
+                {part}
+              </Link>
+            ) : (
+              <span className={last ? "" : "text-muted"}>{part}</span>
+            )}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
 const Owned = ({
   label,
   ids,
@@ -95,7 +121,7 @@ const Owned = ({
 }
 
 export const AreaPage = () => {
-  const { id = "" } = useParams()
+  const id = useParams()["*"] ?? ""
   const area = areaById.get(id)
   if (!area) {
     return (
@@ -114,19 +140,19 @@ export const AreaPage = () => {
             Areas
           </Link>
           <span>/</span>
+        </>
+      }
+      title={<TokenPath id={area.id} />}
+      tools={
+        <span className="pane floating flex h-9 items-center gap-1 px-2">
           <Link
             to={nodePath(area.node)}
-            className="flex items-center gap-1.5 text-muted no-underline hover:text-fg"
+            title="Runs in"
+            className="mr-2 flex items-center gap-1.5 text-control text-muted no-underline hover:text-fg"
           >
             <Dot node={area.node} />
             {nodeTitle(area.node)}
           </Link>
-          <span>/</span>
-        </>
-      }
-      title={area.title}
-      tools={
-        <span className="pane floating flex h-9 items-center gap-1 px-2">
           {area.entries.map((e) => (
             <AnchorIcon key={`${e.file}:${e.line}`} anchor={e} size={15} />
           ))}
@@ -171,7 +197,9 @@ export const AreaPage = () => {
               {area.files} files · {area.tests} tests
             </span>
           </div>
-          <p className="mt-3 max-w-2xl text-[12px] text-muted">{area.purpose}</p>
+          {area.purpose ? (
+            <p className="mt-3 max-w-2xl text-[12px] text-muted">{area.purpose}</p>
+          ) : null}
         </header>
         <section className="space-y-2">
           <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted">

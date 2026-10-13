@@ -8,7 +8,7 @@ import { Badge } from "./ui.tsx"
 type Item = { kind: string; label: string; detail: string; to: string }
 
 const items: Item[] = [
-  ...atlas.areas.map((a) => ({ kind: "area", label: a.title, detail: a.id, to: areaPath(a.id) })),
+  ...atlas.areas.map((a) => ({ kind: "area", label: a.id, detail: a.purpose, to: areaPath(a.id) })),
   ...atlas.api.procedures.map((p) => ({
     kind: "procedure",
     label: p.id,

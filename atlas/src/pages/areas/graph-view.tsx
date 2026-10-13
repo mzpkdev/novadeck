@@ -14,7 +14,16 @@ import { useNavigate } from "react-router"
 
 import { atlas, nodeTitle } from "../../atlas-data.ts"
 import type { Area, AreaLink } from "../../atlas.ts"
-import { compact, Dot, hue, KindSample, kindDash, links, strokeFor } from "../../components/viz.tsx"
+import {
+  compact,
+  Dot,
+  hue,
+  KindSample,
+  kindDash,
+  links,
+  strokeFor,
+  Token,
+} from "../../components/viz.tsx"
 import { areaPath } from "../../links.ts"
 
 // Columns follow the data's path: renderer, then electron, then the runner, then
@@ -45,7 +54,7 @@ const AreaCard = ({ data }: NodeProps<AreaNode>) => (
     className={clsx("pane px-2 py-0.5 transition-opacity", data.dim && "opacity-25")}
     style={{ width: NODE_W, borderLeft: `3px solid ${hue(data.area.node).ink}` }}
   >
-    <div className="truncate text-[12px] leading-4">{data.area.title}</div>
+    <Token id={data.area.id} className="block truncate text-[12px] leading-4" />
     <div
       className="mt-0.5 h-[3px] rounded-full"
       style={{
@@ -194,7 +203,7 @@ export const GraphView = () => {
       {hover ? (
         <div className="pane floating pointer-events-none absolute bottom-3 left-3 flex items-center gap-1.5 px-2 py-1 text-control">
           <Dot node={atlas.areas.find((a) => a.id === hover)?.node ?? ""} />
-          {atlas.areas.find((a) => a.id === hover)?.title}
+          <Token id={hover} />
           <span className="font-mono text-[11px] text-muted">
             {compact(atlas.areas.find((a) => a.id === hover)?.lines ?? 0)} ·{" "}
             {nodeTitle(atlas.areas.find((a) => a.id === hover)?.node ?? "")}

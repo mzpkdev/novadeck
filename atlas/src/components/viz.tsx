@@ -1,3 +1,4 @@
+import { clsx } from "clsx"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { atlas, nodeById } from "../atlas-data.ts"
@@ -87,3 +88,24 @@ export const KindSample = ({ kind }: { kind: AreaLink["kind"] }) => (
     />
   </svg>
 )
+
+// An area's token, as the team says it: the path to it quiet, its own segment plain.
+// `within` drops a leading part the surroundings already name, as a treemap group does.
+export const Token = ({
+  id,
+  within,
+  className,
+}: {
+  id: string
+  within?: string
+  className?: string
+}) => {
+  const shown = within && id.startsWith(`${within}/`) ? id.slice(within.length + 1) : id
+  const at = shown.lastIndexOf("/")
+  return (
+    <span className={clsx("font-mono", className)}>
+      {at === -1 ? null : <span className="text-muted">{shown.slice(0, at + 1)}</span>}
+      {shown.slice(at + 1)}
+    </span>
+  )
+}

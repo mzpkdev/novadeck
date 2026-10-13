@@ -92,7 +92,7 @@ const Nav = ({ selected, onSelect }: { selected: string; onSelect: (id: string) 
   const groups = useMemo(() => {
     const matches = (p: Procedure) => {
       const hay =
-        `${p.id} ${p.namespace} ${p.area ?? ""} ${areaById.get(p.area ?? "")?.title ?? ""}`.toLowerCase()
+        `${p.id} ${p.namespace} ${p.area ?? ""} ${areaById.get(p.area ?? "")?.purpose ?? ""}`.toLowerCase()
       return terms.every((t) => hay.includes(t))
     }
     return groupBy(atlas.api.procedures, (p) => p.namespace)

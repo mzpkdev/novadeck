@@ -42,7 +42,7 @@ export const build = async (): Promise<Atlas> => {
   const api = await extractApi(repo, anchors)
   const data = extractData(repo, anchors)
   const agents = extractAgents(repo, anchors)
-  const areas = extractAreas(repo, anchors, { api, data, agents })
+  const { areas, problems } = extractAreas(repo, anchors, { api, data, agents })
   const owner = (file: string | undefined): string | null =>
     file === undefined ? null : areaOf(areas, file)
 
@@ -67,7 +67,7 @@ export const build = async (): Promise<Atlas> => {
     },
     agents,
     flows: resolveFlows(anchors),
-    broken: anchors.broken(),
+    broken: [...anchors.broken(), ...problems],
   }
 }
 
@@ -81,7 +81,11 @@ if (import.meta.main) {
       `${atlas.flows.length} flows`,
   )
   for (const broken of atlas.broken) {
-    console.warn(`broken anchor: ${broken.where}: "${broken.text}" not in ${broken.file}`)
+    console.warn(
+      broken.text
+        ? `broken anchor: ${broken.where}: "${broken.text}" not in ${broken.file}`
+        : `broken: ${broken.where}: ${broken.file}`,
+    )
   }
   if (process.argv.includes("--strict") && atlas.broken.length > 0) process.exitCode = 1
 }

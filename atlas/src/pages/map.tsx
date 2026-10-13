@@ -18,7 +18,7 @@ import { AnchorIcon } from "../components/anchor.tsx"
 import { CanvasBackground, canvasPointer } from "../components/canvas-background.tsx"
 import { squarify } from "../components/treemap.ts"
 import { Badge } from "../components/ui.tsx"
-import { compact, Dot, hue } from "../components/viz.tsx"
+import { compact, Dot, hue, Token } from "../components/viz.tsx"
 import { areaPath } from "../links.ts"
 
 type NodeData = { node: RuntimeNode; width: number; body: number }
@@ -82,7 +82,9 @@ const AtlasNode = ({ data, selected }: NodeProps<FlowNode>) => {
         style={{ height: HEADER }}
       >
         <Dot node={node.id} />
-        <span className="truncate">{hovered ? hovered.title : node.title}</span>
+        <span className={clsx("truncate", hovered && "font-mono")}>
+          {hovered ? hovered.id : node.title}
+        </span>
         <span className="ml-auto font-mono text-[11px] font-normal text-muted">
           {compact(hovered ? hovered.lines : lines)}
         </span>
@@ -115,7 +117,7 @@ const AtlasNode = ({ data, selected }: NodeProps<FlowNode>) => {
               }}
             >
               {w > 52 && h > 16 ? (
-                <span className="block truncate px-1 pt-0.5">{item.title}</span>
+                <span className="block truncate px-1 pt-0.5 font-mono">{item.id}</span>
               ) : null}
             </button>
           ))}
@@ -169,10 +171,10 @@ const NodePanel = ({ node }: { node: RuntimeNode }) => {
               key={id}
               to={areaPath(id)}
               className="inline-flex items-center gap-1 rounded-sm border border-line px-1.5 text-[11px] leading-5 text-fg no-underline hover:border-accent"
-              title={`${areaById.get(id)?.lines ?? 0} lines`}
+              title={`${areaById.get(id)?.purpose ?? ""} (${areaById.get(id)?.lines ?? 0} lines)`}
             >
               <Dot node={node.id} size={6} />
-              {areaById.get(id)?.title ?? id}
+              <Token id={id} />
             </Link>
           ))}
         </div>

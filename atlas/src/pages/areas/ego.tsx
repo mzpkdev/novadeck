@@ -50,8 +50,8 @@ export const EgoGraph = ({ id }: { id: string }) => {
           stroke={hover === area ? "var(--accent)" : "var(--window-border-color)"}
         />
         <rect x={x} y={y - BOX_H / 2} width={4} height={BOX_H} fill={hue(a?.node ?? "").ink} />
-        <text x={x + 12} y={y + 4} fontSize={12} fill="var(--fg)">
-          {clip(a?.title ?? area, 24)}
+        <text x={x + 12} y={y + 4} fontSize={12} fontFamily="var(--font-mono)" fill="var(--fg)">
+          {clip(area, 26)}
         </text>
       </g>
     )
@@ -109,8 +109,15 @@ export const EgoGraph = ({ id }: { id: string }) => {
           stroke="var(--accent)"
           strokeWidth={1.5}
         />
-        <text x={cx + 12} y={mid + 4} fontSize={12} fontWeight={600} fill="var(--fg)">
-          {clip(areaById.get(id)?.title ?? id, 24)}
+        <text
+          x={cx + 12}
+          y={mid + 4}
+          fontSize={12}
+          fontWeight={600}
+          fontFamily="var(--font-mono)"
+          fill="var(--fg)"
+        >
+          {clip(id, 26)}
         </text>
       </g>
     </svg>
