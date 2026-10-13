@@ -26,9 +26,8 @@ export const scrollLineToTop = (view: EditorView, at: number): void => {
       Math.max(
         0,
         scroller.scrollTop +
-          view.documentTop +
-          view.lineBlockAt(at).top -
-          scroller.getBoundingClientRect().top -
+          (view.documentTop + view.lineBlockAt(at).top - scroller.getBoundingClientRect().top) /
+            scaleOf(view) -
           margin,
       ),
       scroller.scrollHeight - scroller.clientHeight,
@@ -96,9 +95,9 @@ export const followScroll = (view: EditorView, on: (scroll: PlanScroll) => void)
 
 // Scrolls the pane back to where `scroll` says, at once, then again each frame while the
 // editor measures the lines that came into view, whose heights it had only estimated, or
-// an edit moves the place; `done` once it holds still, after a few frames, or once the
-// person scrolls themselves. Out of sight, it waits until the pane shows. Returns the
-// finish, for an editor that closes or jumps elsewhere meanwhile.
+// an edit moves the place; `done` once it holds still, after half a second, or once the
+// person, or anything else, scrolls the pane. Out of sight, it waits until the pane
+// shows. Returns the finish, for an editor that closes or jumps elsewhere meanwhile.
 export const restoreScroll = (
   view: EditorView,
   scroll: () => PlanScroll | null,
@@ -119,11 +118,14 @@ export const restoreScroll = (
       scroller.scrollHeight - scroller.clientHeight,
     )
   }
+  // Where it last put the pane: a scroll anywhere else is someone else's.
+  let placed = scroller.scrollTop
   // Whether it moved.
   const go = (): boolean => {
     const top = target()
     if (top === null || Math.abs(top - scroller.scrollTop) < 1) return false
     scroller.scrollTo({ top, behavior: "instant" })
+    placed = scroller.scrollTop
     return true
   }
   const stop = new AbortController()
@@ -137,12 +139,26 @@ export const restoreScroll = (
   }
   for (const type of ["wheel", "touchstart", "pointerdown", "keydown"])
     scroller.addEventListener(type, finish, { signal, passive: true })
+  // Scrolled by anyone else, as the app jumping somewhere or the page keeping what shows
+  // in place, the pane stays where they put it.
+  scroller.addEventListener(
+    "scroll",
+    () => {
+      if (Math.abs(scroller.scrollTop - placed) >= 1) finish()
+    },
+    { signal, passive: true },
+  )
+  // The editor may still correct heights it estimated a few frames on: it holds still
+  // once three frames in a row don't move it, or after half a second's worth.
   let frames = 0
+  let still = 0
   const settle = (): void => {
-    if ((go() || frames === 0) && ++frames < 6) frame = requestAnimationFrame(settle)
+    still = go() ? 0 : still + 1
+    if (still < 3 && ++frames < 30) frame = requestAnimationFrame(settle)
     else finish()
   }
   const start = (): void => {
+    placed = scroller.scrollTop
     go()
     frame = requestAnimationFrame(settle)
   }
