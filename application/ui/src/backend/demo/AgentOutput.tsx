@@ -1,5 +1,3 @@
-import { useState } from "react"
-
 import type { DemoAgent } from "./samples"
 
 // Claude Code asked to plan: what it read before proposing. The plan itself waits as a
@@ -19,18 +17,17 @@ const ClaudePlan = (): React.JSX.Element => (
   </>
 )
 
-// What the agent opened with is history: whether it was planning is taken once, when this
-// mounts, and later changes in its plan mode leave the opening as it was.
+// Whether the agent opened planning is decided by the caller, once per terminal, so that
+// remounting this leaves the opening as it was.
 export const AgentOutput = ({
   agent,
   directory,
-  planning = false,
+  planned = false,
 }: {
   agent: DemoAgent
   directory: string
-  planning?: boolean
+  planned?: boolean
 }): React.JSX.Element => {
-  const [planned] = useState(planning)
   return (
     <div
       className={`agent-transcript max-w-180 [overflow-wrap:anywhere] leading-[1.65] agent-${agent}`}

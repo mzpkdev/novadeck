@@ -11,7 +11,7 @@ import type {
 } from "../../model/conversation"
 import { createTerminalState } from "../../model/state"
 import { createStore } from "../../model/store"
-import type { TerminalMetadata } from "../../model/types"
+import type { TerminalMetadata, Workspace } from "../../model/types"
 import { context, describe, expect, it } from "../../test"
 import { render, type Rendered } from "../../test/render"
 import type { BackendConnectionState, TerminalKey } from "../port"
@@ -491,6 +491,8 @@ describe("demo agent terminal", () => {
       const output = view.container.querySelector<HTMLElement>(".demo-output")!
       Object.defineProperty(output, "scrollHeight", { configurable: true, value: 900 })
       output.scrollTop = 0
+      // The person scrolled up before the news came.
+      act(() => void output.dispatchEvent(new Event("scroll")))
       act(
         () =>
           void store.update((c) => ({
@@ -500,6 +502,20 @@ describe("demo agent terminal", () => {
       )
       expect(text()).toContain("More news.")
       expect(output.scrollTop).toBe(900)
+    })
+  })
+
+  context("repeating a note", () => {
+    it("renders the same note anew, so the screen's live region announces it again", async () => {
+      const { value } = link(conversation({ requests: [asking({})] }))
+      const { view, submit } = mountAgent(claude, value)
+      const region = (): Element => view.container.querySelector(".agent-note")!
+      await submit("maybe")
+      const first = region().firstElementChild
+      expect(region().textContent).toBe("Type an option's number.")
+      await submit("maybe")
+      expect(region().textContent).toBe("Type an option's number.")
+      expect(region().firstElementChild).not.toBe(first)
     })
   })
 
@@ -516,5 +532,102 @@ describe("demo agent terminal", () => {
       expect(calls.send).not.toHaveBeenCalled()
       expect(calls.answer).not.toHaveBeenCalled()
     })
+  })
+})
+
+const workspace = (terminal: TerminalMetadata): Workspace => ({
+  activeProjectId: "p",
+  projects: [
+    {
+      id: "p",
+      name: "p",
+      directory: "~/p",
+      activeSessionId: "s",
+      history: [
+        {
+          id: "s",
+          name: "s",
+          visitedAt: 0,
+          state: createTerminalState([terminal], "grid", "grid"),
+        },
+      ],
+    },
+  ],
+})
+describe("an agent terminal's opening", () => {
+  const codex: TerminalMetadata = { ...claude, process: "codex" }
+  const planning: TerminalMetadata = { ...claude, agent: { working: true, planning: true } }
+  const working: TerminalMetadata = { ...claude, agent: { working: true } }
+  // One engine, as the backend keeps it, under surfaces that come and go with the views.
+  const setup = (first: TerminalMetadata) => {
+    const engine = createDemoEngine()
+    engine.reconcile(workspace(first), [])
+    const Surface = createDemoTerminal(engine)
+    const surface = (terminal: TerminalMetadata) =>
+      createElement(Surface, {
+        terminalKey: key,
+        terminal,
+        projectName: "novadeck",
+        fontSize: 13,
+        focusInput: false,
+        onInputFocused: () => {},
+        renderWindow: (content: ReactNode) => content,
+      })
+    // The workspace changes first, then the surface that shows it renders.
+    const change = (terminal: TerminalMetadata): void => engine.reconcile(workspace(terminal), [])
+    const mountView = (terminal: TerminalMetadata) => {
+      const view = render(surface(terminal))
+      mounted.push(view)
+      return { view, text: () => view.container.textContent ?? "" }
+    }
+    return { surface, change, mountView }
+  }
+
+  it("keeps what the agent opened with when its surface remounts in another view", () => {
+    const { change, mountView } = setup(planning)
+    const grid = mountView(planning)
+    expect(grid.text()).toContain("Plan a compact order summary")
+    grid.view.unmount()
+    mounted.splice(0)
+    change(working)
+    const focus = mountView(working)
+    expect(focus.text()).toContain("Plan a compact order summary")
+    expect(focus.text()).not.toContain("Add a compact order summary")
+  })
+
+  it("keeps an opening without plan mode as it was when plan mode comes on", () => {
+    const { change, mountView } = setup(working)
+    mountView(working).view.unmount()
+    mounted.splice(0)
+    change(planning)
+    const canvas = mountView(planning)
+    expect(canvas.text()).toContain("Add a compact order summary")
+    expect(canvas.text()).not.toContain("Plan a compact order summary")
+  })
+
+  it("keeps it while mounted, as plan mode toggles", () => {
+    const { change, surface, mountView } = setup(planning)
+    const { view, text } = mountView(planning)
+    change(working)
+    view.rerender(surface(working))
+    expect(text()).toContain("Plan a compact order summary")
+  })
+
+  it("opens afresh for the agent it becomes, and keeps that opening in turn", () => {
+    const { change, surface, mountView } = setup(codex)
+    const { view, text } = mountView(codex)
+    expect(text()).toContain("Review the checkout changes")
+    change(planning)
+    view.rerender(surface(planning))
+    expect(text()).toContain("Plan a compact order summary")
+    expect(text()).not.toContain("Review the checkout changes")
+    change(working)
+    view.unmount()
+    mounted.splice(0)
+    const next = mountView(working)
+    expect(next.text()).toContain("Plan a compact order summary")
+    change(codex)
+    next.view.rerender(surface(codex))
+    expect(next.text()).toContain("Review the checkout changes")
   })
 })

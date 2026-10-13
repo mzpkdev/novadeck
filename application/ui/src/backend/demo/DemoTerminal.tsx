@@ -56,6 +56,7 @@ const DemoTerminalSurface = ({
   projectName,
   entries,
   cleared,
+  opening,
   onCommand,
   draft,
   onDraftChange,
@@ -86,10 +87,12 @@ const DemoTerminalSurface = ({
     answers: QuestionAnswers
   }>()
   // A note belongs to the request that was shown when it came up, and goes with it.
-  const [noted, setNoted] = useState<{ text: string; request: string | undefined }>()
+  // Each note counts up, so one that repeats re-renders its text and is announced again.
+  const [noted, setNoted] = useState<{ text: string; request: string | undefined; n: number }>()
+  const notes = useRef(0)
   const note = noted && noted.request === request?.id ? noted.text : undefined
   const setNote = (text: string | undefined): void =>
-    setNoted(text === undefined ? undefined : { text, request: request?.id })
+    setNoted(text === undefined ? undefined : { text, request: request?.id, n: ++notes.current })
   // Where the shown request stands among those the agent waits on, when there are several.
   const place = request
     ? { at: conversation.requests.indexOf(request) + 1, of: conversation.requests.length }
@@ -176,7 +179,10 @@ const DemoTerminalSurface = ({
         onScrollChange(event.currentTarget.scrollTop)
       }}
     >
-      {!cleared && (intro ?? <TerminalOutput terminal={terminal} projectName={projectName} />)}
+      {!cleared &&
+        (intro ?? (
+          <TerminalOutput terminal={terminal} projectName={projectName} planned={opening.planned} />
+        ))}
       {entries.map((entry) => (
         <div className="output-gap" key={entry.id}>
           <p>
@@ -186,7 +192,14 @@ const DemoTerminalSurface = ({
         </div>
       ))}
       {live && tail && (
-        <AgentScreen agent={live} tail={tail} progress={answers.length} place={place} note={note} />
+        <AgentScreen
+          agent={live}
+          tail={tail}
+          progress={answers.length}
+          place={place}
+          note={note}
+          noteKey={noted?.n ?? 0}
+        />
       )}
       <form
         className={`command-form p-3${agent ? " agent-command-form max-w-180" : ""}`}

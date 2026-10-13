@@ -1,8 +1,8 @@
 import type { WorkspaceAction } from "../../model/state"
-import type { Workspace } from "../../model/types"
+import type { TerminalMetadata, Workspace } from "../../model/types"
 import type { TerminalKey } from "../port"
 import { createTerminalRegistry, terminalKeyId } from "../registry"
-import { mockReply } from "./samples"
+import { demoAgent, mockReply, type DemoAgent } from "./samples"
 
 export type Entry = {
   readonly id: string
@@ -10,7 +10,20 @@ export type Entry = {
   readonly reply: string
 }
 
+// What an agent's terminal opened with, taken once and kept: its transcript is history, so
+// a later change of plan mode, or a remount of the surface, leaves it as it was.
+export type Opening = {
+  readonly agent: DemoAgent | undefined
+  readonly planned: boolean
+}
+
+const openingOf = (terminal: TerminalMetadata): Opening => ({
+  agent: demoAgent(terminal),
+  planned: terminal.state === "running" && terminal.agent?.planning === true,
+})
+
 export type DemoTerminalSnapshot = {
+  readonly opening: Opening
   readonly draft: string
   readonly scrollOffset: number | undefined
   readonly entries: readonly Entry[]
@@ -29,6 +42,7 @@ export type DemoEngine = {
 }
 
 const empty: DemoTerminalSnapshot = {
+  opening: { agent: undefined, planned: false },
   draft: "",
   scrollOffset: undefined,
   entries: [],
@@ -42,8 +56,8 @@ export const createDemoEngine = (): DemoEngine => {
     listeners.get(terminalKeyId(key))?.forEach((listener) => listener())
   const registry = createTerminalRegistry<{ snapshot: DemoTerminalSnapshot }>({
     // Created terminals start blank instead of showing the sample transcript.
-    open: (_key, _terminal, created) => ({
-      snapshot: { ...empty, cleared: created },
+    open: (_key, terminal, created) => ({
+      snapshot: { ...empty, opening: openingOf(terminal), cleared: created },
     }),
     close: (_entry, key) => publish(key),
   })
@@ -60,7 +74,20 @@ export const createDemoEngine = (): DemoEngine => {
     publish(key)
   }
   return {
-    reconcile: registry.reconcile,
+    reconcile: (workspace, actions) => {
+      registry.reconcile(workspace, actions)
+      // A terminal whose program changed in place opens afresh for its new agent.
+      for (const project of workspace.projects)
+        for (const session of project.history)
+          for (const terminal of session.state.roster.terminals)
+            update(
+              { projectId: project.id, workspaceSessionId: session.id, terminalId: terminal.id },
+              (previous) =>
+                previous.opening.agent === demoAgent(terminal)
+                  ? previous
+                  : { ...previous, opening: openingOf(terminal) },
+            )
+    },
     has: (key) => registry.get(key) !== undefined,
     getSnapshot: (key) => registry.get(key)?.entry.snapshot ?? empty,
     subscribe: (key, listener) => {

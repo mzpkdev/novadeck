@@ -241,6 +241,7 @@ export const AgentScreen = ({
   progress,
   place,
   note,
+  noteKey,
 }: {
   agent: ChatAgent
   tail: AgentTail
@@ -250,6 +251,8 @@ export const AgentScreen = ({
   place: { readonly at: number; readonly of: number } | undefined
   // Muted line under the dialog: why a line wasn't taken.
   note: string | undefined
+  // Changes with each note, so a repeat of the same text is rendered and announced anew.
+  noteKey: number
 }): React.JSX.Element => {
   const { items, request, status } = tail
   return (
@@ -282,7 +285,7 @@ export const AgentScreen = ({
       )}
       {/* Mounted while empty too, so a note that comes up is announced. */}
       <p role="status" className={`agent-note muted text-[0.85em]${note ? " mt-2" : ""}`}>
-        {note}
+        <span key={noteKey}>{note}</span>
       </p>
       {status.map((line) => (
         <p key={line} className="agent-completion mt-3 muted text-[0.85em]">

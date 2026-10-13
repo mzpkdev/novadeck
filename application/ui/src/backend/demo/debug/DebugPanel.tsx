@@ -100,7 +100,10 @@ export const createDebugPanel = ({
   }: DebugPanelProps): React.JSX.Element => {
     const [open, setOpen] = useState(false)
     const [terminals, setTerminals] = useState(shell.terminals)
-    const [note, setNote] = useState("")
+    // Each note counts up, so one that repeats re-renders its text and is announced again.
+    const [noted, setNoted] = useState({ text: "", n: 0 })
+    const note = noted.text
+    const setNote = (text: string): void => setNoted((last) => ({ text, n: last.n + 1 }))
     const [query, setQuery] = useState("")
     const [opened, setOpened] = useState(readOpened)
     const [target, setTarget] = useState(readTarget)
@@ -400,7 +403,7 @@ export const createDebugPanel = ({
               role="status"
               className={note ? "debug-panel-note m-0 px-4 py-2 text-control" : "sr-only"}
             >
-              {note}
+              <span key={noted.n}>{note}</span>
             </p>
           </aside>
         </div>

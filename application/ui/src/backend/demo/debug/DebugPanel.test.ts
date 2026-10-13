@@ -8,9 +8,8 @@ import { createDebugPanel } from "./DebugPanel"
 import type { DemoActionGroup, DemoStates } from "./types"
 import type { DemoLaunch, DemoShell } from "./with-debug"
 
-// The shell's and the portable copy's groups stand aside, so the panel shows only these.
+// The shell's groups stand aside, so the panel shows these and the real Portable group.
 vi.mock("./shell-groups", () => ({ shellGroups: () => [] }))
-vi.mock("./portable", () => ({ portableGroup: () => ({ section: "App", title: "", actions: [] }) }))
 
 const groups: readonly DemoActionGroup[] = [
   {
@@ -23,6 +22,7 @@ const groups: readonly DemoActionGroup[] = [
         run: ({ note }) => note("Select a terminal first."),
       },
       { label: "Work", hint: "Spinner and the status line", run: () => {} },
+      { label: "Again", hint: "Says the same each time", run: ({ note }) => note("Same again.") },
     ],
   },
   {
@@ -47,7 +47,11 @@ const press = (element: HTMLElement, key: string): void =>
   act(() => void element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })))
 const mount = () => {
   const Panel = createDebugPanel({
-    launch: { variant: "full", switchVariant: () => {} } as unknown as DemoLaunch,
+    launch: {
+      variant: "full",
+      switchVariant: () => {},
+      setPortable: () => {},
+    } as unknown as DemoLaunch,
     shell: {
       connection: createStore("connected"),
       crashes: createStore(0),
@@ -139,7 +143,7 @@ describe("demo debug panel", () => {
       panel.click(panel.handle())
       expect(panel.actions()).toEqual([])
       panel.click(panel.toggle("Selected terminal"))
-      expect(panel.actions()).toEqual(["Exit code 3", "Work"])
+      expect(panel.actions()).toEqual(["Exit code 3", "Work", "Again"])
       expect(panel.toggle("Selected terminal").getAttribute("aria-expanded")).toBe("true")
       panel.click(panel.toggle("Selected terminal"))
       expect(panel.actions()).toEqual([])
@@ -182,6 +186,42 @@ describe("demo debug panel", () => {
       const second = mount()
       second.click(second.handle())
       expect(second.pressed()).toBe("Other project")
+    })
+  })
+
+  context("the target switch", () => {
+    it("shows with a search hit in its group, and not with one elsewhere", () => {
+      const panel = mount()
+      panel.click(panel.handle())
+      panel.type("permission")
+      expect(panel.actions()).toEqual(["Ask"])
+      expect(panel.pressed()).toBe("Selected")
+      panel.type("banner")
+      expect(panel.actions()).toEqual(["Offer a release"])
+      expect(panel.pressed()).toBeUndefined()
+    })
+  })
+
+  context("actions that boot the demo again", () => {
+    it("carry the mark, and the others do not", () => {
+      const panel = mount()
+      panel.click(panel.handle())
+      panel.click(panel.toggle("Portable"))
+      const marked = (): boolean[] =>
+        [...panel.view.container.querySelectorAll(".debug-action")].map(
+          (each) => each.querySelector(".debug-reboots") !== null,
+        )
+      expect(marked().length).toBeGreaterThan(0)
+      expect(marked().every(Boolean)).toBe(true)
+      expect(panel.view.container.querySelector(".debug-reboots")?.textContent).toBe(
+        "(boots the demo again)",
+      )
+      panel.click(panel.toggle("Selected terminal"))
+      const own = [...panel.view.container.querySelectorAll(".debug-action")].find((each) =>
+        each.textContent?.startsWith("Work"),
+      )
+      expect(own).toBeDefined()
+      expect(own?.querySelector(".debug-reboots")).toBeNull()
     })
   })
 
@@ -233,6 +273,22 @@ describe("demo debug panel", () => {
       panel.click(panel.view.container.querySelector<HTMLElement>(".debug-action")!)
       expect(panel.view.container.querySelector('[role="status"]')).toBe(region)
       expect(region?.textContent).toBe("Select a terminal first.")
+    })
+
+    it("renders a repeated note anew, so it is announced again", () => {
+      const panel = mount()
+      panel.click(panel.handle())
+      panel.click(panel.toggle("Selected terminal"))
+      const again = [...panel.view.container.querySelectorAll<HTMLElement>(".debug-action")].find(
+        (each) => each.textContent?.startsWith("Again"),
+      )!
+      const region = (): Element => panel.view.container.querySelector('[role="status"]')!
+      panel.click(again)
+      const first = region().firstElementChild
+      expect(region().textContent).toBe("Same again.")
+      panel.click(again)
+      expect(region().textContent).toBe("Same again.")
+      expect(region().firstElementChild).not.toBe(first)
     })
   })
 })
