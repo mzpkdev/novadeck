@@ -108,12 +108,24 @@ const requestedInstall = (): InstallResult | undefined => {
 const answerDelay = (): number =>
   new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("answer") === "late" ? 4000 : 0
 
+// `&version=dev` makes the host a development build, which carries 0.0.0, and
+// `&version=none` one that gives no version.
+const requestedVersion = (
+  backend: ReturnType<typeof createDemoBackend>,
+): ReturnType<typeof createDemoBackend> => {
+  const version = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("version")
+  if (version === "dev") return { ...backend, version: () => Promise.resolve("0.0.0") }
+  if (version !== "none") return backend
+  const { version: _given, ...rest } = backend
+  return rest
+}
+
 const testBackend = (): ReturnType<typeof createDemoBackend> => {
   if (showcaseRequested()) return createContentDemo()
   const update = requestedUpdate()
   const sandbox = requestedSandbox()
   const install = requestedInstall()
-  const demo = update ? demoWithUpdate(update) : createDemoBackend()
+  const demo = requestedVersion(update ? demoWithUpdate(update) : createDemoBackend())
   const withSandbox = sandbox ? { ...demo, sandbox: createDemoSandbox(sandbox) } : demo
   return install
     ? {

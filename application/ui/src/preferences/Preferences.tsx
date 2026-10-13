@@ -396,12 +396,12 @@ export const Preferences = ({
             )}
             {version && (
               <Section title="About">
-                <div className={settingsCardClasses}>
+                <dl className={`${settingsCardClasses} m-0`}>
                   <div className={`preference-row ${settingRowClasses}`}>
-                    <span>Version</span>
-                    <span className="select-text">{versionText(version)}</span>
+                    <dt className="m-0">Version</dt>
+                    <dd className="m-0 select-text">{versionText(version)}</dd>
                   </div>
-                </div>
+                </dl>
               </Section>
             )}
           </TabPanel>
