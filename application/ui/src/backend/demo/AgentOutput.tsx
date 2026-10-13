@@ -1,6 +1,7 @@
 import type { DemoAgent } from "./samples"
 
-// Claude Code in plan mode: it read the code and waits for the person to review its plan.
+// Claude Code asked to plan: what it read before proposing. The plan itself waits as a
+// request, shown by the terminal's screen while there is one.
 const ClaudePlan = (): React.JSX.Element => (
   <>
     <p className="agent-request mb-4 px-3 py-2">
@@ -13,19 +14,6 @@ const ClaudePlan = (): React.JSX.Element => (
       </p>
       <p className="agent-tool-result pl-3 muted">└ Read 128 lines</p>
     </div>
-    <div className="agent-plan mt-5 px-3 py-2">
-      <p>
-        <strong>Ready to code?</strong>
-      </p>
-      <ol className="mt-2 pl-5">
-        <li>Add OrderSummary beside the checkout form, reusing OrderItems and OrderTotal.</li>
-        <li>Stack it below the form on small screens.</li>
-        <li>Cover empty carts and quantity changes in the checkout tests.</li>
-      </ol>
-      <p className="mt-3 muted text-[0.85em]">❯ 1. Yes, and auto-accept edits</p>
-      <p className="muted text-[0.85em]">&nbsp; 2. No, keep planning</p>
-    </div>
-    <p className="agent-completion mt-4 muted text-[0.85em]">⏸ plan mode on</p>
   </>
 )
 

@@ -1,10 +1,14 @@
 import type { WorkspaceAction } from "../../model/state"
-import type { TerminalMetadata, Workspace } from "../../model/types"
+import type { Workspace } from "../../model/types"
 import type { TerminalKey } from "../port"
 import { createTerminalRegistry, terminalKeyId } from "../registry"
 import { mockReply } from "./samples"
 
-export type Entry = { readonly id: string; readonly command: string; readonly reply: string }
+export type Entry = {
+  readonly id: string
+  readonly command: string
+  readonly reply: string
+}
 
 export type DemoTerminalSnapshot = {
   readonly draft: string
@@ -31,17 +35,16 @@ const empty: DemoTerminalSnapshot = {
   cleared: false,
 }
 
-// Drafts, transcript and scroll offsets for the demo's simulated terminals. `reply`
-// answers a terminal's command instead of the sample shell, when it has an answer.
-export const createDemoEngine = (
-  reply?: (command: string, terminal: TerminalMetadata, key: TerminalKey) => string | undefined,
-): DemoEngine => {
+// Drafts, transcript and scroll offsets for the demo's simulated terminals.
+export const createDemoEngine = (): DemoEngine => {
   const listeners = new Map<string, Set<() => void>>()
   const publish = (key: TerminalKey): void =>
     listeners.get(terminalKeyId(key))?.forEach((listener) => listener())
   const registry = createTerminalRegistry<{ snapshot: DemoTerminalSnapshot }>({
     // Created terminals start blank instead of showing the sample transcript.
-    open: (_key, _terminal, created) => ({ snapshot: { ...empty, cleared: created } }),
+    open: (_key, _terminal, created) => ({
+      snapshot: { ...empty, cleared: created },
+    }),
     close: (_entry, key) => publish(key),
   })
   const update = (
@@ -90,7 +93,7 @@ export const createDemoEngine = (
                 {
                   id: crypto.randomUUID(),
                   command,
-                  reply: reply?.(command, terminal, key) ?? mockReply(command, terminal),
+                  reply: mockReply(command, terminal),
                 },
               ],
             },

@@ -3,6 +3,7 @@ import { gridColumns } from "../../model/layout/grid-placement"
 import { viewOf } from "../../model/seed"
 import { createTerminalState } from "../../model/state"
 import type {
+  AgentStatus,
   CanvasLayout,
   GridBreakpoint,
   GridLayouts,
@@ -11,7 +12,7 @@ import type {
 } from "../../model/types"
 import type { Backend, BackendSink, CreateBackend, TerminalKey } from "../port"
 import type { DemoSurfaceRuntime } from "./debug/types"
-import { createDemoEngine, type DemoEngine } from "./engine"
+import { createDemoEngine } from "./engine"
 import { demoBackend, windowReset, withConversations } from "./index"
 import { createDemoMessages, studioMailbox } from "./messages"
 import { demoTerminalId, terminalSlot } from "./samples"
@@ -19,10 +20,20 @@ import { authAgent, studioAgent, type SampleAgent } from "./showcase/agents"
 import { devServerArtifacts } from "./showcase/artifacts"
 import { createShowcase } from "./showcase/simulation"
 import { showcaseTranscripts } from "./transcripts"
-import { demoTurns } from "./turns"
+import { demoTurns, type DemoTurns } from "./turns"
+
+// Both sample agents wrote a plan, and wait on the person to approve it.
+const planned: AgentStatus = {
+  working: true,
+  planning: true,
+  attention: { kind: "plan", count: 1 },
+}
 
 // A UI-only workspace. The previews never start processes or request a runner.
-export const contentDemo = (runtime?: DemoSurfaceRuntime): Backend => {
+export const contentDemo = (
+  runtime?: DemoSurfaceRuntime,
+  turns: DemoTurns = demoTurns(),
+): Backend => {
   const session = { projectId: "studio", workspaceSessionId: "initial" }
   const terminals: TerminalMetadata[] = [
     {
@@ -34,6 +45,7 @@ export const contentDemo = (runtime?: DemoSurfaceRuntime): Backend => {
       process: "codex",
       state: "running",
       directory: "~/projects/studio",
+      agent: planned,
     },
     {
       id: demoTerminalId(session, 3),
@@ -45,6 +57,7 @@ export const contentDemo = (runtime?: DemoSurfaceRuntime): Backend => {
       process: "claude",
       state: "running",
       directory: "~/projects/studio",
+      agent: planned,
     },
     {
       id: demoTerminalId(session, 2),
@@ -125,15 +138,12 @@ export const contentDemo = (runtime?: DemoSurfaceRuntime): Backend => {
   })
   const agentAt = (key: TerminalKey): SampleAgent | undefined =>
     agents.find((agent) => companionKeyId(agent.key) === companionKeyId(key))?.sample
-  const base = createDemoEngine((command, _terminal, key) => agentAt(key)?.reply(command.trim()))
-  const engine: DemoEngine = {
-    ...base,
-    run: (key, command) => {
-      base.run(key, command)
-      if (command.trim()) showcase.told(key, command)
-    },
-  }
-  const backend = demoBackend(engine, false, (_terminal, key) => agentAt(key)?.transcript, runtime)
+  const backend = demoBackend(
+    createDemoEngine(),
+    false,
+    (_terminal, key) => agentAt(key)?.transcript,
+    runtime,
+  )
   let latest: Workspace | undefined
   let reset: BackendSink["dispatch"] | undefined
   // The showcase session's items as they stand, which an agent showing something again
@@ -194,7 +204,10 @@ export const contentDemo = (runtime?: DemoSurfaceRuntime): Backend => {
               items: showcase.items,
               windows: [],
               restored: viewOf(
-                createTerminalState(terminals, "focus", "grid", { canvasLayout, gridLayouts }),
+                createTerminalState(terminals, "focus", "grid", {
+                  canvasLayout,
+                  gridLayouts,
+                }),
               ),
             },
           ],
@@ -218,7 +231,25 @@ export const contentDemo = (runtime?: DemoSurfaceRuntime): Backend => {
       ],
     },
   }
-  return withConversations(content, showcaseTranscripts(Date.now()), demoTurns())
+  return withConversations(content, showcaseTranscripts(Date.now()), turns, (conversations) => ({
+    ...conversations,
+    // What the person sends a sample agent, it acts on: it revises its plan, shows
+    // something.
+    send: async (key, text) => {
+      await conversations.send(key, text)
+      showcase.told(key, text)
+    },
+    // Approving a plan is a "y" to its agent; its words, what to change.
+    answer: async (key, request, answer) => {
+      await conversations.answer(key, request, answer)
+      if (answer.type === "choice")
+        showcase.told(
+          key,
+          answer.text?.trim() ||
+            (answer.option === (terminalSlot(key.terminalId) === "01" ? "2" : "3") ? "n" : "y"),
+        )
+    },
+  }))
 }
 
 export const createContentDemo: CreateBackend = () => contentDemo()

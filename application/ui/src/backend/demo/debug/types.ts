@@ -27,8 +27,16 @@ export type DemoSurfaceRuntime = {
   readonly restart: (key: TerminalKey) => void
 }
 
+// Which terminal an agent action acts on: the selected one; another of its session, added
+// in the background where it has none, so the person looks elsewhere and gets the unread
+// mark and notice; or the first live terminal of another project, for the switcher.
+export const demoTargets = ["selected", "terminal", "project"] as const
+export type DemoTarget = (typeof demoTargets)[number]
+
 // What a state's action may use.
 export type DemoActionContext = {
+  // Where the group's agent actions land, as its switch chose; the others ignore it.
+  readonly target: DemoTarget
   // The selected terminal of the session on screen, if any.
   readonly selected: () => TerminalKey | undefined
   // Adds a terminal to the current session and returns its key.
@@ -63,6 +71,8 @@ export type DemoSection = (typeof demoSections)[number]
 export type DemoActionGroup = {
   readonly section: DemoSection
   readonly title: string
+  // Its actions act on a target, which the group lets the person choose.
+  readonly targets?: true
   readonly actions: readonly DemoAction[]
 }
 

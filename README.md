@@ -670,7 +670,9 @@ Terminals:
 
 - **Selected terminal:** put the selected terminal in each of its states: starting, loading
   output, back at the prompt, running a long program, Claude Code or Codex, a failed
-  paste, and each way to end (clean exit, exit code, killed, failed to start).
+  paste, and each way to end (clean exit, exit code, killed, failed to start). Each one
+  that changes the state calls off what the terminal's agent had pending, so a finish
+  due later doesn't bring the agent back.
 - **New terminals:** "Every state at once" adds one terminal per state, named after it, so
   the tabs and the windows in Grid and Canvas show attention, done, error, ended and the
   rest side by side; you stay on one that needs permission, and the done marks land on
@@ -680,25 +682,34 @@ Terminals:
 
 Agents:
 
-- **Selected agent:** working, planning, a permission, a question or a plan waiting (or
-  three of them), subagents, background work, and context and limits.
-- **Agent turns:** the selected terminal's agent works, then ends its turn after 3 s as
-  completed, failed, interrupted or unknown; or is an unheard agent.
-- **Another project:** make the agent in the first terminal of another project wait
-  for a permission, ask a question, wait on a plan, finish or fail its turn (after
-  3 s), work, or go back to its prompt, for the project switcher's marks and dot.
+- **Agent:** verbs on the demo's agents, which have one owner that keeps their status, the
+  requests their chats hold and what their screens show in step, as the runner's do. A
+  switch at the top of the group, remembered in this tab and shown with each search hit,
+  picks the terminal they act on: the selected one; another terminal of its session (added
+  in the background when there is none, so you look elsewhere and get the unread mark and
+  the notice); or the first terminal of another project, for the switcher's marks. A terminal
+  that runs no agent becomes Claude Code first. Work, Plan mode and Subagents start a turn
+  that works on. Needs permission, Asks a question, Plan ready and 3 permissions stop it on
+  requests you can answer in the chat or on the screen, which clears the tab and the
+  notification. Completes, Fails, Interrupted and Ends without reply work for 3 s, then end
+  the turn the way asked: with its reply, a short one for Interrupted (no unread mark), none
+  for Ends without reply. Background work (2 tasks counted) and Background, uncounted end the
+  turn and leave work running; Finishing subagents keeps the agent working until its 2
+  subagents finish. Rest leaves it at its prompt with everything answered and read.
+- **Agent fixtures:** what no turn produces: an unheard agent (Claude Code whose hooks say
+  nothing), and context and limits or tokens alone, in the tooltip and status.
 - **Notifications:** "Fill notifications" has up to 12 terminals across
   the projects ask for you (questions, permissions, plans), and after 3 s finish done or
   failed, so the Notifications panel lists every kind and the rail badge reads 9+. It
   adds terminals to the current session if the workspace has too few, without selecting
   them or leaving the Notifications panel, and leaves the selected terminal alone, since
-  a finish only counts while you look elsewhere. "Clear notifications" answers every
-  request and reads every finish, a terminal back at its prompt included, for the empty
-  panel. Its second round of kinds carries what Murmur would write (a headline on the
-  question and the plan, a gist on the done and the failed finish, the done one asking), so
-  the rows can be seen without Murmur installed. "Show notice" notifies for the selected
-  terminal; "Finish elsewhere" and "Fail elsewhere" need the Preferences
-  switch "Notify when an agent finishes" on.
+  a finish only counts while you look elsewhere. "Clear notifications" rests every agent,
+  which answers every request, reads every finish and calls off those still to come, and
+  has a terminal back at its prompt work for a moment and leave, for the empty panel. Its
+  second round of kinds carries what Murmur would write (a headline on the question and the
+  plan, a gist on the done and the failed finish, the done one asking), so the rows can be
+  seen without Murmur installed. The notices for finishes need the Preferences switch
+  "Notify when an agent finishes" on.
 - **Chat: next send or Stop fails:** arm the next send from a chat to fail as the runner turns it away: a
   draft in the agent's box, its shell mode, too tall a message, no box on screen, or no
   agent running (each with Open terminal), a request waiting (answer it first), or a

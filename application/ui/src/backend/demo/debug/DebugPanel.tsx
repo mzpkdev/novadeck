@@ -14,10 +14,12 @@ import { portableGroup } from "./portable"
 import { shellGroups } from "./shell-groups"
 import {
   demoSections,
+  demoTargets,
   type DemoAction,
   type DemoActionContext,
   type DemoActionGroup,
   type DemoStates,
+  type DemoTarget,
 } from "./types"
 import type { DemoLaunch, DemoShell } from "./with-debug"
 
@@ -43,6 +45,29 @@ const keepOpened = (opened: ReadonlySet<string>): void => {
     window.sessionStorage.setItem(openedKey, JSON.stringify([...opened]))
   } catch {
     // Without storage, the groups fold again at the next boot.
+  }
+}
+
+// The target of the agent actions chosen in this tab, kept the same way.
+const targetKey = "novadeck.debug-panel.target"
+const targetLabels: Record<DemoTarget, string> = {
+  selected: "Selected",
+  terminal: "Other terminal",
+  project: "Other project",
+}
+const readTarget = (): DemoTarget => {
+  try {
+    const stored = window.sessionStorage.getItem(targetKey)
+    return demoTargets.find((each) => each === stored) ?? "selected"
+  } catch {
+    return "selected"
+  }
+}
+const keepTarget = (target: DemoTarget): void => {
+  try {
+    window.sessionStorage.setItem(targetKey, target)
+  } catch {
+    // Without storage, the target is the selected terminal again at the next boot.
   }
 }
 
@@ -78,6 +103,7 @@ export const createDebugPanel = ({
     const [note, setNote] = useState("")
     const [query, setQuery] = useState("")
     const [opened, setOpened] = useState(readOpened)
+    const [target, setTarget] = useState(readTarget)
     const toggle = useRef<HTMLButtonElement>(null)
     const search = useRef<HTMLInputElement>(null)
     const body = useRef<HTMLDivElement>(null)
@@ -105,6 +131,7 @@ export const createDebugPanel = ({
     }
 
     const context = (): DemoActionContext => ({
+      target,
       selected,
       addTerminal,
       addInBackground,
@@ -306,6 +333,28 @@ export const createDebugPanel = ({
                         </button>
                         {shown && (
                           <div className="flex flex-col gap-0.5 pb-1.5 pl-3.5">
+                            {group.targets && (
+                              <div
+                                role="group"
+                                aria-label="Target"
+                                className="segmented flex gap-0.5 px-2.5 pb-1"
+                              >
+                                {demoTargets.map((each) => (
+                                  <button
+                                    key={each}
+                                    type="button"
+                                    aria-pressed={each === target}
+                                    className="segment flex h-6 flex-1 items-center justify-center px-1.5 text-control"
+                                    onClick={() => {
+                                      keepTarget(each)
+                                      setTarget(each)
+                                    }}
+                                  >
+                                    {targetLabels[each]}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                             {group.shown.map((action) => (
                               <button
                                 key={action.label}

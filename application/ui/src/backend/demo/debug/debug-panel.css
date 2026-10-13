@@ -128,7 +128,7 @@
   }
   .debug-group:focus-visible,
   .debug-action:focus-visible,
-  .debug-panel-header .segment:focus-visible,
+  .debug-panel .segment:focus-visible,
   .debug-search-clear:focus-visible,
   .debug-handle:focus-visible {
     outline: 2px solid var(--focus-ring-color, var(--color-strong));
