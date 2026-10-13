@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto"
 
+import { hookShellSlackMs } from "@novadeck/harness-core/harness"
 import { screen as screenWith } from "@novadeck/harness-core/testing/screens"
 import { vi } from "vitest"
 
+import { submitWindowMs } from "../messaging/delivery.js"
 import { describe, expect, it } from "../test.js"
 import { ptyOptions } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
@@ -24,13 +26,14 @@ const fixture = (resources: Resources) => ({
   },
 })
 
-// A session of Antigravity's that binds ten seconds after the person's last key.
+// A session of Antigravity's that binds a second past the window in which the person's last
+// Enter could have submitted it, wider on Windows, where a hook's shell may start slowly.
 const root = (sessionId: string) => ({
   type: "new",
   root: { agent: "agy", sessionId, instance: null, source: "binding" },
   guess: false,
   ready: true,
-  startedAt: Date.now() + 10_000,
+  startedAt: Date.now() + submitWindowMs + hookShellSlackMs(process.platform) + 1_000,
 })
 
 describe("settling a draft kept only by doubt", () => {
