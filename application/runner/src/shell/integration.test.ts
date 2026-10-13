@@ -3764,6 +3764,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         const [opened] = created as [string]
         symlinkSync(steps, join(shell.home, `steps-${opened}`))
         await shell.until(manager, opened, "claude ready")
+        // Bound once Novadeck says so, which comes after the agent printed it ran its hook.
+        await expect.poll(() => manager.messages(opened).delivery).toBe("ready")
         const listed = async () =>
           (JSON.parse(await step(opener.id, { call: "agents", request: {} })) as { text: string })
             .text
@@ -3874,6 +3876,9 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       })
       // A new root session starts over, with its own prompts.
       await clear("s-2")
+      // The new session is bound once Novadeck says so: a hook's report is applied after the
+      // agent has printed that it ran, and an Enter keyed before it is a draft's, not a submission.
+      await expect.poll(() => manager.messages(terminal.id).delivery).toBe("ready")
       // The person's Enter starts the prompt's hook at once, as a TUI's does, so the hook
       // is never left to start after the Enter's window on a loaded machine.
       const submitted = queue(terminal.id, {
