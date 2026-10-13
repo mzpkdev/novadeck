@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, vi } from "vitest"
 
+import { clearUpdateRaised } from "../backend/update-raised"
 import { createWorkspaceStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
 import { updateKey, type UpdateOffer } from "../model/update"
@@ -22,7 +23,7 @@ import {
 } from "./ui-store"
 
 // A run of the app's memory of what it raised outlasts a store, so each test starts one.
-beforeEach(() => sessionStorage.clear())
+beforeEach(() => clearUpdateRaised())
 
 const initial = (updateSeen: string | null = null): UiState =>
   initialUi({
@@ -535,7 +536,7 @@ const stale = (kind: UpdateOffer["kind"] = "available"): UpdateOffer => ({
 })
 
 describe("a portable copy", () => {
-  const here = { portable: true, version: "0.0.70" } as const
+  const here = { portable: true, version: "0.0.70", run: "run-1" } as const
 
   it("is kept as the backend says it, once", async () => {
     const ui = createUiStore(initial())
@@ -587,7 +588,7 @@ describe("a portable copy", () => {
     watchPortable(host, early)
     await vi.waitFor(() => expect(early.getSnapshot().updateOpen).toBe(true))
     // The answer first, in another run.
-    sessionStorage.clear()
+    clearUpdateRaised()
     const second = updateHost()
     const late = createUiStore(initial(seen))
     watchPortable(host, late)
@@ -605,44 +606,48 @@ describe("a portable copy", () => {
     report(stale())
     expect(ui.getSnapshot().updateOpen).toBe(true)
     // Shown, then answered with Later.
-    noteUpdateShown(updateKey(stale()))
+    noteUpdateShown(here, updateKey(stale()))
     ui.update((state) => ({ ...state, updateOpen: false }))
     report(stale())
     expect(ui.getSnapshot().updateOpen).toBe(false)
   })
 
-  context("in a store made anew within the run, as a page reload does", () => {
-    const seen = "available:0.0.80"
-    const host = {
-      state: () => Promise.resolve(here),
-      install: () => Promise.resolve({ kind: "installing" as const }),
-      openInstalled: () => {},
-    }
-    // A store as a launch makes one, hearing a stale release once the host has said.
-    const launch = async (): Promise<boolean> => {
-      const { updates, report } = updateHost()
-      const ui = createUiStore(initial(seen))
-      watchUpdates(updates, ui)
-      watchPortable(host, ui)
-      await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual(here))
-      report(stale())
-      return ui.getSnapshot().updateOpen
-    }
+  context(
+    "in a store made anew within the run, as a page reload or a window opened again does",
+    () => {
+      const seen = "available:0.0.80"
+      const host = {
+        state: () => Promise.resolve(here),
+        install: () => Promise.resolve({ kind: "installing" as const }),
+        openInstalled: () => {},
+      }
+      // A store as a launch makes one, hearing a stale release once the host has said.
+      const launch = async (run: string = here.run): Promise<boolean> => {
+        const { updates, report } = updateHost()
+        const ui = createUiStore(initial(seen))
+        watchUpdates(updates, ui)
+        watchPortable({ ...host, state: () => Promise.resolve({ ...here, run }) }, ui)
+        await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual({ ...here, run }))
+        report(stale())
+        return ui.getSnapshot().updateOpen
+      }
 
-    it("raises the notice again when it was raised but never shown", async () => {
-      expect(await launch()).toBe(true)
-      expect(await launch()).toBe(true)
-    })
+      it("raises the notice again when it was raised but never shown", async () => {
+        expect(await launch()).toBe(true)
+        expect(await launch()).toBe(true)
+      })
 
-    it("does not raise it again once shown, until a relaunch", async () => {
-      expect(await launch()).toBe(true)
-      // The footer shows the notice, as the command `updateShown` records.
-      noteUpdateShown(updateKey(stale()))
-      expect(await launch()).toBe(false)
-      sessionStorage.clear()
-      expect(await launch()).toBe(true)
-    })
-  })
+      it("does not raise it again once shown, until a relaunch", async () => {
+        expect(await launch()).toBe(true)
+        // The footer shows the notice, as the command `updateShown` records.
+        noteUpdateShown(here, updateKey(stale()))
+        // The window closed and opened again: the page is new and the run the same.
+        sessionStorage.clear()
+        expect(await launch()).toBe(false)
+        expect(await launch("run-2")).toBe(true)
+      })
+    },
+  )
 
   it("leaves the notice of an installed copy to once per version", () => {
     const { updates, report } = updateHost()
