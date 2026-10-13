@@ -12,7 +12,12 @@ const token = "novadeck-cli-tests-only-not-a-production-credential"
 
 const directoryFixture = async (resources: Resources) => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "novadeck-cli-")))
-  resources.defer(() => rm(directory, { recursive: true, force: true }))
+  // The CLI's cwd is this directory, and its database lives in it. launchCli's stop() waits for the
+  // runner's exit, but Windows releases a dying process's cwd and file handles asynchronously, so
+  // the first rmdir can still see EBUSY. Retry only that (rm retries EBUSY/EPERM/ENOTEMPTY).
+  resources.defer(() =>
+    rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }),
+  )
   await writeFile(
     join(directory, ".env"),
     [
