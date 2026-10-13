@@ -21,7 +21,7 @@ const working = {
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`
 
-export const statusLines = (
+const statusLines = (
   agent: ChatAgent,
   status: AgentStatus | undefined,
   asking: boolean,
@@ -228,7 +228,9 @@ const Body = ({
   return (
     <>
       <p className="whitespace-pre-wrap">{dialog.text.split("\n").slice(0, 12).join("\n")}</p>
-      <p className="mt-2 muted text-[0.85em]">Answer this one from the chat, or type to go on.</p>
+      <p className="mt-2 muted text-[0.85em]">
+        The agent&apos;s own dialog: answer it in the agent, or type to go on.
+      </p>
     </>
   )
 }

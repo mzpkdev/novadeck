@@ -26,10 +26,11 @@ window phase, a backend field it never sets — add it in the same change:
 - Terminal, notification and picker states go in `application/ui/src/backend/demo/debug/states.ts`,
   with pure action builders in `debug/terminals.ts`. A new tab or window phase also
   joins the "Every state at once" gallery there.
-- An agent's state is one of `demoTurns`' verbs (`work`, `ask`, `finish`, `rest`), never a
+- An agent's state is one of `demoTurns`' verbs (`work`, `ask`, `finish`, `rest`, `usage`), never a
   status the panel dispatches, so the chat, the screen and the notification center
-  follow it: add a verb or an option there, and an action in the panel's "Agent" group
-  that calls it on the group's target. Only a display-only fixture, as an unheard agent,
+  follow it: add a verb or an option there, and an action that calls it: in the panel's "Agent"
+  group on the group's target, or, for a setting such as usage, in "Agent fixtures" on
+  the selected terminal. Only a display-only fixture, as an unheard agent,
   patches the terminal's metadata, and any action that sets a terminal's state other than
   through a verb calls `verbs.release(key)` first, so no timer of its agent undoes it.
 - Startup, boot-failure, runner (connection, crash loop) and sandbox states go in `application/ui/src/backend/demo/debug/shell-groups.ts`.

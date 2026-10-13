@@ -1,3 +1,4 @@
+import { isAgentProgram } from "../../../model/process"
 import { workspaceFromSeed } from "../../../model/seed"
 import { workspaceReducer } from "../../../model/state"
 import { terminalEnding } from "../../../model/terminal-ending"
@@ -7,7 +8,6 @@ import { describe, expect, it } from "../../../test"
 import type { BackendAction, TerminalKey } from "../../port"
 import { demoSeed, demoTerminalId } from "../samples"
 import {
-  agentIn,
   backToPrompt,
   cleanExit,
   exitedWithCode,
@@ -42,6 +42,20 @@ const key = (slot: string): TerminalKey => ({
 const apply = (actions: readonly BackendAction[], from: Workspace = initial): Workspace =>
   actions.reduce(workspaceReducer, from)
 const shell = (workspace: Workspace): TerminalMetadata => terminalOf(workspace, key("04"))!
+// An agent in the terminal with this status; a terminal not running one becomes Claude Code.
+const agentIn = (
+  at: TerminalKey,
+  terminal: TerminalMetadata | undefined,
+  agent: AgentStatus,
+): BackendAction[] => [
+  ...(terminal && isAgentProgram(terminal.process) ? [] : runProgram(at, "claude").slice(0, 1)),
+  {
+    type: "terminal/status",
+    target: { projectId: at.projectId, workspaceSessionId: at.workspaceSessionId },
+    terminalId: at.terminalId,
+    status: { state: "running", agent },
+  },
+]
 const working: AgentStatus = { working: true }
 const asking = (kind: "plan" | "question", count: number): AgentStatus => ({
   working: true,
@@ -122,13 +136,13 @@ describe("terminal states", () => {
     })
 
     it("reports its context and limits", () => {
-      const { usage } = withUsage(1000)
-      expect(usage?.context).toEqual({ occupied: 84_000, capacity: 200_000 })
-      expect(usage?.limits.every((limit) => limit.resetsAt! > 1000)).toBe(true)
+      const usage = withUsage(1000)
+      expect(usage.context).toEqual({ occupied: 84_000, capacity: 200_000 })
+      expect(usage.limits.every((limit) => limit.resetsAt! > 1000)).toBe(true)
     })
 
     it("reports its tokens alone where its harness gives no size", () => {
-      expect(contextOnly.usage).toMatchObject({ context: { capacity: null }, limits: [] })
+      expect(contextOnly).toMatchObject({ context: { capacity: null }, limits: [] })
     })
 
     it("is unheard when it runs without reporting", () => {

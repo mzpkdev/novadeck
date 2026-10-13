@@ -32,6 +32,8 @@ export const answerMs = 400
 // settled, in milliseconds.
 export const answeredMs = 500
 
+const movedOn = "The agent moved on before your answer reached it."
+
 type Found = { readonly key: TerminalKey; readonly terminal: TerminalMetadata }
 
 const agentOf = (terminal: TerminalMetadata): AgentStatus =>
@@ -185,6 +187,27 @@ export const createDemoChat = (
     while (requests.length < attention.count) {
       requested += 1
       const id = `${terminalKeyId(found.key)}:ask-${requested}`
+      // A plan is the agent's own: as its transcript's plan asks, with its options.
+      const transcript = transcriptOf(found)
+      const seeded =
+        attention.kind === "plan"
+          ? transcript?.requests?.find(
+              (request) =>
+                request.kind === "plan" &&
+                request.dialog?.type === "choices" &&
+                transcript.outcomes?.[request.id],
+            )
+          : undefined
+      if (seeded?.dialog?.type === "choices") {
+        made.set(id, transcript!.outcomes![seeded.id]!)
+        requests.push({
+          ...seeded,
+          id,
+          answered: false,
+          dialog: { ...seeded.dialog, id: `${id}:d` },
+        })
+        continue
+      }
       const request = madeRequest(attention.kind, id, name, requests.length)
       made.set(id, request.outcome)
       requests.push(request.request)
@@ -433,7 +456,8 @@ export const createDemoChat = (
         try {
           await new Promise((resolve) => setTimeout(resolve, answerMs))
           // Stopped meanwhile: the request went with the turn.
-          if (!waiting() || moved()) throw new Error("That request is already answered.")
+          if (moved()) throw new Error(movedOn)
+          if (!waiting()) throw new Error("That request is already answered.")
           const result = outcome(answer, dialog)
           store.update((conversation) => ({
             ...conversation,
@@ -443,7 +467,8 @@ export const createDemoChat = (
           }))
           await new Promise((resolve) => setTimeout(resolve, answeredMs))
           // The agent was stopped or taken elsewhere while the request showed as answered:
-          // what that left is final, and the answer goes no further.
+          // what that left is final, and the answer goes no further, which the caller is
+          // told.
           if (moved()) {
             store.update((conversation) => ({
               ...conversation,
@@ -451,7 +476,7 @@ export const createDemoChat = (
                 request.id === id ? { ...request, answered: false } : request,
               ),
             }))
-            return
+            throw new Error(movedOn)
           }
           // Of several requests, answering one lowers what the agent waits on and goes no
           // further; the last takes it on.

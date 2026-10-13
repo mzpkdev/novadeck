@@ -11,6 +11,7 @@ import type {
   Workspace,
 } from "../../model/types"
 import type { Backend, BackendSink, CreateBackend, TerminalKey } from "../port"
+import { terminalOf } from "./debug/terminals"
 import type { DemoSurfaceRuntime } from "./debug/types"
 import { createDemoEngine } from "./engine"
 import { demoBackend, windowReset, withConversations } from "./index"
@@ -239,15 +240,30 @@ export const contentDemo = (
       await conversations.send(key, text)
       showcase.told(key, text)
     },
-    // Approving a plan is a "y" to its agent; its words, what to change.
+    // Approving a plan is a "y" to its agent; declining it, its words, or an "n", and the
+    // agent then comes back with the revised plan to approve. Nothing else is told: only
+    // an answer that went through, and only to a plan.
     answer: async (key, request, answer) => {
+      const asked = conversations
+        .conversation(key)
+        .getSnapshot()
+        .requests.find((each) => each.id === request)
       await conversations.answer(key, request, answer)
-      if (answer.type === "choice")
-        showcase.told(
-          key,
-          answer.text?.trim() ||
-            (answer.option === (terminalSlot(key.terminalId) === "01" ? "2" : "3") ? "n" : "y"),
-        )
+      if (asked?.kind !== "plan" || answer.type !== "choice" || !agentAt(key)) return
+      // The plan's last option is the one that keeps planning.
+      const options = asked.dialog?.type === "choices" ? asked.dialog.options : []
+      if (answer.option !== options.at(-1)?.id) return showcase.told(key, "y")
+      // Words that read as approval, or as asking it to show something, are no notes for
+      // the plan: it keeps planning, whatever they say. Asking it to re-read the plan goes
+      // through, for an agent that applies the notes in it only then.
+      const words = answer.text?.trim()
+      const notes = words && !/^(?:y|yes)$|^(?:show|open)\b/i.test(words)
+      const epoch = turns.epoch(key)
+      showcase.told(key, notes ? words : "n", () => {
+        // Still at rest where the answer left it: the revised plan waits on the person.
+        if (turns.epoch(key) === epoch && !turns.working(key))
+          turns.ask(key, terminalOf(latest, key), "plan", 1)
+      })
     },
   }))
 }

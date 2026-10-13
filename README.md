@@ -697,7 +697,8 @@ Agents:
   turn and leave work running; Finishing subagents keeps the agent working until its 2
   subagents finish. Rest leaves it at its prompt with everything answered and read.
 - **Agent fixtures:** what no turn produces: an unheard agent (Claude Code whose hooks say
-  nothing), and context and limits or tokens alone, in the tooltip and status.
+  nothing), and context and limits or tokens alone, in the tooltip and status; those two set
+  only the usage of the selected terminal's agent, so a turn, request or queued prompt stays.
 - **Notifications:** "Fill notifications" has up to 12 terminals across
   the projects ask for you (questions, permissions, plans), and after 3 s finish done or
   failed, so the Notifications panel lists every kind and the rail badge reads 9+. It

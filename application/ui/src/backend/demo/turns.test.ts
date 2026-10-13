@@ -63,6 +63,13 @@ const open = (variant: DemoVariant = "agents") => {
   return { turns, events, backend, store, held, agent, chat, requests, answer }
 }
 
+const usageOf = (model: string) => ({
+  context: { occupied: 1, capacity: null },
+  limits: [],
+  model,
+  effort: null,
+})
+
 describe("demo turns", () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
@@ -383,6 +390,133 @@ describe("demo turns", () => {
         lastTurn: { outcome: "completed" },
       })
       expect(agent(key("01", "infra"))).toMatchObject({ lastTurn: { outcome: "failed" } })
+    })
+  })
+
+  describe("an agent Novadeck hears nothing from", () => {
+    it("takes a prompt as a line and a reply, with no turn to report", async () => {
+      const { agent, chat, requests, held } = open()
+      const terminal = held(key("05"))
+      expect(agent(key("05"))).toBeUndefined()
+      expect(requests(key("05")).length).toBeGreaterThan(0)
+      const before = chat.conversation(key("05")).getSnapshot().items.length
+      await chat.send(key("05"), "hello agy")
+      await vi.advanceTimersByTimeAsync(demoTurnMs * 2)
+      expect(held(key("05"))).toBe(terminal)
+      expect(agent(key("05"))).toBeUndefined()
+      // What its screen showed is moved past by the line.
+      expect(requests(key("05"))).toEqual([])
+      expect(
+        chat
+          .conversation(key("05"))
+          .getSnapshot()
+          .items.slice(before)
+          .map((item) => [item.role, item.text]),
+      ).toEqual([
+        ["user", "hello agy"],
+        ["assistant", "Done: hello agy. Nothing else changed."],
+      ])
+    })
+  })
+
+  describe("usage", () => {
+    it("sets usage in a working turn, which a queued prompt leaves working", async () => {
+      const { turns, held, agent, chat } = open()
+      turns.work(key("06"), held(key("06")))
+      await chat.send(key("06"), "queued words")
+      const usage = {
+        context: { occupied: 1, capacity: null },
+        limits: [],
+        model: "m",
+        effort: null,
+      }
+      turns.usage(key("06"), held(key("06")), usage)
+      expect(agent(key("06"))).toEqual({ working: true, usage })
+      // The queued prompt still waits for the turn that works on.
+      await vi.advanceTimersByTimeAsync(demoTurnMs * 2)
+      expect(agent(key("06"))).toEqual({ working: true, usage })
+      expect(chat.conversation(key("06")).getSnapshot().items.at(-1)?.text).not.toContain("queued")
+    })
+
+    it("lives through the end of a turn it was set in", async () => {
+      const { turns, held, agent, chat } = open()
+      turns.rest(key("06"), held(key("06")))
+      await chat.send(key("06"), "go")
+      await vi.advanceTimersByTimeAsync(0)
+      const usage = {
+        context: { occupied: 1, capacity: null },
+        limits: [],
+        model: "m",
+        effort: null,
+      }
+      turns.usage(key("06"), held(key("06")), usage)
+      await vi.advanceTimersByTimeAsync(demoTurnMs)
+      expect(agent(key("06"))).toMatchObject({ working: false, usage, lastTurn: {} })
+    })
+  })
+
+  describe("usage over several turns", () => {
+    it("is the last one set, not one set in a turn that ended", async () => {
+      const { turns, held, agent, chat } = open()
+      turns.rest(key("06"), held(key("06")))
+      await chat.send(key("06"), "first")
+      await vi.advanceTimersByTimeAsync(0)
+      turns.usage(key("06"), held(key("06")), usageOf("u1"))
+      await vi.advanceTimersByTimeAsync(demoTurnMs)
+      expect(agent(key("06"))?.usage?.model).toBe("u1")
+      turns.usage(key("06"), held(key("06")), usageOf("u2"))
+      await chat.send(key("06"), "second")
+      await vi.advanceTimersByTimeAsync(demoTurnMs)
+      expect(agent(key("06"))).toMatchObject({ working: false, usage: { model: "u2" } })
+    })
+
+    it("is not kept by a turn that was stopped", async () => {
+      const { turns, held, agent, chat } = open()
+      turns.rest(key("06"), held(key("06")))
+      await chat.send(key("06"), "first")
+      await vi.advanceTimersByTimeAsync(0)
+      turns.usage(key("06"), held(key("06")), usageOf("u1"))
+      await chat.interrupt(key("06"))
+      turns.usage(key("06"), held(key("06")), usageOf("u2"))
+      await chat.send(key("06"), "second")
+      await vi.advanceTimersByTimeAsync(demoTurnMs)
+      expect(agent(key("06"))?.usage?.model).toBe("u2")
+    })
+
+    it("leaves an agent that is not heard unheard", async () => {
+      const { turns, held, agent } = open()
+      turns.usage(key("05"), held(key("05")), usageOf("u1"))
+      expect(agent(key("05"))).toBeUndefined()
+    })
+  })
+
+  describe("an answer the agent moved on from", () => {
+    it.each([
+      ["released while it was on its way", answerMs - 100, "release"],
+      ["stopped before it landed", answerMs - 100, "stop"],
+      ["stopped while it showed as answered", answerMs + answeredMs - 100, "stop"],
+    ] as const)("is refused when the agent is %s", async (_, wait, how) => {
+      const { turns, held, agent, chat, requests } = open()
+      turns.ask(key("06"), held(key("06")), "permission", 2)
+      const [first] = requests(key("06"))
+      const dialog = first!.dialog as { id: string }
+      const answering = chat.answer(key("06"), first!.id, {
+        type: "choice",
+        dialog: dialog.id,
+        option: "1",
+      })
+      const outcome = answering.then(
+        () => "went through",
+        (error: Error) => error.message,
+      )
+      await vi.advanceTimersByTimeAsync(wait)
+      if (how === "release") turns.release(key("06"))
+      else await chat.interrupt(key("06"))
+      await vi.advanceTimersByTimeAsync(answerMs + answeredMs)
+      expect(await outcome).toBe("The agent moved on before your answer reached it.")
+      expect(agent(key("06"))?.lastTurn?.outcome).toBe(how === "stop" ? "interrupted" : undefined)
+      // Nothing is left half-answered.
+      expect(requests(key("06")).every((request) => !request.answered)).toBe(true)
     })
   })
 

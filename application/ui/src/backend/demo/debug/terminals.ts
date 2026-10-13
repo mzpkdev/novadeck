@@ -1,4 +1,3 @@
-import { isAgentProgram } from "../../../model/process"
 import { terminalAsks, type TerminalAsk } from "../../../model/terminal-ending"
 import type { AgentStatus, TerminalMetadata, Workspace } from "../../../model/types"
 import type { BackendAction, TerminalKey } from "../../port"
@@ -98,16 +97,6 @@ const agentSays = (key: TerminalKey, agent: AgentStatus): BackendAction[] => [
   setStatus(key, { state: "running", agent }),
 ]
 
-// An agent in the terminal with this status; a terminal not running one becomes Claude Code.
-export const agentIn = (
-  key: TerminalKey,
-  terminal: TerminalMetadata | undefined,
-  agent: AgentStatus,
-): BackendAction[] => [
-  ...(terminal && isAgentProgram(terminal.process) ? [] : [setProcess(key, "claude")]),
-  ...agentSays(key, agent),
-]
-
 // An agent started at the prompt, resting.
 export const runAgent = (key: TerminalKey, program: string): BackendAction[] => [
   setProcess(key, program),
@@ -123,28 +112,22 @@ export const unheardAgent = (key: TerminalKey, program: string): BackendAction[]
 export const resting: AgentStatus = { working: false }
 
 // Context and rate limits, as an agent's records tell them.
-export const withUsage = (now: number): AgentStatus => ({
-  working: false,
-  usage: {
-    context: { occupied: 84_000, capacity: 200_000 },
-    limits: [
-      { minutes: 300, used: 0.42, resetsAt: now + 2 * 3_600_000 },
-      { minutes: 10_080, used: 0.78, resetsAt: now + 3 * 86_400_000 },
-    ],
-    model: "gpt-6-astra",
-    effort: "medium",
-  },
+export const withUsage = (now: number): NonNullable<AgentStatus["usage"]> => ({
+  context: { occupied: 84_000, capacity: 200_000 },
+  limits: [
+    { minutes: 300, used: 0.42, resetsAt: now + 2 * 3_600_000 },
+    { minutes: 10_080, used: 0.78, resetsAt: now + 3 * 86_400_000 },
+  ],
+  model: "gpt-6-astra",
+  effort: "medium",
 })
 
 // How much its context holds, where its harness doesn't say of how much.
-export const contextOnly: AgentStatus = {
-  working: false,
-  usage: {
-    context: { occupied: 84_000, capacity: null },
-    limits: [],
-    model: "Opus 5.5",
-    effort: null,
-  },
+export const contextOnly: NonNullable<AgentStatus["usage"]> = {
+  context: { occupied: 84_000, capacity: null },
+  limits: [],
+  model: "Opus 5.5",
+  effort: null,
 }
 
 // What murmur would say of each notification, in its words, for the notification center to

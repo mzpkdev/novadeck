@@ -360,7 +360,7 @@ describe("demo conversations", () => {
       )
     await chat.interrupt(key("04"))
     await vi.advanceTimersByTimeAsync(answerMs + answeredMs)
-    expect(await late).toBe("That request is already answered.")
+    expect(await late).toBe("The agent moved on before your answer reached it.")
   })
 
   it("shows a dialog the chat can't read as it is", () => {
@@ -448,7 +448,9 @@ describe("demo conversations", () => {
       const answering = answerFirst(view.chat)
       await view.chat.interrupt(key("04"))
       await vi.advanceTimersByTimeAsync(answerMs + answeredMs)
-      expect(await answering).toMatchObject({ message: "That request is already answered." })
+      expect(await answering).toMatchObject({
+        message: "The agent moved on before your answer reached it.",
+      })
     })
 
     it("is called off by a release, which leaves the request to ask again", async () => {

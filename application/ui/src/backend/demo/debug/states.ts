@@ -10,7 +10,6 @@ import { createDebugChat } from "./chat"
 import { createDemoFolders } from "./folders"
 import { createDemoNotices } from "./notices"
 import {
-  agentIn,
   backToPrompt,
   cleanExit,
   contextOnly,
@@ -125,6 +124,19 @@ type Verbed = (
   key: TerminalKey,
   terminal: TerminalMetadata | undefined,
 ) => void
+
+// Sets the selected terminal's usage, which an agent Novadeck hears nothing from can't show.
+const usageOf = (
+  verbs: DemoAgentVerbs,
+  key: TerminalKey,
+  { workspace, note }: DemoActionContext,
+  usage: Parameters<DemoAgentVerbs["usage"]>[2],
+): void => {
+  const terminal = terminalOf(workspace(), key)
+  if (terminal?.state === "running" && !terminal.agent && isAgentProgram(terminal.process))
+    return note("Novadeck hears nothing from this agent, so it has no usage to show.")
+  verbs.usage(key, terminal, usage)
+}
 
 // An action of the agent group: a verb on whichever terminal the group's target names.
 const verb = (label: string, hint: string, run: Verbed, verbs: DemoAgentVerbs): DemoAction => ({
@@ -516,14 +528,13 @@ export const createDemoStates = (verbs: DemoAgentVerbs): DemoStates => {
         setting("Unheard agent", "Claude Code, its hooks silent", (key, { dispatch }) =>
           dispatch(unheardAgent(key, "claude")),
         ),
-        setting(
+        onSelected(
           "Context and limits",
-          "Usage in tooltip and status",
-          (key, { dispatch, workspace }) =>
-            dispatch(agentIn(key, terminalOf(workspace(), key), withUsage(Date.now()))),
+          "Usage in tooltip and status; all else stays",
+          (key, context) => usageOf(verbs, key, context, withUsage(Date.now())),
         ),
-        setting("Context, no size", "Tokens only, no limits", (key, { dispatch, workspace }) =>
-          dispatch(agentIn(key, terminalOf(workspace(), key), contextOnly)),
+        onSelected("Context, no size", "Tokens only, no limits; all else stays", (key, context) =>
+          usageOf(verbs, key, context, contextOnly),
         ),
       ],
     },

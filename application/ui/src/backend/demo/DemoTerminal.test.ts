@@ -385,6 +385,20 @@ describe("demo agent terminal", () => {
       expect(calls.send).toHaveBeenCalledWith(key, "skip it")
     })
 
+    it("tells a raw dialog's own agent answers it, not the chat", async () => {
+      const dialog = {
+        type: "raw" as const,
+        text: "Allow this?",
+        reason: "unrecognized" as const,
+      }
+      const { value, calls } = link(conversation({ requests: [asking({ dialog })] }))
+      const { submit, text } = mountAgent(claude, value)
+      expect(text()).toContain("answer it in the agent, or type to go on")
+      expect(text()).not.toContain("from the chat")
+      await submit("go on")
+      expect(calls.send).toHaveBeenCalledWith(key, "go on")
+    })
+
     it("sends a typed line as a prompt when nothing waits, and shows a rejection", async () => {
       const { value, calls } = link(conversation({}))
       calls.send.mockRejectedValueOnce(new Error("Another agent's message is reaching it."))

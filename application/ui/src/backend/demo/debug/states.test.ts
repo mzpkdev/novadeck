@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, vi } from "vitest"
 
+import { isAgentProgram } from "../../../model/process"
 import { workspaceFromSeed } from "../../../model/seed"
 import { workspaceReducer } from "../../../model/state"
 import { createWorkspaceStore } from "../../../model/store"
@@ -12,7 +13,7 @@ import { createMockTerminal, demoSeed, demoTerminalId, terminalSlot } from "../s
 import { demoTurns } from "../turns"
 import { createDemo } from "../variants"
 import { createDemoStates } from "./states"
-import { agentIn, backToPrompt, terminalOf } from "./terminals"
+import { backToPrompt, runProgram, terminalOf } from "./terminals"
 import type { DemoActionContext, DemoTarget } from "./types"
 
 beforeEach(() => vi.useFakeTimers())
@@ -30,6 +31,21 @@ const inSession = (terminalId: string): TerminalKey => ({
   terminalId,
 })
 const key = (slot: string): TerminalKey => inSession(id(slot))
+
+// An agent in the terminal with this status; a terminal not running one becomes Claude Code.
+const agentIn = (
+  at: TerminalKey,
+  terminal: TerminalMetadata | undefined,
+  agent: AgentStatus,
+): BackendAction[] => [
+  ...(terminal && isAgentProgram(terminal.process) ? [] : runProgram(at, "claude").slice(0, 1)),
+  {
+    type: "terminal/status",
+    target: { projectId: at.projectId, workspaceSessionId: at.workspaceSessionId },
+    terminalId: at.terminalId,
+    status: { state: "running", agent },
+  },
+]
 
 // A verb the panel called, on which terminal, and whether the workspace held it.
 type VerbCall = {
@@ -83,6 +99,10 @@ const verbs = (
     rest: (at, terminal) => {
       record("rest", at, terminal, [])
       say(at, terminal, { working: false })
+    },
+    usage: (at, terminal, usage) => {
+      record("usage", at, terminal, [usage])
+      say(at, terminal, { working: false, usage })
     },
     release: (at) => void released.push(at),
   }
@@ -287,8 +307,17 @@ describe("demo states", () => {
       expect(calls).toEqual([])
     })
 
-    it("shows usage and tokens without a verb", () => {
-      const { run, terminal, calls } = panel("04")
+    it("notes that an unheard agent has no usage, and sets nothing", () => {
+      const { run, notes, calls } = panel("04")
+      run("Unheard agent")
+      calls.length = 0
+      run("Context and limits")
+      expect(notes.at(-1)).toContain("hears nothing")
+      expect(calls).toEqual([])
+    })
+
+    it("sets usage and tokens through the usage verb, on the selected terminal", () => {
+      const { run, terminal, calls, released } = panel("04")
       run("Context and limits")
       expect(terminal("04")).toMatchObject({
         process: "claude",
@@ -296,7 +325,12 @@ describe("demo states", () => {
       })
       run("Context, no size")
       expect(terminal("04")).toMatchObject({ agent: { usage: { context: { capacity: null } } } })
-      expect(calls).toEqual([])
+      expect(calls.map((call) => [call.verb, call.key])).toEqual([
+        ["usage", key("04")],
+        ["usage", key("04")],
+      ])
+      // It sets nothing but usage, so what the agent had pending stays.
+      expect(released).toEqual([])
     })
   })
 
@@ -313,8 +347,6 @@ describe("demo states", () => {
       "Killed (SIGKILL)",
       "Failed to start",
       "Unheard agent",
-      "Context and limits",
-      "Context, no size",
     ])("lets the selected terminal's agent go first on %s", (label) => {
       const { run, released } = panel("04")
       run(label)
