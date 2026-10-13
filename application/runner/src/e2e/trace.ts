@@ -12,6 +12,7 @@ import { Messaging } from "../messaging/messaging.js"
 import { Interrupts } from "../terminals/interrupts.js"
 import { Terminals } from "../terminals/manager.js"
 import { Prompts } from "../terminals/prompts.js"
+import { Trees, type Member } from "../terminals/trees.js"
 import type { FakeModel } from "./model/server.js"
 
 /**
@@ -31,6 +32,10 @@ const brief = (value: unknown, most = 160): string => {
   const text = JSON.stringify(value) ?? String(value)
   return text.length > most ? `${text.slice(0, most)}…` : text
 }
+
+// Processes of a tree, each by its pid and start.
+const list = (members: readonly Member[]): string =>
+  members.map(({ pid, startedAt }) => `${pid}@${startedAt}`).join(" ")
 
 /**
  * `owner`, its `names` checked to be methods it has: a renamed one fails the trace at once,
@@ -363,10 +368,59 @@ export const startTrace = (name: string, model: FakeModel) => {
     }
   }
 
+  // A terminal's tree as the runner reads and ends it as the terminal closes (Windows'
+  // only), and how a close begins: where a program outlives the deck, whether its tree
+  // was read with it in, and what was ended.
+  const treeing = methods(Trees.prototype as unknown as Record<string, never>, "Trees", [
+    "read",
+    "end",
+  ]) as unknown as {
+    read: (root: number | Member, timeoutMs?: number) => Promise<readonly Member[] | undefined>
+    end: (members: readonly Member[], timeoutMs?: number) => Promise<void>
+  }
+  const { read: readTree, end: endTree } = treeing
+  treeing.read = async function (root, timeoutMs) {
+    const rooted = typeof root === "number" ? String(root) : `${root.pid}@${root.startedAt}`
+    const tree = await readTree.call(this, root, timeoutMs)
+    add(
+      `tree read ${rooted} (within ${timeoutMs ?? "default"} ms): ${
+        tree === undefined ? "unknown" : `${tree.length} [${list(tree)}]`
+      }`,
+    )
+    return tree
+  }
+  treeing.end = async function (members, timeoutMs) {
+    add(`tree end ${members.length} [${list(members)}] (within ${timeoutMs ?? "default"} ms)`)
+    await endTree.call(this, members, timeoutMs)
+    add(`tree end ${members.length} done`)
+  }
+  const closing = methods(Terminals.prototype as unknown as Record<string, never>, "Terminals", [
+    "kill",
+  ]) as unknown as {
+    kill: (record: {
+      readonly summary: { readonly id: string; readonly exit: unknown }
+      readonly exitQueued: boolean
+      readonly process: { readonly pid: number }
+    }) => Promise<void>
+  }
+  const { kill } = closing
+  closing.kill = async function (record) {
+    add(
+      `kill ${named(record.summary.id)} begins: shell ${record.process.pid}, exit ${brief(record.summary.exit, 60)}, exit queued ${record.exitQueued}`,
+    )
+    try {
+      await kill.call(this, record)
+    } finally {
+      add(`kill ${named(record.summary.id)} done`)
+    }
+  }
+
   return {
     /** Puts the runner back as it was. */
     stop: () => {
       clearInterval(calls)
+      Object.assign(treeing, { read: readTree, end: endTree })
+      Object.assign(closing, { kill })
       Object.assign(interrupting, { once, settled })
       Object.assign(prompting, { emptied })
       for (const [host, original] of seeing) Object.assign(host, original)
