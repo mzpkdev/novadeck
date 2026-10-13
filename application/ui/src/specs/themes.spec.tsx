@@ -44,7 +44,8 @@ const selectedItem = (highlighted: boolean): HTMLElement => {
   element.className = "item standalone"
   element.dataset.selected = "true"
   if (highlighted) element.dataset.highlighted = ""
-  element.innerHTML = '<span>storefront</span><small class="item-detail">~/storefront</small>'
+  element.innerHTML =
+    '<svg></svg><span>storefront</span><small class="item-detail">~/storefront</small>'
   document.body.append(element)
   return element
 }
@@ -63,9 +64,10 @@ describe("a selected item", () => {
           const style = getComputedStyle(lit)
           expect(style.backgroundColor, where).toBe(getComputedStyle(plain).backgroundColor)
           expect(style.color, where).toBe(getComputedStyle(plain).color)
-          expect(getComputedStyle(lit.querySelector(".item-detail")!).color, where).toBe(
-            getComputedStyle(plain.querySelector(".item-detail")!).color,
-          )
+          for (const part of ["svg", ".item-detail"])
+            expect(getComputedStyle(lit.querySelector(part)!).color, `${where} ${part}`).toBe(
+              getComputedStyle(plain.querySelector(part)!).color,
+            )
         }
     } finally {
       plain.remove()

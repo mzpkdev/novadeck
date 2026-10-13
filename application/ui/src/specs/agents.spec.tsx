@@ -706,10 +706,10 @@ describe("A pinned project", () => {
     })
 
     it("keeps its words clear of the pins in a crowded bar", async () => {
-      // Six pins in a narrow window, some without room: the words show only after the last
-      // pin shown, or not at all.
-      arrange(["storefront", "api-service", "mobile-app", "design-system", "infra", "dotfiles"])
-      await page.viewport(600, 900)
+      // Three pins in a narrow window, which the dragged one's slot fills: the words show
+      // only after the last pin shown and that slot, or not at all.
+      arrange(["storefront", "api-service", "mobile-app"])
+      await page.viewport(620, 900)
       onTestFinished(() => page.viewport(1440, 900))
       await openWorkspace("/?demo=agents")
       await skipWelcome()
@@ -721,8 +721,9 @@ describe("A pinned project", () => {
         sampled++
         if (!dropHint().checkVisibility({ visibilityProperty: true })) return
         const left = dropHint().getBoundingClientRect().left
+        // The pins shown, and the slot the dragged one holds, where it lands.
         for (const shown of document.querySelectorAll<HTMLElement>(
-          ".pin:not([inert]):not([data-dragging])",
+          ".pin[data-dnd-placeholder], .pin:not([inert]):not([data-dragging])",
         ))
           if (shown.getBoundingClientRect().right > left) overlaps.push(shown.dataset.pin!)
       }

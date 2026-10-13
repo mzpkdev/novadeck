@@ -146,10 +146,12 @@ export const PinsBar = ({
     // as it does.
     const room = (): void => {
       const limit = element.clientWidth - (dropHint.current?.offsetWidth ?? 0)
+      // dnd-kit's placeholder holds the slot, unseen by its own rule; the pins hidden for
+      // want of room are hidden by their own style.
       const seen = [...element.querySelectorAll<HTMLElement>(".pin")].filter(
         (pin) =>
-          !(pin.dataset.dragging === "true" && !pin.inert) &&
-          getComputedStyle(pin).visibility !== "hidden",
+          pin.hasAttribute("data-dnd-placeholder") ||
+          (pin.dataset.dragging !== "true" && pin.style.visibility !== "hidden"),
       )
       setRoomy(seen.every((pin) => pin.offsetLeft + pin.offsetWidth <= limit))
     }
