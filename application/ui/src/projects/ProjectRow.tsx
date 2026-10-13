@@ -95,7 +95,7 @@ export const ProjectRow = ({
                 <Pin
                   aria-label="Pinned"
                   className="workspace-switcher-pinned shrink-0"
-                  size={11}
+                  size={12}
                   strokeWidth={1.8}
                 />
               )}

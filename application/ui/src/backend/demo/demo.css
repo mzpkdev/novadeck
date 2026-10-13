@@ -142,6 +142,7 @@
     .terminal-meta,
     .terminal-compact .terminal-meta {
       font-size: var(--text-caption);
+      line-height: var(--text-caption--line-height);
       gap: 3px 10px;
     }
   }

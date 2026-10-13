@@ -114,7 +114,7 @@ export const WorkspaceSwitcher = ({
                 onOpenFolder?.()
               }}
             >
-              <FolderOpen aria-hidden="true" className="shrink-0" size={15} strokeWidth={1.65} />
+              <FolderOpen aria-hidden="true" className="shrink-0" size={14} strokeWidth={1.65} />
               <span>Open folder…</span>
             </button>
           </div>

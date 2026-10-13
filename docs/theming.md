@@ -192,9 +192,15 @@ footer), `--text-control` (buttons, menus, tooltips), `--text-code` (code in pan
 `--text-body` (names, dialog and pane text), `--text-lead` (the page's own size, plans'
 prose), `--text-heading` (dialog headings) and `--text-title` (a section's title). TSX
 takes a step as `text-<role>` and a recipe as `var(--text-<role>)`, so the whole app's
-type moves from one place. Miniatures (the welcome's stage, a peek's thumbnail), the
-brand's wordmark and display text keep their own sizes. It is layout, not look, so it is
-not a theme token: every theme shares it.
+type moves from one place. Each role also sets its line, `--text-<role>--line-height`,
+which `text-<role>` applies and a recipe sets beside the size as
+`line-height: var(--text-<role>--line-height)`: 1.5, or where that lands on half a
+pixel, the even number of pixels nearest it (20px for body, 16px for caption), so stacked
+rows don't drift off the pixel grid and even-sized icons beside them centre on whole
+pixels. Keep icons even-sized too (12, 14, 16) and an explicit `leading-*` on whole
+pixels. Miniatures (the welcome's stage, a peek's thumbnail), the brand's wordmark and
+display text keep their own sizes. It is layout, not look, so it is not a theme token:
+every theme shares it.
 
 ### Fonts
 
