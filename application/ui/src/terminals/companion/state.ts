@@ -58,7 +58,7 @@ export type Panes = {
   // Follows an item while something shows it; returns the release.
   readonly watch: (target: WorkspaceTarget, itemId: ItemId) => () => void
   // The person asked to see an item that may hold secrets.
-  readonly reveal: (target: WorkspaceTarget, itemId: ItemId) => void
+  readonly reveal: (itemId: ItemId) => void
   readonly plan: (target: WorkspaceTarget, itemId: ItemId) => PlanActions
   // Follows every plan in the workspace and the messages from here on; returns the stop.
   readonly connect: () => () => void
@@ -66,7 +66,7 @@ export type Panes = {
 
 type Followed = {
   readonly target: WorkspaceTarget
-  readonly reveal: boolean
+  reveal: boolean
   stop: () => void
   // How many places show it, and whether it's a plan, which is followed regardless.
   watchers: number
@@ -315,10 +315,16 @@ const follow = (
   }
   // Known before following starts: the backend may report at once.
   session.followed.set(id, entry)
+  listen(session, id, entry)
+  return entry
+}
+
+// Starts what the backend reports for an item, as it's followed now.
+const listen = (session: Session, id: ItemId, entry: Followed): void => {
+  const { target, reveal } = entry
   entry.stop = session.companions.follow(target, id, { reveal }, (content) => {
     if (session.followed.get(id) === entry) received(session, target, id, content)
   })
-  return entry
 }
 
 const unfollow = (session: Session, id: ItemId): void => {
@@ -483,14 +489,17 @@ export const createPanes = ({
       linger(session, id, entry)
     }
   }
-  const reveal = (target: WorkspaceTarget, id: ItemId): void => {
+  const reveal = (id: ItemId): void => {
     session.panes.update((state) =>
       state.revealed[id] ? state : { ...state, revealed: { ...state.revealed, [id]: true } },
     )
+    // The same entry follows it again, revealed, so the places showing it still let go
+    // of it, and one waiting to be let go still is.
     const entry = session.followed.get(id)
     if (!entry || entry.reveal) return
-    unfollow(session, id)
-    linger(session, id, follow(session, target, id, { watchers: entry.watchers, plan: entry.plan }))
+    entry.stop()
+    entry.reveal = true
+    listen(session, id, entry)
   }
   const plan = (target: WorkspaceTarget, id: ItemId): PlanActions => ({
     edit: (text, marks) => {

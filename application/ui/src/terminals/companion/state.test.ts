@@ -322,11 +322,23 @@ describe("following items", () => {
     expect(stopped).toEqual([hero.id])
   })
 
+  it("lets go of what's revealed while shown, once nothing shows it", () => {
+    const { companions, follows, stopped } = backend()
+    const { panes } = connected(companions)
+    const release = panes.watch(target, hero.id)
+    panes.reveal(hero.id)
+    expect(follows.at(-1)).toEqual({ id: hero.id, reveal: true })
+    release()
+    vi.advanceTimersByTime(30_000)
+    expect(stopped).toEqual([hero.id, hero.id])
+    expect(panes.store.getSnapshot().content).not.toHaveProperty(hero.id)
+  })
+
   it("lets go of what's revealed while nothing shows it", () => {
     const { companions, stopped } = backend()
     const { panes } = connected(companions)
     panes.watch(target, hero.id)()
-    panes.reveal(target, hero.id)
+    panes.reveal(hero.id)
     vi.advanceTimersByTime(30_000)
     expect(stopped).toEqual([hero.id, hero.id])
     expect(panes.store.getSnapshot().content).not.toHaveProperty(hero.id)
@@ -336,7 +348,7 @@ describe("following items", () => {
     const { companions, follows } = backend()
     const { panes } = connected(companions)
     panes.watch(target, hero.id)
-    panes.reveal(target, hero.id)
+    panes.reveal(hero.id)
     expect(follows.at(-1)).toEqual({ id: hero.id, reveal: true })
     expect(panes.store.getSnapshot().revealed).toEqual({ [hero.id]: true })
   })
