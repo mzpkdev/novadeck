@@ -132,7 +132,7 @@ describe("settling a draft kept only by doubt", () => {
       reading.inside.settleBox(reading.record)
       await vi.advanceTimersByTimeAsync(500)
       expect(reading.looks()).toBeGreaterThan(1)
-      const closing = reading.manager.close({ terminalId: reading.id }, "creator")
+      const closing = reading.manager.close({ terminalId: reading.id })
       await vi.advanceTimersByTimeAsync(1_000)
       await closing
       const closed = reading.looks()
