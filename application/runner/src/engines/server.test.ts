@@ -1,4 +1,5 @@
 import { writeFile } from "node:fs/promises"
+import { createServer, type Server as Listener } from "node:net"
 import { join } from "node:path"
 
 import { describe, expect, it } from "../test.js"
@@ -97,6 +98,49 @@ describe("a server", () => {
     expect(again).toBe(first)
     expect(other).not.toBe(first)
     expect(first.stopped).toBe(true)
+  })
+
+  it("starts again on another port when something takes the one it was given", async ({
+    resources,
+  }) => {
+    const { directory, launch } = await launchWith(resources)
+    const squatters: Listener[] = []
+    resources.defer(() => squatters.forEach((squatter) => squatter.close()))
+    const ports: string[] = []
+    // Takes the port of the first two starts, as another process could between choosing it and the engine binding it.
+    const taken: Launch = (program, args) => {
+      const port = args[args.indexOf("--port") + 1] ?? ""
+      ports.push(port)
+      if (ports.length <= 2) squatters.push(createServer().listen(Number(port), "127.0.0.1"))
+      return launch(program, args)
+    }
+    const server = new Server(spec, { launch: taken })
+    resources.defer(() => server.close())
+
+    const running = await server.acquire({ folder: directory, key: "a" })
+
+    expect(ports).toHaveLength(3)
+    expect(new Set(ports).size).toBe(3)
+    expect(String(running.port)).toBe(ports[2])
+  })
+
+  it("gives up when the port stays taken", async ({ resources }) => {
+    const { directory, launch } = await launchWith(resources)
+    const squatters: Listener[] = []
+    resources.defer(() => squatters.forEach((squatter) => squatter.close()))
+    let starts = 0
+    const taken: Launch = (program, args) => {
+      starts += 1
+      squatters.push(createServer().listen(Number(args[args.indexOf("--port") + 1]), "127.0.0.1"))
+      return launch(program, args)
+    }
+    const server = new Server(spec, { launch: taken })
+    resources.defer(() => server.close())
+
+    await expect(server.start({ folder: directory, key: "a" })).rejects.toThrow(
+      /Demo failed: the engine stopped while starting/,
+    )
+    expect(starts).toBe(3)
   })
 
   it("explains a failed start by its cause, not by the generic lines the engine ends with", async ({
