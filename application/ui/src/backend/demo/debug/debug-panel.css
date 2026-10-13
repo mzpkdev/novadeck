@@ -38,7 +38,7 @@
   .debug-panel {
     --_radius: var(--debug-panel-radius, var(--radius-popover));
     border: var(--border-width) solid var(--debug-panel-border-color, var(--color-line));
-    border-bottom: none;
+    border-bottom-color: transparent;
     border-radius: var(--_radius) var(--_radius) 0 0;
     background-color: var(--debug-panel-bg, var(--color-paper));
     color: var(--debug-panel-fg, var(--color-ink));

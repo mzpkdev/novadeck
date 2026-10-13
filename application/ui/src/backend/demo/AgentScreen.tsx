@@ -250,9 +250,8 @@ export const AgentScreen = ({
   place: { readonly at: number; readonly of: number } | undefined
   // Muted line under the dialog: why a line wasn't taken.
   note: string | undefined
-}): React.JSX.Element | null => {
+}): React.JSX.Element => {
   const { items, request, status } = tail
-  if (!items.length && !request && !status.length && !note) return null
   return (
     <div
       className={`agent-transcript agent-tail max-w-180 [overflow-wrap:anywhere] leading-[1.65] agent-${agent}`}
@@ -281,7 +280,10 @@ export const AgentScreen = ({
           )}
         </div>
       )}
-      {note && <p className="agent-note mt-2 muted text-[0.85em]">{note}</p>}
+      {/* Mounted while empty too, so a note that comes up is announced. */}
+      <p role="status" className={`agent-note muted text-[0.85em]${note ? " mt-2" : ""}`}>
+        {note}
+      </p>
       {status.map((line) => (
         <p key={line} className="agent-completion mt-3 muted text-[0.85em]">
           {line}

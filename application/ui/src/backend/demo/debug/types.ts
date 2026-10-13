@@ -54,7 +54,7 @@ export type DemoActionContext = {
 }
 
 export type DemoAction = {
-  // Short and unique within its group, as "Exited · code 3".
+  // Short and unique within its group, as "Exit code 3".
   readonly label: string
   // What should appear once it runs, in a line, as "Ending bar with Restart".
   readonly hint: string

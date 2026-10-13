@@ -14,6 +14,7 @@ export const TerminalOutput = ({
   if (agent)
     return (
       <AgentOutput
+        key={agent}
         agent={agent}
         directory={directory}
         planning={terminal.state === "running" && terminal.agent?.planning === true}

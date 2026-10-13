@@ -14,7 +14,7 @@ import { demoTurns } from "../turns"
 import { createDemo } from "../variants"
 import { createDemoStates } from "./states"
 import { backToPrompt, runProgram, terminalOf } from "./terminals"
-import type { DemoActionContext, DemoTarget } from "./types"
+import { demoSections, type DemoActionContext, type DemoTarget } from "./types"
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -258,21 +258,15 @@ describe("demo states", () => {
     expect(calls.every((call) => !call.known)).toBe(true)
   })
 
-  it("groups its actions, each with a hint", () => {
+  it("groups its actions under the panel's sections, each with a hint and a label of its own", () => {
     const { states } = panel("04")
-    expect(states.groups.map((group) => group.title)).toEqual([
-      "Selected terminal",
-      "New terminals",
-      "Projects and sessions",
-      "Agent",
-      "Agent fixtures",
-      "Notifications",
-      "Chat: next send or Stop fails",
-      "Agent connections",
-      "Updates",
-    ])
-    for (const action of states.groups.flatMap((group) => group.actions))
-      expect(action.hint).not.toBe("")
+    for (const group of states.groups) {
+      expect(demoSections).toContain(group.section)
+      const labels = group.actions.map((action) => action.label)
+      // The panel keys an action by its label within its group.
+      expect(new Set(labels).size).toBe(labels.length)
+      for (const action of group.actions) expect(action.hint).not.toBe("")
+    }
   })
 
   it("lets only the agent group choose a target", () => {

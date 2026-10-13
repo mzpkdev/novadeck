@@ -431,6 +431,18 @@ describe("demo agent terminal", () => {
       expect(input.value).toBe("so far queued words")
     })
 
+    it("announces a note from a region that was mounted before it", async () => {
+      const { value } = link(conversation({ requests: [asking({})] }))
+      const { view, submit } = mountAgent(claude, value)
+      const region = (): Element | null =>
+        view.container.querySelector('.agent-tail [role="status"]')
+      const before = region()
+      expect(before?.textContent).toBe("")
+      await submit("maybe")
+      expect(region()).toBe(before)
+      expect(before?.textContent).toContain("Type an option's number.")
+    })
+
     it("drops the note once another request is shown", async () => {
       const { value, store } = link(conversation({ requests: [asking({})] }))
       const { submit, text } = mountAgent(claude, value)
@@ -473,9 +485,12 @@ describe("demo agent terminal", () => {
       expect(calls.interrupt).not.toHaveBeenCalled()
     })
 
-    it("follows the conversation as it grows", () => {
+    it("scrolls to the end as the conversation grows", () => {
       const { value, store } = link(conversation({}))
-      const { text } = mountAgent(claude, value)
+      const { view, text } = mountAgent(claude, value)
+      const output = view.container.querySelector<HTMLElement>(".demo-output")!
+      Object.defineProperty(output, "scrollHeight", { configurable: true, value: 900 })
+      output.scrollTop = 0
       act(
         () =>
           void store.update((c) => ({
@@ -484,6 +499,7 @@ describe("demo agent terminal", () => {
           })),
       )
       expect(text()).toContain("More news.")
+      expect(output.scrollTop).toBe(900)
     })
   })
 

@@ -284,7 +284,10 @@ export const createDebugPanel = ({
                   onKeyDown={(event) => {
                     if (event.key !== "ArrowDown") return
                     event.preventDefault()
-                    body.current?.querySelector<HTMLElement>(".debug-action")?.focus()
+                    // The first group toggle or action in order; the toggles are disabled while searching.
+                    body.current
+                      ?.querySelector<HTMLElement>(".debug-group:not(:disabled), .debug-action")
+                      ?.focus()
                   }}
                   className="field-input min-w-0 flex-1 text-body"
                 />
@@ -392,11 +395,13 @@ export const createDebugPanel = ({
                 </p>
               )}
             </div>
-            {note && (
-              <p role="status" className="debug-panel-note m-0 px-4 py-2 text-control">
-                {note}
-              </p>
-            )}
+            {/* Mounted while empty too, so a note that comes up is announced. */}
+            <p
+              role="status"
+              className={note ? "debug-panel-note m-0 px-4 py-2 text-control" : "sr-only"}
+            >
+              {note}
+            </p>
           </aside>
         </div>
       </>
