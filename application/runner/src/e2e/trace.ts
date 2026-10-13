@@ -370,29 +370,14 @@ export const startTrace = (name: string, model: FakeModel) => {
 
   // A terminal's tree as the runner reads and ends it as the terminal closes (Windows'
   // only), and how a close begins: where a program outlives the deck, whether its tree
-  // was read with it in, and what was ended.
+  // was read with it in, and what was ended. Each line says whether a close was running,
+  // so the runner's own reads and ends are told from the reap's after the deck.
   const treeing = methods(Trees.prototype as unknown as Record<string, never>, "Trees", [
     "read",
     "end",
   ]) as unknown as {
     read: (root: number | Member, timeoutMs?: number) => Promise<readonly Member[] | undefined>
     end: (members: readonly Member[], timeoutMs?: number) => Promise<void>
-  }
-  const { read: readTree, end: endTree } = treeing
-  treeing.read = async function (root, timeoutMs) {
-    const rooted = typeof root === "number" ? String(root) : `${root.pid}@${root.startedAt}`
-    const tree = await readTree.call(this, root, timeoutMs)
-    add(
-      `tree read ${rooted} (within ${timeoutMs ?? "default"} ms): ${
-        tree === undefined ? "unknown" : `${tree.length} [${list(tree)}]`
-      }`,
-    )
-    return tree
-  }
-  treeing.end = async function (members, timeoutMs) {
-    add(`tree end ${members.length} [${list(members)}] (within ${timeoutMs ?? "default"} ms)`)
-    await endTree.call(this, members, timeoutMs)
-    add(`tree end ${members.length} done`)
   }
   const closing = methods(Terminals.prototype as unknown as Record<string, never>, "Terminals", [
     "kill",
@@ -403,14 +388,37 @@ export const startTrace = (name: string, model: FakeModel) => {
       readonly process: { readonly pid: number }
     }) => Promise<void>
   }
+  const { read: readTree, end: endTree } = treeing
   const { kill } = closing
+  let closes = 0
+  const during = () => (closes > 0 ? "in a close" : "outside a close")
+  treeing.read = async function (root, timeoutMs) {
+    const rooted = typeof root === "number" ? String(root) : `${root.pid}@${root.startedAt}`
+    const tree = await readTree.call(this, root, timeoutMs)
+    add(
+      `tree read ${rooted} (${during()}, within ${timeoutMs ?? "default"} ms): ${
+        tree === undefined ? "unknown" : `${tree.length} [${list(tree)}]`
+      }`,
+    )
+    return tree
+  }
+  treeing.end = async function (members, timeoutMs) {
+    if (members.length === 0) return endTree.call(this, members, timeoutMs)
+    add(
+      `tree end ${members.length} [${list(members)}] (${during()}, within ${timeoutMs ?? "default"} ms)`,
+    )
+    await endTree.call(this, members, timeoutMs)
+    add(`tree end ${members.length} returned`)
+  }
   closing.kill = async function (record) {
     add(
-      `kill ${named(record.summary.id)} begins: shell ${record.process.pid}, exit ${brief(record.summary.exit, 60)}, exit queued ${record.exitQueued}`,
+      `kill ${named(record.summary.id)} begins: shell ${record.process.pid}, exit queued ${record.exitQueued}`,
     )
+    closes += 1
     try {
       await kill.call(this, record)
     } finally {
+      closes -= 1
       add(`kill ${named(record.summary.id)} done`)
     }
   }
