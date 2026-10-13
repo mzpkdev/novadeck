@@ -1,3 +1,12 @@
+// The id a URL hash names. A malformed %-escape reads as the raw text, never throws.
+export const hashId = (hash: string) => {
+  const raw = hash.slice(1)
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
 export const areaPath = (id: string) => `/areas/${id}`
 export const procedurePath = (id: string) => `/api#${encodeURIComponent(id)}`
 export const tablePath = (name: string) => `/data#${encodeURIComponent(`table:${name}`)}`

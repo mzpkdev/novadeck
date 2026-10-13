@@ -5,6 +5,7 @@ import { useLocation } from "react-router"
 
 import { atlas, tableByName } from "../atlas-data.ts"
 import { CanvasBackground, canvasPointer } from "../components/canvas-background.tsx"
+import { hashId } from "../links.ts"
 import { StorageStrip } from "./data/chips.tsx"
 import { NODE_W, nodeHeight, positions, relations } from "./data/model.ts"
 import type { TableNode } from "./data/model.ts"
@@ -112,11 +113,12 @@ const line = (dash?: string) => (
 )
 
 export const DataPage = () => {
-  const { hash } = useLocation()
-  const id = decodeURIComponent(hash.slice(1))
-  const [picked, setPicked] = useState<{ hash: string; name: string | null } | null>(null)
-  const selected = picked?.hash === id ? picked.name : id.startsWith("table:") ? id.slice(6) : null
-  const setSelected = (name: string | null) => setPicked({ hash: id, name })
+  const { hash, key } = useLocation()
+  const id = hashId(hash)
+  // A pick on the canvas holds only until the next navigation, which reselects from the hash.
+  const [picked, setPicked] = useState<{ key: string; name: string | null } | null>(null)
+  const selected = picked?.key === key ? picked.name : id.startsWith("table:") ? id.slice(6) : null
+  const setSelected = (name: string | null) => setPicked({ key, name })
   const table = selected ? (tableByName.get(selected) ?? null) : null
   return (
     <div className="workspace relative min-w-0 flex-1 overflow-hidden" {...canvasPointer}>
@@ -136,6 +138,7 @@ export const DataPage = () => {
       </div>
       <div className="absolute bottom-3 left-3 z-10 w-[min(720px,calc(100%-24px))]">
         <StorageStrip
+          navKey={key}
           initial={
             id.startsWith("setting:") ? "settings" : id.startsWith("local:") ? "local" : null
           }

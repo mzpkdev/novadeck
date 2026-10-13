@@ -39,29 +39,6 @@ export const AnchorLink = ({ anchor }: { anchor: Anchor }) => {
   )
 }
 
-const unique = (anchors: Anchor[]) => [
-  ...new Map(anchors.map((a) => [`${a.file}:${a.line}`, a])).values(),
-]
-
-export const AnchorList = ({ anchors }: { anchors: Anchor[] }) => (
-  <span className="inline-flex flex-wrap gap-x-3 gap-y-0.5">
-    {unique(anchors).map((a) => (
-      <AnchorLink key={`${a.file}:${a.line}`} anchor={a} />
-    ))}
-  </span>
-)
-
-export const DocLink = ({ file }: { file: string }) => (
-  <a
-    href={blobUrl(file)}
-    target="_blank"
-    rel="noreferrer"
-    className="font-mono text-[12px] no-underline hover:underline"
-  >
-    {file}
-  </a>
-)
-
 // An anchor as a small icon: the path shows on hover, a click opens it on GitHub. For
 // places where the picture carries the meaning and the file is a detail.
 export const AnchorIcon = ({ anchor, size = 13 }: { anchor: Anchor; size?: number }) => {

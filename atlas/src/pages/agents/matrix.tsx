@@ -21,7 +21,7 @@ export const HarnessMatrix = () => {
                 <div
                   className="h-full"
                   style={{
-                    width: `${(have / required.length) * 100}%`,
+                    width: `${required.length > 0 ? (have / required.length) * 100 : 0}%`,
                     background: harnessColor(h.id),
                   }}
                 />

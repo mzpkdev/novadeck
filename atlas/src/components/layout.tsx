@@ -11,12 +11,13 @@ import {
   Workflow,
 } from "lucide-react"
 import { useEffect, useState } from "react"
-import { Link, NavLink, Outlet } from "react-router"
+import { Link, NavLink, Outlet, useLocation } from "react-router"
 
 import { atlas } from "../atlas-data.ts"
+import { ErrorBoundary } from "./error-boundary.tsx"
 import { Search } from "./search.tsx"
 
-const nav = [
+export const nav = [
   { to: "/", label: "Map", icon: MapIcon },
   { to: "/areas", label: "Areas", icon: Layers },
   { to: "/ui", label: "UI", icon: AppWindow },
@@ -128,6 +129,7 @@ const Footer = () => {
 
 export const Layout = () => {
   const [searching, setSearching] = useState(false)
+  const { key } = useLocation()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -144,10 +146,28 @@ export const Layout = () => {
     <div className="flex h-full flex-col">
       <Header onSearch={() => setSearching(true)} />
       <main className="flex min-h-0 flex-1">
-        <Outlet />
+        <ErrorBoundary resetKey={key}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
       <Footer />
       <Search open={searching} onClose={() => setSearching(false)} />
     </div>
   )
 }
+
+export const NotFound = () => (
+  <div className="workspace flex min-w-0 flex-1 items-start justify-center p-6">
+    <div className="pane floating max-w-lg p-4">
+      <h1 className="m-0 text-body font-medium">No such page</h1>
+      <p className="mt-2 text-muted">Atlas has these pages:</p>
+      <div className="flex flex-wrap gap-2">
+        {nav.map(({ to, label }) => (
+          <Link key={to} to={to} className="pane px-2 py-0.5 no-underline">
+            {label}
+          </Link>
+        ))}
+      </div>
+    </div>
+  </div>
+)

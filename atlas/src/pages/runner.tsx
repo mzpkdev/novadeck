@@ -3,6 +3,7 @@ import { useLocation } from "react-router"
 
 import { StackStrip } from "../components/stack.tsx"
 import { Ground } from "../components/ui.tsx"
+import { hashId } from "../links.ts"
 import { Detail } from "./runner/detail.tsx"
 import { Figure } from "./runner/figure.tsx"
 import { lens, procedureOf } from "./runner/model.ts"
@@ -19,7 +20,7 @@ const Stat = ({ n, children }: { n: number; children: string }) => (
 
 export const RunnerPage = () => {
   const { hash } = useLocation()
-  const wanted = decodeURIComponent(hash.slice(1))
+  const wanted = hashId(hash)
   const [sel, setSel] = useState<Selection>(
     procedureOf.has(wanted) ? { kind: "procedure", id: wanted } : null,
   )

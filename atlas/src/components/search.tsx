@@ -41,27 +41,38 @@ const match = (item: Item, terms: string[]) => {
   return terms.every((term) => haystack.includes(term))
 }
 
-export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
+// Mounted only while open, so every opening starts with an empty query.
+export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }) =>
+  open ? <Dialog onClose={onClose} /> : null
+
+const Dialog = ({ onClose }: { onClose: () => void }) => {
   const [query, setQuery] = useState("")
   const [index, setIndex] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  const list = useRef<HTMLUListElement>(null)
   const navigate = useNavigate()
 
   useEffect(() => {
-    if (open) input.current?.focus()
-  }, [open])
+    input.current?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose()
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [onClose])
+
+  useEffect(() => {
+    list.current?.children[index]?.scrollIntoView({ block: "nearest" })
+  }, [index])
 
   const results = useMemo(() => {
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
     return items.filter((item) => match(item, terms)).slice(0, 50)
   }, [query])
 
-  if (!open) return null
-
   const go = (item: Item | undefined) => {
     if (!item) return
     onClose()
-    setQuery("")
     void navigate(item.to)
   }
 
@@ -84,8 +95,7 @@ export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }
             setIndex(0)
           }}
           onKeyDown={(e) => {
-            if (e.key === "Escape") onClose()
-            else if (e.key === "ArrowDown") {
+            if (e.key === "ArrowDown") {
               e.preventDefault()
               setIndex(Math.min(index + 1, results.length - 1))
             } else if (e.key === "ArrowUp") {
@@ -94,7 +104,7 @@ export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }
             } else if (e.key === "Enter") go(results[index])
           }}
         />
-        <ul className="m-0 max-h-[56vh] list-none overflow-auto p-1.5">
+        <ul ref={list} className="m-0 max-h-[56vh] list-none overflow-auto p-1.5">
           {results.length === 0 ? <li className="px-3 py-2 text-muted">No matches</li> : null}
           {results.map((item, i) => (
             <li key={`${item.kind}:${item.label}:${item.to}`}>

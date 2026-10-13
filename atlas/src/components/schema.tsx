@@ -2,26 +2,10 @@ import { useState } from "react"
 import type { ReactNode } from "react"
 
 import type { JsonSchema } from "../atlas.ts"
-
-type Schema = Record<string, unknown>
-
-const isSchema = (value: unknown): value is Schema =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
+import { isSchema, resolve } from "./json-schema.ts"
+import type { Schema } from "./json-schema.ts"
 
 const list = (value: unknown): Schema[] => (Array.isArray(value) ? value.filter(isSchema) : [])
-
-const resolve = (root: Schema, schema: Schema): Schema => {
-  let current = schema
-  for (let i = 0; i < 8; i++) {
-    const ref = current["$ref"]
-    if (typeof ref !== "string" || !ref.startsWith("#/")) return current
-    let target: unknown = root
-    for (const part of ref.slice(2).split("/")) target = isSchema(target) ? target[part] : undefined
-    if (!isSchema(target)) return current
-    current = target
-  }
-  return current
-}
 
 // One type as a pill. Primitives are tinted by kind so shape reads before names do.
 const tone = (label: string) =>

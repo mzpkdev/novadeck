@@ -214,11 +214,22 @@ const parallel = atlas.runtime.edges.reduce<[RuntimeEdge, ...RuntimeEdge[]][]>((
 }, [])
 
 export const MapPage = () => {
-  const [params] = useSearchParams()
-  const initial = params.get("node")
-  const [selection, setSelection] = useState<Selection>(
-    initial ? { type: "node", id: initial } : null,
+  // The selection lives in the URL (`?node=` or `?edge=`), so links, search and the back
+  // button all agree with what is drawn.
+  const [params, setParams] = useSearchParams()
+  const nodeParam = params.get("node")
+  const edgeParam = params.get("edge")
+  const selection = useMemo<Selection>(
+    () =>
+      edgeParam
+        ? { type: "edge", id: edgeParam }
+        : nodeParam
+          ? { type: "node", id: nodeParam }
+          : null,
+    [edgeParam, nodeParam],
   )
+  const setSelection = (next: Selection) =>
+    setParams(next ? { [next.type]: next.id } : {}, { replace: true })
 
   const nodes = useMemo<FlowNode[]>(
     () =>

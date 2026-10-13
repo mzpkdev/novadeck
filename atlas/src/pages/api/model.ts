@@ -1,29 +1,16 @@
 // Reads zod's JSON Schema the way an API reference does: what a value is called, what it
 // constrains, what it looks like as TypeScript and as an example.
-export type Schema = Record<string, unknown>
+import { isSchema, resolve } from "../../components/json-schema.ts"
+import type { Schema } from "../../components/json-schema.ts"
 
-export const isSchema = (value: unknown): value is Schema =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
+export type { Schema }
+export { isSchema, resolve }
 
 const schemas = (value: unknown): Schema[] => (Array.isArray(value) ? value.filter(isSchema) : [])
 
 // Schemas that say nothing: a procedure with no input is `{ $schema }` alone.
 export const isEmpty = (schema: Schema | null): boolean =>
   !schema || Object.keys(schema).every((key) => ["$schema", "$defs", "definitions"].includes(key))
-
-export const resolve = (root: Schema, schema: Schema): Schema => {
-  let current = schema
-  for (let i = 0; i < 12; i++) {
-    const ref = current["$ref"]
-    if (typeof ref !== "string" || !ref.startsWith("#/")) return current
-    let target: unknown = root
-    for (const part of ref.slice(2).split("/")) target = isSchema(target) ? target[part] : undefined
-    if (!isSchema(target)) return current
-    const { $ref: _ref, ...rest } = current
-    current = { ...target, ...rest }
-  }
-  return current
-}
 
 export type View = {
   schema: Schema

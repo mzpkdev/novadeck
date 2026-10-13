@@ -58,7 +58,7 @@ export const TableBox = memo(({ data }: NodeProps<TableNode>) => {
         </span>
       </div>
       <div className="pb-2">
-        {t.columns.map((c, i) => {
+        {t.columns.map((c) => {
           const key = `${t.name}.${c.name}`
           return (
             <div
@@ -85,7 +85,7 @@ export const TableBox = memo(({ data }: NodeProps<TableNode>) => {
                   id={`${c.name}-${side}`}
                   type="source"
                   position={side === "l" ? Position.Left : Position.Right}
-                  style={{ top: HEAD + i * ROW + ROW / 2, opacity: 0, pointerEvents: "none" }}
+                  style={{ opacity: 0, pointerEvents: "none" }}
                 />
               ))}
             </div>

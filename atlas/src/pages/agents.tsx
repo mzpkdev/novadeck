@@ -36,10 +36,11 @@ const Chip = ({
   selected: boolean
   onSelect: (n: string) => void
 }) => {
-  const { ref, focused } = useFocus<HTMLButtonElement>(`tool:${tool.name}`)
+  const { ref, visit } = useFocus<HTMLButtonElement>(`tool:${tool.name}`)
+  // Every navigation to a tool selects it again, even when the hash did not change.
   useEffect(() => {
-    if (focused) onSelect(tool.name)
-  }, [focused, onSelect, tool.name])
+    if (visit) onSelect(tool.name)
+  }, [visit, onSelect, tool.name])
   const Icon = icons[tool.name] ?? Wrench
   return (
     <button

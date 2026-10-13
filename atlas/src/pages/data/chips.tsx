@@ -31,8 +31,20 @@ const Chip = ({
   )
 }
 
-export const StorageStrip = ({ initial }: { initial: "settings" | "local" | null }) => {
+export const StorageStrip = ({
+  initial,
+  navKey,
+}: {
+  initial: "settings" | "local" | null
+  navKey: string
+}) => {
   const [tab, setTab] = useState<"settings" | "local" | null>(initial)
+  // A navigation that names a setting or a browser key opens the tab holding it.
+  const [seen, setSeen] = useState(navKey)
+  if (seen !== navKey) {
+    setSeen(navKey)
+    if (initial) setTab(initial)
+  }
   const { settings, local } = atlas.data
   const tabs = [
     ["settings", "Settings", settings.length],

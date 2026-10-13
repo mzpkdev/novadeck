@@ -2,30 +2,8 @@ import { X } from "lucide-react"
 import type { ReactNode } from "react"
 import { Link } from "react-router"
 
-import { atlas } from "../../atlas-data.ts"
 import { Token } from "../../components/viz.tsx"
 import { areaPath } from "../../links.ts"
-
-const toRegex = (glob: string) =>
-  new RegExp(
-    `^${glob
-      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*\*/g, "@@")
-      .replace(/\*/g, "[^/]*")
-      .replace(/@@/g, ".*")}$`,
-  )
-
-const matchers = atlas.areas.flatMap((a) =>
-  a.globs.map((g) => ({ id: a.id, glob: g, re: toRegex(g) })),
-)
-
-// The area a file belongs to, by the most specific glob that matches it.
-export const areaOfFile = (file: string): string | null => {
-  let best: { id: string; glob: string } | null = null
-  for (const m of matchers)
-    if (m.re.test(file) && (!best || m.glob.length > best.glob.length)) best = m
-  return best?.id ?? null
-}
 
 const groups = new Set(["ui", "runner", "protocol", "host"])
 export const groupOfArea = (id: string) => {

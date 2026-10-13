@@ -4,10 +4,11 @@ import { useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router"
 
 import { areaById, atlas, nodeTitle } from "../atlas-data.ts"
+import type { Area } from "../atlas.ts"
 import { AnchorIcon, blobUrl } from "../components/anchor.tsx"
 import { StackStrip } from "../components/stack.tsx"
 import { Empty, Ground, Page } from "../components/ui.tsx"
-import { compact, Dot, hue, KindSample, Segmented } from "../components/viz.tsx"
+import { compact, Dot, hue, KindSample, links, Segmented } from "../components/viz.tsx"
 import { areaPath, nodePath, procedurePath, tablePath, toolPath } from "../links.ts"
 import { EgoGraph } from "./areas/ego.tsx"
 import { GraphView } from "./areas/graph-view.tsx"
@@ -131,6 +132,12 @@ export const AreaPage = () => {
       </Page>
     )
   }
+  return <AreaBody key={area.id} area={area} />
+}
+
+// Keyed by area, so what the reader opened on one area never carries over to the next.
+const AreaBody = ({ area }: { area: Area }) => {
+  const linked = links.some((l) => l.from !== l.to && (l.from === area.id || l.to === area.id))
   const maxLines = Math.max(...atlas.areas.map((a) => a.lines))
   const share = area.files > 0 ? Math.min(1, area.tests / area.files) : 0
   return (
@@ -205,22 +212,29 @@ export const AreaPage = () => {
             <p className="mt-3 max-w-2xl text-[12px] text-muted">{area.purpose}</p>
           ) : null}
         </header>
-        <section className="space-y-2">
-          <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted">
-            <span>depends on</span>
-            <span className="flex items-center gap-1">
-              <KindSample kind="import" /> import
-            </span>
-            <span className="flex items-center gap-1">
-              <KindSample kind="call" /> call
-            </span>
-            <span className="flex items-center gap-1">
-              <KindSample kind="data" /> data
-            </span>
-            <span className="ml-auto">used by</span>
-          </div>
-          <EgoGraph id={area.id} />
-        </section>
+        {linked ? (
+          <section className="space-y-2">
+            <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted">
+              <span>depends on</span>
+              <span className="flex items-center gap-1">
+                <KindSample kind="import" /> import
+              </span>
+              <span className="flex items-center gap-1">
+                <KindSample kind="call" /> call
+              </span>
+              <span className="flex items-center gap-1">
+                <KindSample kind="data" /> data
+              </span>
+              <span className="ml-auto">used by</span>
+            </div>
+            <EgoGraph id={area.id} />
+          </section>
+        ) : (
+          <p className="text-[12px] text-muted">
+            No links found by the scan. That is not proof there are none: it reads imports, calls
+            and data access in the source it follows.
+          </p>
+        )}
         <section className="flex flex-wrap items-start gap-2">
           <Owned label="procedures" ids={area.procedures} to={procedurePath} />
           <Owned label="tables" ids={area.tables} to={tablePath} />

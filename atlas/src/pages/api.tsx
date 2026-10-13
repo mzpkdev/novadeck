@@ -7,6 +7,7 @@ import { areaById, atlas, groupBy, procedureById } from "../atlas-data.ts"
 import type { Procedure } from "../atlas.ts"
 import { AnchorLink } from "../components/anchor.tsx"
 import { Ground } from "../components/ui.tsx"
+import { hashId } from "../links.ts"
 import { CodePane } from "./api/code.tsx"
 import { isEmpty } from "./api/model.ts"
 import { ParamsTable } from "./api/params.tsx"
@@ -84,7 +85,13 @@ const ErrorCodes = () => {
   )
 }
 
-const Nav = ({ selected, onSelect }: { selected: string; onSelect: (id: string) => void }) => {
+const Nav = ({
+  selected,
+  onSelect,
+}: {
+  selected: string | null
+  onSelect: (id: string) => void
+}) => {
   const [filter, setFilter] = useState("")
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const terms = filter.toLowerCase().split(/\s+/).filter(Boolean)
@@ -282,9 +289,26 @@ const Reference = ({ p }: { p: Procedure }) => {
 export const ApiPage = () => {
   const { hash } = useLocation()
   const navigate = useNavigate()
-  const wanted = decodeURIComponent(hash.slice(1))
-  const p = procedureById.get(wanted) ?? atlas.api.procedures[0]
-  if (!p) return <div className="p-6 text-muted">No procedures.</div>
+  const wanted = hashId(hash)
+  // No hash opens the first procedure; a hash that names none says so rather than showing another.
+  const p = wanted ? procedureById.get(wanted) : atlas.api.procedures[0]
+  if (!p) {
+    if (atlas.api.procedures.length === 0)
+      return <div className="p-6 text-muted">No procedures.</div>
+    return (
+      <Ground
+        title={<span className="font-mono">No procedure {wanted}</span>}
+        side={
+          <Nav selected={null} onSelect={(id) => void navigate({ hash: id }, { replace: true })} />
+        }
+        flush
+      >
+        <p className="px-3 text-muted">
+          Nothing in the API is called {wanted}. Pick a procedure from the list.
+        </p>
+      </Ground>
+    )
+  }
   return (
     <Ground
       title={

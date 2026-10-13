@@ -13,7 +13,7 @@ export const hue = (node: string) => ({
 export const compact = (n: number) =>
   n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`
 
-export const links: AreaLink[] = (atlas as { links?: AreaLink[] }).links ?? []
+export const links: AreaLink[] = atlas.links
 
 export const kindDash: Record<AreaLink["kind"], string | undefined> = {
   import: undefined,

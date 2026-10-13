@@ -11,6 +11,8 @@ import { areaPath } from "../../links.ts"
 const SPACE = 6
 const PAD = 4
 const HEAD = 26
+// A rect smaller than this on a side is not a target anyone can hit.
+const MIN = 6
 
 // The whole codebase: a window per top-level token (`runner`, `ui`, `harness`…), a rect per
 // area inside it, area = lines.
@@ -18,6 +20,7 @@ const HEAD = 26
 export const TreemapView = () => {
   const { ref, w, h } = useSize<HTMLDivElement>()
   const navigate = useNavigate()
+  const [listing, setListing] = useState(false)
   const [hover, setHover] = useState<{ area: Area; x: number; y: number } | null>(null)
 
   const groups = useMemo(() => {
@@ -52,6 +55,13 @@ export const TreemapView = () => {
       }))
   }, [w, h])
 
+  // Areas the layout could not give a usable rect (no lines, or a window too small to tile)
+  // are listed, never dropped.
+  const drawn = new Set(
+    groups.flatMap((g) => g.cells.filter((c) => c.w >= MIN && c.h >= MIN).map((c) => c.item.id)),
+  )
+  const hidden = w > 0 ? atlas.areas.filter((a) => !drawn.has(a.id)) : []
+
   return (
     <div ref={ref} className="relative h-full w-full">
       {groups.map((g) => (
@@ -75,6 +85,7 @@ export const TreemapView = () => {
       ))}
       {groups.flatMap((g) =>
         g.cells.map(({ item: a, x, y, w: cw, h: ch }) => {
+          if (cw < MIN || ch < MIN) return null
           const share = a.files > 0 ? Math.min(1, a.tests / a.files) : 0
           return (
             <button
@@ -106,6 +117,36 @@ export const TreemapView = () => {
           )
         }),
       )}
+      {hidden.length > 0 ? (
+        <div className="absolute right-3 bottom-3 z-10 flex flex-col items-end gap-1">
+          {listing ? (
+            <ul className="pane floating m-0 max-h-60 list-none overflow-auto p-1.5 text-[12px]">
+              {hidden.map((a) => (
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(areaPath(a.id))}
+                    className="item flex w-full items-center gap-3 px-2 py-0.5 text-left"
+                  >
+                    <Token id={a.id} />
+                    <span className="ml-auto font-mono text-[11px] text-muted">
+                      {compact(a.lines)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <button
+            type="button"
+            aria-expanded={listing}
+            onClick={() => setListing(!listing)}
+            className="item pane floating cursor-pointer px-2 py-1 text-[12px] text-muted"
+          >
+            +{hidden.length} too small to draw
+          </button>
+        </div>
+      ) : null}
       {hover ? (
         <div
           className="pane floating pointer-events-none fixed z-20 px-2 py-1 text-[12px]"

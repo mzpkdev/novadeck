@@ -223,8 +223,27 @@ export const Wiring = ({
         <text x={col(0) + 50} y={mid("port") + 10} className="uw-note">
           back: events become actions
         </text>
-        <text x={col(0)} y={mid("port") + 30} className="uw-note">
-          Static scan; dashed = not traced.
+        <line
+          x1={col(0)}
+          x2={col(0) + 40}
+          y1={mid("port") + 26}
+          y2={mid("port") + 26}
+          className="uw-edge"
+          data-lit="2"
+        />
+        <text x={col(0) + 50} y={mid("port") + 30} className="uw-note">
+          dark: the path you picked
+        </text>
+        <rect
+          x={col(0)}
+          y={mid("port") + 38}
+          width={40}
+          height={10}
+          rx={2}
+          className="uw-key-gap"
+        />
+        <text x={col(0) + 50} y={mid("port") + 47} className="uw-note">
+          warning outline: not traced
         </text>
       </g>
       {edges.map((edge) => {
@@ -276,12 +295,7 @@ export const Wiring = ({
           >
             <rect className="face" width={BW} height={h} rx={3} />
             <rect className="bar" x={0} y={h * 0.25} width={2} height={h * 0.5} />
-            <circle
-              cx={14}
-              cy={16}
-              r={3.5}
-              fill={`var(--g-${place.side === "protocol" ? "protocol" : place.side})`}
-            />
+            <circle cx={14} cy={16} r={3.5} fill={`var(--g-${place.side})`} />
             <text x={24} y={19} className="uw-title">
               {box.title}
             </text>

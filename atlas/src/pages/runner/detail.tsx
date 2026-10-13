@@ -205,10 +205,20 @@ const MethodDetail = ({ name, onPick }: { name: string; onPick: Pick }) => {
         {method.calls.length > 0 ? (
           <>
             <Label>Also calls</Label>
-            <div className="flex flex-wrap gap-1">
-              {method.calls.flatMap((call) => {
+            <div className="flex flex-wrap items-center gap-1">
+              {method.calls.map((call) => {
                 const other = methodOf.get(call)
-                return other ? [<MethodButton key={call} method={other} onPick={onPick} />] : []
+                return other ? (
+                  <MethodButton key={call} method={other} onPick={onPick} />
+                ) : (
+                  <span
+                    key={call}
+                    title="Called here, but not traced into SQL"
+                    className="rounded-sm border border-dashed border-line px-1.5 font-mono text-control text-muted"
+                  >
+                    {call}
+                  </span>
+                )
               })}
             </div>
           </>
