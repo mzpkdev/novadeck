@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events"
+import { existsSync } from "node:fs"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
@@ -993,7 +994,7 @@ describe("quitting by a signal", () => {
 })
 
 // What the download folder test uses of electron-updater's internals.
-type DownloadHelper = { readonly file: string | null }
+type DownloadHelper = { readonly file: string | null; clear(): Promise<void> }
 type Download = {
   readonly fileInfo: { readonly url: URL; readonly info: { url: string; sha512: string } }
   readonly fileExtension: string
@@ -1022,6 +1023,15 @@ describe("electron-updater's download folder", () => {
     }
     const folder = await mkdtemp(join(tmpdir(), "novadeck-updater-"))
     const helper = new DownloadedUpdateHelper(folder)
+    // What clearing finds as it begins: whether the file is still named, and still there.
+    const clearing: { file: string | null; there: boolean }[] = []
+    let waiting: string | null = null
+    const clear = helper.clear.bind(helper)
+    helper.clear = () => {
+      const cleared = clear()
+      clearing.push({ file: helper.file, there: waiting !== null && existsSync(waiting) })
+      return cleared
+    }
     const updater = {
       listenerCount: () => 0,
       emit: () => false,
@@ -1048,7 +1058,7 @@ describe("electron-updater's download folder", () => {
       AppUpdater.prototype.executeDownload.call(updater, download(version, task))
     try {
       await run("1.2.3", (temp) => writeFile(temp, "1.2.3"))
-      const waiting = helper.file
+      waiting = helper.file
       const during: { file: string | null; content: string }[] = []
       const newer = run("1.3.0", async (temp) => {
         during.push({ file: helper.file, content: await readFile(waiting!, "utf8") })
@@ -1062,6 +1072,7 @@ describe("electron-updater's download folder", () => {
       return {
         waiting,
         during,
+        clearing,
         failure,
         after: helper.file,
         content: await readFile(waiting!, "utf8").catch(() => undefined),
@@ -1080,10 +1091,12 @@ describe("electron-updater's download folder", () => {
     expect(content).toBe("1.3.0")
   })
 
-  it("stops naming the waiting file when that download fails; re-check replacing in checkForUpdates if this fails", async () => {
-    const { failure, after } = await downloading(true)
+  it("stops naming the waiting file before deleting it when that download fails; re-check replacing in checkForUpdates if this fails", async () => {
+    const { failure, clearing, after, content } = await downloading(true)
     expect(failure).toBeInstanceOf(Error)
+    expect(clearing).toEqual([{ file: null, there: true }])
     expect(after).toBeNull()
+    expect(content).toBeUndefined()
   })
 
   it("is fed release files that carry no version in their names", async () => {

@@ -77,9 +77,10 @@ build checks its own signature once at launch with `codesign`. See
   clears its download folder, which likely takes the waiting file too: the newer release is
   offered as `available` and the next check downloads it. Quitting and restarting end the
   schedule first, so no new download starts on the way out; one under way goes on, and a quit
-  after it lands installs the newer release. On Windows the newer one downloads whole, as
-  electron-updater's differential download then pairs the waiting update's blockmap with the
-  installed build's installer, finds them apart and falls back. macOS keeps the update Squirrel
+  after it lands installs the newer release. On Windows the newer one costs its changed ranges and then the
+  whole file: electron-updater's differential download pairs the waiting update's blockmap
+  with the installed build's installer, and the result fails its checksum, so it falls back
+  to a full download. macOS keeps the update Squirrel
   staged and checks again at the next launch, as staging one update over another is
   untried. `updater.test.ts` pins the file names and electron-updater's handling of the
   waiting file: were the folder emptied while the updater still names the file, quitting

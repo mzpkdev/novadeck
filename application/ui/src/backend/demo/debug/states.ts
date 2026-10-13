@@ -595,7 +595,7 @@ export const createDemoStates = (verbs: DemoAgentVerbs): DemoStates => {
         },
         {
           label: "Newer update",
-          hint: "Replaces the open or dismissed one",
+          hint: "Replaces the open or dismissed one; after Restart now, Restarting… stays",
           run: () =>
             offer({ kind: "ready", version: nextVersion(), notes: sampleNotes.slice(0, 2) }),
         },

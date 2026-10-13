@@ -396,8 +396,9 @@ export type NativeUpdater = {
  *
  * `setChannel` follows another channel from the next check, and makes one soon, unless the
  * schedule has ended. `stop` ends the schedule, after which no new download starts; one
- * under way goes on. Quitting and restarting stop it first. `settled` gives whether an update is downloaded
- * and waits to install, once a newer one downloading in its place is in or has failed.
+ * under way goes on. Quitting and restarting stop it first. `settled` gives whether an
+ * update is downloaded and waits to install, once a newer one downloading in its place is
+ * in or has failed.
  */
 export const checkForUpdates = (
   updater: Updater,
