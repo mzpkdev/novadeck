@@ -367,24 +367,24 @@ export type NativeUpdater = {
  * at every launch. A newer release installs as usual.
  *
  * The schedule goes on once an update has downloaded, and a newer release it finds
- * replaces that update, so one restart lands on the latest release. Downloading it
- * empties the folder the waiting file is in while the updater still names that file, so
- * installing on quit is off until the newer file is in: quitting then would install
- * nothing, or delete the running AppImage. The offer stays `ready` meanwhile, and
- * `settled` lets a restart wait for the download. Should it fail, the waiting file is
- * gone with it: the newer release is offered as `available` until a later check
- * downloads it. On macOS the schedule ends once an update has downloaded instead, as
- * electron-updater hands a download to Squirrel.Mac only while installing on quit is on,
- * and the next launch checks again.
+ * replaces that update, so one restart lands on the latest release. No release file
+ * carries a version in its name, so electron-updater downloads the newer one beside the
+ * waiting file and renames it over that file once complete; quitting meanwhile installs
+ * the waiting update. The offer stays `ready`, and `settled` lets a restart wait for the
+ * download. Should it fail, the waiting file is likely gone with it, as electron-updater
+ * clears its download folder then: the newer release is offered as `available` until a
+ * later check downloads it. On macOS the schedule ends once an update has downloaded
+ * instead, as whether Squirrel.Mac stages an update over one it has staged is untried;
+ * the next launch checks again.
  *
- * An error raised while installing fails the
- * install: installing on quit is switched off, so the same failing install is not tried
- * at every quit, `installFailed` hears of the version, and `offer` is told the update is
- * only `available`. Installing is when the updater's `install` (quitting) or
- * `quitAndInstall` (restarting) has been called, which this wraps to know, and on macOS
- * also while Squirrel stages the download; any other error, such as a check still in
- * flight failing offline, is only logged. The notes of an offer are the release's, and
- * none unless the update information names that release.
+ * An error raised while installing fails the install: installing on quit is switched
+ * off, so the same failing install is not tried at every quit, `installFailed` hears of
+ * the version, and `offer` is told the update is only `available`. Installing is when
+ * the updater's `install` (quitting) or `quitAndInstall` (restarting) has been called,
+ * which this wraps to know, and on macOS also while Squirrel stages the download; any
+ * other error, such as a check still in flight failing offline, is only logged. The
+ * notes of an offer are the release's, and none unless the update information names
+ * that release.
  *
  * In `tell` mode it downloads and installs nothing, and tells `offer` each release newer
  * than this build is `available`, with its notes; the schedule goes on, so a newer
@@ -395,10 +395,9 @@ export type NativeUpdater = {
  * The update is `ready` once Squirrel has it.
  *
  * `setChannel` follows another channel from the next check, and makes one soon, unless the
- * schedule has ended. `stop` ends the schedule, after which nothing more downloads and a
- * download still under way does not switch installing on quit back on: quitting and
- * restarting stop it first. `settled` gives whether an update is downloaded and waits to
- * install, once a newer one downloading in its place is in or has failed.
+ * schedule has ended. `stop` ends the schedule, after which nothing more downloads;
+ * quitting and restarting stop it first. `settled` gives whether an update is downloaded
+ * and waits to install, once a newer one downloading in its place is in or has failed.
  */
 export const checkForUpdates = (
   updater: Updater,
@@ -479,7 +478,6 @@ export const checkForUpdates = (
     // under way electron-updater returns that download's promise, so a second check
     // finding the same release does not download it twice.
     if (downloaded === undefined) return void updater.downloadUpdate().catch(() => {})
-    updater.autoInstallOnAppQuit = false
     const notes = updateNotesLines(info)
     replacing = updater
       .downloadUpdate()
@@ -498,8 +496,6 @@ export const checkForUpdates = (
   updater.on("update-downloaded", (info) => {
     // Squirrel.Mac has the download staged, or soon will, and keeps it.
     if (native) stop()
-    // Installing on quit was off while the download replaced another, or failed to.
-    else if (!ended) updater.autoInstallOnAppQuit = true
     const notes = updateNotesLines(info)
     downloaded = { version: info.version, notes }
     const ready = (): void => {

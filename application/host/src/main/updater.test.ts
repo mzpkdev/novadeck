@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events"
-import { readFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
+import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
 import type { UpdateChannel } from "@novadeck/protocol/bridge"
@@ -374,9 +375,6 @@ describe("taking the page's requests about updates", () => {
   })
 })
 
-// An updater whose quitAndInstall behaves as electron-updater's does when installing
-// fails: it logs and returns, without quitting or throwing. `ends` is how it behaves
-// when installing works: the app quits (as BaseUpdater does after a setImmediate).
 // A promise and what settles it, as the host's lib has no Promise.withResolvers.
 const deferred = <T>() => {
   const settle: { resolve?: (value: T) => void; reject?: (error: unknown) => void } = {}
@@ -388,6 +386,9 @@ const deferred = <T>() => {
   }
 }
 
+// An updater whose quitAndInstall behaves as electron-updater's does when installing
+// fails: it logs and returns, without quitting or throwing. `ends` is how it behaves
+// when installing works: the app quits (as BaseUpdater does after a setImmediate).
 const installing = ({
   downloaded = true,
   settled = () => Promise.resolve(true),
@@ -706,12 +707,8 @@ describe("checking for updates", () => {
         ])
       })
 
-      it("installs nothing on quit until it is in, as the waiting file is gone", async () => {
-        const { updater, download } = waiting()
-        expect(updater.autoInstallOnAppQuit).toBe(false)
-        updater.emit("update-downloaded", { version: "1.3.0" })
-        download.resolve(undefined)
-        await vi.advanceTimersByTimeAsync(0)
+      it("still installs the waiting one on quit until it is in", () => {
+        const { updater } = waiting()
         expect(updater.autoInstallOnAppQuit).toBe(true)
       })
 
@@ -736,29 +733,22 @@ describe("checking for updates", () => {
       })
 
       it("offers it as available when its download fails, and downloads it at a later check", async () => {
-        const { updater, offered, settled, download } = waiting()
+        const { updater, offered, failed, logged, settled, download } = waiting()
         const ready = settled()
+        // electron-updater reports the failure through the error event before it rejects.
+        updater.emit("error", new Error("download failed"))
         download.reject(new Error("download failed"))
         await vi.advanceTimersByTimeAsync(0)
         await expect(ready).resolves.toBe(false)
         await expect(settled()).resolves.toBe(false)
         expect(offered.at(-1)).toEqual(["available", "1.3.0", []])
-        expect(updater.autoInstallOnAppQuit).toBe(false)
+        expect(logged).toEqual(["The update check failed."])
+        expect(failed).toEqual([])
         updater.downloadResult = undefined
         updater.emit("update-available", { version: "1.3.0" })
         expect(updater.downloads).toHaveLength(2)
         updater.emit("update-downloaded", { version: "1.3.0" })
-        expect(updater.autoInstallOnAppQuit).toBe(true)
         expect(offered.at(-1)).toEqual(["ready", "1.3.0", []])
-      })
-
-      it("does not switch installing on quit back on once quitting has stopped the schedule", async () => {
-        const { updater, stop, download } = waiting()
-        stop()
-        updater.emit("update-downloaded", { version: "1.3.0" })
-        download.resolve(undefined)
-        await vi.advanceTimersByTimeAsync(0)
-        expect(updater.autoInstallOnAppQuit).toBe(false)
       })
     })
 
@@ -999,6 +989,75 @@ describe("quitting by a signal", () => {
         () => false,
       )(),
     ).not.toThrow()
+  })
+})
+
+describe("electron-updater's download folder", () => {
+  it("keeps the waiting file while a newer release with the same file name downloads; re-check replacing in checkForUpdates if this fails", async () => {
+    // checkForUpdates leaves installing on quit on while a newer release replaces the
+    // waiting update. That holds while electron-updater keeps the waiting file until the
+    // newer one is renamed over it, which it does when both have one name, as no release
+    // file carries a version (electron-builder.yml). Should it empty the folder while
+    // still naming the file, quitting would delete the running AppImage and install
+    // nothing.
+    const require = createRequire(import.meta.url)
+    const { DownloadedUpdateHelper } = require(
+      join(dirname(require.resolve("electron-updater")), "DownloadedUpdateHelper.js"),
+    ) as {
+      DownloadedUpdateHelper: new (cacheDir: string) => {
+        readonly cacheDirForPendingUpdate: string
+        readonly file: string | null
+        setDownloadedFile(
+          file: string,
+          packageFile: null,
+          versionInfo: { version: string },
+          fileInfo: { info: { sha512: string } },
+          fileName: string,
+          isSaveCache: boolean,
+        ): Promise<void>
+        validateDownloadedPath(
+          file: string,
+          versionInfo: { version: string },
+          fileInfo: { info: { sha512: string } },
+          logger: { info(message: string): void; warn(message: string): void },
+        ): Promise<string | null>
+      }
+    }
+    const folder = await mkdtemp(join(tmpdir(), "novadeck-updater-"))
+    try {
+      const helper = new DownloadedUpdateHelper(folder)
+      await mkdir(helper.cacheDirForPendingUpdate, { recursive: true })
+      const name = "novadeck-linux-x86_64.AppImage"
+      const file = join(helper.cacheDirForPendingUpdate, name)
+      await writeFile(file, "1.2.3")
+      await helper.setDownloadedFile(
+        file,
+        null,
+        { version: "1.2.3" },
+        { info: { sha512: "older" } },
+        name,
+        true,
+      )
+      const quiet = { info: () => {}, warn: () => {} }
+      const cached = await helper.validateDownloadedPath(
+        file,
+        { version: "1.3.0" },
+        { info: { sha512: "newer" } },
+        quiet,
+      )
+      expect(cached).toBeNull()
+      expect(helper.file).toBe(file)
+      expect(await readFile(file, "utf8")).toBe("1.2.3")
+    } finally {
+      await rm(folder, { recursive: true, force: true })
+    }
+  })
+
+  it("is fed release files that carry no version in their names", async () => {
+    const config = await readFile(join(import.meta.dirname, "../../electron-builder.yml"), "utf8")
+    const names = [...config.matchAll(/artifactName:\s*(\S+)/gu)].map(([, name]) => name)
+    expect(names.length).toBeGreaterThan(0)
+    expect(names.filter((name) => name?.includes("version"))).toEqual([])
   })
 })
 

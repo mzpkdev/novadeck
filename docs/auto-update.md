@@ -31,9 +31,11 @@ which is logged as a failed check; nothing is offered and nothing crashes.
 
 Switching applies to the next check, and one runs about two seconds later. Switching
 back to `stable` never downgrades: an `early` build newer than stable waits until stable
-passes it. A switch never discards a downloaded update; a newer release on the new channel
-replaces it, as any newer release does (see "Installing and telling"). On macOS the schedule
-ends once an update has downloaded, so a switch then applies from the next launch.
+passes it. A downloaded update that waits is replaced by the release the new channel offers
+when that is newer than the running build, as any newer release replaces it (see "Installing
+and telling"): switching from `early` to `stable` with a prerelease waiting installs the
+stable release, even one older than that prerelease. On macOS the schedule ends once an
+update has downloaded, so a switch then applies from the next launch.
 
 electron-updater decides the release in `GitHubProvider.getLatestVersion`. With
 `allowPrerelease` false it asks `/releases/latest`, which GitHub answers with the latest
@@ -67,16 +69,18 @@ build checks its own signature once at launch with `codesign`. See
   `ready` once downloaded (on macOS, once Squirrel has staged it) and installs on the next
   quit or when the person restarts.
 - **A newer release** found while an update waits replaces it, so one restart lands on the
-  latest release rather than one restart per release missed. Downloading it empties the
-  folder the waiting file is in (electron-updater's `getValidCachedUpdateFile`) while the
-  updater still names that file, so installing on quit is off until the newer file is in;
-  a quit meanwhile installs nothing, and the next launch finds the newer file cached. The
-  offer stays `ready`, and a restart asked for meanwhile waits for the download and goes
-  ahead into it. Should the download fail, the waiting file is gone with it: the newer
-  release is offered as `available` and the next check downloads it. Quitting and
-  restarting end the schedule first, so nothing downloads on the way out. macOS keeps the
-  update Squirrel staged and checks again at the next launch: electron-updater hands a
-  download to Squirrel only while installing on quit is on.
+  latest release rather than one restart per release missed. No release file carries a
+  version in its name (`electron-builder.yml`), so electron-updater downloads the newer one
+  beside the waiting file and renames it over that file once complete; a quit meanwhile
+  installs the waiting update. The offer stays `ready`, and a restart asked for meanwhile
+  waits for the download and goes ahead into it. Should the download fail, electron-updater
+  clears its download folder, which likely takes the waiting file too: the newer release is
+  offered as `available` and the next check downloads it. Quitting and restarting end the
+  schedule first, so nothing downloads on the way out. macOS keeps the update Squirrel
+  staged and checks again at the next launch, as staging one update over another is
+  untried. `updater.test.ts` pins the file names and electron-updater's handling of the
+  waiting file: were the folder emptied while the updater still names the file, quitting
+  would delete the running AppImage and install nothing.
 - **Telling** builds download nothing and keep checking, so a newer release replaces the
   offer. The offer is `available`, and the page's button opens the release page,
   `https://github.com/<owner>/<repo>/releases/tag/v<version>`, in the browser.
