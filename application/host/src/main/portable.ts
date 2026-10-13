@@ -23,6 +23,8 @@ export type PortableHost = {
   readonly version: string
   /** Names this run of the app, which a page that opens again within it can tell. */
   readonly run: string
+  /** What to do about an installed copy that could not be checked, as a sentence. */
+  readonly uncheckedAdvice: string
   /** The copies of the app already installed, with their versions. */
   readonly find: () => Promise<readonly InstalledCopy[]>
   /**
@@ -106,8 +108,9 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
       return { kind: "newer", version: copy.version }
     }
     newer = undefined
-    // An installed copy is replaced where it is, the installer's own before Homebrew's, so
-    // no second copy appears; `find` lists them in that order. One that could not be
+    // On Linux an installed copy is replaced where it is, the installer's own before
+    // Homebrew's, so no second copy appears; `find` lists them in that order. (On macOS
+    // Electron decides where the copy goes; see `renamedMoveReason`.) One that could not be
     // looked at may be a newer app, so it is left as it is.
     const [replaced] = copies
     if (replaced?.unchecked) {
@@ -116,7 +119,7 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
         kind: "failed",
         reason:
           "The installed copy could not be checked, so it was left as it is. " +
-          "Try again, or reinstall Novadeck with install.sh.",
+          host.uncheckedAdvice,
       }
     }
     if (host.stopping()) return quitting

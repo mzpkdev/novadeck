@@ -4,6 +4,7 @@ import {
   findInstalledApps,
   isNewerVersion,
   moveToApplications,
+  renamedMoveReason,
   relaunchIntoCopy,
   resolveMoveConflict,
 } from "./applications-folder"
@@ -163,6 +164,23 @@ describe("moving the app to Applications", () => {
       kind: "failed",
       reason: "Moving to Applications failed.",
     })
+  })
+})
+
+describe("a renamed copy moving beside an installed one", () => {
+  const reason = (running: string, installed: boolean) =>
+    renamedMoveReason({ running, packaged: "novadeck.app", installed })
+
+  it("is refused, with how to go on, when the packaged name is installed", () => {
+    expect(reason("novadeck 2.app", true)).toBe(
+      "This copy is named novadeck 2.app, and novadeck.app is already in Applications. " +
+        "Rename this copy to novadeck.app, or remove the old one, and try again.",
+    )
+  })
+
+  it("is allowed where the copy has the packaged name, or none is installed", () => {
+    expect(reason("novadeck.app", true)).toBeUndefined()
+    expect(reason("novadeck 2.app", false)).toBeUndefined()
   })
 })
 

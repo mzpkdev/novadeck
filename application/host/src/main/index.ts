@@ -39,6 +39,7 @@ import {
   findInstalledApps,
   moveToApplications,
   relaunchIntoCopy,
+  renamedMoveReason,
 } from "./applications-folder.js"
 import { dataFolderName } from "./data-folder.js"
 import {
@@ -498,6 +499,14 @@ const installedVersion = (): string | undefined => {
 // The macOS install: Electron moves the app to Applications, which quits it and starts the
 // moved copy; see `moveToApplications`.
 const moveApp = (): PortableInstall => {
+  const running = basename(bundleOf(app.getPath("exe")))
+  const [, packaged] = installedNames()
+  const refused = renamedMoveReason({
+    running,
+    packaged: packaged ?? running,
+    installed: packaged !== undefined && existsSync(join("/Applications", packaged)),
+  })
+  if (refused !== undefined) return { kind: "failed", reason: refused }
   const outcome = moveToApplications({
     move: (conflictHandler) => app.moveToApplicationsFolder({ conflictHandler }),
     existingVersion: installedVersion,
@@ -725,6 +734,10 @@ const launch = async (): Promise<void> => {
       portable,
       version: app.getVersion(),
       run,
+      uncheckedAdvice:
+        process.platform === "darwin"
+          ? "Check the copy in your Applications folder, or reinstall Novadeck from the disk image."
+          : "Try again, or reinstall Novadeck with install.sh.",
       find: installedCopies,
       install: (target) =>
         process.platform === "darwin" ? Promise.resolve(moveApp()) : installAppImageOver(target),

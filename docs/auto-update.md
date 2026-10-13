@@ -282,9 +282,13 @@ install; one whose plist cannot be read is not replaced. Opening a newer install
 shuts down the same way and then relaunches into its executable. Electron's move installs
 only into `/Applications`, so an older copy kept in `~/Applications` stays beside it.
 Electron's move writes only to `/Applications/<the running bundle's name>`. A portable copy
-Finder renamed (`novadeck 2.app`) is still checked against the installed copy: the guard and
-the launch check look for the running name and for the packaged one, `novadeck.app` (the
-executable's name plus `.app`), in both Applications folders.
+Finder or Archive Utility renamed (`novadeck 2.app`) is still checked against the installed
+copy: the guard and the launch check look for the running name and for the packaged one,
+`novadeck.app` (the executable's name plus `.app`), in both Applications folders. The move
+itself is refused, as `failed` with a reason that says to rename this copy or remove the old
+one, when the names differ and `/Applications/novadeck.app` exists, since it would otherwise
+install a second copy beside the old one, which stays launchable and never runs the launch
+check (`renamedMoveReason`). Nothing is renamed for the person.
 Authorization limits: an account that cannot write `/Applications` gets an administrator
 prompt, and the install fails (with Electron's message as the reason) if it is cancelled; once
 authorized, Electron replaces a copy in `/Applications` that another account owns; a copy in

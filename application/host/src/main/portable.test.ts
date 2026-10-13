@@ -31,6 +31,7 @@ const hosting = (overrides: Partial<PortableHost> = {}) => {
     portable: true,
     version: "1.0.0",
     run: "run-1",
+    uncheckedAdvice: "Try again, or reinstall Novadeck with install.sh.",
     find: async () => [],
     install: async (target): Promise<PortableInstall> => {
       calls.push(`install${target ? ` over ${target}` : ""}`)
@@ -195,6 +196,21 @@ describe("installing from a portable copy", () => {
       } finally {
         vi.useRealTimers()
       }
+    })
+
+    it("tells an unchecked installed copy's way out in the platform's own words", async () => {
+      const { host, calls } = hosting({
+        uncheckedAdvice: "Check the copy in your Applications folder.",
+        find: async () => [copy(undefined, true)],
+      })
+      const result = await portableInstaller(host).install()
+      expect(result).toEqual({
+        kind: "failed",
+        reason:
+          "The installed copy could not be checked, so it was left as it is. " +
+          "Check the copy in your Applications folder.",
+      })
+      expect(calls).toEqual([])
     })
 
     it("fails with the reason and keeps running, shells and all", async () => {

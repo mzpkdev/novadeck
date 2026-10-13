@@ -1,6 +1,7 @@
 import { updateVersionPattern } from "@novadeck/protocol/bridge"
 
 import type { InstalledCopy } from "./install-linux.js"
+import { reasonText } from "./install-reason.js"
 
 // A version as numbers and a prerelease tag, or undefined for text that is not one.
 const parseVersion = (
@@ -64,18 +65,32 @@ export type MoveOutcome =
   | { readonly kind: "newer"; readonly version: string }
   | { readonly kind: "failed"; readonly reason: string }
 
-// The most characters of an error's own message a reason carries.
-const maxReasonLength = 200
+// A reason from an error's message, or a general one where it has none.
+const reasonOf = (error: unknown): string =>
+  reasonText(error instanceof Error ? error.message : "") || "Moving to Applications failed."
 
-// eslint-disable-next-line no-control-regex -- These are the characters it replaces.
-const controls = /[\x00-\x1f\x7f-\x9f]+/gu
-
-// A reason from an error's message: one line, without control characters.
-const reasonOf = (error: unknown): string => {
-  const message = error instanceof Error ? error.message : ""
-  const line = message.replace(controls, " ").trim().slice(0, maxReasonLength)
-  return line === "" ? "Moving to Applications failed." : line
-}
+/**
+ * Why a move must not go ahead when the running bundle was renamed: Electron writes the
+ * copy to `/Applications/<running name>`, so a copy `running` named otherwise (Finder and
+ * Archive Utility add " 2" to a name already taken) would sit beside an older installed
+ * one under the `packaged` name, which stays launchable and never runs the launch check.
+ * Undefined when the names agree or no such copy is installed (`installed`).
+ */
+export const renamedMoveReason = ({
+  running,
+  packaged,
+  installed,
+}: {
+  readonly running: string
+  readonly packaged: string
+  readonly installed: boolean
+}): string | undefined =>
+  running === packaged || !installed
+    ? undefined
+    : reasonText(
+        `This copy is named ${running}, and ${packaged} is already in Applications. ` +
+          `Rename this copy to ${packaged}, or remove the old one, and try again.`,
+      )
 
 /**
  * Moves the app to Applications with Electron's `moveToApplicationsFolder`, passed as
