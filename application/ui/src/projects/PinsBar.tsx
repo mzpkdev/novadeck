@@ -138,15 +138,36 @@ export const PinsBar = ({
       const widths = buttons.map((button) => button.offsetWidth)
       const fit = pinsThatFit(available, widths, parseFloat(style.columnGap) || 0)
       setCount(fit)
-      const last = buttons[fit - 1]
-      const end = last ? last.offsetLeft + last.offsetWidth : parseFloat(style.paddingLeft)
-      setRoomy(end + (dropHint.current?.offsetWidth ?? 0) <= element.clientWidth)
+      room()
+    }
+    // Whether the words saying where to drop clear every pin that shows where it sits, the
+    // slot a dragged pin holds included but not the pin itself, which follows the pointer.
+    // A drag moves pins among each other without resizing any, so they are checked again
+    // as it does.
+    const room = (): void => {
+      const limit = element.clientWidth - (dropHint.current?.offsetWidth ?? 0)
+      const seen = [...element.querySelectorAll<HTMLElement>(".pin")].filter(
+        (pin) =>
+          !(pin.dataset.dragging === "true" && !pin.inert) &&
+          getComputedStyle(pin).visibility !== "hidden",
+      )
+      setRoomy(seen.every((pin) => pin.offsetLeft + pin.offsetWidth <= limit))
     }
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(element)
     for (const pin of element.querySelectorAll(".pin")) observer.observe(pin)
-    return () => observer.disconnect()
+    const moves = new MutationObserver(room)
+    moves.observe(element, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["inert", "style"],
+    })
+    return () => {
+      observer.disconnect()
+      moves.disconnect()
+    }
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A drag's end remounts the pins, which are then observed again.
   }, [items, drags])
 
@@ -197,7 +218,7 @@ export const PinsBar = ({
       data-open={open ? "true" : undefined}
       data-animated={animated ? "true" : undefined}
       data-receiving={receiving ? "true" : undefined}
-      data-over={receiving && over ? "true" : undefined}
+      data-over={over ? "true" : undefined}
       inert={!open}
     >
       <div className="pins-bar-clip">

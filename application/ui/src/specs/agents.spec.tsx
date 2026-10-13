@@ -594,7 +594,12 @@ describe("A pinned project", () => {
   context("dragged from the switcher menu", () => {
     // Drags a project's row out of the open menu and lets it go at a point on the screen:
     // by default on the bar under the header, past its pins and the menu.
-    const dragOut = async (name: string, to?: { x: number; y: number }): Promise<void> => {
+    // More steps leave more moves after the handoff, for what shows as the menu closes.
+    const dragOut = async (
+      name: string,
+      to?: { x: number; y: number },
+      steps = 16,
+    ): Promise<void> => {
       // Once the menu has opened in full: a drag begun while it still slides in starts
       // off the row, and the drag never takes (seen once on a macOS runner).
       const from = await settled(() => switcherRow(name).element().getBoundingClientRect())
@@ -602,7 +607,7 @@ describe("A pinned project", () => {
       await userEvent.dragAndDrop(switcherRow(name), page.elementLocator(document.body), {
         sourcePosition: { x: 40, y: from.height / 2 },
         targetPosition: to ?? { x: window.innerWidth - 80, y: header.bottom + 16 },
-        steps: 16,
+        steps,
         force: true,
       })
     }
@@ -639,6 +644,9 @@ describe("A pinned project", () => {
       await openWorkspace("/?demo=agents")
       await skipWelcome()
       await workspaceSwitcher().click()
+      await expect
+        .element(page.getByRole("dialog", { name: "Switch workspace" }))
+        .toHaveAttribute("data-state", "open")
       // What shows at the last move before the drag is let go, the bar dragging the pin the
       // menu handed over.
       let seen: {
@@ -649,14 +657,17 @@ describe("A pinned project", () => {
       const moved = (): void => {
         if (!document.querySelector('.pin[data-pin="docs-site"][data-dragging="true"]')) return
         seen = {
-          menu: page.getByRole("dialog", { name: "Switch workspace" }).query() !== null,
+          // Open, rather than still in the page as it fades out.
+          menu:
+            page.getByRole("dialog", { name: "Switch workspace" }).query()?.dataset.state ===
+            "open",
           hint: dropHint().checkVisibility({ visibilityProperty: true }),
           target: document.querySelector('.pins-bar[data-receiving="true"]') !== null,
         }
       }
       window.addEventListener("pointermove", moved, true)
 
-      await dragOut("docs-site")
+      await dragOut("docs-site", undefined, 48)
       window.removeEventListener("pointermove", moved, true)
 
       expect(seen).toEqual({ menu: false, hint: true, target: true })
@@ -692,6 +703,36 @@ describe("A pinned project", () => {
       expect(seen).toEqual({ hint: true, target: true, after: true })
       await expect.element(pin("docs-site")).toHaveTextContent("3docs-site")
       expect(document.querySelector('.pins-bar[data-receiving="true"]')).toBeNull()
+    })
+
+    it("keeps its words clear of the pins in a crowded bar", async () => {
+      // Six pins in a narrow window, some without room: the words show only after the last
+      // pin shown, or not at all.
+      arrange(["storefront", "api-service", "mobile-app", "design-system", "infra", "dotfiles"])
+      await page.viewport(600, 900)
+      onTestFinished(() => page.viewport(1440, 900))
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      const overlaps: string[] = []
+      let sampled = 0
+      const moved = (): void => {
+        if (!document.querySelector('.pin[data-pin="docs-site"][data-dragging="true"]')) return
+        sampled++
+        if (!dropHint().checkVisibility({ visibilityProperty: true })) return
+        const left = dropHint().getBoundingClientRect().left
+        for (const shown of document.querySelectorAll<HTMLElement>(
+          ".pin:not([inert]):not([data-dragging])",
+        ))
+          if (shown.getBoundingClientRect().right > left) overlaps.push(shown.dataset.pin!)
+      }
+      window.addEventListener("pointermove", moved, true)
+
+      await dragOut("docs-site")
+      window.removeEventListener("pointermove", moved, true)
+
+      expect(sampled).toBeGreaterThan(0)
+      expect(overlaps).toEqual([])
     })
 
     it("still reorders the list when dragged to its top, with the bar behind it", async () => {

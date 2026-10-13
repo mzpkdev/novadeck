@@ -52,12 +52,15 @@
 .icon-button.workspace-switcher-action:disabled {
   cursor: not-allowed;
 }
-/* On a highlighted row's bar, the buttons beside it take the bar's text. */
-.workspace-switcher-row:has(.workspace-switcher-project:focus-visible) .workspace-switcher-action {
+/* On a highlighted row's bar, the buttons beside it take the bar's text; the current
+   project's row keeps its selected ground, and its buttons their own colour. */
+.workspace-switcher-row:has(.workspace-switcher-project:not([data-selected]):focus-visible)
+  .workspace-switcher-action {
   --_fg: var(--item-highlighted-fg, var(--icon-button-fg, var(--color-muted)));
 }
 @media (hover: hover) {
-  .workspace-switcher-row:has(.workspace-switcher-project:hover) .workspace-switcher-action {
+  .workspace-switcher-row:has(.workspace-switcher-project:not([data-selected]):hover)
+    .workspace-switcher-action {
     --_fg: var(--item-highlighted-fg, var(--icon-button-fg, var(--color-muted)));
   }
 }

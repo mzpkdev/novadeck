@@ -165,8 +165,6 @@
       var(--pin-drag-border-color, var(--item-selected-border-color, var(--color-line))),
     var(--pin-drag-shadow, var(--shadow-control));
 }
-/* An empty bar, open for a project dragged from the switcher's list, says so in its
-   middle, where the pin the drag carries, once it is in the bar, never moves it. */
 /* Where to drop, at the bar's end: always there, so it can be measured, but seen only
    where it fits after the pins. */
 .pins-bar-drop-hint {
