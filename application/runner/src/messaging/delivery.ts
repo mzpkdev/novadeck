@@ -455,9 +455,10 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
         state: "unknown",
         escapedAt: event.at,
       }
-    return delivery.box.enteredAt === null || delivery.state === "unbound"
-      ? delivery
-      : { ...delivery, box: { ...delivery.box, escapedAt: event.at } }
+    const kept = undoubted(delivery)
+    return kept.box.enteredAt === null || kept.state === "unbound"
+      ? kept
+      : { ...kept, box: { ...kept.box, escapedAt: event.at } }
   }
   if (event.type === "bound") {
     // The session a ring's own prompt starts, where it rang a prompt shown before any
@@ -661,7 +662,9 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
       // and Tab may too, as the request may have been answered with no report, its
       // dialog gone, and the prompt take a suggestion.
       if (event.asked)
-        return event.key === "content" || event.key === "accept" ? asked(delivery) : delivery
+        return event.key === "content" || event.key === "accept"
+          ? asked(delivery)
+          : undoubted(delivery)
       // A bare Enter on a box known empty (no draft typed while asked either) while a root
       // turn runs queues nothing in any harness: it answered something Novadeck didn't see
       // (a confirmation between two of Antigravity's status lines), or did nothing. At the
@@ -714,6 +717,10 @@ const asked = (delivery: Delivery): Delivery =>
   delivery.box.draftWhileAsked && !delivery.box.doubted
     ? delivery
     : { ...delivery, box: { ...delivery.box, draftWhileAsked: true, doubted: false } }
+
+/** The delivery with no doubt left of its draft: any key of the person's ends one. */
+const undoubted = (delivery: Delivery): Delivery =>
+  delivery.box.doubted ? { ...delivery, box: { ...delivery.box, doubted: false } } : delivery
 
 /** The delivery with the person's key changing the box to `box`: no longer ringable. */
 const drafted = (delivery: Delivery, box: Box): Delivery => {

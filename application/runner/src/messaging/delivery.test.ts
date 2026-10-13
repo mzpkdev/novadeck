@@ -810,6 +810,12 @@ describe("a new session at its own prompt", () => {
     const answering = transition(doubted, key("content", at + 3_000, true))
     expect(answering.box).toMatchObject({ doubted: false, draftWhileAsked: true })
     expect(transition(answering, empty).state).toBe("drafting")
+    // Escape at the prompt, and Enter or Escape while a request waits, end it as well.
+    for (const ending of [key("escape", at + 3_000), key("enter", at + 3_000, true)]) {
+      const after = transition(doubted, ending)
+      expect(after.box.doubted).toBe(false)
+      expect(transition(after, empty).state).toBe("drafting")
+    }
     // A prompt queued or held stays a draft, not a doubt: it starts the next session's turn.
     const queued = run(working, typing, enter, late)
     expect(queued).toMatchObject({ state: "drafting", box: { doubted: false } })
