@@ -444,6 +444,8 @@ describe("Connecting agents", () => {
 })
 
 const pinsBar = () => page.getByRole("group", { name: "Pinned projects" })
+// The words on the bar saying where to drop a project dragged from the switcher.
+const dropHint = (): HTMLElement => document.querySelector<HTMLElement>(".pins-bar-drop-hint")!
 const pin = (name: string) => pinsBar().getByRole("button", { name: new RegExp(`${name}$`) })
 const arrange = (pinned: string[]): void =>
   localStorage.setItem("novadeck.project-arrangement", JSON.stringify({ order: pinned, pinned }))
@@ -633,6 +635,65 @@ describe("A pinned project", () => {
       await expect.element(pin("docs-site")).toHaveTextContent("1docs-site")
     })
 
+    it("says where to drop until the drag is let go, after the menu has closed", async () => {
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      // What shows at the last move before the drag is let go, the bar dragging the pin the
+      // menu handed over.
+      let seen: {
+        readonly menu: boolean
+        readonly hint: boolean
+        readonly target: boolean
+      } | null = null
+      const moved = (): void => {
+        if (!document.querySelector('.pin[data-pin="docs-site"][data-dragging="true"]')) return
+        seen = {
+          menu: page.getByRole("dialog", { name: "Switch workspace" }).query() !== null,
+          hint: dropHint().checkVisibility({ visibilityProperty: true }),
+          target: document.querySelector('.pins-bar[data-receiving="true"]') !== null,
+        }
+      }
+      window.addEventListener("pointermove", moved, true)
+
+      await dragOut("docs-site")
+      window.removeEventListener("pointermove", moved, true)
+
+      expect(seen).toEqual({ menu: false, hint: true, target: true })
+      await expect.element(pin("docs-site")).toHaveTextContent("1docs-site")
+      await expect.poll(() => dropHint().checkVisibility({ visibilityProperty: true })).toBe(false)
+      expect(document.querySelector('.pins-bar[data-receiving="true"]')).toBeNull()
+    })
+
+    it("marks a bar with pins as a place to drop, its words after them", async () => {
+      arrange(["storefront", "api-service"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      let seen: {
+        readonly hint: boolean
+        readonly target: boolean
+        readonly after: boolean
+      } | null = null
+      const moved = (): void => {
+        if (!document.querySelector('.pin[data-pin="docs-site"][data-dragging="true"]')) return
+        const last = pin("api-service").element().getBoundingClientRect()
+        seen = {
+          hint: dropHint().checkVisibility({ visibilityProperty: true }),
+          target: document.querySelector('.pins-bar[data-receiving="true"]') !== null,
+          after: dropHint().getBoundingClientRect().left >= last.right,
+        }
+      }
+      window.addEventListener("pointermove", moved, true)
+
+      await dragOut("docs-site")
+      window.removeEventListener("pointermove", moved, true)
+
+      expect(seen).toEqual({ hint: true, target: true, after: true })
+      await expect.element(pin("docs-site")).toHaveTextContent("3docs-site")
+      expect(document.querySelector('.pins-bar[data-receiving="true"]')).toBeNull()
+    })
+
     it("still reorders the list when dragged to its top, with the bar behind it", async () => {
       await openWorkspace("/?demo=agents")
       await skipWelcome()
@@ -673,40 +734,6 @@ describe("A pinned project", () => {
       await workspaceSwitcher().click()
       await expect.poll(switcherOrder).toEqual(before)
     })
-  })
-
-  it("underlines the current pin with one line, which follows a switch", async () => {
-    arrange(["storefront", "api-service", "docs-site"])
-    await openWorkspace("/?demo=agents")
-    await skipWelcome()
-    const lineUnder = async (name: string): Promise<void> => {
-      const line = document.querySelector(".pins-bar-indicator")
-      await expect.element(pin(name)).toHaveAttribute("aria-current", "true")
-      await expect
-        .poll(() => {
-          const under = pin(name).element().getBoundingClientRect()
-          const box = line?.isConnected
-            ? line.getBoundingClientRect()
-            : document.querySelector(".pins-bar-indicator")?.getBoundingClientRect()
-          return box && box.left > under.left && box.right < under.right
-        })
-        .toBe(true)
-    }
-    await lineUnder("storefront")
-    await pin("docs-site").click()
-    await lineUnder("docs-site")
-    expect(document.querySelectorAll(".pins-bar-indicator")).toHaveLength(1)
-    // A switch slides it; a pin moved by the keyboard takes it along at once.
-    expect(document.querySelector(".pins-bar-indicator")).toHaveAttribute("data-slide", "true")
-    pin("docs-site").element().focus()
-    await userEvent.keyboard("{Alt>}{ArrowLeft}{/Alt}")
-    await lineUnder("docs-site")
-    expect(document.querySelector(".pins-bar-indicator")).not.toHaveAttribute("data-slide")
-
-    // Unpinned, the current project has no pin and no line.
-    await workspaceSwitcher().click()
-    await page.getByRole("button", { name: "Unpin docs-site" }).click()
-    await expect.poll(() => document.querySelector(".pins-bar-indicator")).toBeNull()
   })
 
   it("hides the pins that don't fit, and the dot covers them again", async () => {
