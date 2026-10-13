@@ -1,9 +1,10 @@
+import type { ConversationKey } from "../../../model/conversation"
 import { createStore } from "../../../model/store"
 import type { Workspace } from "../../../model/types"
 import type { Backend } from "../../port"
 import { createDemoEngine } from "../engine"
 import { demoBackend, withConversations, withStorefrontArtifacts } from "../index"
-import { demoSeed } from "../samples"
+import { demoSeed, demoTerminalId } from "../samples"
 import { agentTranscripts } from "../transcripts"
 import { demoTurns } from "../turns"
 import { visitorBeats } from "./beats"
@@ -14,6 +15,13 @@ export const stillMs = 4000
 
 // The events that show the person is using the page.
 const interactions = ["pointerdown", "keydown", "wheel"] as const
+
+// Whether an answer is to the permission request in Checkout review, storefront's fourth
+// terminal: the one the hints ask the person to answer.
+export const answersCheckoutReview = (key: ConversationKey, request: string): boolean =>
+  key.terminalId ===
+    demoTerminalId({ projectId: "storefront", workspaceSessionId: "initial" }, 4) &&
+  request === "04:permission"
 
 // The demo for a website's visitors: the agents demo's storefront and its other projects,
 // with their agents played by a scenario that goes on beside the person (see
@@ -40,7 +48,7 @@ export const visitorDemo = (): Backend => {
     ...conversations,
     answer: async (key, request, answer) => {
       await conversations.answer(key, request, answer)
-      answered.update(() => true)
+      if (answersCheckoutReview(key, request)) answered.update(() => true)
     },
   }))
   let latest: Workspace | undefined

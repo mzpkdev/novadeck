@@ -7,6 +7,7 @@ import { createDemoUpdates, sampleNotes } from "../backend/demo/debug/updates"
 import type { BackendSelection, ConnectBackend } from "../backend/port"
 import type { InstallResult } from "../model/portable"
 import type { SandboxState } from "../model/sandbox"
+import { createStore } from "../model/store"
 import type { UpdateOffer } from "../model/update"
 
 // The only place that chooses a backend adapter. Tests and specs run on the demo;
@@ -105,7 +106,14 @@ const requestedInstall = (): InstallResult | undefined => {
 const answerDelay = (): number =>
   new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("answer") === "late" ? 4000 : 0
 
+// Specs open the demo as a visitor's, with `?visitor=on`: the strip, the hints and the
+// narrow window's panel the app shows for one. Its scenario is the visitor backend's own.
+const visitorRequested = (): boolean =>
+  new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("visitor") === "on"
+
 const testBackend = (): ReturnType<typeof createDemoBackend> => {
+  if (visitorRequested())
+    return { ...createDemoBackend(), visitor: { answered: createStore(false) } }
   if (showcaseRequested()) return createContentDemo()
   const update = requestedUpdate()
   const sandbox = requestedSandbox()

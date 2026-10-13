@@ -22,7 +22,7 @@ import { HeaderSection } from "./HeaderSection"
 import { currentState, currentTarget, shallowEqual } from "./selectors"
 import { SidebarSection } from "./SidebarSection"
 import { useNotificationBadge } from "./useNotifications"
-import { VisitorBar, VisitorHints, VisitorPhone } from "./Visitor"
+import { useVisitorNarrow, VisitorBar, VisitorHints, VisitorPhone } from "./Visitor"
 import { WorkspaceFooter } from "./WorkspaceFooter"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
 import { WorkspaceProvider } from "./WorkspaceProvider"
@@ -104,6 +104,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const { zen, sidebar, sidebarCollapsed, sidebarPanel, fontSize, enabledViews } = shell
   const view = useWorkspaceState((workspace) => currentState(workspace).view)
   const voice = useDictationController(services)
+  const covered = useVisitorNarrow()
   useKeyboard(voice?.dictation)
   const sidebarRail = (mobile = false): React.JSX.Element => (
     <RailWithBadge
@@ -128,42 +129,45 @@ export const WorkspaceApp = (): React.JSX.Element => {
           } as React.CSSProperties
         }
       >
-        <WorkspaceEffects />
-        <VisitorBar />
-        <HeaderSection />
-        <div className="workspace-body relative flex min-h-0 flex-1">
-          {sidebarRail()}
-          <WorkspacePanels
-            collapsed={zen || sidebarCollapsed}
-            mobileOpen={!zen && sidebar}
-            onMobileOpenChange={(open) => {
-              if (!open) hideSidebar()
-            }}
-            mobileRail={sidebarRail(true)}
-            mobileLabel={panelLabels[sidebarPanel]}
-            mobileFinalFocusEl={() => sidebarToggle(sidebarPanel)}
-            sidebar={<SidebarSection />}
-          >
-            <WorkspaceStage canvas={canvas} />
-          </WorkspacePanels>
-          {zen && (
-            <ZenDockWithBadge
-              view={view}
-              enabledViews={enabledViews}
-              onCreate={() => add()}
-              onViewChange={(next) => {
-                if (next !== view) changeView(next)
+        {/* Laid out as if it were not there; inert while the visitor panel stands in for it. */}
+        <div className="contents" inert={covered}>
+          <WorkspaceEffects />
+          <VisitorBar />
+          <HeaderSection />
+          <div className="workspace-body relative flex min-h-0 flex-1">
+            {sidebarRail()}
+            <WorkspacePanels
+              collapsed={zen || sidebarCollapsed}
+              mobileOpen={!zen && sidebar}
+              onMobileOpenChange={(open) => {
+                if (!open) hideSidebar()
               }}
-              onNotifications={() => toggleSidebar("notifications")}
-              onExit={exitZen}
-            />
-          )}
+              mobileRail={sidebarRail(true)}
+              mobileLabel={panelLabels[sidebarPanel]}
+              mobileFinalFocusEl={() => sidebarToggle(sidebarPanel)}
+              sidebar={<SidebarSection />}
+            >
+              <WorkspaceStage canvas={canvas} />
+            </WorkspacePanels>
+            {zen && (
+              <ZenDockWithBadge
+                view={view}
+                enabledViews={enabledViews}
+                onCreate={() => add()}
+                onViewChange={(next) => {
+                  if (next !== view) changeView(next)
+                }}
+                onNotifications={() => toggleSidebar("notifications")}
+                onExit={exitZen}
+              />
+            )}
+          </div>
+          <WorkspaceFooter />
+          <WorkspaceOverlays />
+          {voice && <DictationOverlay view={voice.view} level={voice.level} docks={voice.docks} />}
+          <DebugSection />
+          <VisitorHints />
         </div>
-        <WorkspaceFooter />
-        <WorkspaceOverlays />
-        {voice && <DictationOverlay view={voice.view} level={voice.level} docks={voice.docks} />}
-        <DebugSection />
-        <VisitorHints />
         <VisitorPhone />
       </main>
     </DictationContext.Provider>

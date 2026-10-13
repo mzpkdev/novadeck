@@ -25,6 +25,24 @@ describe("the demo shell", () => {
     expect(mockReply("claude", shell)).toContain("Checkout implementation")
   })
 
+  it("answers a shell's everyday commands with a note, not an error", () => {
+    for (const line of ["pnpm test", "npm run dev", "node -v", "cat package.json", "exit"]) {
+      const reply = mockReply(line, shell)
+
+      expect(reply).toContain("simulated shell")
+      expect(reply).not.toContain("command not found")
+    }
+    expect(mockReply("cd application", shell)).toBe("")
+  })
+
+  it("answers an agent's terminal as an agent, whatever program the line starts with", () => {
+    const agent = { ...shell, command: "claude", process: "claude" }
+
+    expect(mockReply("git commit the fix", agent)).toContain("mock AI session")
+    expect(mockReply("ls the files that changed", agent)).toContain("mock AI session")
+    expect(mockReply("pnpm please", agent)).toContain("mock AI session")
+  })
+
   it("does not dead-end on a command it does not know", () => {
     const reply = mockReply("fnord --now", shell)
 

@@ -319,27 +319,93 @@ export const createMockTerminal = (
   }
 }
 
-// What the demo's shell answers: a few commands it fakes, and for any other a line that
-// says it is a simulation and where to go, since a person who types into it expects a shell.
+// Builtins that answer nothing when they work.
+const quiet: ReadonlySet<string> = new Set([
+  "cd",
+  "export",
+  "source",
+  "alias",
+  "unset",
+  "set",
+  "true",
+])
+
+// Everyday commands the demo shell doesn't run, each with a short note instead of an error.
+const simulated =
+  "This is a simulated shell, so it doesn't run that. In the real app it is your own."
+const noted: Readonly<Record<string, string>> = Object.fromEntries(
+  [
+    "cat",
+    "head",
+    "tail",
+    "less",
+    "grep",
+    "find",
+    "mkdir",
+    "touch",
+    "rm",
+    "cp",
+    "mv",
+    "open",
+    "code",
+    "vim",
+    "nvim",
+    "nano",
+    "curl",
+    "wget",
+    "ssh",
+    "docker",
+    "make",
+    "python",
+    "python3",
+    "pnpm",
+    "npm",
+    "npx",
+    "yarn",
+    "bun",
+    "node",
+    "deno",
+    "cargo",
+    "go",
+    "which",
+    "env",
+    "history",
+    "top",
+    "ps",
+    "kill",
+    "tree",
+    "man",
+    "exit",
+    "logout",
+    "sudo",
+  ].map((name) => [name, simulated]),
+)
+
+// What the demo's shell answers: a few commands it fakes, a short note for the shell's other
+// everyday commands, and, for real nonsense, a line that says it is a simulation and where to
+// go, since a person who types into it expects a shell. A program is only matched in a shell:
+// an agent's terminal answers any other line as an agent.
 export const mockReply = (command: string, terminal: TerminalMetadata): string => {
   const input = command.trim()
   const [program = ""] = input.split(/\s+/)
   if (input === "help")
     return "Local demo commands: help, pwd, ls, whoami, date, echo <text>, git status, claude, clear.\nThis is a simulated shell: the real app runs your own."
   if (input === "pwd") return terminal.directory.replace("~", "/Users/alex")
-  if (program === "ls")
-    return "application/   node_modules/   package.json   pnpm-lock.yaml   README.md"
   if (input === "whoami") return "alex"
   if (input === "date") return new Date().toLocaleString()
   if (input === "echo") return ""
   if (input.startsWith("echo ")) return input.slice(5)
   if (input === "git status")
     return "On branch main\nYour branch is up to date with 'origin/main'.\n\nnothing to commit, working tree clean"
+  if (demoAgent(terminal))
+    return "This is a mock AI session. Your message is saved here, but no model is connected."
+  if (program === "ls")
+    return "application/   node_modules/   package.json   pnpm-lock.yaml   README.md"
   if (program === "git")
     return "This is a simulated shell, so git only answers `git status`. In the real app it is your own."
   if (program === "claude" || program === "codex")
     return "Agents are simulated here. Open a terminal already running one, such as Checkout implementation or Checkout review, and answer what it asks."
-  if (demoAgent(terminal))
-    return "This is a mock AI session. Your message is saved here, but no model is connected."
+  if (quiet.has(program)) return ""
+  if (program in noted) return noted[program]!
   return `zsh: command not found: ${program}\nThis is a simulated shell. Type help to see what works, or try ls, git status or claude.`
 }

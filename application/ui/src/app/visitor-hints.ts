@@ -1,4 +1,5 @@
 import type { ViewMode } from "../model/types"
+import { needsPerson, type ProjectStatus } from "../projects/project-status"
 
 // What the person did that a hint asks for, each noticed once and kept.
 export type Seen = "answer" | "grid" | "canvas" | "companion" | "project"
@@ -27,10 +28,17 @@ export type Signals = {
   readonly answered: boolean
   readonly view: ViewMode
   readonly companion: boolean
-  // The project on screen, and the one the page opened on.
-  readonly project: string
-  readonly first: string
+  // Whether the project now on screen was marked by the switcher when the person opened it.
+  readonly marked: boolean
 }
+
+// Whether opening `project` followed a mark: the project changed, and `statuses`, what the
+// switcher showed just before, marked it as asking for the person or as finished or failed.
+export const openedMarked = (
+  statuses: Readonly<Record<string, ProjectStatus>>,
+  before: string,
+  project: string,
+): boolean => project !== before && needsPerson(statuses[project])
 
 // What was seen, with whatever the signals show now.
 export const noticed = (seen: ReadonlySet<Seen>, signals: Signals): ReadonlySet<Seen> => {
@@ -38,7 +46,7 @@ export const noticed = (seen: ReadonlySet<Seen>, signals: Signals): ReadonlySet<
     ...(signals.answered ? (["answer"] as const) : []),
     ...(signals.view === "grid" || signals.view === "canvas" ? [signals.view] : []),
     ...(signals.companion ? (["companion"] as const) : []),
-    ...(signals.project !== signals.first ? (["project"] as const) : []),
+    ...(signals.marked ? (["project"] as const) : []),
   ]
   return now.every((each) => seen.has(each)) ? seen : new Set([...seen, ...now])
 }

@@ -1,5 +1,5 @@
 /* The visitor build's recipes: the strip above the header, the card of things to try and
-   the panel that covers a window too narrow for the app.
+   the panel that replaces the app in a window too narrow for it.
 
    Hooks: `data-done` on a hint once the person did it.
 
@@ -43,15 +43,9 @@
   text-decoration: line-through;
 }
 .visitor-phone {
-  display: none;
   background-color: var(--visitor-phone-bg, var(--color-canvas));
   color: var(--visitor-phone-fg, var(--color-ink));
 }
 .visitor-phone-text {
   color: var(--visitor-phone-muted-fg, var(--color-muted));
-}
-@media (max-width: 759px) {
-  .visitor-phone {
-    display: flex;
-  }
 }

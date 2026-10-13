@@ -1,11 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest"
 
 import { workspaceFromSeed } from "../../../model/seed"
 import type { Workspace } from "../../../model/types"
+import type { BackendSink } from "../../port"
 import type { DemoAgentVerbs } from "../agent-link"
 import { demoSeed, demoTerminalId } from "../samples"
 import { visitorBeats } from "./beats"
-import { visitorDemo } from "./index"
+import { answersCheckoutReview, visitorDemo } from "./index"
 import { playScenario, selectedKey, stillCheckMs, type Beat, type Stage } from "./scenario"
 
 const workspace: Workspace = workspaceFromSeed(demoSeed(0, true), {
@@ -164,13 +165,110 @@ describe("the visitor scenario", () => {
 })
 
 describe("the visitor demo", () => {
-  it("offers no debug panel, chat, voice or agent connections", () => {
+  it("offers no chat, voice or agent connections", () => {
     const backend = visitorDemo()
 
     expect(backend.visitor).toBeDefined()
-    expect(backend.DebugPanel).toBeUndefined()
     expect(backend.conversations).toBeUndefined()
     expect(backend.voice).toBeUndefined()
     expect(backend.agents).toBeUndefined()
+  })
+
+  it("answers only Checkout review's permission request as the one the hints ask for", () => {
+    const review = at("storefront", 4)
+
+    expect(answersCheckoutReview(review, "04:permission")).toBe(true)
+    expect(answersCheckoutReview(review, "04:other")).toBe(false)
+    expect(answersCheckoutReview(at("storefront", 5), "05:raw")).toBe(false)
+    expect(answersCheckoutReview(at("mobile-app", 4), "04:permission")).toBe(false)
+  })
+})
+
+// The sink's statuses for a terminal: each time an agent verb reached it.
+const statuses = (dispatch: Mock<BackendSink["dispatch"]>, key: ReturnType<typeof at>): number =>
+  dispatch.mock.calls
+    .flatMap(([actions]) => [...actions])
+    .filter((action) => action.type === "terminal/status" && action.terminalId === key.terminalId)
+    .length
+
+describe("the visitor demo, started", () => {
+  // A demo that knows the workspace, with a person on `selecting` if given.
+  const started = (selecting?: ReturnType<typeof at>) => {
+    const shown: Workspace = selecting
+      ? {
+          ...workspace,
+          activeProjectId: selecting.projectId,
+          projects: workspace.projects.map((project) =>
+            project.id !== selecting.projectId
+              ? project
+              : {
+                  ...project,
+                  history: project.history.map((session) => ({
+                    ...session,
+                    state: { ...session.state, selected: selecting.terminalId },
+                  })),
+                },
+          ),
+        }
+      : workspace
+    const backend = visitorDemo()
+    backend.commit(shown, [])
+    const sink = { dispatch: vi.fn<BackendSink["dispatch"]>(), open: vi.fn<BackendSink["open"]>() }
+    return { backend, sink, stop: backend.start!(sink) }
+  }
+
+  it("lands a beat when it is due", () => {
+    const { sink, stop } = started()
+
+    vi.advanceTimersByTime(5900)
+    expect(statuses(sink.dispatch, at("design-system", 1))).toBe(0)
+    vi.advanceTimersByTime(200)
+    expect(statuses(sink.dispatch, at("design-system", 1))).toBeGreaterThan(0)
+    stop()
+  })
+
+  it("skips the terminal the person has selected", () => {
+    const { sink, stop } = started(at("design-system", 1))
+
+    vi.advanceTimersByTime(7000)
+    expect(statuses(sink.dispatch, at("design-system", 1))).toBe(0)
+    stop()
+  })
+
+  it("waits for the person to be still, as the page's own events show it", () => {
+    const { sink, stop } = started()
+
+    vi.advanceTimersByTime(5000)
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }))
+    vi.advanceTimersByTime(3500)
+    expect(statuses(sink.dispatch, at("design-system", 1))).toBe(0)
+    vi.advanceTimersByTime(1600)
+    expect(statuses(sink.dispatch, at("design-system", 1))).toBeGreaterThan(0)
+    stop()
+  })
+
+  it("stops listening when stopped", () => {
+    const added = vi.spyOn(document, "addEventListener")
+    const removed = vi.spyOn(document, "removeEventListener")
+    const { stop } = started()
+    const listening = added.mock.calls.filter(([type]) =>
+      ["pointerdown", "keydown", "wheel"].includes(type),
+    )
+
+    stop()
+    expect(listening).toHaveLength(3)
+    for (const [type, listener] of listening)
+      expect(removed.mock.calls.some(([t, l]) => t === type && l === listener)).toBe(true)
+  })
+
+  it("keeps one scenario when stopped and started again, as StrictMode does", () => {
+    const { backend, sink, stop } = started()
+    const one = vi.getTimerCount()
+
+    stop()
+    expect(vi.getTimerCount()).toBeLessThan(one)
+    const stopAgain = backend.start!(sink)
+    expect(vi.getTimerCount()).toBe(one)
+    stopAgain()
   })
 })
