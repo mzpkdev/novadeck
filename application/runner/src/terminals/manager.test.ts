@@ -1688,6 +1688,7 @@ describe("a turn the person's Escape ended", () => {
     }
   })
 
+  // Each case can wait out the whole window, and a timeout would leave the platform stubbed.
   it("reads completed with no Stop, on Windows, where Antigravity's transcript holds the reply and its screen shows no interruption", async ({
     terminals,
   }) => {
@@ -1830,7 +1831,7 @@ describe("a turn the person's Escape ended", () => {
       Object.defineProperty(process, "platform", platform)
       rmSync(directory, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 })
 
 describe("saving a terminal that was closed", () => {
