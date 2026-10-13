@@ -757,7 +757,7 @@ adapters and the contract they share.
 | `harnesses/codex`      | The Codex adapter, same shape.                                        |
 | `harnesses/agy`        | The Antigravity adapter, same shape.                                  |
 | `scripts`              | Repository checks and automation.                                     |
-| `tools/atlas`          | Dev-only map of what's built, generated from the code (`pnpm atlas`). |
+| `atlas`                | Dev-only map of what's built, generated from the code (`pnpm atlas`). |
 
 Build an engine locally with `pnpm --filter @novadeck/whisper build:engine` or
 `pnpm --filter @novadeck/murmur build:engine`; the archive and `engine.json` land in

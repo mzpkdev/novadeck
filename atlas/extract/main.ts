@@ -12,7 +12,7 @@ import { areaOf, extractAreas } from "./areas.ts"
 import { extractData } from "./data.ts"
 import { extractLinks } from "./links.ts"
 
-const repo = resolve(import.meta.dirname, "../../..")
+const repo = resolve(import.meta.dirname, "../..")
 const output = resolve(import.meta.dirname, "../src/generated/atlas.json")
 
 const resolveRuntime = (anchors: Anchors, areas: Area[]): Runtime => ({
