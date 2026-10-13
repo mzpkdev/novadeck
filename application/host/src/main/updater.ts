@@ -395,8 +395,8 @@ export type NativeUpdater = {
  * The update is `ready` once Squirrel has it.
  *
  * `setChannel` follows another channel from the next check, and makes one soon, unless the
- * schedule has ended. `stop` ends the schedule, after which nothing more downloads;
- * quitting and restarting stop it first. `settled` gives whether an update is downloaded
+ * schedule has ended. `stop` ends the schedule, after which no new download starts; one
+ * under way goes on. Quitting and restarting stop it first. `settled` gives whether an update is downloaded
  * and waits to install, once a newer one downloading in its place is in or has failed.
  */
 export const checkForUpdates = (

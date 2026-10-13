@@ -833,7 +833,7 @@ const declineUnorderlyInstall = installOnlyOnOrderlyQuit(
 )
 
 app.on("before-quit", (event) => {
-  // Nothing more downloads on the way out, nor switches installing on quit back on.
+  // No new download starts on the way out.
   updates?.stop()
   if (process.platform === "linux") declineUnorderlyInstall()
   if ((!server && !runner) || stopping) return

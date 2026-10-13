@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -992,72 +992,109 @@ describe("quitting by a signal", () => {
   })
 })
 
+// What the download folder test uses of electron-updater's internals.
+type DownloadHelper = { readonly file: string | null }
+type Download = {
+  readonly fileInfo: { readonly url: URL; readonly info: { url: string; sha512: string } }
+  readonly fileExtension: string
+  readonly downloadUpdateOptions: unknown
+  readonly task: (temp: string) => Promise<void>
+  readonly done: () => Promise<void>
+}
+
 describe("electron-updater's download folder", () => {
-  it("keeps the waiting file while a newer release with the same file name downloads; re-check replacing in checkForUpdates if this fails", async () => {
-    // checkForUpdates leaves installing on quit on while a newer release replaces the
-    // waiting update. That holds while electron-updater keeps the waiting file until the
-    // newer one is renamed over it, which it does when both have one name, as no release
-    // file carries a version (electron-builder.yml). Should it empty the folder while
-    // still naming the file, quitting would delete the running AppImage and install
-    // nothing.
+  // checkForUpdates leaves installing on quit on while a newer release replaces the waiting
+  // update. That holds while electron-updater keeps the waiting file, and goes on naming
+  // it, until the newer one is renamed over it, which it does when both have one name, as
+  // no release file carries a version (electron-builder.yml); and while a failed download
+  // stops naming the file before it deletes it. Otherwise quitting would delete the running
+  // AppImage and install nothing.
+  const downloading = async (fails: boolean) => {
     const require = createRequire(import.meta.url)
-    const { DownloadedUpdateHelper } = require(
-      join(dirname(require.resolve("electron-updater")), "DownloadedUpdateHelper.js"),
-    ) as {
-      DownloadedUpdateHelper: new (cacheDir: string) => {
-        readonly cacheDirForPendingUpdate: string
-        readonly file: string | null
-        setDownloadedFile(
-          file: string,
-          packageFile: null,
-          versionInfo: { version: string },
-          fileInfo: { info: { sha512: string } },
-          fileName: string,
-          isSaveCache: boolean,
-        ): Promise<void>
-        validateDownloadedPath(
-          file: string,
-          versionInfo: { version: string },
-          fileInfo: { info: { sha512: string } },
-          logger: { info(message: string): void; warn(message: string): void },
-        ): Promise<string | null>
+    const out = dirname(require.resolve("electron-updater"))
+    const { AppUpdater } = require(join(out, "AppUpdater.js")) as {
+      AppUpdater: {
+        prototype: { executeDownload(this: unknown, download: Download): Promise<unknown> }
       }
     }
+    const { DownloadedUpdateHelper } = require(join(out, "DownloadedUpdateHelper.js")) as {
+      DownloadedUpdateHelper: new (folder: string) => DownloadHelper
+    }
     const folder = await mkdtemp(join(tmpdir(), "novadeck-updater-"))
+    const helper = new DownloadedUpdateHelper(folder)
+    const updater = {
+      listenerCount: () => 0,
+      emit: () => false,
+      _logger: { info: () => {}, warn: () => {}, error: () => {} },
+      getOrCreateDownloadHelper: () => Promise.resolve(helper),
+    }
+    const name = "novadeck-linux-x86_64.AppImage"
+    const download = (version: string, task: (temp: string) => Promise<void>): Download => ({
+      fileInfo: {
+        url: new URL(
+          `https://github.com/novadeck-org/novadeck/releases/download/v${version}/${name}`,
+        ),
+        info: { url: name, sha512: version },
+      },
+      fileExtension: "AppImage",
+      downloadUpdateOptions: {
+        requestHeaders: {},
+        updateInfoAndProvider: { info: { version, files: [] } },
+      },
+      task,
+      done: () => Promise.resolve(),
+    })
+    const run = (version: string, task: (temp: string) => Promise<void>) =>
+      AppUpdater.prototype.executeDownload.call(updater, download(version, task))
     try {
-      const helper = new DownloadedUpdateHelper(folder)
-      await mkdir(helper.cacheDirForPendingUpdate, { recursive: true })
-      const name = "novadeck-linux-x86_64.AppImage"
-      const file = join(helper.cacheDirForPendingUpdate, name)
-      await writeFile(file, "1.2.3")
-      await helper.setDownloadedFile(
-        file,
-        null,
-        { version: "1.2.3" },
-        { info: { sha512: "older" } },
-        name,
-        true,
+      await run("1.2.3", (temp) => writeFile(temp, "1.2.3"))
+      const waiting = helper.file
+      const during: { file: string | null; content: string }[] = []
+      const newer = run("1.3.0", async (temp) => {
+        during.push({ file: helper.file, content: await readFile(waiting!, "utf8") })
+        await writeFile(temp, "1.3.0")
+        if (fails) throw new Error("download failed")
+      })
+      const failure = await newer.then(
+        () => undefined,
+        (error: unknown) => error,
       )
-      const quiet = { info: () => {}, warn: () => {} }
-      const cached = await helper.validateDownloadedPath(
-        file,
-        { version: "1.3.0" },
-        { info: { sha512: "newer" } },
-        quiet,
-      )
-      expect(cached).toBeNull()
-      expect(helper.file).toBe(file)
-      expect(await readFile(file, "utf8")).toBe("1.2.3")
+      return {
+        waiting,
+        during,
+        failure,
+        after: helper.file,
+        content: await readFile(waiting!, "utf8").catch(() => undefined),
+      }
     } finally {
       await rm(folder, { recursive: true, force: true })
     }
+  }
+
+  it("keeps naming the waiting file, unchanged, while a newer release downloads in its place; re-check replacing in checkForUpdates if this fails", async () => {
+    const { waiting, during, failure, after, content } = await downloading(false)
+    expect(waiting).toMatch(/novadeck-linux-x86_64\.AppImage$/u)
+    expect(during).toEqual([{ file: waiting, content: "1.2.3" }])
+    expect(failure).toBeUndefined()
+    expect(after).toBe(waiting)
+    expect(content).toBe("1.3.0")
+  })
+
+  it("stops naming the waiting file when that download fails; re-check replacing in checkForUpdates if this fails", async () => {
+    const { failure, after } = await downloading(true)
+    expect(failure).toBeInstanceOf(Error)
+    expect(after).toBeNull()
   })
 
   it("is fed release files that carry no version in their names", async () => {
     const config = await readFile(join(import.meta.dirname, "../../electron-builder.yml"), "utf8")
-    const names = [...config.matchAll(/artifactName:\s*(\S+)/gu)].map(([, name]) => name)
-    expect(names.length).toBeGreaterThan(0)
-    expect(names.filter((name) => name?.includes("version"))).toEqual([])
+    // Without a name of its own a build takes electron-builder's default, which has one.
+    expect(config).toMatch(/^artifactName: \S/mu)
+    const names = [...config.matchAll(/artifactName:(.*)$/gmu)].map(([, name]) => name!.trim())
+    for (const name of names) {
+      expect(name, "a name on one line").toMatch(/^[^>|]/u)
+      expect(name).not.toMatch(/version/iu)
+    }
   })
 })
 

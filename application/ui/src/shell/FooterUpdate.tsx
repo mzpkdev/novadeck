@@ -244,8 +244,9 @@ export const FooterUpdate = ({
   readonly update: FooterUpdateProps | undefined
   readonly hidden: boolean
 }): React.JSX.Element => {
-  // The offer the person pressed Restart for: any other offer, a newer version or the
-  // same one turned to a download, is a new one, not pending.
+  // The offer the person pressed Restart for. A newer version ready in its place is still
+  // pending, as the host's restart waits for that download and goes into it; any other
+  // offer, such as one turned to a download, is a new one.
   const [pressed, setPressed] = useState<string>()
   // Where installing from a portable copy stands.
   const [install, setInstall] = useState<Install>({ phase: "idle" })
@@ -259,7 +260,8 @@ export const FooterUpdate = ({
   const panelId = useId()
   const offer = update?.offer
   const key = offer && updateKey(offer)
-  if (pressed !== undefined && pressed !== key) setPressed(undefined)
+  if (pressed !== undefined && pressed !== key)
+    setPressed(offer?.kind === "ready" && pressed.startsWith("ready:") ? key : undefined)
   const portable = update?.portable
   const waiting = install.phase === "running" || install.phase === "installing"
   const installing = (offer?.kind === "ready" && pressed === key) || waiting

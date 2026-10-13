@@ -286,6 +286,20 @@ describe("workspace footer", () => {
         expect(chip(page).textContent).toBe("Update readyUpdate")
       })
 
+      it("keeps showing Restarting when a newer version is ready in its place, which the restart goes into", () => {
+        const page = render(raised())
+        mounted.push(page)
+        const restart = [...page.container.querySelectorAll("section button")].find(
+          (button) => button.textContent === "Restart now",
+        ) as HTMLButtonElement
+        act(() => restart.click())
+        page.rerender(raised({}, undefined, { ...ready, version: "9.9.9" }))
+        expect(chip(page).textContent).toBe("Restarting…")
+        expect(notice(page)).toBeNull()
+        page.rerender(raised({}, undefined, { ...ready, version: "9.9.9", kind: "available" }))
+        expect(chip(page).textContent).toBe("Update availableUpdate")
+      })
+
       it("shows five notes and says how many more there are, outside the list", () => {
         const notes = Array.from({ length: 8 }, (_, index) => `Note ${index + 1}`)
         const page = render(raised({}, undefined, { ...ready, notes }))
