@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, ExternalLink, RotateCw } from "lucide-react"
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
 import {
   pathOf,
@@ -14,6 +14,7 @@ import { useShown } from "../../ui-toolkit/shown"
 import { isMarkdown } from "./artifact-icons"
 import { DocumentViewer } from "./DocumentViewer"
 import type { HighlightedLine } from "./highlight"
+import { createKept } from "./kept"
 import { headingsOf, titleOf } from "./plan-text"
 import { createWebview, type WebviewElement } from "./webview"
 
@@ -75,20 +76,30 @@ const ImageViewer = ({
 const pointedLines = (file: FileContent): readonly string[] =>
   file.lines.slice(file.from - file.firstLine, file.to - file.firstLine + 1)
 
+// Files lately highlighted, by path and text, so one shown again, as a view switch or a
+// tab Focus no longer keeps builds its viewer again, shows highlighted at once.
+const highlightedFiles = createKept<readonly HighlightedLine[] | null>(24)
+
+const highlightKey = (file: FileContent): string => `${file.path}\n${file.lines.join("\n")}`
+
 // The file's lines highlighted, once its parser has loaded; null until then, or for a
 // language Novadeck doesn't highlight.
 const useHighlighted = (file: FileContent): readonly HighlightedLine[] | null => {
+  const key = useMemo(() => highlightKey(file), [file])
   const [highlighted, setHighlighted] = useState<{
-    readonly of: FileContent
+    readonly of: string
     readonly lines: readonly HighlightedLine[] | null
   } | null>(null)
+  const known = highlightedFiles.get(key)
   useEffect(() => {
+    if (highlightedFiles.get(key) !== undefined) return
     let current = true
     import("./highlight")
       .then(({ highlightLines }) => highlightLines(file.path, file.lines))
       .then(
         (lines) => {
-          if (current) setHighlighted({ of: file, lines })
+          highlightedFiles.keep(key, lines)
+          if (current) setHighlighted({ of: key, lines })
         },
         // Plain text is the fallback when a parser can't load.
         () => undefined,
@@ -96,8 +107,8 @@ const useHighlighted = (file: FileContent): readonly HighlightedLine[] | null =>
     return () => {
       current = false
     }
-  }, [file])
-  return highlighted?.of === file ? highlighted.lines : null
+  }, [file, key])
+  return known !== undefined ? known : highlighted?.of === key ? highlighted.lines : null
 }
 
 const FileViewer = ({
@@ -410,7 +421,7 @@ export const ArtifactViewer = ({
       ) : ready?.kind === "image" ? (
         <ImageViewer artifact={artifact} content={ready} actions={actions} />
       ) : ready?.kind === "file" && isMarkdown(ready.path) ? (
-        <DocumentViewer content={ready} actions={actions} />
+        <DocumentViewer id={artifact.id} content={ready} actions={actions} />
       ) : ready?.kind === "file" ? (
         <FileViewer content={ready} actions={actions} />
       ) : ready?.kind === "page" ? (

@@ -62,3 +62,47 @@ export const scrollLineToTop = (view: EditorView, at: number): void => {
   // A scroll that never reports its end leaves nothing behind.
   setTimeout(() => done.abort(), 2000)
 }
+
+// Where the pane is scrolled in the plan: the line at its top, and how far down that line.
+export type PlanScroll = { readonly at: number; readonly into: number }
+
+// Follows where the pane is scrolled in the plan, while it's on screen; returns the stop.
+export const followScroll = (view: EditorView, on: (scroll: PlanScroll) => void): (() => void) => {
+  const scroller = scrollerOf(view.dom)
+  if (!scroller) return () => {}
+  const note = (): void => {
+    // Out of sight it has no size, and no place to note.
+    if (!scroller.clientHeight) return
+    const height = scroller.getBoundingClientRect().top - view.documentTop
+    const line = view.lineBlockAtHeight(Math.max(0, height))
+    on({ at: line.from, into: height - line.top })
+  }
+  scroller.addEventListener("scroll", note, { passive: true })
+  return () => scroller.removeEventListener("scroll", note)
+}
+
+// Scrolls the pane back to `scroll`, at once, and once more a frame after the editor
+// measured the lines that came into view.
+export const restoreScroll = (view: EditorView, scroll: PlanScroll): void => {
+  const scroller = scrollerOf(view.dom)
+  if (!scroller) return
+  const target = (): number =>
+    Math.min(
+      Math.max(
+        0,
+        scroller.scrollTop +
+          view.documentTop +
+          view.lineBlockAt(Math.min(scroll.at, view.state.doc.length)).top +
+          scroll.into -
+          scroller.getBoundingClientRect().top,
+      ),
+      scroller.scrollHeight - scroller.clientHeight,
+    )
+  scroller.scrollTo({ top: target(), behavior: "instant" })
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (Math.abs(target() - scroller.scrollTop) >= 1)
+        scroller.scrollTo({ top: target(), behavior: "instant" })
+    }),
+  )
+}

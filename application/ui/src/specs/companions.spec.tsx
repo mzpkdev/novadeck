@@ -19,7 +19,7 @@ import {
   windowMenu,
 } from "./support/companions"
 import { gridView } from "./support/layouts"
-import { expectStaysAbsent, terminal, terminalTab } from "./support/workspace"
+import { chooseView, expectStaysAbsent, terminal, terminalTab } from "./support/workspace"
 
 describe("A terminal's taskbar", () => {
   it("shows its agent's plan, what it showed, and its messages, stacked by kind", async () => {
@@ -203,6 +203,34 @@ describe("Switching terminals in Focus", () => {
     expect(scroll.isConnected).toBe(true)
     expect(scroll.querySelector(".cm-editor")).toBe(editor)
     expect(scroll.scrollTop).toBe(100)
+  })
+})
+
+describe("Switching views", () => {
+  it("opens a plan's editor as it was left: scrolled, and with what can be undone", async () => {
+    await openShowcase("grid")
+    await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+    const plan = (): HTMLElement =>
+      companionPane("Build Studio").element().querySelector<HTMLElement>(".plan-document-scroll")!
+    const content = (): HTMLElement => plan().querySelector<HTMLElement>(".cm-content")!
+    await expect.poll(() => plan()?.querySelector(".cm-content")).not.toBeNull()
+    content().focus()
+    await userEvent.keyboard("Draft ")
+    await expect.poll(() => content().textContent).toContain("Draft ")
+    await expect.poll(() => plan().scrollHeight).toBeGreaterThan(plan().clientHeight + 200)
+    plan().scrollTop = 200
+    await expect.poll(() => plan().scrollTop).toBe(200)
+
+    await chooseView("Focus")
+    await chooseView("Grid")
+
+    await expect
+      .poll(() => companionPane("Build Studio").element().querySelector(".cm-content"))
+      .not.toBeNull()
+    await expect.poll(() => Math.abs(plan().scrollTop - 200)).toBeLessThan(24)
+    content().focus()
+    await userEvent.keyboard("{Control>}z{/Control}")
+    await expect.poll(() => content().textContent).not.toContain("Draft ")
   })
 })
 
