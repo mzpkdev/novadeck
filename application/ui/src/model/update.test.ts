@@ -51,6 +51,21 @@ describe("a notice's raising", () => {
     })
   })
 
+  context("for a download", () => {
+    const downloading: UpdateOffer = {
+      kind: "downloading",
+      version: "0.0.80",
+      notes: [],
+      percent: 40,
+    }
+
+    it("is never raised, but the offer it turns into is", () => {
+      expect(raised(downloading, {})).toBe(false)
+      expect(raised(downloading, { portable: true })).toBe(false)
+      expect(raised({ ...downloading, kind: "ready" }, { seen: "downloading:0.0.80" })).toBe(true)
+    })
+  })
+
   context("for an offer shown before", () => {
     const seen = "available:0.0.80"
 

@@ -65,15 +65,23 @@ build checks its own signature once at launch with `codesign`. See
 
 ### Installing and telling
 
-- **Installing** builds download in the background. The update is offered to the page as
-  `ready` once downloaded (on macOS, once Squirrel has staged it) and installs on the next
-  quit or when the person restarts.
+- **Installing** builds download in the background and show it. The update is offered to
+  the page as `downloading` when its download starts, at 0 percent, and again at each whole
+  percent electron-updater reports (`download-progress`); only the progress of the download
+  the host started counts. It becomes `ready` once downloaded (on macOS, once Squirrel has
+  staged it, with the percent staying where it was until then), and the page then offers a
+  restart; the update installs on the next quit or when the person restarts. A download
+  that fails is offered as `available`, so the person can install from the release page
+  until a later check downloads it. One download is tracked at a time, and a release found
+  while it is under way waits for the next check.
 - **A newer release** found while an update waits replaces it, so one restart lands on the
   latest release rather than one restart per release missed. No release file carries a
   version in its name (`electron-builder.yml`), so electron-updater downloads the newer one
   beside the waiting file and renames it over that file once complete; a quit meanwhile
-  installs the waiting update. The offer stays `ready`, and a restart asked for meanwhile
-  waits for the download and goes ahead into it. Should the download fail, electron-updater
+  installs the waiting update on Windows and Linux. The offer turns from `ready` into
+  `downloading` the newer release, so the page shows its progress and no restart until it
+  is in; a restart asked for before the page learned of that waits for the download and
+  goes ahead into it. Should the download fail, electron-updater
   clears its download folder, which likely takes the waiting file too: the newer release is
   offered as `available` and the next check downloads it. Quitting and restarting end the
   schedule first, so no new download starts on the way out; one under way goes on, and a quit
@@ -282,7 +290,7 @@ a pure function in `applications-folder.ts`.
 ## The page's view
 
 `DesktopBridge` in `application/protocol/src/bridge.ts` carries `onUpdate` (an
-`UpdateOffer` with `kind`, `version` and `notes`), `installUpdate`, `openUpdatePage`,
+`UpdateOffer` with `kind`, `version`, `notes` and, for `downloading`, a whole `percent`), `installUpdate`, `openUpdatePage`,
 `updateChannel` and `setUpdateChannel`. Release notes arrive from GitHub as HTML; the host
 turns them into plain-text lines (one per list item or paragraph, tags, entities and
 control characters stripped, at most `updateNotesLength` lines of `updateNoteLength`
@@ -327,6 +335,7 @@ full one.
   channel's answer; the next check, within four hours, corrects it.
 - **Offers are not retracted.** After switching from `early` to `stable`, an `available`
   offer for an early-only release stays until a later check offers another version; the
-  bridge has no way to withdraw one. A downloaded update stays `ready` as well.
+  bridge has no way to withdraw one. A downloaded update stays `ready` as well, and a `downloading` offer is replaced only by
+  its own outcome or a newer download.
 - **Windows installs are not watched past the call.** The NSIS installer is started
   asynchronously as the app exits, so an error there is not seen by the app.

@@ -136,6 +136,24 @@ describe("desktop updates", () => {
       ])
     })
 
+    it("hears a download only with a whole percent from 0 to 100, which no other offer carries", () => {
+      const { bridge, report } = updater()
+      const heard: unknown[] = []
+      desktopUpdates(bridge)!.onOffer((offer) => heard.push(offer))
+      report({ kind: "downloading", version: "0.0.80", notes: [], percent: 0 })
+      report({ kind: "downloading", version: "0.0.80", notes: [], percent: 100 })
+      report({ kind: "downloading", version: "0.0.80", notes: [] })
+      report({ kind: "downloading", version: "0.0.80", notes: [], percent: 42.5 })
+      report({ kind: "downloading", version: "0.0.80", notes: [], percent: 101 })
+      report({ kind: "downloading", version: "0.0.80", notes: [], percent: "40" })
+      report({ kind: "ready", version: "0.0.80", notes: [], percent: 40 })
+      expect(heard).toEqual([
+        { kind: "downloading", version: "0.0.80", notes: [], percent: 0 },
+        { kind: "downloading", version: "0.0.80", notes: [], percent: 100 },
+        { kind: "ready", version: "0.0.80", notes: [] },
+      ])
+    })
+
     it("keeps the notes to the lines and length the page shows, as plain text", () => {
       const { bridge, report } = updater()
       const heard: { notes: readonly string[] }[] = []

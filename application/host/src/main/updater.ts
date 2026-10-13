@@ -6,6 +6,7 @@ import {
   updateVersionPattern,
   type UpdateChannel,
   type UpdateOffer,
+  type UpdateOfferKind,
 } from "@novadeck/protocol/bridge"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
@@ -151,29 +152,42 @@ type Page = { send(channel: string, offer: UpdateOffer): void }
 /**
  * Remembers the last offer and tells every page of it: `offer` those open now, `request`
  * a page that started listening later, such as after a reload or in a new window. A
- * report of what the pages already know is dropped; any other replaces it, a newer
- * version and a `ready` update the host then could not install alike. `pages` lists the
- * windows showing the app's own UI. A portable copy passes `outdatedSince`, which gives
- * when this copy first learned a newer release exists; it is asked only for an offer
- * that is new.
+ * report of what the pages already know is dropped, and that includes the `percent` of a
+ * `downloading` offer, so each whole percent a download reaches is told once; any other
+ * replaces the last, a newer version and a `ready` update the host then could not install
+ * alike. `pages` lists the windows showing the app's own UI. Only a `downloading` offer
+ * carries a `percent`. A portable copy passes `outdatedSince`, which gives when this copy
+ * first learned a newer release exists; it is asked only for an offer that is new.
  */
 export const trackOffer = <P extends Page>(pages: () => readonly P[]) => {
   let last: UpdateOffer | undefined
   return {
     current: (): UpdateOffer | undefined => last,
     offer: (
-      kind: UpdateOffer["kind"],
+      kind: UpdateOfferKind,
       value: unknown,
       notes: readonly string[],
-      outdatedSince?: () => string | undefined,
+      {
+        percent,
+        outdatedSince,
+      }: {
+        readonly percent?: number | undefined
+        readonly outdatedSince?: (() => string | undefined) | undefined
+      } = {},
     ): void => {
       const version = updateVersionOf(value)
-      if (version === undefined || (last?.kind === kind && last.version === version)) return
+      const progress = kind === "downloading" ? percent : undefined
+      if (
+        version === undefined ||
+        (last?.kind === kind && last.version === version && last.percent === progress)
+      )
+        return
       const since = outdatedSince?.()
       last = {
         kind,
         version,
         notes,
+        ...(progress === undefined ? {} : { percent: progress }),
         ...(since === undefined ? {} : { outdatedSince: since }),
       }
       for (const page of pages()) page.send(updateOfferChannel, last)
@@ -254,7 +268,9 @@ export const installFallbackMs = (platform: NodeJS.Platform): number =>
  * nothing while no update is downloaded or a shutdown already started, which makes a
  * second request harmless. A newer release still downloading in place of the update
  * (`settled`, see `checkForUpdates`) is waited for, and the restart goes ahead into it,
- * or not at all should that download fail. The shells are gone once it goes ahead, so
+ * or not at all should that download fail. The page offers a restart only once the update
+ * is `ready`, so a request made while a newer release is still coming in is rare: one
+ * sent before the page learned of it. The shells are gone once it goes ahead, so
  * the app must not go on running: should installing throw, or still not have ended the
  * app after `fallbackMs`, it quits. That quit installs on the way out if the updater
  * still can, as any quit does.
@@ -340,6 +356,10 @@ export type Updater = {
       readonly releaseNotes?: unknown
     }) => void,
   ): unknown
+  on(
+    event: "download-progress",
+    listener: (progress: { readonly percent: number }) => void,
+  ): unknown
   on(event: "update-not-available", listener: () => void): unknown
   on(event: "error", listener: (error: Error) => void): unknown
   checkForUpdates(): Promise<unknown>
@@ -360,17 +380,24 @@ export type NativeUpdater = {
  * tries again. `channel` decides which releases count: `stable` is GitHub's latest
  * release that is not a prerelease, `early` every release. Updating never downgrades.
  *
- * In `install` mode it downloads what it finds, installs it when the app next quits, and
- * tells `offer` the update is `ready` once downloaded. The one exception is the release
- * `failedVersion` names, the version an earlier install failed on: it is only told of, as
- * `available`, and not downloaded again, so a failing install does not come back
- * at every launch. A newer release installs as usual.
+ * In `install` mode it downloads what it finds and installs it when the app next quits.
+ * `offer` is told the update is `downloading` as the download starts, at percent 0, and
+ * again at each whole percent electron-updater reports, then `ready` once downloaded. A
+ * download that fails is offered as `available`, to be installed from the release page
+ * until a later check downloads it. The one exception is the release `failedVersion`
+ * names, the version an earlier install failed on: it is only told of, as `available`,
+ * and not downloaded again, so a failing install does not come back at every launch. A
+ * newer release installs as usual.
  *
- * The schedule goes on once an update has downloaded, and a newer release it finds
- * replaces that update, so one restart lands on the latest release. No release file
- * carries a version in its name, so electron-updater downloads the newer one beside the
- * waiting file and renames it over that file once complete; quitting meanwhile installs
- * the waiting update. The offer stays `ready`, and `settled` lets a restart wait for the
+ * One download is tracked at a time, whether the first or one in place of an update
+ * already downloaded. While it is under way a release found is left to the next check, and
+ * only its progress is offered. The schedule goes on once an update has downloaded, and a
+ * newer release it finds replaces that update, so one restart lands on the latest
+ * release. No release file carries a version in its name, so electron-updater downloads
+ * the newer one beside the waiting file and renames it over that file once complete;
+ * quitting meanwhile installs the waiting update on Windows and Linux. The offer turns
+ * from `ready` to `downloading` the newer release, so the page shows its progress and no
+ * restart until it is in, and `settled` lets a restart requested meanwhile wait for the
  * download. Should it fail, the waiting file is likely gone with it, as electron-updater
  * clears its download folder then: the newer release is offered as `available` until a
  * later check downloads it. On macOS the schedule ends once an update has downloaded
@@ -392,13 +419,14 @@ export type NativeUpdater = {
  *
  * On macOS, pass Electron's `native` updater: electron-updater reports a download before
  * Squirrel.Mac has staged it, and restarting before then waits on Squirrel indefinitely.
- * The update is `ready` once Squirrel has it.
+ * The update stays `downloading`, at the last percent reported, until Squirrel has it,
+ * and is `ready` then.
  *
  * `setChannel` follows another channel from the next check, and makes one soon, unless the
  * schedule has ended. `stop` ends the schedule, after which no new download starts; one
  * under way goes on. Quitting and restarting stop it first. `settled` gives whether an
- * update is downloaded and waits to install, once a newer one downloading in its place is
- * in or has failed.
+ * update is downloaded and waits to install, once the download under way is in or has
+ * failed.
  */
 export const checkForUpdates = (
   updater: Updater,
@@ -417,7 +445,13 @@ export const checkForUpdates = (
     /** The version installing failed on in an earlier launch, if it did. */
     readonly failedVersion?: string | undefined
     readonly native?: NativeUpdater | undefined
-    readonly offer: (kind: UpdateOffer["kind"], version: string, notes: readonly string[]) => void
+    /** `percent` is given for `downloading` only. */
+    readonly offer: (
+      kind: UpdateOfferKind,
+      version: string,
+      notes: readonly string[],
+      percent?: number,
+    ) => void
     /** Told whenever a check finds no newer release. */
     readonly upToDate?: (() => void) | undefined
     readonly installFailed: (version: string) => void
@@ -436,8 +470,16 @@ export const checkForUpdates = (
   updater.logger = { info: () => {}, warn: () => {}, error: () => {} }
 
   let downloaded: { readonly version: string; readonly notes: readonly string[] } | undefined
-  // The download of a newer release in place of `downloaded`, and whether it came through.
-  let replacing: Promise<boolean> | undefined
+  // The download under way, the first or a newer release's in place of `downloaded`, with
+  // the whole percent last offered for it and whether it came through.
+  let loading:
+    | {
+        readonly version: string
+        readonly notes: readonly string[]
+        percent: number
+        readonly done: Promise<boolean>
+      }
+    | undefined
   // Once an install has begun the app is on its way out, so the mark never goes back.
   let installing = false
   let staging = false
@@ -468,31 +510,46 @@ export const checkForUpdates = (
   updater.on("update-not-available", () => upToDate?.())
   updater.on("update-available", (info) => {
     if (mode === "tell") return offer("available", info.version, updateNotesLines(info))
-    // A newer release found while one replaces the update waits for the next check.
-    if (ended || replacing !== undefined || info.version === downloaded?.version) return
+    // A release found while a download is under way waits for the next check.
+    if (ended || loading !== undefined || info.version === downloaded?.version) return
     if (info.version === failedVersion) {
       // A ready update stays ready rather than give way to the release that failed.
       if (downloaded === undefined) offer("available", info.version, updateNotesLines(info))
       return
     }
-    // A failed download is reported through the error event, which logs it. While one is
-    // under way electron-updater returns that download's promise, so a second check
-    // finding the same release does not download it twice.
-    if (downloaded === undefined) return void updater.downloadUpdate().catch(() => {})
+    const { version } = info
     const notes = updateNotesLines(info)
-    replacing = updater
-      .downloadUpdate()
-      .then(
+    offer("downloading", version, notes, 0)
+    // A failed download is reported through the error event, which logs it.
+    const current = {
+      version,
+      notes,
+      percent: 0,
+      done: updater.downloadUpdate().then(
         () => true,
         () => {
+          // Failing after it was reported in, as when copying its blockmap fails, leaves
+          // the download where it is; a failed staging on macOS has been told of already.
+          if (downloaded?.version === version) return !failed
+          // The waiting file, if any, is likely gone with the failed download.
           downloaded = undefined
-          offer("available", info.version, notes)
+          offer("available", version, notes)
           return false
         },
-      )
-      .finally(() => {
-        replacing = undefined
-      })
+      ),
+    }
+    loading = current
+    void current.done.then(() => {
+      if (loading === current) loading = undefined
+    })
+  })
+  updater.on("download-progress", ({ percent }) => {
+    // Progress of a download this module did not start, or one already in, is not offered.
+    if (loading === undefined || downloaded?.version === loading.version) return
+    const whole = Math.min(100, Math.max(0, Math.floor(percent)))
+    if (whole === loading.percent) return
+    loading.percent = whole
+    offer("downloading", loading.version, loading.notes, whole)
   })
   updater.on("update-downloaded", (info) => {
     // Squirrel.Mac has the download staged, or soon will, and keeps it.
@@ -531,6 +588,6 @@ export const checkForUpdates = (
       first = setTimeout(check, switchCheckMs)
     },
     stop,
-    settled: () => replacing ?? Promise.resolve(downloaded !== undefined),
+    settled: () => loading?.done ?? Promise.resolve(downloaded !== undefined),
   }
 }

@@ -1,4 +1,5 @@
 import {
+  isUpdatePercent,
   runnerPortMessage,
   updateChannels,
   updateNoteLength,
@@ -67,13 +68,16 @@ const datePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
 // A note the page may not have is dropped rather than shortened.
 const offerOf = (value: unknown): UpdateOffer | undefined => {
   if (typeof value !== "object" || value === null) return undefined
-  const { kind, version, notes, outdatedSince } = value as Record<string, unknown>
-  if (kind !== "ready" && kind !== "available") return undefined
+  const { kind, version, notes, percent, outdatedSince } = value as Record<string, unknown>
+  if (kind !== "downloading" && kind !== "ready" && kind !== "available") return undefined
+  // Only a download has a percent, and it has one always.
+  if (kind === "downloading" && !isUpdatePercent(percent)) return undefined
   if (typeof version !== "string" || !updateVersionPattern.test(version)) return undefined
   const lines = Array.isArray(notes) ? (notes as unknown[]) : []
   return {
     kind,
     version,
+    ...(kind === "downloading" && isUpdatePercent(percent) ? { percent } : {}),
     ...(typeof outdatedSince === "string" && datePattern.test(outdatedSince)
       ? { outdatedSince }
       : {}),

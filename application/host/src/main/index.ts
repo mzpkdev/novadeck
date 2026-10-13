@@ -369,8 +369,11 @@ const startUpdates = async (): Promise<void> => {
     failedVersion: state.installFailedOn,
     // Squirrel.Mac stages macOS updates; the others install from electron-updater's file.
     native: process.platform === "darwin" ? nativeUpdater : undefined,
-    offer: (kind, version, notes) =>
-      offers.offer(kind, version, notes, plan.portable ? outdatedSince : undefined),
+    offer: (kind, version, notes, percent) =>
+      offers.offer(kind, version, notes, {
+        percent,
+        outdatedSince: plan.portable ? outdatedSince : undefined,
+      }),
     // A portable that is current again starts a fresh clock when a release comes after.
     upToDate: plan.portable ? clearOutdated : undefined,
     // Synchronous: a failed install on quit is reported as the app exits.

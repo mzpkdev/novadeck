@@ -173,6 +173,17 @@ describe("workspace footer", () => {
       expect(chip(page).getAttribute("aria-label")).toBe("Update available: Novadeck 0.0.80")
     })
 
+    it("shows a download's progress on the chip, announcing only that it started", () => {
+      const downloading: UpdateOffer = { ...ready, kind: "downloading", percent: 42 }
+      const page = withUpdate("ok", downloading)
+      expect(chip(page).getAttribute("aria-label")).toBe("Downloading update, 42%: Novadeck 0.0.80")
+      expect(chip(page).textContent).toBe("Downloading update… 42%42%")
+      expect(announcer(page).textContent).toBe("Downloading Novadeck update")
+      page.rerender(createElement(WorkspaceFooter, props("ok", { ...downloading, percent: 43 })))
+      expect(chip(page).textContent).toBe("Downloading update… 43%43%")
+      expect(announcer(page).textContent).toBe("Downloading Novadeck update")
+    })
+
     it("leaves the bar's tone and the link's status to the connection", () => {
       const page = withUpdate("unavailable")
       const bar = page.container.querySelector("footer")!
@@ -286,18 +297,19 @@ describe("workspace footer", () => {
         expect(chip(page).textContent).toBe("Update readyUpdate")
       })
 
-      it("keeps showing Restarting when a newer version is ready in its place, which the restart goes into", () => {
-        const page = render(raised())
+      it("shows a download with its progress and notes, and Later alone to do", () => {
+        const offer: UpdateOffer = { ...ready, kind: "downloading", percent: 42, notes: ["One."] }
+        const page = render(raised({}, undefined, offer))
         mounted.push(page)
-        const restart = [...page.container.querySelectorAll("section button")].find(
-          (button) => button.textContent === "Restart now",
-        ) as HTMLButtonElement
-        act(() => restart.click())
-        page.rerender(raised({}, undefined, { ...ready, version: "9.9.9" }))
-        expect(chip(page).textContent).toBe("Restarting…")
-        expect(notice(page)).toBeNull()
-        page.rerender(raised({}, undefined, { ...ready, version: "9.9.9", kind: "available" }))
-        expect(chip(page).textContent).toBe("Update availableUpdate")
+        const region = notice(page)!
+        expect(region.querySelector(".update-title")?.textContent).toBe(
+          "Novadeck 0.0.80 is downloading",
+        )
+        expect(region.querySelector("[role=progressbar]")?.getAttribute("aria-valuenow")).toBe("42")
+        expect(region.querySelector(".update-notes")?.textContent).toBe("One.")
+        expect([...region.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
+          "Later",
+        ])
       })
 
       it("shows five notes and says how many more there are, outside the list", () => {

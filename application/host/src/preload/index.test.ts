@@ -191,6 +191,23 @@ describe("an update offer", () => {
     expect(offers).toEqual([ready, { ...ready, kind: "available" }])
   })
 
+  it("carries a download's percent, and only a download's", () => {
+    const offers: unknown[] = []
+    electron.exposed.onUpdate!((offer) => offers.push(offer))
+    const downloading = { ...ready, kind: "downloading" }
+    electron.renderer.emit(updateOfferChannel, {}, { ...downloading, percent: 42 })
+    electron.renderer.emit(updateOfferChannel, {}, { ...ready, percent: 42 })
+    expect(offers).toEqual([{ ...downloading, percent: 42 }, ready])
+  })
+
+  it("drops a download whose percent is not a whole number from 0 to 100", () => {
+    const offers: unknown[] = []
+    electron.exposed.onUpdate!((offer) => offers.push(offer))
+    for (const percent of [undefined, -1, 101, 4.5, NaN, "42", null])
+      electron.renderer.emit(updateOfferChannel, {}, { ...ready, kind: "downloading", percent })
+    expect(offers).toEqual([])
+  })
+
   it("is dropped unless its kind and version are valid", () => {
     const offers: unknown[] = []
     electron.exposed.onUpdate!((offer) => offers.push(offer))
