@@ -126,7 +126,10 @@ export const PlanEditor = ({
     editor.dispatch({ effects: setMarks.of(latest.current.marks) })
     // Where the pane is scrolled counts once it's back where it was left.
     let stopScroll = (): void => {}
+    let closing = false
     const follow = (): void => {
+      // A restore ended by closing leaves the place it was restoring to.
+      if (closing) return
       stopScroll = followScroll(editor, (at) => {
         followers.scroll = at
       })
@@ -145,6 +148,7 @@ export const PlanEditor = ({
     return () => {
       // Closing the pane leaves no empty note behind: none of the editor's updates follow.
       latest.current.onClose()
+      closing = true
       stopRestore()
       stopScroll()
       savedEditors.keep(plan, { state: editor.state, scroll: followers.scroll })

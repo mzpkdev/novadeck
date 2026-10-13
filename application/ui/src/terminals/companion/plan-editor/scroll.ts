@@ -89,6 +89,8 @@ export const followScroll = (view: EditorView, on: (scroll: PlanScroll) => void)
     const line = view.lineBlockAtHeight(height)
     on({ at: line.from, into: line.height ? (height - line.top) / line.height : 0 })
   }
+  // Where it is now counts too, as a scroll that ended a restore and came before this.
+  note()
   scroller.addEventListener("scroll", note, { passive: true })
   return () => scroller.removeEventListener("scroll", note)
 }
@@ -144,22 +146,27 @@ export const restoreScroll = (
   scroller.addEventListener(
     "scroll",
     () => {
-      if (Math.abs(scroller.scrollTop - placed) >= 1) finish()
+      const top = scroller.scrollTop
+      // The pane cut short as what it holds shrank for a moment isn't anyone's scroll.
+      const clamped = top < placed && top >= scroller.scrollHeight - scroller.clientHeight - 1
+      if (!clamped && Math.abs(top - placed) >= 1) finish()
     },
     { signal, passive: true },
   )
-  // The editor may still correct heights it estimated a few frames on: it holds still
-  // once three frames in a row don't move it, or after half a second's worth.
-  let frames = 0
-  let still = 0
-  const settle = (): void => {
-    still = go() ? 0 : still + 1
-    if (still < 3 && ++frames < 30) frame = requestAnimationFrame(settle)
+  // The editor may still correct heights it estimated a while on, as it measures again
+  // after a resize settles: it holds still once nothing moved it for 150ms, or after
+  // half a second.
+  let began = 0
+  let moved = 0
+  const settle = (now: number): void => {
+    if (go()) moved = now
+    if (now - moved < 150 && now - began < 500) frame = requestAnimationFrame(settle)
     else finish()
   }
   const start = (): void => {
     placed = scroller.scrollTop
     go()
+    began = moved = performance.now()
     frame = requestAnimationFrame(settle)
   }
   if (scroller.clientHeight) start()
