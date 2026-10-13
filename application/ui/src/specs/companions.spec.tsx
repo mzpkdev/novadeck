@@ -19,7 +19,7 @@ import {
   windowMenu,
 } from "./support/companions"
 import { gridView } from "./support/layouts"
-import { chooseView, expectStaysAbsent, terminal, terminalTab } from "./support/workspace"
+import { chooseView, expectStaysAbsent, isMac, terminal, terminalTab } from "./support/workspace"
 
 describe("A terminal's taskbar", () => {
   it("shows its agent's plan, what it showed, and its messages, stacked by kind", async () => {
@@ -268,7 +268,7 @@ describe("Switching views", () => {
       .not.toBeNull()
     await expect.poll(() => Math.abs(plan().scrollTop - 200)).toBeLessThan(24)
     content().focus()
-    await userEvent.keyboard("{Control>}z{/Control}")
+    await userEvent.keyboard(isMac() ? "{Meta>}z{/Meta}" : "{Control>}z{/Control}")
     await expect.poll(() => content().textContent).not.toContain("Draft ")
 
     // The undo reached the plan, not only the editor.
