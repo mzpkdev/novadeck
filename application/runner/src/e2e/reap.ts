@@ -425,8 +425,8 @@ export const sandboxProcesses = async (
 /**
  * The sandbox's processes now, each named as a leftover is, with its recorded parent on
  * Windows; none elsewhere. Taken while a deck still runs, it names the parent a leftover
- * records once that has gone, which tells a program started apart from the terminal's
- * shell from one the terminal's tree should have held.
+ * later records as gone, which tells a program started apart from the terminal's shell
+ * from one the terminal's tree should have held.
  */
 export const census = async (sandbox: Scope): Promise<string[]> =>
   process.platform === "win32" ? (await table.list(sandbox)).map(named) : []

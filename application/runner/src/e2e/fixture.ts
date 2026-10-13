@@ -145,7 +145,9 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
       // held. Dropped once that is settled.
       const running =
         process.platform === "win32" && setups.some((setup) => setup.agent === "agy")
-          ? await census(sandbox).catch(() => [])
+          ? await census(sandbox).catch((error: unknown) => [
+              `census failed: ${error instanceof Error ? error.message : String(error)}`,
+            ])
           : []
       // Checked once the deck has closed, so what a harness sends as it exits counts too,
       // while the fake model still listens.
