@@ -3,7 +3,9 @@ import {
   Cable,
   Database,
   Layers,
+  AppWindow,
   Map as MapIcon,
+  Server,
   Search as SearchIcon,
   TriangleAlert,
   Workflow,
@@ -17,6 +19,8 @@ import { Search } from "./search.tsx"
 const nav = [
   { to: "/", label: "Map", icon: MapIcon },
   { to: "/areas", label: "Areas", icon: Layers },
+  { to: "/ui", label: "UI", icon: AppWindow },
+  { to: "/runner", label: "Runner", icon: Server },
   { to: "/api", label: "API", icon: Cable },
   { to: "/data", label: "Data", icon: Database },
   { to: "/agents", label: "Agents", icon: Bot },

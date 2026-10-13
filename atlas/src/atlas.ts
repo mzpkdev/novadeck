@@ -1,3 +1,8 @@
+import type { RunnerLens } from "./lens-runner.ts"
+import type { UiLens } from "./lens-ui.ts"
+
+export type { RunnerLens, UiLens }
+
 // The atlas: what Novadeck is built of, as `extract/main.ts` reads it from the code and
 // writes it to `src/generated/atlas.json`. The pages render only this.
 
@@ -26,7 +31,36 @@ export type Atlas = {
   data: Data
   agents: AgentSurface
   flows: Flow[]
+  // The runner from the inside: its API surface down to the SQL it runs.
+  runner: RunnerLens
+  // The UI from the inside: how state is wired and how calls reach the runner.
+  ui: UiLens
+  // What each package is built with, from its manifest.
+  stacks: PackageStack[]
   broken: BrokenAnchor[]
+}
+
+// A package's dependencies, as its manifest declares them, with a role where the atlas
+// knows what the library is for.
+export type PackageStack = {
+  // The area token of the package, as `ui` or `harness/claude`.
+  token: string
+  // The manifest's package name, as `@novadeck/ui`.
+  name: string
+  manifest: Anchor
+  deps: Dependency[]
+}
+
+export type Dependency = {
+  name: string
+  version: string
+  // "runtime" ships with the package; "dev" only builds or tests it; "workspace" is
+  // another package in this repository.
+  kind: "runtime" | "dev" | "workspace"
+  // What it is for, where curated (content/stack.ts); null otherwise.
+  role: string | null
+  // The shelf it sits on, as "UI", "Storage" or "Build"; null where uncurated.
+  category: string | null
 }
 
 // What runs, and how the pieces talk.

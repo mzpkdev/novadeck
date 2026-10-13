@@ -11,6 +11,9 @@ import { extractApi } from "./api.ts"
 import { areaOf, extractAreas } from "./areas.ts"
 import { extractData } from "./data.ts"
 import { extractLinks } from "./links.ts"
+import { extractRunnerLens } from "./runner-lens.ts"
+import { extractStacks } from "./stack.ts"
+import { extractUiLens } from "./ui-lens.ts"
 
 const repo = resolve(import.meta.dirname, "../..")
 const output = resolve(import.meta.dirname, "../src/generated/atlas.json")
@@ -45,6 +48,15 @@ export const build = async (): Promise<Atlas> => {
   const { areas, problems } = extractAreas(repo, anchors, { api, data, agents })
   const owner = (file: string | undefined): string | null =>
     file === undefined ? null : areaOf(areas, file)
+  const lens = {
+    repo,
+    anchors,
+    api,
+    data,
+    agents,
+    areas,
+    areaOf: (file: string) => areaOf(areas, file),
+  }
 
   return {
     generatedAt: new Date().toISOString(),
@@ -67,6 +79,9 @@ export const build = async (): Promise<Atlas> => {
     },
     agents,
     flows: resolveFlows(anchors),
+    runner: extractRunnerLens(lens),
+    ui: extractUiLens(lens),
+    stacks: extractStacks(repo, anchors, areas),
     broken: [...anchors.broken(), ...problems],
   }
 }

@@ -7,6 +7,8 @@ import { AreaPage, AreasPage } from "./pages/areas.tsx"
 import { DataPage } from "./pages/data.tsx"
 import { FlowPage, FlowsPage } from "./pages/flows.tsx"
 import { MapPage } from "./pages/map.tsx"
+import { RunnerPage } from "./pages/runner.tsx"
+import { UiPage } from "./pages/ui.tsx"
 
 export const App = () => (
   <BrowserRouter>
@@ -15,6 +17,8 @@ export const App = () => (
         <Route index element={<MapPage />} />
         <Route path="areas" element={<AreasPage />} />
         <Route path="areas/*" element={<AreaPage />} />
+        <Route path="ui" element={<UiPage />} />
+        <Route path="runner" element={<RunnerPage />} />
         <Route path="api" element={<ApiPage />} />
         <Route path="data" element={<DataPage />} />
         <Route path="agents" element={<AgentsPage />} />
