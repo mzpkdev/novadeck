@@ -5,11 +5,12 @@
    so the line is a border image: its middle band, 1px tall from the icon's half down so it
    lands on whole pixels for an even size, filled with dashes and pushed out sideways.
    Neither moves anything; an icon in a box that clips its overflow has its guides clipped
-   too. Last of the layers, so nothing hides them.
+   too.
 
-   Token, optional: --icon-guide-color (danger-fg at half strength): the guides. */
+   Tokens, each optional (its fallback in brackets):
+   --icon-guide-color (danger-fg at half strength): the box and the line. */
 
-@layer utilities {
+@layer components {
   :root[data-icon-guides] svg.lucide {
     --_color: var(--icon-guide-color, color-mix(in srgb, var(--color-danger-fg) 50%, transparent));
     outline: 1px dashed var(--_color);

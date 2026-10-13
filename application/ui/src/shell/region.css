@@ -46,6 +46,9 @@
   position: relative;
   border-top-width: var(--border-width);
   border-top-style: solid;
+  /* As much below as the edge above, so the bar's even height leaves an even box and
+     what it centres lands on whole pixels, not half a pixel low. */
+  padding-bottom: var(--border-width);
   transition:
     background-color var(--motion-state) var(--ease-interface),
     border-color var(--motion-state) var(--ease-interface),

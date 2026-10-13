@@ -380,9 +380,7 @@ export const createDebugPanel = ({
                                     </span>
                                   )}
                                 </span>
-                                <span className="debug-hint text-caption leading-[1.4]">
-                                  {action.hint}
-                                </span>
+                                <span className="debug-hint text-caption">{action.hint}</span>
                               </button>
                             ))}
                           </div>
