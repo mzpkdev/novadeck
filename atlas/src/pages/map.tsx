@@ -68,17 +68,17 @@ const AtlasNode = ({ data, selected }: NodeProps<FlowNode>) => {
     <div
       style={{ width }}
       className={clsx(
-        "rounded-sm border bg-panel",
-        node.kind === "external"
-          ? "border-dashed border-[var(--color-line-strong)]"
-          : "border-solid border-[var(--color-outline)]",
-        selected
-          ? "border-accent shadow-lg outline outline-1 outline-accent"
-          : "shadow-[var(--shadow-control)]",
+        "pane",
+        node.kind === "external" && "border-dashed border-[var(--color-line-strong)]",
+        selected && "selected",
       )}
     >
       <div
-        className="flex items-center gap-1.5 px-2 text-[12px] font-medium"
+        className={clsx(
+          "pane-heading mb-1 flex items-center gap-1.5 px-2 text-[12px] font-medium",
+          !selected && "quiet",
+          body === 0 && "border-b-0",
+        )}
         style={{ height: HEADER }}
       >
         <Dot node={node.id} />
@@ -150,7 +150,7 @@ const shortChannel = (channel: string) =>
 type Selection = { type: "node" | "edge"; id: string } | null
 
 const Eyebrow = ({ children }: { children: string }) => (
-  <div className="font-mono text-[10px] uppercase tracking-wider text-muted">{children}</div>
+  <div className="section-label">{children}</div>
 )
 
 const NodePanel = ({ node }: { node: RuntimeNode }) => {
@@ -259,7 +259,7 @@ export const MapPage = () => {
     selection?.type === "edge" ? atlas.runtime.edges.find((e) => e.id === selection.id) : undefined
 
   return (
-    <div className="relative h-full">
+    <div className="relative min-w-0 flex-1">
       <div className="workspace absolute inset-0">
         <ReactFlow
           nodes={nodes}
@@ -283,7 +283,7 @@ export const MapPage = () => {
         </ReactFlow>
       </div>
       {node || edge ? (
-        <aside className="absolute top-3 right-3 w-72 rounded-sm border border-[var(--color-outline)] bg-panel p-3 shadow-lg">
+        <aside className="pane floating absolute top-3 right-3 w-72 p-3">
           {node ? <NodePanel node={node} /> : null}
           {edge ? <EdgePanel edge={edge} /> : null}
         </aside>

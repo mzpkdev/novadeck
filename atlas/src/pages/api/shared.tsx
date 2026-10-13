@@ -51,17 +51,12 @@ export const SidePanel = ({
   className?: string
 }) => (
   <aside
-    className={`flex min-h-0 w-80 shrink-0 flex-col border-l border-[var(--color-outline)] bg-panel ${className}`}
+    className={`flex min-h-0 w-80 shrink-0 flex-col border-l border-[var(--window-border-color)] bg-panel ${className}`}
   >
-    <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-      <div className="min-w-0 flex-1 truncate font-mono text-[13px] font-medium">{title}</div>
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close"
-        className="cursor-pointer text-muted hover:text-fg"
-      >
-        <X size={14} />
+    <div className="pane-heading flex h-12 shrink-0 items-center gap-2 px-3">
+      <div className="min-w-0 flex-1 truncate font-mono text-body font-medium">{title}</div>
+      <button type="button" onClick={onClose} aria-label="Close" className="icon-button small">
+        <X size={12} />
       </button>
     </div>
     <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">{children}</div>
@@ -69,9 +64,7 @@ export const SidePanel = ({
 )
 
 export const Label = ({ children }: { children: ReactNode }) => (
-  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
-    {children}
-  </div>
+  <div className="section-label mb-1.5">{children}</div>
 )
 
 export const AreaChip = ({ id }: { id: string | null }) =>

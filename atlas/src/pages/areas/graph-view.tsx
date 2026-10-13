@@ -146,7 +146,7 @@ export const GraphView = () => {
   })
 
   return (
-    <div className="workspace relative h-full w-full">
+    <div className="relative h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -165,7 +165,7 @@ export const GraphView = () => {
         <Background color="var(--accent)" gap={18} size={1.4} />
         <Controls showInteractive={false} />
       </ReactFlow>
-      <div className="absolute top-3 left-3 flex items-center gap-1 rounded-sm border border-[var(--color-outline)] bg-panel p-1">
+      <div className="segmented absolute top-3 left-3 items-center gap-0.5">
         {kinds.map((k) => (
           <button
             key={k}
@@ -177,16 +177,17 @@ export const GraphView = () => {
                 return next
               })
             }
+            aria-pressed={shown.has(k)}
             className={clsx(
-              "flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-0.5 text-[11px]",
-              shown.has(k) ? "bg-raised text-fg" : "text-muted line-through",
+              "segment h-6 gap-1.5 px-2 text-caption",
+              !shown.has(k) && "line-through",
             )}
           >
             <KindSample kind={k} />
             {k}
           </button>
         ))}
-        <span className="px-1 text-[11px] text-muted">
+        <span className="px-2 text-caption text-muted">
           thickness = weight · same-column links on hover
         </span>
       </div>
@@ -196,7 +197,7 @@ export const GraphView = () => {
         </div>
       ) : null}
       {hover ? (
-        <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1.5 rounded-sm border border-[var(--color-outline)] bg-panel px-2 py-1 text-[12px]">
+        <div className="pane floating pointer-events-none absolute bottom-3 left-3 flex items-center gap-1.5 px-2 py-1 text-control">
           <Dot node={atlas.areas.find((a) => a.id === hover)?.node ?? ""} />
           {atlas.areas.find((a) => a.id === hover)?.title}
           <span className="font-mono text-[11px] text-muted">

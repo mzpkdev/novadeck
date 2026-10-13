@@ -1,21 +1,80 @@
 import { clsx } from "clsx"
 import type { ReactNode } from "react"
 
+// A page as one of Novadeck's windows: a pane on the recessed workspace, its heading
+// carrying the selection bar, an optional sidebar of the app's chrome to its left.
 export const Page = ({
   title,
-  subtitle,
+  crumbs,
+  tools,
+  side,
+  flush = false,
   children,
 }: {
-  title: string
-  subtitle?: string
+  title: ReactNode
+  // What leads up to the title, such as "Areas /".
+  crumbs?: ReactNode
+  // Controls at the heading's end.
+  tools?: ReactNode
+  side?: ReactNode
+  // Content that lays itself out edge to edge and scrolls itself, such as a canvas.
+  flush?: boolean
   children: ReactNode
 }) => (
-  <div className="mx-auto max-w-5xl px-6 py-6">
-    <h1 className="text-lg font-semibold">{title}</h1>
-    {subtitle ? <p className="mt-1 max-w-3xl text-muted">{subtitle}</p> : null}
-    <div className="mt-5 space-y-8">{children}</div>
+  <div className="flex min-h-0 min-w-0 flex-1">
+    {side}
+    <div className="workspace dots flex min-w-0 flex-1 p-3">
+      <section className="pane relative z-[1] flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="pane-heading flex h-12 shrink-0 items-center gap-3 px-4">
+          {crumbs ? (
+            <span className="flex shrink-0 items-center gap-1.5 text-body text-muted">
+              {crumbs}
+            </span>
+          ) : null}
+          <h1 className="m-0 min-w-0 truncate text-body font-medium">{title}</h1>
+          {tools ? <div className="ml-auto flex shrink-0 items-center gap-3">{tools}</div> : null}
+        </header>
+        <div className={clsx("relative min-h-0 flex-1", flush ? "flex flex-col" : "overflow-auto")}>
+          {flush ? children : <div className="px-5 py-5">{children}</div>}
+        </div>
+      </section>
+    </div>
   </div>
 )
+
+// The app's sidebar: a grained ground, a panel labelled in small capitals.
+export const Sidebar = ({
+  title,
+  count,
+  children,
+  footer,
+  className,
+}: {
+  title: string
+  count?: number
+  children: ReactNode
+  footer?: ReactNode
+  className?: string
+}) => (
+  <aside className={clsx("sidebar flex w-64 shrink-0 flex-col", className)}>
+    <header className="mx-3 mt-3 flex h-[38px] shrink-0 items-center px-0.5">
+      <h2 className="section-label m-0 flex items-center gap-1.5">
+        {title}
+        {count === undefined ? null : <span className="count">{count}</span>}
+      </h2>
+    </header>
+    <div className="min-h-0 flex-1 overflow-auto px-3 pb-3">{children}</div>
+    {footer}
+  </aside>
+)
+
+export const SectionLabel = ({
+  children,
+  className,
+}: {
+  children: ReactNode
+  className?: string
+}) => <h2 className={clsx("section-label m-0 mb-2.5", className)}>{children}</h2>
 
 export const Section = ({
   title,
@@ -27,9 +86,9 @@ export const Section = ({
   children: ReactNode
 }) => (
   <section>
-    <h2 className="mb-2 flex items-baseline gap-2 border-b border-line pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
+    <h2 className="section-label mb-2 flex items-baseline gap-2 border-b border-line pb-1.5">
       {title}
-      {count === undefined ? null : <span className="font-mono normal-case">{count}</span>}
+      {count === undefined ? null : <span className="count">{count}</span>}
     </h2>
     {children}
   </section>
@@ -46,8 +105,8 @@ export const Mono = ({ children, className }: { children: ReactNode; className?:
 export const Badge = ({ children, accent }: { children: ReactNode; accent?: boolean }) => (
   <span
     className={clsx(
-      "inline-block rounded-sm border px-1.5 font-mono text-[11px] leading-4",
-      accent ? "border-accent text-accent" : "border-line text-muted",
+      "badge inline-block px-1.5 text-[11px] leading-4",
+      accent && "border-accent text-accent",
     )}
   >
     {children}

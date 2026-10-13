@@ -25,28 +25,32 @@ export const AreasPage = () => {
     )
   }
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-3 px-4 py-2">
-        <h1 className="text-[15px] font-semibold">Areas</h1>
-        <Segmented
-          value={view}
-          onChange={(v) => setParams(v === "graph" ? { view: "graph" } : {})}
-          options={[
-            { id: "treemap", label: "Size", icon: <Blocks size={13} /> },
-            { id: "graph", label: "Links", icon: <Network size={13} /> },
-          ]}
-        />
-        {view === "treemap" ? (
-          <span className="flex items-center gap-2 text-[11px] text-muted">
-            area = lines
-            <span className="hatch inline-block h-3 w-5 border border-line" /> tests
-          </span>
-        ) : null}
-      </div>
-      <div className="min-h-0 flex-1 px-4 pb-4">
+    <Page
+      title="Areas"
+      flush
+      tools={
+        <>
+          {view === "treemap" ? (
+            <span className="flex items-center gap-2 text-caption text-muted">
+              area = lines
+              <span className="hatch inline-block h-3 w-5 border border-line" /> tests
+            </span>
+          ) : null}
+          <Segmented
+            value={view}
+            onChange={(v) => setParams(v === "graph" ? { view: "graph" } : {})}
+            options={[
+              { id: "treemap", label: "Size", icon: <Blocks size={13} /> },
+              { id: "graph", label: "Links", icon: <Network size={13} /> },
+            ]}
+          />
+        </>
+      }
+    >
+      <div className={view === "treemap" ? "min-h-0 flex-1 p-3" : "min-h-0 flex-1"}>
         {view === "treemap" ? <TreemapView /> : <GraphView />}
       </div>
-    </div>
+    </Page>
   )
 }
 
@@ -102,22 +106,26 @@ export const AreaPage = () => {
   const maxLines = Math.max(...atlas.areas.map((a) => a.lines))
   const share = area.files > 0 ? Math.min(1, area.tests / area.files) : 0
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-6 py-6">
-      <header>
-        <div className="flex items-center gap-2">
-          <Link to="/areas" className="text-[12px] text-muted no-underline hover:text-fg">
-            Areas /
+    <Page
+      crumbs={
+        <>
+          <Link to="/areas" className="text-muted no-underline hover:text-fg">
+            Areas
           </Link>
+          <span>/</span>
           <Link
             to={nodePath(area.node)}
-            className="flex items-center gap-1.5 text-[12px] text-muted no-underline hover:text-fg"
+            className="flex items-center gap-1.5 text-muted no-underline hover:text-fg"
           >
             <Dot node={area.node} />
             {nodeTitle(area.node)}
           </Link>
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <h1 className="text-xl font-semibold">{area.title}</h1>
+          <span>/</span>
+        </>
+      }
+      title={area.title}
+      tools={
+        <span className="flex items-center gap-1">
           {area.entries.map((e) => (
             <AnchorIcon key={`${e.file}:${e.line}`} anchor={e} size={15} />
           ))}
@@ -128,59 +136,64 @@ export const AreaPage = () => {
               target="_blank"
               rel="noreferrer"
               title={d}
-              className="inline-flex text-muted hover:text-accent"
+              className="icon-button small"
             >
-              <FileText size={15} />
+              <FileText size={13} />
             </a>
           ))}
-        </div>
-        <div className="mt-3 flex items-center gap-3">
-          <div
-            className="relative h-3 overflow-hidden rounded-sm bg-raised"
-            style={{ width: "min(100%, 28rem)" }}
-            title={`${area.lines.toLocaleString()} lines, ${area.files} files, ${area.tests} test files`}
-          >
+        </span>
+      }
+    >
+      <div className="mx-auto max-w-4xl space-y-6">
+        <header>
+          <div className="flex items-center gap-3">
             <div
-              className="absolute inset-y-0 left-0"
-              style={{
-                width: `${(area.lines / maxLines) * 100}%`,
-                background: hue(area.node).ink,
-              }}
+              className="relative h-3 overflow-hidden rounded-sm bg-raised"
+              style={{ width: "min(100%, 28rem)" }}
+              title={`${area.lines.toLocaleString()} lines, ${area.files} files, ${area.tests} test files`}
             >
               <div
-                className="hatch absolute inset-y-0 right-0"
-                style={{ width: `${share * 100}%` }}
-              />
+                className="absolute inset-y-0 left-0"
+                style={{
+                  width: `${(area.lines / maxLines) * 100}%`,
+                  background: hue(area.node).ink,
+                }}
+              >
+                <div
+                  className="hatch absolute inset-y-0 right-0"
+                  style={{ width: `${share * 100}%` }}
+                />
+              </div>
             </div>
+            <span className="font-mono text-[12px]">{compact(area.lines)}</span>
+            <span className="font-mono text-[11px] text-muted">
+              {area.files} files · {area.tests} tests
+            </span>
           </div>
-          <span className="font-mono text-[12px]">{compact(area.lines)}</span>
-          <span className="font-mono text-[11px] text-muted">
-            {area.files} files · {area.tests} tests
-          </span>
-        </div>
-        <p className="mt-3 max-w-2xl text-[12px] text-muted">{area.purpose}</p>
-      </header>
-      <section className="space-y-2">
-        <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted">
-          <span>depends on</span>
-          <span className="flex items-center gap-1">
-            <KindSample kind="import" /> import
-          </span>
-          <span className="flex items-center gap-1">
-            <KindSample kind="call" /> call
-          </span>
-          <span className="flex items-center gap-1">
-            <KindSample kind="data" /> data
-          </span>
-          <span className="ml-auto">used by</span>
-        </div>
-        <EgoGraph id={area.id} />
-      </section>
-      <section className="flex flex-wrap items-start gap-2">
-        <Owned label="procedures" ids={area.procedures} to={procedurePath} />
-        <Owned label="tables" ids={area.tables} to={tablePath} />
-        <Owned label="tools" ids={area.tools} to={toolPath} />
-      </section>
-    </div>
+          <p className="mt-3 max-w-2xl text-[12px] text-muted">{area.purpose}</p>
+        </header>
+        <section className="space-y-2">
+          <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted">
+            <span>depends on</span>
+            <span className="flex items-center gap-1">
+              <KindSample kind="import" /> import
+            </span>
+            <span className="flex items-center gap-1">
+              <KindSample kind="call" /> call
+            </span>
+            <span className="flex items-center gap-1">
+              <KindSample kind="data" /> data
+            </span>
+            <span className="ml-auto">used by</span>
+          </div>
+          <EgoGraph id={area.id} />
+        </section>
+        <section className="flex flex-wrap items-start gap-2">
+          <Owned label="procedures" ids={area.procedures} to={procedurePath} />
+          <Owned label="tables" ids={area.tables} to={tablePath} />
+          <Owned label="tools" ids={area.tools} to={toolPath} />
+        </section>
+      </div>
+    </Page>
   )
 }

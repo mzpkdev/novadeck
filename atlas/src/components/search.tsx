@@ -71,14 +71,14 @@ export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }
       onMouseDown={onClose}
     >
       <div
-        className="h-fit max-h-[70vh] w-[560px] max-w-[92vw] overflow-hidden rounded-sm border border-line bg-panel shadow-lg"
+        className="pane floating h-fit max-h-[70vh] w-[560px] max-w-[92vw] overflow-hidden rounded-[var(--radius-popover)]"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <input
           ref={input}
           value={query}
           placeholder="Jump to…"
-          className="w-full border-b border-line bg-transparent px-3 py-2 outline-none"
+          className="h-11 w-full border-0 border-b border-line bg-transparent px-4 text-body outline-none placeholder:text-muted"
           onChange={(e) => {
             setQuery(e.target.value)
             setIndex(0)
@@ -94,7 +94,7 @@ export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }
             } else if (e.key === "Enter") go(results[index])
           }}
         />
-        <ul className="max-h-[56vh] overflow-auto">
+        <ul className="m-0 max-h-[56vh] list-none overflow-auto p-1.5">
           {results.length === 0 ? <li className="px-3 py-2 text-muted">No matches</li> : null}
           {results.map((item, i) => (
             <li key={`${item.kind}:${item.label}:${item.to}`}>
@@ -102,7 +102,8 @@ export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }
                 type="button"
                 onMouseEnter={() => setIndex(i)}
                 onClick={() => go(item)}
-                className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-left ${i === index ? "bg-raised" : ""}`}
+                data-selected={i === index}
+                className="item flex w-full items-center gap-2 px-2.5 py-1 text-left"
               >
                 <span className="w-20 shrink-0">
                   <Badge>{item.kind}</Badge>

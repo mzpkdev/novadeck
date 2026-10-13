@@ -9,7 +9,7 @@ import {
   Workflow,
 } from "lucide-react"
 import { useEffect, useState } from "react"
-import { NavLink, Outlet } from "react-router"
+import { Link, NavLink, Outlet } from "react-router"
 
 import { atlas } from "../atlas-data.ts"
 import { Search } from "./search.tsx"
@@ -23,16 +23,102 @@ const nav = [
   { to: "/flows", label: "Flows", icon: Workflow },
 ]
 
-const Banner = () => {
-  if (atlas.broken.length === 0) return null
-  return (
-    <div
-      className="flex shrink-0 items-center gap-2 border-b border-warn bg-[var(--color-warning)] px-4 py-1 text-[12px] text-warn"
-      title={atlas.broken.map((b) => `${b.where}: ${b.file} / ${b.text}`).join("\n")}
-    >
-      <TriangleAlert size={13} />
-      {atlas.broken.length} broken anchor{atlas.broken.length === 1 ? "" : "s"}
+// Novadeck's mark: the ">_" tile with two terminal cards fanned behind it.
+const DeckMark = () => (
+  <span aria-hidden="true" className="deck-mark">
+    <span className="deck-card far" />
+    <span className="deck-card near" />
+    <span className="deck-face">
+      <svg viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+        <path d="m5 16.5 5.5-5.5-5.5-5.5" />
+        <path d="M12.5 18.5h6.5" />
+      </svg>
+    </span>
+  </span>
+)
+
+// The header, as the app's: the mark and the atlas's name, the page switch where the
+// app switches views, and search.
+const Header = ({ onSearch }: { onSearch: () => void }) => (
+  <header className="app-header grid h-16 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6 px-4">
+    <Link to="/" className="flex min-w-0 items-center gap-4 text-fg no-underline hover:text-fg">
+      <DeckMark />
+      <span className="truncate text-body font-medium">Atlas</span>
+    </Link>
+    <nav aria-label="Pages" className="segmented">
+      {nav.map(({ to, label, icon: Icon }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={to === "/"}
+          className="segment h-8 min-w-22 px-3 text-control max-[1001px]:min-w-0"
+        >
+          <Icon size={14} strokeWidth={1.6} aria-hidden="true" />
+          <span className="max-[860px]:hidden">{label}</span>
+        </NavLink>
+      ))}
+    </nav>
+    <div className="flex items-center justify-self-end gap-2">
+      <button
+        type="button"
+        onClick={onSearch}
+        className="icon-button w-auto gap-2 px-2.5 text-control"
+        aria-label="Search the atlas"
+      >
+        <SearchIcon size={15} />
+        Search
+        <kbd className="hint mb-[-2px] ml-3">Ctrl K</kbd>
+      </button>
     </div>
+  </header>
+)
+
+// The status bar: what the atlas holds, and the commit it was drawn from. Broken anchors
+// tone the whole bar, as the app's does while its backend is in trouble.
+const Footer = () => {
+  const broken = atlas.broken.length
+  const counts = [
+    `${atlas.areas.length} areas`,
+    `${atlas.api.procedures.length} procedures`,
+    `${atlas.data.tables.length} tables`,
+    `${atlas.agents.tools.length} agent tools`,
+    `${atlas.flows.length} flows`,
+  ]
+  return (
+    <footer
+      data-tone={broken > 0 ? "warning" : undefined}
+      className="app-footer flex h-7 shrink-0 items-center justify-between px-4 text-caption"
+    >
+      <span className="flex items-center">
+        {counts.map((count, i) => (
+          <span key={count} className={i === 0 ? "pr-3" : "footer-divider px-3"}>
+            {count}
+          </span>
+        ))}
+      </span>
+      <span className="flex items-center gap-4">
+        {broken > 0 ? (
+          <span
+            className="footer-status flex items-center gap-1.5 font-bold"
+            title={atlas.broken.map((b) => `${b.where}: ${b.file} / ${b.text}`).join("\n")}
+          >
+            <TriangleAlert size={12} />
+            {broken} broken anchor{broken === 1 ? "" : "s"}
+          </span>
+        ) : null}
+        <a
+          href={`${atlas.repository}/commit/${atlas.commit}`}
+          target="_blank"
+          rel="noreferrer"
+          className="font-mono text-[inherit] no-underline hover:text-[inherit] hover:underline"
+        >
+          {atlas.commit.slice(0, 7)}
+        </a>
+        <span className="footer-divider pl-4 font-mono" title={atlas.generatedAt}>
+          {atlas.generatedAt.replace("T", " ").slice(0, 16)}
+        </span>
+      </span>
+    </footer>
   )
 }
 
@@ -51,51 +137,12 @@ export const Layout = () => {
   }, [])
 
   return (
-    <div className="flex h-full">
-      <nav className="region-sidebar flex w-48 shrink-0 flex-col border-r">
-        <div className="px-4 py-3 text-[13px] font-semibold tracking-wide">Novadeck Atlas</div>
-        <button
-          type="button"
-          onClick={() => setSearching(true)}
-          className="mx-3 mb-3 flex cursor-pointer items-center gap-2 rounded-sm border border-line px-2 py-1 text-left text-[12px] text-muted hover:text-fg"
-        >
-          <SearchIcon size={13} />
-          Search
-          <kbd className="ml-auto font-mono text-[10px]">Ctrl K</kbd>
-        </button>
-        <ul className="flex-1">
-          {nav.map(({ to, label, icon: Icon }) => (
-            <li key={to}>
-              <NavLink
-                to={to}
-                end={to === "/"}
-                className={({ isActive }) =>
-                  `flex items-center gap-2 px-4 py-1.5 text-[13px] no-underline ${
-                    isActive ? "bg-raised text-fg" : "text-muted hover:text-fg"
-                  }`
-                }
-              >
-                <Icon size={14} />
-                {label}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-        <div className="border-t border-line px-4 py-3 font-mono text-[11px] leading-5 text-muted">
-          <div>
-            <a href={`${atlas.repository}/commit/${atlas.commit}`} target="_blank" rel="noreferrer">
-              {atlas.commit.slice(0, 7)}
-            </a>
-          </div>
-          <div title={atlas.generatedAt}>{atlas.generatedAt.replace("T", " ").slice(0, 16)}</div>
-        </div>
-      </nav>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Banner />
-        <main className="min-h-0 flex-1 overflow-auto">
-          <Outlet />
-        </main>
-      </div>
+    <div className="flex h-full flex-col">
+      <Header onSearch={() => setSearching(true)} />
+      <main className="flex min-h-0 flex-1">
+        <Outlet />
+      </main>
+      <Footer />
       <Search open={searching} onClose={() => setSearching(false)} />
     </div>
   )

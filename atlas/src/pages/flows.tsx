@@ -9,15 +9,14 @@ import { Thumb, actorsOf } from "./flows/thumb.tsx"
 import "./visual-tokens.css"
 
 export const FlowsPage = () => (
-  <div className="p-5">
-    <h1 className="mb-4 text-lg font-semibold">Flows</h1>
+  <Page title="Flows" tools={<span className="text-caption text-muted">actors x steps</span>}>
     <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
       {atlas.flows.map((f) => (
         <Link
           key={f.id}
           to={flowPath(f.id)}
           title={f.summary}
-          className="group block rounded-sm border border-[var(--color-outline)] bg-panel p-3 text-fg no-underline hover:border-accent hover:text-fg"
+          className="pane group block p-3 text-fg no-underline hover:border-[var(--window-selected-border-color)] hover:text-fg hover:shadow-lg"
         >
           <div className="mb-2 flex h-[150px] items-start overflow-hidden">
             <Thumb flow={f} />
@@ -31,7 +30,7 @@ export const FlowsPage = () => (
         </Link>
       ))}
     </div>
-  </div>
+  </Page>
 )
 
 export const FlowPage = () => {
@@ -45,23 +44,32 @@ export const FlowPage = () => {
     )
   }
   return (
-    <div className="p-5">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <Link to="/flows" className="text-[12px]">
-          Flows
-        </Link>
-        <h1 className="text-lg font-semibold">{flow.title}</h1>
-        <span className="ml-auto flex flex-wrap gap-x-3 text-[12px]">
-          {atlas.flows
-            .filter((f) => f.id !== flow.id)
-            .map((f) => (
-              <Link key={f.id} to={flowPath(f.id)}>
-                {f.title}
-              </Link>
-            ))}
-        </span>
-      </div>
+    <Page
+      crumbs={
+        <>
+          <Link to="/flows" className="text-muted no-underline hover:text-fg">
+            Flows
+          </Link>
+          <span>/</span>
+        </>
+      }
+      title={flow.title}
+      tools={
+        <nav aria-label="Flows" className="segmented gap-0.5">
+          {atlas.flows.map((f) => (
+            <Link
+              key={f.id}
+              to={flowPath(f.id)}
+              aria-current={f.id === flow.id ? "page" : undefined}
+              className="segment h-7 px-2.5 text-control"
+            >
+              {f.title}
+            </Link>
+          ))}
+        </nav>
+      }
+    >
       <Sequence key={flow.id} flow={flow} />
-    </div>
+    </Page>
   )
 }

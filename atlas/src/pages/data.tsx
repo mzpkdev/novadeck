@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useLocation } from "react-router"
 
 import { atlas, tableByName } from "../atlas-data.ts"
+import { Page } from "../components/ui.tsx"
 import { StorageStrip } from "./data/chips.tsx"
 import { NODE_W, nodeHeight, positions, relations } from "./data/model.ts"
 import type { TableNode } from "./data/model.ts"
@@ -103,6 +104,21 @@ const Canvas = ({
   )
 }
 
+// A sample of the line the diagram draws for a kind of relation.
+const line = (dash?: string) => (
+  <svg width="22" height="6">
+    <line
+      x1="0"
+      x2="22"
+      y1="3"
+      y2="3"
+      stroke="var(--color-line-strong)"
+      strokeWidth="1.5"
+      strokeDasharray={dash}
+    />
+  </svg>
+)
+
 export const DataPage = () => {
   const { hash } = useLocation()
   const id = decodeURIComponent(hash.slice(1))
@@ -111,42 +127,27 @@ export const DataPage = () => {
   const setSelected = (name: string | null) => setPicked({ hash: id, name })
   const table = selected ? (tableByName.get(selected) ?? null) : null
   return (
-    <div className="flex h-full flex-col">
+    <Page
+      title="Data"
+      flush
+      tools={
+        <span className="flex items-center gap-4 text-caption text-muted">
+          <span className="flex items-center gap-1">
+            {line()}
+            foreign key
+          </span>
+          <span className="flex items-center gap-1">
+            {line("4 3")}
+            implied by name
+          </span>
+        </span>
+      }
+    >
       <div className="flex min-h-0 flex-1">
-        <div className="workspace relative min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1">
           <ReactFlowProvider>
             <Canvas selected={selected} onSelect={setSelected} />
           </ReactFlowProvider>
-          <div className="pointer-events-none absolute left-3 top-2 flex items-center gap-4 text-[11px] text-muted">
-            <span className="text-sm font-semibold text-fg">Data</span>
-            <span className="flex items-center gap-1">
-              <svg width="22" height="6">
-                <line
-                  x1="0"
-                  x2="22"
-                  y1="3"
-                  y2="3"
-                  stroke="var(--color-line-strong)"
-                  strokeWidth="1.5"
-                />
-              </svg>
-              foreign key
-            </span>
-            <span className="flex items-center gap-1">
-              <svg width="22" height="6">
-                <line
-                  x1="0"
-                  x2="22"
-                  y1="3"
-                  y2="3"
-                  stroke="var(--color-line-strong)"
-                  strokeWidth="1.5"
-                  strokeDasharray="4 3"
-                />
-              </svg>
-              implied by name
-            </span>
-          </div>
           {table ? (
             <div className="absolute inset-y-0 right-0 z-10 flex shadow-lg">
               <TablePanel table={table} onClose={() => setSelected(null)} />
@@ -157,6 +158,6 @@ export const DataPage = () => {
       <StorageStrip
         initial={id.startsWith("setting:") ? "settings" : id.startsWith("local:") ? "local" : null}
       />
-    </div>
+    </Page>
   )
 }

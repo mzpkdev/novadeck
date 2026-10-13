@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from "react-router"
 import { areaById, atlas, groupBy, procedureById } from "../atlas-data.ts"
 import type { Procedure } from "../atlas.ts"
 import { AnchorLink } from "../components/anchor.tsx"
+import { Page } from "../components/ui.tsx"
 import { CodePane } from "./api/code.tsx"
 import { isEmpty } from "./api/model.ts"
 import { ParamsTable } from "./api/params.tsx"
@@ -43,11 +44,8 @@ const NavRow = ({
       ref={ref}
       type="button"
       onClick={() => onSelect(p.id)}
-      className={`flex w-full cursor-pointer items-center gap-2 border-l-2 py-[5px] pl-5 pr-3 text-left ${
-        selected
-          ? "border-accent bg-raised text-accent"
-          : "border-transparent hover:bg-raised hover:text-accent"
-      }`}
+      data-selected={selected}
+      className="item flex w-full items-center gap-2 py-[5px] pl-3 pr-2 text-left"
     >
       <KindBadge kind={p.kind} />
       <span className="min-w-0 truncate font-mono text-[12.5px]">{p.name}</span>
@@ -58,15 +56,15 @@ const NavRow = ({
 const ErrorCodes = () => {
   const [open, setOpen] = useState(false)
   return (
-    <div className="border-t border-line">
+    <div className="border-t border-[var(--region-sidebar-border-color)] px-3">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex w-full cursor-pointer items-center gap-1.5 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-muted hover:text-fg"
+        className="section-label flex h-[38px] w-full cursor-pointer items-center gap-1.5 px-0.5 text-left hover:text-fg"
       >
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         All error codes
-        <span className="ml-auto font-mono font-normal">{atlas.api.errors.length}</span>
+        <span className="count ml-auto">{atlas.api.errors.length}</span>
       </button>
       {open ? (
         <ul className="pb-2">
@@ -74,7 +72,7 @@ const ErrorCodes = () => {
             <li
               key={e.code}
               title={e.note ?? undefined}
-              className="flex items-baseline justify-between gap-2 px-3 py-0.5 font-mono text-[11.5px]"
+              className="flex items-baseline justify-between gap-2 px-0.5 py-0.5 font-mono text-caption"
             >
               <span className="truncate">{e.code}</span>
               <span className="text-muted">{e.status}</span>
@@ -103,19 +101,19 @@ const Nav = ({ selected, onSelect }: { selected: string; onSelect: (id: string) 
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [filter])
   return (
-    <nav className="flex h-full w-[248px] shrink-0 flex-col border-r border-[var(--color-outline)] bg-panel">
-      <div className="border-b border-line p-3">
+    <nav className="sidebar flex w-64 shrink-0 flex-col">
+      <div className="px-3 pt-3 pb-1">
         <label className="relative block">
           <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted" />
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Search procedures"
-            className="w-full rounded-sm border border-[var(--color-outline)] bg-raised py-1 pl-7 pr-2 text-[12.5px] outline-none placeholder:text-muted focus:border-accent"
+            className="field h-8 w-full pl-7 pr-2 text-control"
           />
         </label>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto py-1">
+      <div className="min-h-0 flex-1 overflow-auto px-3 pb-2">
         {groups.map(([ns, list]) => {
           const open = searching || !closed.has(ns)
           return (
@@ -129,11 +127,11 @@ const Nav = ({ selected, onSelect }: { selected: string; onSelect: (id: string) 
                     return next
                   })
                 }
-                className="flex w-full cursor-pointer items-center gap-1 px-3 pb-1 pt-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted hover:text-fg"
+                className="section-label flex h-[34px] w-full cursor-pointer items-center gap-1 px-0.5 text-left hover:text-fg"
               >
                 {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                 {ns}
-                <span className="ml-auto font-mono font-normal">{list.length}</span>
+                <span className="count ml-auto">{list.length}</span>
               </button>
               {open
                 ? list.map((p) => (
@@ -162,9 +160,9 @@ const Section = ({
   children: ReactNode
 }) => (
   <section className="mt-7">
-    <div className="mb-2 flex items-baseline gap-3 border-b border-line pb-1.5">
-      <h2 className="text-[15px] font-semibold">{title}</h2>
-      {hint ? <span className="text-[12px] text-muted">{hint}</span> : null}
+    <div className="mb-2.5 flex items-baseline gap-3">
+      <h2 className="section-label m-0">{title}</h2>
+      {hint ? <span className="text-caption text-muted">{hint}</span> : null}
     </div>
     {children}
   </section>
@@ -228,14 +226,9 @@ const Reference = ({ p }: { p: Procedure }) => {
   const output = isEmpty(p.output) ? null : p.output
   const stream = p.kind === "stream"
   return (
-    <div className="mx-auto max-w-[760px] px-6 pb-16 pt-6">
+    <div className="mx-auto max-w-[760px] px-6 pb-16 pt-5">
       <header>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="break-all font-mono text-[20px] font-semibold leading-7">{p.id}</h1>
-          <KindBadge kind={p.kind} large />
-          <AreaChip id={p.area} />
-        </div>
-        <p className="mt-1.5 text-[12.5px] text-muted">
+        <p className="m-0 text-[12.5px] text-muted">
           {stream
             ? "oRPC stream on the runner: one request opens it, then the runner yields events over the authenticated runner connection."
             : "oRPC procedure on the runner, called over the authenticated runner connection."}
@@ -293,12 +286,25 @@ export const ApiPage = () => {
   const p = procedureById.get(wanted) ?? atlas.api.procedures[0]
   if (!p) return <div className="p-6 text-muted">No procedures.</div>
   return (
-    <div className="flex h-full">
-      <Nav selected={p.id} onSelect={(id) => void navigate({ hash: id }, { replace: true })} />
-      <div key={p.id} className="min-w-0 flex-1 overflow-auto">
-        <Reference p={p} />
+    <Page
+      title={<span className="font-mono">{p.id}</span>}
+      tools={
+        <>
+          <AreaChip id={p.area} />
+          <KindBadge kind={p.kind} large />
+        </>
+      }
+      side={
+        <Nav selected={p.id} onSelect={(id) => void navigate({ hash: id }, { replace: true })} />
+      }
+      flush
+    >
+      <div className="flex min-h-0 flex-1">
+        <div key={p.id} className="min-w-0 flex-1 overflow-auto">
+          <Reference p={p} />
+        </div>
+        <CodePane p={p} />
       </div>
-      <CodePane p={p} />
-    </div>
+    </Page>
   )
 }

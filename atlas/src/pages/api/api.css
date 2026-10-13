@@ -1,23 +1,16 @@
-/* The reference's code pane: a dark surface in both themes (ink on paper, the deep workspace
-   ground in dark), with muted hues so the accent stays the loudest thing on the page. */
+/* The reference's code pane, as code reads in Novadeck's panes: a light step off the
+   paper, divided from the reference by a line, and Graphite's syntax hues. */
 .code-pane {
-  --code-bg: var(--color-ink);
-  --code-fg: #dedcd5;
-  --code-dim: #8d8b84;
-  --code-line: rgb(255 255 255 / 0.1);
-  --code-key: oklch(0.8 0.06 235);
-  --code-str: oklch(0.8 0.07 150);
-  --code-num: oklch(0.8 0.08 70);
-  --code-kw: oklch(0.78 0.07 310);
-  --code-type: oklch(0.8 0.05 195);
+  --code-bg: var(--color-fill);
+  --code-fg: var(--color-ink);
+  --code-dim: var(--color-muted);
+  --code-line: var(--color-line);
+  --code-key: var(--color-syntax-property);
+  --code-str: var(--color-syntax-string);
+  --code-num: var(--color-syntax-number);
+  --code-kw: var(--color-syntax-keyword);
+  --code-type: var(--color-syntax-type);
+  border-left: var(--border-width) solid var(--color-line);
   background: var(--code-bg);
   color: var(--code-fg);
-}
-
-@media (prefers-color-scheme: dark) {
-  .code-pane {
-    --code-bg: var(--workspace-bg);
-    --code-fg: #d3d5db;
-    --code-dim: #858892;
-  }
 }

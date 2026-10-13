@@ -6,6 +6,7 @@ import { atlas, toolByName } from "../atlas-data.ts"
 import type { McpTool } from "../atlas.ts"
 import { AnchorIcon, AnchorLink } from "../components/anchor.tsx"
 import { SchemaView } from "../components/schema.tsx"
+import { Page, SectionLabel } from "../components/ui.tsx"
 import { useFocus } from "../components/use-focus.ts"
 import { Lifecycle } from "./agents/lifecycle.tsx"
 import { HarnessMatrix } from "./agents/matrix.tsx"
@@ -61,7 +62,7 @@ const ToolPanel = ({ tool }: { tool: McpTool }) => {
   const rest = tool.description.trim().slice(first.length).trim()
   const owner = atlas.areas.find((a) => a.tools.includes(tool.name))
   return (
-    <div className="mt-3 space-y-3 rounded-sm border border-[var(--color-outline)] bg-panel p-3">
+    <div className="mt-3 space-y-3 rounded-sm border border-line p-3">
       <div className="flex items-center gap-2">
         <span className="font-mono text-[13px] font-medium">{tool.name}</span>
         <AreaChip id={owner?.id ?? null} />
@@ -100,39 +101,38 @@ const ToolPanel = ({ tool }: { tool: McpTool }) => {
   )
 }
 
-const H = ({ children }: { children: string }) => (
-  <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted">{children}</h2>
-)
+const H = ({ children }: { children: string }) => <SectionLabel>{children}</SectionLabel>
 
 export const AgentsPage = () => {
   const [selected, setSelected] = useState<string | null>(null)
   const tool = selected ? toolByName.get(selected) : undefined
   return (
-    <div className="space-y-7 p-5">
-      <h1 className="text-lg font-semibold">Agents</h1>
-      <div className="grid items-start gap-8 xl:grid-cols-[auto_1fr]">
+    <Page title="Agents">
+      <div className="space-y-7">
+        <div className="grid items-start gap-8 xl:grid-cols-[auto_1fr]">
+          <section>
+            <H>Harness parity</H>
+            <div className="rounded-sm border border-line p-3">
+              <HarnessMatrix />
+            </div>
+          </section>
+          <section className="min-w-0">
+            <H>Hook lifecycle</H>
+            <div className="overflow-auto rounded-sm border border-line p-3">
+              <Lifecycle />
+            </div>
+          </section>
+        </div>
         <section>
-          <H>Harness parity</H>
-          <div className="rounded-sm border border-[var(--color-outline)] bg-panel p-3">
-            <HarnessMatrix />
+          <H>MCP tools</H>
+          <div className="flex flex-wrap gap-2">
+            {atlas.agents.tools.map((t) => (
+              <Chip key={t.name} tool={t} selected={selected === t.name} onSelect={setSelected} />
+            ))}
           </div>
-        </section>
-        <section className="min-w-0">
-          <H>Hook lifecycle</H>
-          <div className="overflow-auto rounded-sm border border-[var(--color-outline)] bg-panel p-3">
-            <Lifecycle />
-          </div>
+          {tool ? <ToolPanel tool={tool} /> : null}
         </section>
       </div>
-      <section>
-        <H>MCP tools</H>
-        <div className="flex flex-wrap gap-2">
-          {atlas.agents.tools.map((t) => (
-            <Chip key={t.name} tool={t} selected={selected === t.name} onSelect={setSelected} />
-          ))}
-        </div>
-        {tool ? <ToolPanel tool={tool} /> : null}
-      </section>
-    </div>
+    </Page>
   )
 }

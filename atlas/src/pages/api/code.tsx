@@ -82,7 +82,7 @@ const CopyButton = ({ text }: { text: string }) => {
           setTimeout(() => setDone(false), 1200)
         })
       }}
-      className="flex cursor-pointer items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] hover:bg-white/10"
+      className="icon-button small w-auto gap-1 px-1.5 text-caption"
       style={{ color: "var(--code-dim)" }}
     >
       {done ? <Check size={12} /> : <Copy size={12} />}
@@ -94,10 +94,7 @@ const CopyButton = ({ text }: { text: string }) => {
 const Block = ({ title, code, kind }: { title: string; code: string; kind: Kind }) => (
   <section className="border-b" style={{ borderColor: "var(--code-line)" }}>
     <div className="flex items-center justify-between px-4 pt-3">
-      <h3
-        className="font-mono text-[10.5px] font-semibold uppercase tracking-wider"
-        style={{ color: "var(--code-dim)" }}
-      >
+      <h3 className="section-label m-0" style={{ color: "var(--code-dim)" }}>
         {title}
       </h3>
       <CopyButton text={code} />

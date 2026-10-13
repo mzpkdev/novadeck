@@ -1,4 +1,3 @@
-import { clsx } from "clsx"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { atlas, nodeById } from "../atlas-data.ts"
@@ -47,16 +46,14 @@ export const Segmented = <T extends string>({
   options: { id: T; label: string; icon?: ReactNode }[]
   onChange: (id: T) => void
 }) => (
-  <div className="inline-flex rounded-sm border border-[var(--color-outline)] bg-panel p-0.5">
+  <div className="segmented gap-0.5">
     {options.map((o) => (
       <button
         key={o.id}
         type="button"
+        aria-pressed={o.id === value}
         onClick={() => onChange(o.id)}
-        className={clsx(
-          "flex cursor-pointer items-center gap-1.5 rounded-sm px-2.5 py-0.5 text-[12px]",
-          o.id === value ? "bg-raised text-accent" : "text-muted hover:text-fg",
-        )}
+        className="segment h-7 gap-1.5 px-2.5 text-control"
       >
         {o.icon}
         {o.label}
