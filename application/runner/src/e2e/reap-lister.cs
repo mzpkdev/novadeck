@@ -54,14 +54,17 @@ public static class NovadeckReap {
       CloseHandle(handle);
     }
   }
+  // Never throws: a parent that exits meanwhile must not drop the process it is told for.
   static string Parent(int pid, DateTime created) {
     Process one;
     try { one = Process.GetProcessById(pid); } catch (Exception) { return "#" + pid + " gone"; }
+    string name = "";
+    try { name = one.ProcessName; } catch (Exception) { return "#" + pid + " gone"; }
     try {
       bool later = one.StartTime.ToUniversalTime() > created;
-      return one.ProcessName + "#" + pid + (later ? " taken by a later process" : " running");
+      return name + "#" + pid + (later ? " taken by a later process" : " running");
     } catch (Exception) {
-      return one.ProcessName + "#" + pid + " unreadable";
+      return name + "#" + pid + " unreadable";
     }
   }
   static string Quoted(string text) {
