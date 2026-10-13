@@ -221,21 +221,30 @@ describe("Switching views", () => {
     plan().scrollTop = 200
     await expect.poll(() => plan().scrollTop).toBe(200)
 
-    // The line at the pane's top, wherever the pane is and however wide.
-    const lineAtTop = (): string | undefined => {
-      const { left, width, top } = plan().getBoundingClientRect()
-      return (
-        document.elementFromPoint(left + width / 2, top + 10)?.closest(".cm-line")?.textContent ??
-        undefined
+    // The first line with words showing at the pane's top, and how far down it the top
+    // is, as a share of the line, which holds however wide or zoomed the pane is.
+    const place = (): { readonly line: string; readonly into: number } | undefined => {
+      const { top } = plan().getBoundingClientRect()
+      const line = [...plan().querySelectorAll(".cm-line")].find(
+        (each) => each.getBoundingClientRect().bottom > top + 1 && each.textContent?.trim(),
       )
+      if (!line) return undefined
+      const box = line.getBoundingClientRect()
+      return { line: line.textContent ?? "", into: (top - box.top) / box.height }
     }
-    const reading = lineAtTop()
-    expect(reading).toBeTruthy()
+    const reading = place()!
+    expect(reading.line).toBeTruthy()
+    const backAt = async (): Promise<void> => {
+      await expect.poll(() => place()?.line).toBe(reading.line)
+      await expect.poll(() => Math.abs(place()!.into - reading.into)).toBeLessThan(0.1)
+    }
 
     await chooseView("Focus")
     await terminalTab("Build Studio").click()
-    await expect.poll(lineAtTop).toBe(reading)
+    await backAt()
+    // Canvas shows the pane zoomed, as it fits the board.
     await chooseView("Canvas")
+    await backAt()
     await chooseView("Grid")
 
     await expect

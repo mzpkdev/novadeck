@@ -67,14 +67,16 @@ export const scrollLineToTop = (view: EditorView, at: number): void => {
 // as a share of its height, which holds across a narrower or zoomed pane.
 export type PlanScroll = { readonly at: number; readonly into: number }
 
-// How far the pane's top is into the document, in the editor's own pixels: the page's
-// are scaled where Canvas zooms. The scale is the editor's, measured here since it holds
-// before the editor first measures it, and over the whole document, so rounding its
-// height to whole pixels hardly matters.
-const heightAtTop = (view: EditorView, scroller: HTMLElement): number => {
+// How far the pane's top is into the document, in the page's pixels, which CodeMirror
+// measures its lines in: scaled where Canvas zooms, or while the pane scales in.
+const heightAtTop = (view: EditorView, scroller: HTMLElement): number =>
+  scroller.getBoundingClientRect().top - view.documentTop
+
+// How many page pixels a pixel of the pane's own scroll is. Over the whole editor, so
+// rounding its height to whole pixels hardly matters.
+const scaleOf = (view: EditorView): number => {
   const tall = view.dom.offsetHeight
-  const scale = tall ? view.dom.getBoundingClientRect().height / tall : 1
-  return (scroller.getBoundingClientRect().top - view.documentTop) / scale
+  return tall ? view.dom.getBoundingClientRect().height / tall : 1
 }
 
 // Follows where the pane is scrolled in the plan, while it's on screen; returns the stop.
@@ -96,7 +98,7 @@ export const followScroll = (view: EditorView, on: (scroll: PlanScroll) => void)
 // editor measures the lines that came into view, whose heights it had only estimated, or
 // an edit moves the place; `done` once it holds still, after a few frames, or once the
 // person scrolls themselves. Out of sight, it waits until the pane shows. Returns the
-// cancel, for an editor that closes meanwhile.
+// finish, for an editor that closes or jumps elsewhere meanwhile.
 export const restoreScroll = (
   view: EditorView,
   scroll: () => PlanScroll | null,
@@ -111,9 +113,9 @@ export const restoreScroll = (
     const now = scroll()
     if (!now) return null
     const line = view.lineBlockAt(Math.min(now.at, view.state.doc.length))
-    const height = line.top + now.into * line.height
+    const off = line.top + now.into * line.height - heightAtTop(view, scroller)
     return Math.min(
-      Math.max(0, scroller.scrollTop + height - heightAtTop(view, scroller)),
+      Math.max(0, scroller.scrollTop + off / scaleOf(view)),
       scroller.scrollHeight - scroller.clientHeight,
     )
   }
@@ -154,8 +156,5 @@ export const restoreScroll = (
     shows.observe(scroller)
     signal.addEventListener("abort", () => shows.disconnect())
   }
-  return () => {
-    stop.abort()
-    cancelAnimationFrame(frame)
-  }
+  return finish
 }

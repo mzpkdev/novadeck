@@ -1,6 +1,6 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
 import { Language, LanguageSupport, defineLanguageFacet } from "@codemirror/language"
-import { Annotation, EditorState, Transaction } from "@codemirror/state"
+import { Annotation, EditorState, MapMode, Transaction } from "@codemirror/state"
 import { EditorView, keymap } from "@codemirror/view"
 import { GFM, parser } from "@lezer/markdown"
 import { useEffect, useLayoutEffect, useRef } from "react"
@@ -64,7 +64,14 @@ const extensions = (readOnly: boolean) => [
     const followers = followersOf.get(update.view)
     if (!followers || !update.docChanged) return
     const { scroll } = followers
-    if (scroll) followers.scroll = { ...scroll, at: update.changes.mapPos(scroll.at, 1) }
+    // Inserted right above, the line stays; rewritten, the place is where the rewrite starts.
+    if (scroll)
+      followers.scroll = {
+        ...scroll,
+        at:
+          update.changes.mapPos(scroll.at, 1, MapMode.TrackDel) ??
+          update.changes.mapPos(scroll.at, -1),
+      }
     if (
       update.transactions.some(
         (transaction) => transaction.docChanged && !transaction.annotation(fromAgent),
@@ -129,7 +136,11 @@ export const PlanEditor = ({
     else follow()
     view.current = editor
     latest.current.onReady({
-      jumpTo: (at) => scrollLineToTop(editor, at),
+      // A jump from the outline wins over a restore still under way.
+      jumpTo: (at) => {
+        stopRestore()
+        scrollLineToTop(editor, at)
+      },
     })
     return () => {
       // Closing the pane leaves no empty note behind: none of the editor's updates follow.
