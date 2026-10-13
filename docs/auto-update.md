@@ -339,7 +339,11 @@ so installing keeps the workspace.
 - **Install.** While the app runs normally, it downloads `latest.yml` and
   `novadeck-win-x64-setup.exe` from `releases/latest/download/` of the repository
   `app-update.yml` names (the host's own fetch, so the file carries no Mark of the Web), into
-  `%TEMP%\novadeck-setup`, emptied first. The SHA-512 of the file must equal the `sha512` that
+  `%TEMP%\novadeck-setup`, emptied first. Until the first stable release there is no `latest`: its
+  `latest.yml` answers 404, and only then does the install fall back to this copy's own release,
+  `releases/download/v<this version>/`, fetching and checking both files from there (installing
+  the copy's own version is fine, as the installed copy then updates itself). A network error at
+  `latest` does not fall back. The "older than this copy" refusal applies to `latest` only. The SHA-512 of the file must equal the `sha512` that
   `latest.yml` lists for it; a missing entry, a mismatch (the file is deleted), a network failure
   or a latest release older than this copy (an `early` copy ahead of stable) answers `failed`
   with a short reason and changes nothing. Only then: the shutdown every platform runs (pages

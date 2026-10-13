@@ -251,7 +251,10 @@ describe("getting the setup ready", () => {
   ) => {
     const calls: string[] = []
     const host: SetupHost = {
-      downloads: "https://github.com/o/r/releases/latest/download/",
+      downloads: {
+        latest: "https://github.com/o/r/releases/latest/download/",
+        own: "https://github.com/o/r/releases/download/v1.0.0/",
+      },
       version: "1.0.0",
       text: async (url) => {
         calls.push(`text ${url}`)
@@ -314,8 +317,61 @@ describe("getting the setup ready", () => {
     expect(calls.some((call) => call.startsWith("download"))).toBe(false)
   })
 
+  it("falls back to this copy's own release when latest is a 404, from the same base", async () => {
+    const own = "https://github.com/o/r/releases/download/v1.0.0/"
+    const { host, calls } = setup({
+      version: "1.3.0",
+      text: async (url) => {
+        calls.push(`text ${url}`)
+        // Its listed version is not compared: the own release is never older than this copy.
+        return url.startsWith(own) ? latest(sha("setup"), "1.3.0") : undefined
+      },
+    })
+    expect(await prepareSetup(host)).toMatchObject({ kind: "ready" })
+    expect(calls).toEqual([
+      "text https://github.com/o/r/releases/latest/download/latest.yml",
+      `text ${own}latest.yml`,
+      `download ${own}novadeck-win-x64-setup.exe`,
+    ])
+  })
+
+  it("still checks the hash of the setup from the own release", async () => {
+    const { host } = setup({
+      text: async (url) => (url.includes("/latest/") ? undefined : latest(sha("other"))),
+    })
+    expect(await prepareSetup(host)).toMatchObject({ kind: "failed" })
+  })
+
+  it("fails with a short reason when the own release is a 404 too", async () => {
+    const { host, calls } = setup({ text: async () => undefined })
+    const result = await prepareSetup(host)
+    expect(result).toMatchObject({ kind: "failed" })
+    expect(result.kind === "failed" && result.reason.length).toBeLessThan(80)
+    expect(calls.some((call) => call.startsWith("download"))).toBe(false)
+  })
+
+  it("does not fall back on a network error at latest", async () => {
+    const asked: string[] = []
+    const { host } = setup({
+      text: async (url) => {
+        asked.push(url)
+        throw new Error("getaddrinfo ENOTFOUND")
+      },
+    })
+    expect(await prepareSetup(host)).toMatchObject({ kind: "failed" })
+    expect(asked).toEqual(["https://github.com/o/r/releases/latest/download/latest.yml"])
+  })
+
+  it("does not fall back when latest answers and is older than this copy", async () => {
+    const { host, calls } = setup({ version: "1.3.0" })
+    expect(await prepareSetup(host)).toMatchObject({ kind: "failed" })
+    expect(calls.filter((call) => call.startsWith("text"))).toHaveLength(1)
+  })
+
   it("fails where the repository is unknown", async () => {
-    expect(await prepareSetup(setup({ downloads: undefined }).host)).toMatchObject({
+    expect(
+      await prepareSetup(setup({ downloads: { latest: undefined, own: undefined } }).host),
+    ).toMatchObject({
       kind: "failed",
     })
   })

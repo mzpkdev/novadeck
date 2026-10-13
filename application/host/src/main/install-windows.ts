@@ -228,12 +228,21 @@ export type SetupOutcome =
 
 /** What getting the setup uses of the machine and the network. */
 export type SetupHost = {
-  /** The address ending in "/" that the latest release's assets download from. */
-  readonly downloads: string | undefined
+  /**
+   * The addresses, each ending in "/", that assets download from: the latest stable
+   * release's, and this copy's own release's. Either is undefined where it cannot be named.
+   */
+  readonly downloads: {
+    readonly latest: string | undefined
+    readonly own: string | undefined
+  }
   /** This build's version. */
   readonly version: string
-  /** The text of `url`; throws on any failure, including a status other than 200. */
-  readonly text: (url: string) => Promise<string>
+  /**
+   * The text of `url`, or undefined when it answers 404; throws on any other failure,
+   * including a network error or a status other than 200.
+   */
+  readonly text: (url: string) => Promise<string | undefined>
   /**
    * Downloads `url` into a fresh file and gives its path and the base64 SHA-512 of what
    * was written; throws on any failure, and gives up past `maxBytes`.
@@ -252,22 +261,34 @@ export type SetupHost = {
  * ready only if `latest.yml` lists it with a SHA-512 and the file matches; a mismatch
  * removes the file. A release older than this copy is refused, as installing it would put
  * an app that cannot open the workspace this one may have upgraded (an `early` copy newer
- * than the latest stable release).
+ * than the latest stable release). While there is no stable release (`latest` answers 404)
+ * it falls back to this copy's own release, fetching both files from there; that one is
+ * by definition not older, and the installed copy then updates itself.
  */
 export const prepareSetup = async (host: SetupHost): Promise<SetupOutcome> => {
-  if (host.downloads === undefined)
+  const { latest: latestBase, own } = host.downloads
+  if (latestBase === undefined && own === undefined)
     return { kind: "failed", reason: "This copy does not know where Novadeck is released." }
-  let yaml: string
+  let base = latestBase
+  let yaml: string | undefined
   try {
-    yaml = await host.text(`${host.downloads}latest.yml`)
+    yaml = latestBase === undefined ? undefined : await host.text(`${latestBase}latest.yml`)
+    // Before a first stable release `latest` is a 404, and only then is this copy's own
+    // release tried; a network failure is not a reason to guess elsewhere.
+    if (yaml === undefined && own !== undefined) {
+      base = own
+      yaml = await host.text(`${own}latest.yml`)
+    }
   } catch (error) {
     host.log("The release information could not be fetched.", error)
     return { kind: "failed", reason: "The latest release could not be fetched. Are you online?" }
   }
+  if (yaml === undefined || base === undefined)
+    return { kind: "failed", reason: "No release with the Windows installer was found." }
   const expected = sha512Of(yaml, setupName)
   if (expected === undefined)
     return { kind: "failed", reason: "The latest release does not list the Windows installer." }
-  const latest = latestVersionOf(yaml)
+  const latest = base === own ? undefined : latestVersionOf(yaml)
   if (latest !== undefined && isNewerVersion(host.version, latest))
     return {
       kind: "failed",
@@ -275,7 +296,7 @@ export const prepareSetup = async (host: SetupHost): Promise<SetupOutcome> => {
     }
   let downloaded: { readonly file: string; readonly sha512: string }
   try {
-    downloaded = await host.download(`${host.downloads}${setupName}`, maxSetupBytes)
+    downloaded = await host.download(`${base}${setupName}`, maxSetupBytes)
   } catch (error) {
     host.log("The installer could not be downloaded.", error)
     return { kind: "failed", reason: "The installer could not be downloaded. Are you online?" }

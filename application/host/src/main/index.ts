@@ -656,9 +656,11 @@ const alertNotStarted = async (image: string): Promise<void> => {
   })
 }
 
-// The text of `url`, fetched with a time limit; throws unless the answer is 200.
-const fetchText = async (url: string): Promise<string> => {
+// The text of `url`, fetched with a time limit; undefined for a 404, and a throw for
+// anything else but 200.
+const fetchText = async (url: string): Promise<string | undefined> => {
   const response = await fetch(url, { signal: AbortSignal.timeout(20_000) })
+  if (response.status === 404) return undefined
   if (!response.ok) throw new Error(`${url} answered ${response.status}.`)
   return response.text()
 }
@@ -700,7 +702,10 @@ const downloadSetup = async (
 const stageWindowsSetup = async (): Promise<PortableInstall> => {
   const repository = await releaseRepository()
   const outcome = await prepareSetup({
-    downloads: repository && releaseLatestUrl(repository),
+    downloads: {
+      latest: repository && releaseLatestUrl(repository),
+      own: repository && releaseDownloadsUrl(repository, app.getVersion()),
+    },
     version: app.getVersion(),
     text: fetchText,
     download: downloadSetup,
