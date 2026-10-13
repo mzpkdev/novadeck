@@ -102,10 +102,10 @@ const demoBackend = () => {
   return selectBackend.createBackend
 }
 
-// The mocks above wait on the real module, and an import of the same module that arrives
-// meanwhile is answered with the real one, unmocked. Slowly loading runners hit that when
-// the page imports Canvas and search on demand, and Canvas then goes uncounted. Load them
-// once here, alone, so every later import gets the mock.
+// The mocks above wait on the real module, and a second import from the same module that
+// arrives meanwhile is answered with the real one, unmocked. Slowly loading runners hit that
+// when the page imports Canvas on demand twice at once, and Canvas then goes uncounted. Load
+// them once here, alone, so every later import gets the mock.
 beforeAll(async () => {
   await import("../layouts/canvas/Canvas")
   await import("../search/TerminalSearch")
