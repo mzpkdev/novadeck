@@ -74,18 +74,23 @@ build checks its own signature once at launch with `codesign`. See
   then raises the notice with Restart now; the update installs on the next quit or when the
   person restarts. The chip shows the progress meanwhile and raises no notice. One download
   is tracked at a time, and a release found while it is under way waits for the next check.
-- **A failed download** is tried again by a check five minutes later, then as usual. Once its
-  progress (or an update it replaces) was offered, it is offered as `available` meanwhile:
-  the chip reads Update available, but no notice comes up, as the page raises none for a
-  download that turned `available`. One that failed before any progress goes untold, as a
-  failed check does.
+- **A failed download** is tried again by a check five minutes later, once per release in a
+  run; after that the four-hourly checks try it. Once its progress (or an update it
+  replaces) was offered, it is offered as `available` meanwhile, and the chip reads Update
+  available. The page raises no notice for a download that turned `available` straight
+  from its progress; it does when a newer release failed before any progress in place of
+  a ready one, as the update waiting is gone, and after a reload. One that failed before
+  any progress, with no update waiting, goes untold, as a failed check does. A failed
+  staging on macOS (an install failure) turns the chip to Update available the same way,
+  quietly; the next launch tells of it with a notice.
 - **A newer release** found while an update waits replaces it, so one restart lands on the
   latest release rather than one restart per release missed. No release file carries a
   version in its name (`electron-builder.yml`), so electron-updater downloads the newer one
   beside the waiting file and renames it over that file once complete; a quit meanwhile
   installs the waiting update on Windows and Linux. The offer turns from `ready` into
   `downloading` the newer release as its progress comes in, so the page shows it and offers
-  no restart until it is in. Should the download fail, electron-updater clears its download
+  no restart until it is in. A restart asked for in the moment before its progress came in
+  shows the download instead of going ahead later. Should the download fail, electron-updater clears its download
   folder, which likely takes the waiting file too: the newer release is offered as
   `available` until the retry downloads it. Quitting and restarting end the schedule first,
   so no new download starts on the way out; one under way goes on, and a quit after it
@@ -339,7 +344,7 @@ full one.
   channel's answer; the next check, within four hours, corrects it.
 - **Offers are not retracted.** After switching from `early` to `stable`, an `available`
   offer for an early-only release stays until a later check offers another version; the
-  bridge has no way to withdraw one. A downloaded update stays `ready` as well, and a `downloading` offer is replaced only by
-  its own outcome.
+  bridge has no way to withdraw one. A downloaded update stays `ready` as well, unless a stable release newer than the running
+  build replaces it, and a `downloading` offer is replaced only by its own outcome.
 - **Windows installs are not watched past the call.** The NSIS installer is started
   asynchronously as the app exits, so an error there is not seen by the app.

@@ -606,7 +606,7 @@ export const createDemoStates = (verbs: DemoAgentVerbs): DemoStates => {
         },
         {
           label: "Install failed",
-          hint: "Ready, or a download, turns to Available, with Download",
+          hint: "Ready turns to Available, with Download; a download, quietly",
           run: failInstall,
         },
         {

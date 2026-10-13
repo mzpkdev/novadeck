@@ -39,7 +39,8 @@ export const portableNagged = (offer: UpdateOffer, now: number): boolean =>
 // Whether an offer's notice comes up as the offer is heard. A download never raises it:
 // the notice comes when it turns `ready`. Nor does a download that failed, which turns
 // `available` after `previous`, the offer heard before, was its `downloading`: the host
-// tries it again soon, and the chip shows the release meanwhile. Otherwise it does once per version and
+// tries it again soon, or, should Squirrel.Mac have failed to stage it, tells of it at the
+// next launch, and the chip shows the release meanwhile. Otherwise it does once per version and
 // kind (`seen` is what was shown last). A portable copy, which can't update itself, is
 // asked again at every launch once its release is stale: `shownThisRun` is whether this
 // run has shown the offer's notice already, so a repeated offer does not bring it back

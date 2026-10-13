@@ -26,7 +26,7 @@ export const firstCheckMs = 10_000
 export const checkIntervalMs = 4 * 60 * 60 * 1000
 /** How long after switching channels the check on the new one waits, so a few clicks make one. */
 export const switchCheckMs = 2_000
-/** How long after a download failed the check that tries it again waits. */
+/** How long after a download failed the check that tries it again, once, waits. */
 export const retryCheckMs = 5 * 60 * 1000
 
 /** What decides whether and how a build updates itself. */
@@ -268,9 +268,10 @@ export const installFallbackMs = (platform: NodeJS.Platform): number =>
 /**
  * Restarts into the downloaded update after the same shutdown quitting runs. Does
  * nothing while no update is downloaded or a shutdown already started, which makes a
- * second request harmless. `settled` (see `checkForUpdates`) is waited for first: once
- * electron-updater has reported a download it still finishes it, and should that fail
- * nothing is restarted. The shells are gone once it goes ahead, so
+ * second request harmless. `settled` (see `checkForUpdates`) is waited for first, and
+ * nothing is restarted unless it holds: a newer release still downloading in place of the
+ * update is shown to the page instead, to restart into once it is in. The shells are gone
+ * once it goes ahead, so
  * the app must not go on running: should installing throw, or still not have ended the
  * app after `fallbackMs`, it quits. That quit installs on the way out if the updater
  * still can, as any quit does.
@@ -383,8 +384,9 @@ export type NativeUpdater = {
  * In `install` mode it downloads what it finds and installs it when the app next quits.
  * `offer` is told the update is `downloading` at each whole percent electron-updater
  * reports, from the first, then `ready` once downloaded. A download already on disk from
- * an earlier launch reports none, and is `ready` at once. A download that fails is tried
- * again by a check `retryCheckMs` later. Meanwhile it is offered as `available`, to be
+ * an earlier launch reports none, and is `ready` at once. A release whose download fails
+ * is tried again, once in a run, by a check `retryCheckMs` later; after that the schedule
+ * tries it. Meanwhile it is offered as `available`, to be
  * installed from the release page, once its progress or an update it replaces was
  * offered; one that failed before either goes untold, as a failed check does. The one
  * exception is the release `failedVersion`
@@ -427,8 +429,10 @@ export type NativeUpdater = {
  * `setChannel` follows another channel from the next check, and makes one soon, unless the
  * schedule has ended. `stop` ends the schedule, after which no new download starts; one
  * under way goes on. Quitting and restarting stop it first. `settled` gives whether an
- * update is downloaded and waits to install, once the download under way is in or has
- * failed.
+ * update is downloaded and waits to install: once a download electron-updater has
+ * reported in is done, and false while a newer release still downloads in place of the
+ * update, which it then offers as `downloading`, so a restart asked for before its
+ * progress came in shows it instead of going ahead later.
  */
 export const checkForUpdates = (
   updater: Updater,
@@ -536,9 +540,10 @@ export const checkForUpdates = (
           // page is told, unless it has heard of neither.
           if (current.percent >= 0 || downloaded !== undefined) offer("available", version, notes)
           downloaded = undefined
-          if (!ended) {
-            clearTimeout(first)
-            first = setTimeout(check, retryCheckMs)
+          if (!ended && !retried.has(version)) {
+            retried.add(version)
+            clearTimeout(retry)
+            retry = setTimeout(check, retryCheckMs)
           }
           return false
         },
@@ -581,9 +586,13 @@ export const checkForUpdates = (
   let ended = false
   let first = setTimeout(check, firstCheckMs)
   const every = setInterval(check, checkIntervalMs)
+  // The check that tries a failed download again, and the releases it has been for.
+  let retry: ReturnType<typeof setTimeout> | undefined
+  const retried = new Set<string>()
   const stop = (): void => {
     ended = true
     clearTimeout(first)
+    clearTimeout(retry)
     clearInterval(every)
   }
   return {
@@ -594,6 +603,13 @@ export const checkForUpdates = (
       first = setTimeout(check, switchCheckMs)
     },
     stop,
-    settled: () => loading?.done ?? Promise.resolve(downloaded !== undefined),
+    settled: () => {
+      if (loading === undefined) return Promise.resolve(downloaded !== undefined)
+      if (downloaded?.version === loading.version) return loading.done
+      // A newer release is still coming in: the page is shown it rather than restarted.
+      loading.percent = Math.max(0, loading.percent)
+      offer("downloading", loading.version, loading.notes, loading.percent)
+      return Promise.resolve(false)
+    },
   }
 }

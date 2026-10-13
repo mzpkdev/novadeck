@@ -771,6 +771,28 @@ describe("checking for updates", () => {
         expect(updater.checks).toBe(3)
       })
 
+      it("tries a release again early only once in a run", async () => {
+        const { updater } = checking()
+        updater.downloadResult = () => Promise.reject(new Error("download failed"))
+        updater.emit("update-available", { version: "1.2.3" })
+        // The first check after launch, then the retry.
+        await vi.advanceTimersByTimeAsync(retryCheckMs)
+        expect(updater.checks).toBe(2)
+        updater.emit("update-available", { version: "1.2.3" })
+        await vi.advanceTimersByTimeAsync(retryCheckMs * 3)
+        expect(updater.checks).toBe(2)
+        expect(updater.downloads).toHaveLength(2)
+      })
+
+      it("keeps a channel switch's check soon while a retry waits", async () => {
+        const checks = checking()
+        checks.updater.downloadResult = () => Promise.reject(new Error("download failed"))
+        checks.setChannel("early")
+        checks.updater.emit("update-available", { version: "1.2.3" })
+        await vi.advanceTimersByTimeAsync(switchCheckMs)
+        expect(checks.updater.checks).toBe(1)
+      })
+
       it("does not try again once stopped", async () => {
         const { updater, stop } = checking()
         updater.downloadResult = () => Promise.reject(new Error("download failed"))
@@ -861,13 +883,24 @@ describe("checking for updates", () => {
         expect(updater.autoInstallOnAppQuit).toBe(true)
       })
 
-      it("lets a restart wait for it, and tells whether it came through", async () => {
+      it("shows it in place of a restart asked for before its progress came in", async () => {
+        const { updater, offered, settled } = waiting()
+        await expect(settled()).resolves.toBe(false)
+        expect(offered.at(-1)).toEqual(["downloading", "1.3.0", [], 0])
+        updater.emit("download-progress", { percent: 0.5 })
+        expect(offered).toHaveLength(2)
+        updater.emit("download-progress", { percent: 30 })
+        await expect(settled()).resolves.toBe(false)
+        expect(offered.at(-1)).toEqual(["downloading", "1.3.0", [], 30])
+      })
+
+      it("lets a restart wait for it once it was reported in, and tells whether it came through", async () => {
         const { updater, settled, download } = waiting()
+        updater.emit("update-downloaded", { version: "1.3.0" })
         let ready: boolean | undefined
         void settled().then((value) => void (ready = value))
         await vi.advanceTimersByTimeAsync(0)
         expect(ready).toBeUndefined()
-        updater.emit("update-downloaded", { version: "1.3.0" })
         download.resolve(undefined)
         await vi.advanceTimersByTimeAsync(0)
         expect(ready).toBe(true)
@@ -883,12 +916,10 @@ describe("checking for updates", () => {
 
       it("offers it as available when its download fails, and downloads it at a later check", async () => {
         const { updater, offered, failed, logged, settled, download } = waiting()
-        const ready = settled()
         // electron-updater reports the failure through the error event before it rejects.
         updater.emit("error", new Error("download failed"))
         download.reject(new Error("download failed"))
         await vi.advanceTimersByTimeAsync(0)
-        await expect(ready).resolves.toBe(false)
         await expect(settled()).resolves.toBe(false)
         // The ready update is likely gone, so the page hears even without any progress.
         expect(offered).toEqual([

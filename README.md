@@ -759,7 +759,9 @@ App:
   "Update available" chip. Downloading counts the chip up in steps (its notice, opened from the
   chip, shows the progress with Later alone), then brings up the Ready notice. Each press offers a newer version, so the notice comes up
   again; Later leaves the chip, which opens it again. Install failed turns the update
-  waiting from ready to available, and the notice comes up again with Download. Restart
+  waiting from ready to available, and the notice comes up again with Download; pressed
+  while Downloading counts, it turns the chip to Update available without a notice, as a
+  failed download does. Restart
   now shows Restarting…, which stays until Finish restart reloads the demo, as the app
   comes back on the new version; Download opens no page in the demo. Early builds on and
   off set the channel Preferences' Updates switch shows once Preferences is reopened.
