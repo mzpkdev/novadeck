@@ -1,50 +1,6 @@
-/** What decides whether a launch offers to move the app to the Applications folder. */
-export type MoveBuild = {
-  readonly packaged: boolean
-  readonly version: string
-  readonly platform: NodeJS.Platform
-  readonly env: Readonly<Record<string, string | undefined>>
-  /** Electron's `app.isInApplicationsFolder()`; only macOS has an answer. */
-  readonly inApplications: boolean
-  /** Whether the person asked not to be offered the move again. */
-  readonly declined: boolean
-  /** Whether the app bundle is Developer ID signed; unsigned builds do not update. */
-  readonly signed: boolean
-}
+import { updateVersionPattern } from "@novadeck/protocol/bridge"
 
-/**
- * Whether a launch offers to move the app to Applications. macOS updates an app only in
- * place, and cannot replace one that runs from a disk image or, after a download, from a
- * randomized read-only copy, so the offer is made on a packaged macOS launch from any
- * other folder, until the person asks not to be asked again. Only a signed build is
- * asked: an unsigned one only tells of updates, and the offer promises one that installs.
- * A development run, a build
- * that carries version 0.0.0 (it never updates), and a launch with `NOVADECK_UPDATES=off`,
- * as the smoke tests give, never ask.
- */
-export const shouldOfferMove = ({
-  packaged,
-  version,
-  platform,
-  env,
-  inApplications,
-  declined,
-  signed,
-}: MoveBuild): boolean =>
-  platform === "darwin" &&
-  packaged &&
-  version !== "0.0.0" &&
-  env.NOVADECK_UPDATES !== "off" &&
-  !inApplications &&
-  !declined &&
-  signed
-
-/** The person's answer to the offer. */
-export type MoveAnswer = {
-  readonly move: boolean
-  /** Whether "Don't ask again" was ticked, whichever button was pressed. */
-  readonly dontAskAgain: boolean
-}
+import type { InstalledCopy } from "./install-linux.js"
 
 // A version as numbers and a prerelease tag, or undefined for text that is not one.
 const parseVersion = (
@@ -92,9 +48,6 @@ export const resolveMoveConflict = (
   return "replace"
 }
 
-/** How a move went: started, not done (turned down by Electron, or failed), or cancelled for a newer copy. */
-export type MoveResult = "moved" | "declined" | "newer"
-
 /**
  * The `CFBundleShortVersionString` in the text of an XML `Info.plist`, if it has one.
  */
@@ -103,53 +56,110 @@ export const bundleVersionOf = (plist: string): string | undefined =>
     .exec(plist)?.[1]
     ?.trim()
 
+/** How a move to Applications went. */
+export type MoveOutcome =
+  /** The app is copied, and Electron is quitting it to start the copy. */
+  | { readonly kind: "moved" }
+  /** Applications holds a newer copy, `version`, which was left alone. */
+  | { readonly kind: "newer"; readonly version: string }
+  | { readonly kind: "failed"; readonly reason: string }
+
+// The most characters of an error's own message a reason carries.
+const maxReasonLength = 200
+
+// eslint-disable-next-line no-control-regex -- These are the characters it replaces.
+const controls = /[\x00-\x1f\x7f-\x9f]+/gu
+
+// A reason from an error's message: one line, without control characters.
+const reasonOf = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : ""
+  const line = message.replace(controls, " ").trim().slice(0, maxReasonLength)
+  return line === "" ? "Moving to Applications failed." : line
+}
+
 /**
- * Offers the move on a launch that should, and does it when accepted. Returns whether the
- * app is on its way to restart from Applications, in which case the launch goes no
- * further. A move that fails or is turned down lets the launch go on where it is. "Don't
- * ask again" is kept whatever else happens; the buttons alone ask again at the next launch.
- * A move cancelled because Applications holds a newer copy says so, and the person may
- * open that copy instead, which also ends this launch. Whether the build is signed, which
- * takes a `codesign` run, is asked only once nothing else rules the offer out.
+ * Moves the app to Applications with Electron's `moveToApplicationsFolder`, passed as
+ * `move`. On success Electron has copied the app, moved the original to the Trash unless it
+ * runs from a disk image, started a script that opens the copy once this process ends,
+ * and called `app.quit()` itself, all before `move` returns true (see
+ * `ElectronBundleMover::Move`); the quit runs the app's own shutdown, so nothing here quits.
+ * The move is made before any shutdown on purpose: it can fail, and the person's shells
+ * should survive that. A copy in Applications that is a newer version than this one is
+ * never replaced: the move is cancelled and the answer is `newer`. Electron throws for a
+ * failed copy or a refused authorization, and returns false for a conflict this turned down
+ * or for what it will not do; either says why in a `failed` answer.
  */
-export const offerMove = async ({
-  build,
-  signed,
-  ask,
-  decline,
+export const moveToApplications = ({
   move,
-  tellNewer,
+  existingVersion,
+  runningVersion,
   log,
 }: {
-  readonly build: Omit<MoveBuild, "signed">
-  readonly signed: () => Promise<boolean>
-  readonly ask: () => Promise<MoveAnswer>
-  readonly decline: () => void
-  /** Electron's `moveToApplicationsFolder`. */
-  readonly move: () => MoveResult
-  /** Tells the person a newer copy is in Applications; true if they want that one opened. */
-  readonly tellNewer: () => Promise<boolean>
+  /** Electron's `moveToApplicationsFolder`, given the handler for a copy already there. */
+  readonly move: (conflictHandler: (conflict: "exists" | "existsAndRunning") => boolean) => boolean
+  /** The version of the copy in Applications, when it can be read. */
+  readonly existingVersion: () => string | undefined
+  readonly runningVersion: string
   readonly log: (message: string, error: unknown) => void
-}): Promise<boolean> => {
-  // Everything but the signature, which is asked last.
-  if (!shouldOfferMove({ ...build, signed: true })) return false
+}): MoveOutcome => {
+  // What the conflict handler found, if Electron asked it.
+  const found: { answer: ReturnType<typeof resolveMoveConflict>; version?: string } = {
+    answer: "replace",
+  }
   try {
-    if (!(await signed())) return false
-    const answer = await ask()
-    if (answer.dontAskAgain) {
-      try {
-        decline()
-      } catch (error) {
-        log("The choice was not kept.", error)
-      }
-    }
-    if (!answer.move) return false
-    const result = move()
-    return result === "moved" || (result === "newer" && (await tellNewer()))
+    const moved = move((conflict) => {
+      const existing = existingVersion()
+      found.answer = resolveMoveConflict(conflict, { existingVersion: existing, runningVersion })
+      if (existing !== undefined) found.version = existing
+      return found.answer === "replace"
+    })
+    if (moved) return { kind: "moved" }
   } catch (error) {
     log("Moving to Applications failed.", error)
-    return false
+    return { kind: "failed", reason: reasonOf(error) }
   }
+  if (found.answer === "newer" && found.version !== undefined)
+    return { kind: "newer", version: found.version }
+  return {
+    kind: "failed",
+    reason:
+      found.answer === "running"
+        ? "Novadeck is already running from Applications."
+        : "Moving to Applications was cancelled.",
+  }
+}
+
+/** What finding the copies installed in Applications folders looks at of the machine. */
+export type InstalledAppsHost = {
+  /** The app bundles to look at, in the order a copy is replaced. */
+  readonly bundles: readonly string[]
+  readonly exists: (path: string) => Promise<boolean>
+  readonly readFile: (path: string) => Promise<string>
+}
+
+/**
+ * The copies of the app installed in the given bundles that exist, each with the version
+ * its `Info.plist` names. A bundle whose `Info.plist` cannot be read is `unchecked`: it may
+ * well be a newer app. One whose plist names no release version has none, and is not
+ * known to be newer.
+ */
+export const findInstalledApps = async ({
+  bundles,
+  exists,
+  readFile,
+}: InstalledAppsHost): Promise<InstalledCopy[]> => {
+  const copy = async (image: string): Promise<InstalledCopy | undefined> => {
+    if (!(await exists(image))) return undefined
+    try {
+      const version = bundleVersionOf(await readFile(`${image}/Contents/Info.plist`))
+      const known = version !== undefined && updateVersionPattern.test(version)
+      return { image, version: known ? version : undefined, unchecked: false }
+    } catch {
+      return { image, version: undefined, unchecked: true }
+    }
+  }
+  const copies = await Promise.all(bundles.map(copy))
+  return copies.filter((each) => each !== undefined)
 }
 
 /**
