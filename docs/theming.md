@@ -198,11 +198,12 @@ which `text-<role>` applies and a recipe sets beside the size as
 `line-height: var(--text-<role>--line-height)`: 1.5 where that is a whole number of
 pixels (label 15, control 18, lead 21, title 24), and otherwise the even number nearest
 it (caption 16, code 18, body 20, heading 22), so stacked rows don't drift off the pixel
-grid and even-sized icons beside them centre on whole pixels. Keep icons even-sized too
-(12, 14, 16), and a UI row's explicit `leading-*` (a row an icon sits beside, or one of a
-stack of them) on whole pixels; prose may keep a ratio. Miniatures (the welcome's stage, a peek's thumbnail), the brand's wordmark and
-display text keep their own sizes. It is layout, not look, so it is not a theme token:
-every theme shares it.
+grid. Keep icons even-sized (12, 14, 16): beside an even line (caption, control, code,
+body, heading, title) they centre on whole pixels. Keep a UI row's explicit `leading-*`
+(a row an icon sits beside, or one of a stack of them) on whole pixels too; prose may
+keep a ratio. Miniatures (the welcome's stage, a peek's thumbnail), the brand's wordmark
+and display text keep their own sizes. It is layout, not look, so it is not a theme
+token: every theme shares it.
 
 ### Fonts
 
