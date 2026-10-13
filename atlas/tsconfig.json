@@ -15,5 +15,12 @@
     "noEmit": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "extract/**/*.ts", "content/**/*.ts", "vite.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "extract/**/*.ts",
+    "content/**/*.ts",
+    "brief/**/*.ts",
+    "vite.config.ts"
+  ]
 }
