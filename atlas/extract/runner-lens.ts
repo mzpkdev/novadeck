@@ -256,10 +256,17 @@ export const extractRunnerLens = (input: LensInput): RunnerLens => {
       ? undefined
       : unitsByFile.get(anchor.file)?.find((unit) => unit.line === anchor.line)
 
-  // The store's shapes: WorkspaceStore, and every object type in the runner whose members
-  // are all store methods (`TerminalRecords`, `VoiceSettingsStore`…), so an unrelated
-  // `FooStore` with its own methods never counts as the store.
-  const storeTypes = new Set(["WorkspaceStore"])
+  // The store's shapes: WorkspaceStore, the types it declares it implements, and object
+  // types in the runner made only of store methods, at least three of them
+  // (`VoiceSettingsStore`). An unrelated `FooStore` with its own methods, or a one-method
+  // lookup that happens to be called `project`, never counts as the store.
+  const storeTypes = new Set([
+    "WorkspaceStore",
+    ...(/export class WorkspaceStore implements ([\w\s,]+)\{/.exec(storeSource)?.[1] ?? "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean),
+  ])
   for (const file of files)
     for (const match of (anchors.read(file) ?? "").matchAll(
       /^export type (\w+) = \{\n([\s\S]*?)^\}/gm,
@@ -267,7 +274,7 @@ export const extractRunnerLens = (input: LensInput): RunnerLens => {
       const members = [...match[2]!.matchAll(/^ {2}(?:readonly\s+)?(\w+)\??\s*[(:<]/gm)].map(
         (member) => member[1]!,
       )
-      if (members.length > 0 && members.every((name) => storeNames.has(name)))
+      if (members.length >= 3 && members.every((name) => storeNames.has(name)))
         storeTypes.add(match[1]!)
     }
   const typeAlternatives = [...storeTypes].join("|")

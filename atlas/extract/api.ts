@@ -226,6 +226,21 @@ export const extractApi = async (repo: string, anchors: Anchors): Promise<Api> =
         `no handler in ${namespace}.* resolves to a service method`,
       )
   }
+  // A service the router calls but no handler resolves into: its import or file moved.
+  for (const service of routed) {
+    const dir = service.file.slice(0, service.file.lastIndexOf("/") + 1)
+    const called = new RegExp(`\\b${service.field}\\.\\w+\\(`).test(router)
+    const reached = procedures.some(
+      (p) =>
+        p.handler !== null && (p.handler.file === service.file || p.handler.file.startsWith(dir)),
+    )
+    if (called && !reached)
+      anchors.report(
+        "api handlers",
+        routerFile,
+        `the router calls ${service.field}, but no handler resolves into ${service.file}`,
+      )
+  }
   if (resolved * 2 < procedures.length)
     anchors.report(
       "api handlers",

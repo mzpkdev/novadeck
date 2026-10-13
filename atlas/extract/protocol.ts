@@ -24,7 +24,9 @@ export const ensureProtocol = (repo: string): void => {
     "typescript/package.json",
   )
   const tsc = join(dirname(typescript), "bin/tsc")
-  execFileSync(process.execPath, [tsc, "-p", "tsconfig.build.json"], {
+  // `--noEmitOnError`: a failed build leaves the old output stale, so the next call
+  // rebuilds and fails again, instead of finding fresh output built from broken source.
+  execFileSync(process.execPath, [tsc, "-p", "tsconfig.build.json", "--noEmitOnError"], {
     cwd: protocol,
     stdio: ["ignore", 2, 2],
   })

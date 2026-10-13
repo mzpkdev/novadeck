@@ -5,6 +5,7 @@ import {
   Position,
   ReactFlow,
   type Edge,
+  type FitViewOptions,
   type Node,
   type NodeProps,
 } from "@xyflow/react"
@@ -213,6 +214,12 @@ const parallel = atlas.runtime.edges.reduce<[RuntimeEdge, ...RuntimeEdge[]][]>((
     : [...groups, [edge]]
 }, [])
 
+// Room on the right for the selection panel, so it never covers a node: on the first fit
+// and on the fit button alike.
+const fit: FitViewOptions = {
+  padding: { top: "48px", left: "48px", bottom: "48px", right: "336px" },
+}
+
 export const MapPage = () => {
   // The selection lives in the URL (`?node=` or `?edge=`), so links, search and the back
   // button all agree with what is drawn.
@@ -286,10 +293,9 @@ export const MapPage = () => {
           nodeTypes={nodeTypes}
           colorMode="system"
           fitView
-          // Room on the right for the selection panel, so it never covers a node.
-          fitViewOptions={{
-            padding: { top: "48px", left: "48px", bottom: "48px", right: "336px" },
-          }}
+          fitViewOptions={fit}
+          // Low enough that the reserved room still leaves the whole map in a small window.
+          minZoom={0.2}
           nodesDraggable={false}
           nodesConnectable={false}
           proOptions={{ hideAttribution: true }}
@@ -301,7 +307,7 @@ export const MapPage = () => {
           onPaneClick={() => setSelection(null)}
         >
           <CanvasBackground />
-          <Controls showInteractive={false} />
+          <Controls showInteractive={false} fitViewOptions={fit} />
         </ReactFlow>
       </div>
       {node || edge ? (

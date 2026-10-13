@@ -45,6 +45,10 @@ const match = (item: Item, terms: string[]) => {
 export const Search = ({ open, onClose }: { open: boolean; onClose: () => void }) =>
   open ? <Dialog onClose={onClose} /> : null
 
+// The focus restore a closing dialog has scheduled; shared by every open, so a new one
+// cancels it before it can take focus from the new input.
+let pendingRestore: number | undefined
+
 const Dialog = ({ onClose }: { onClose: () => void }) => {
   const [query, setQuery] = useState("")
   const [index, setIndex] = useState(0)
@@ -53,16 +57,15 @@ const Dialog = ({ onClose }: { onClose: () => void }) => {
   const navigate = useNavigate()
 
   // Closing hands focus back to whatever had it before the dialog opened. It is deferred,
-  // because focusing a button inside the Enter keydown would let that key press it, and a
-  // remount (StrictMode) cancels it.
+  // because focusing a button inside the Enter keydown would let that key press it; any
+  // later open (a remount, or a quick reopen) cancels a restore still pending.
   const before = useRef<Element | null>(document.activeElement)
-  const restore = useRef<number | undefined>(undefined)
   useEffect(() => {
-    clearTimeout(restore.current)
+    clearTimeout(pendingRestore)
     input.current?.focus()
     const el = before.current
     return () => {
-      restore.current = window.setTimeout(() => {
+      pendingRestore = window.setTimeout(() => {
         if (el instanceof HTMLElement && el.isConnected) el.focus()
       })
     }

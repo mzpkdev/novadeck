@@ -10,7 +10,7 @@ export type Service = { field: string; type: string; file: string }
 
 export const servicesOf = (anchors: Anchors, router: string): Service[] => {
   const imports = new Map(
-    [...router.matchAll(/import type \{ (\w+) \} from "\.\/([^"]+)\.js"/g)].map((match) => [
+    [...router.matchAll(/import type \{ (\w+) \} from "\.\/([^"]+)\.(?:js|ts)"/g)].map((match) => [
       match[1]!,
       `${runnerDir}/${match[2]}.ts`,
     ]),
@@ -22,6 +22,20 @@ export const servicesOf = (anchors: Anchors, router: string): Service[] => {
   }
   const services = [...router.slice(at).matchAll(/^\s+(\w+): (\w+)$/gm)].flatMap((match) => {
     const file = imports.get(match[2]!)
+    // An option typed by a class or type the scan can't find the import of has lost its
+    // service, and every handler that calls it would quietly fall back to the router.
+    if (!file && /^[A-Z]/.test(match[2]!))
+      anchors.report(
+        "router services",
+        routerFile,
+        `no import found for ${match[1]}: ${match[2]} in createRouter's options`,
+      )
+    if (file && anchors.read(file) === null)
+      anchors.report(
+        "router services",
+        file,
+        `${match[1]}: ${match[2]} is imported from a missing file`,
+      )
     return file ? [{ field: match[1]!, type: match[2]!, file }] : []
   })
   if (services.length === 0)
