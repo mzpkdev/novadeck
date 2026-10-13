@@ -2562,15 +2562,8 @@ const standIn = (home: string): string => {
       '    console.log("done " + require("node:path").basename(step.out))',
       "    next()",
       "  }",
-      "  const run = () => {",
-      "    if (step.hook) hook(step.hook, { hook_event_name: step.hook, session_id: session, ...step.payload }, finish)",
-      "    else call(step.call, step.request, finish)",
-      "  }",
-      // With `enter`, the hook fires only once the person's Enter reaches the agent, as a
-      // TUI's submission does, however long this step waited for its turn to be taken.
-      "  if (!step.enter) return run()",
-      '  console.log("enter " + require("node:path").basename(step.out))',
-      '  process.stdin.once("data", run)',
+      "  if (step.hook) hook(step.hook, { hook_event_name: step.hook, session_id: session, ...step.payload }, finish)",
+      "  else call(step.call, step.request, finish)",
       "}",
       "process.stdin.resume()",
     ].join("\n"),
@@ -3725,7 +3718,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       writeFileSync(join(bin, "claude"), '#!/bin/sh\nexec agent claude "$@"\n')
       chmodSync(join(bin, "claude"), 0o755)
       const opener = await create(manager, shell)
-      const { queue, start, step } = driver(shell, manager)
+      const { start, step } = driver(shell, manager)
       await start(opener.id, "claude", "s-opener")
       const steps = join(shell.home, "steps-opened")
       mkdirSync(steps)
@@ -3764,7 +3757,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         const [opened] = created as [string]
         symlinkSync(steps, join(shell.home, `steps-${opened}`))
         await shell.until(manager, opened, "claude ready")
-        // Bound once Novadeck says so, which comes after the agent printed it ran its hook.
+        // Bound once Novadeck has applied the hook the agent printed it ran; an Enter keyed
+        // before that is a draft's, so this one would not test the opener's prompt at all.
         await expect
           .poll(() => manager.messages(opened).delivery, { timeout: 10_000 })
           .toBe("ready")
@@ -3772,15 +3766,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
           (JSON.parse(await step(opener.id, { call: "agents", request: {} })) as { text: string })
             .text
         // An Enter the person pressed meanwhile, as at a trust screen, doesn't make it theirs.
-        // Its hook fires from that Enter, so the Enter is always within the window.
-        const submitted = queue(opened, {
-          hook: "UserPromptSubmit",
-          payload: { prompt: "fix-the-build" },
-          enter: true,
-        })
-        await shell.until(manager, opened, `enter ${submitted.name}`)
         manager.write({ terminalId: opened, data: "\r" }, "client")
-        await shell.until(manager, opened, `done ${submitted.name}`)
+        await step(opened, { hook: "UserPromptSubmit", payload: { prompt: "fix-the-build" } })
         expect(shell.store.terminal(opened)?.work).toMatchObject({
           first: "fix-the-build",
           firstByPerson: false,
@@ -3844,7 +3831,7 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
       })
       const terminal = await create(manager, shell)
-      const { queue, start, step } = driver(shell, manager)
+      const { start, step } = driver(shell, manager)
       await start(terminal.id, "claude", "s-1")
       const prompt = async (session: string, text: string) =>
         context(
@@ -3883,17 +3870,8 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       await expect
         .poll(() => manager.messages(terminal.id).delivery, { timeout: 10_000 })
         .toBe("ready")
-      // The person's Enter starts the prompt's hook at once, as a TUI's does, so the hook
-      // is never left to start after the Enter's window on a loaded machine.
-      const submitted = queue(terminal.id, {
-        hook: "UserPromptSubmit",
-        payload: { session_id: "s-2", prompt: "Write the docs" },
-        enter: true,
-      })
-      await shell.until(manager, terminal.id, `enter ${submitted.name}`)
       manager.write({ terminalId: terminal.id, data: "\r" }, "owner")
-      await shell.until(manager, terminal.id, `done ${submitted.name}`)
-      expect(context(readFileSync(submitted.out, "utf8"))).toMatch(bar)
+      await expect(prompt("s-2", "Write the docs")).resolves.toMatch(bar)
       expect(shell.store.terminal(terminal.id)?.work).toMatchObject({
         first: "Write the docs",
         firstByPerson: true,
