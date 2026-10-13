@@ -573,7 +573,8 @@ the opener's (see [Naming](#naming)).
   plan's "clear context") empties the box only if it was known empty, or the person's
   bare Enter came within the submission window before its hook started with nothing
   typed since: an Enter that made a newline or took a suggestion leaves their text, so
-  the box is a draft by doubt, which the screen settles (below). An
+  the box is a draft by doubt, which the screen settles (below). The doubt follows an
+  Enter outside the submission window; inside it, the terminal goes Ready as submitted. An
   Enter during a running turn queued a prompt the harness may still hold, so the box
   stays a draft; after an abnormal end (Unknown), where the turn may have run on, that
   Enter was the command that replaced the session, and what it might have queued went
@@ -601,8 +602,10 @@ the opener's (see [Naming](#naming)).
   person next submits, never a wrong Enter. One doubt the screen settles: a draft kept
   only because the person's Enter came too long before a replacing session's hook to
   tell it ran their command (a slow `/clear`). Once the agent's box reads empty on two
-  screen reads running, within 5 s, nothing was left in it, and the terminal is Ready.
-  Any key of the person's ends that doubt, as does a prompt queued, which stays a draft.
+  screen reads running, within 5 s of the doubt, nothing was left in it, and the terminal
+  is Ready. If the 5 s pass, it stays Drafting, and only a later doubt gets its own 5 s.
+  Any key of the person's ends that doubt, Escape and a key while
+  a request waits included. A prompt queued is never doubted: it stays a draft.
 - **The person submitted during a turn** when they sent Enter while a root turn ran and
   no request was pending, or Codex's Tab, which queues a prompt Codex submits after the
   turn. A bare Enter on a box known empty during a root turn is neutral: no harness
@@ -1063,9 +1066,10 @@ Two known gaps in telling the box empty at a binding:
 - A `/clear` whose binding's hook fired more than the submission window (about 2 s)
   after its Enter, as when another plugin's slow `SessionEnd` or
   `SessionStart` hook delays it, goes Drafting by doubt, and Ready again once its
-  screen shows the box empty on two reads within 5 s. Only where the box can't be read
-  as an empty prompt box in that time (a dialog over it, a redraw that never settles)
-  does it stay Drafting: a missed ring, never a wrong one.
+  screen shows the box empty on two reads within 5 s. Where the box can't be read as an
+  empty prompt box in that time (a dialog over it, a redraw that never settles), it
+  stays Drafting, and only a later doubt gets its own 5 s: a missed ring,
+  never a wrong one.
 
 ### Message states
 

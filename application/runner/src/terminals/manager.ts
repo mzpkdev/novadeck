@@ -3909,7 +3909,7 @@ export class Terminals {
    * session announced too long after the person's Enter to tell it ran their command, as a
    * slow /clear on Windows): once the agent's box reads empty on two reads running, nothing
    * was left in it, and the terminal is Ready. Gives up when the doubt ends or after
-   * `boxSettleMs`, leaving the draft.
+   * `boxSettleMs`, leaving the draft; a later doubt in the same terminal has its own window.
    */
   private settleBox(record: Record): void {
     const id = record.summary.id
@@ -3922,6 +3922,8 @@ export class Terminals {
       try {
         for (;;) {
           const delivery = this.messaging.delivery(id)
+          // The cases where `emptied` does nothing in the current epoch: keep the two in step,
+          // or the `continue` below spins without waiting.
           if (!delivery?.box.doubted || delivery.state !== "drafting") return
           // A new doubt starts anew: its own window, its own two reads.
           if (delivery.epoch !== epoch) {
@@ -3939,7 +3941,8 @@ export class Terminals {
             box !== undefined && box.mode === "prompt" && isEmpty(box) && !profile.queued(screen)
           if (empty && seen) {
             this.messaging.emptied(id, delivery.epoch)
-            return
+            // Stale if the epoch changed during the read: a later doubt is polled anew.
+            continue
           }
           seen = empty
           // eslint-disable-next-line no-await-in-loop -- Each read waits for the one before.
