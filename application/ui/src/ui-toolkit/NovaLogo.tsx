@@ -80,15 +80,17 @@ export const DeckWordmark = ({
 const patternMask =
   "linear-gradient(to right, transparent 10%, black 78%), radial-gradient(ellipse at 100% 0%, black 10%, transparent 72%)"
 
-// A quiet repeat of the layered terminal mark for branded backgrounds. It fades in
-// from the right so foreground content can keep a clean reading surface.
-export const DeckPattern = ({
+// A quiet repeat of the Nova mark for branded backgrounds: thin chevrons around a small
+// cursor, half-dropped so the marks tile into a diamond lattice, the whole field turned a
+// little. It fades in from the right so foreground content keeps a clean reading surface.
+export const NovaPattern = ({
   className,
 }: {
   readonly className?: string | undefined
 }): React.JSX.Element => {
   const id = useId().replaceAll(":", "")
-  const pattern = `deck-pattern-${id}`
+  const mark = `nova-pattern-mark-${id}`
+  const pattern = `nova-pattern-${id}`
   return (
     <svg
       aria-hidden="true"
@@ -105,48 +107,28 @@ export const DeckPattern = ({
       }}
     >
       <defs>
-        <pattern id={pattern} width="112" height="92" patternUnits="userSpaceOnUse">
-          <g transform="rotate(-5 56 46)">
-            <rect
-              x="29"
-              y="10"
-              width="62"
-              height="48"
-              rx="3"
-              fill="var(--color-paper)"
-              fillOpacity="0.22"
-              stroke="currentColor"
-            />
-            <rect
-              x="22"
-              y="17"
-              width="62"
-              height="48"
-              rx="3"
-              fill="var(--color-paper)"
-              fillOpacity="0.34"
-              stroke="currentColor"
-            />
-            <rect
-              x="15"
-              y="24"
-              width="62"
-              height="48"
-              rx="3"
-              fill="var(--color-paper)"
-              fillOpacity="0.58"
-              stroke="currentColor"
-            />
-            <path d="M15 36h62" stroke="currentColor" />
-            <path
-              d="m27 46 5 5-5 5"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <path d="M39 57h9" fill="none" stroke="currentColor" strokeLinecap="round" />
+        {/* The mark at half size, its strokes thinned so the field stays a texture. */}
+        <g id={mark} transform="scale(0.5) translate(-32 -32)">
+          <g fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="miter">
+            <polyline points="46,22 56,32 46,42" />
+            <polyline points="18,22 8,32 18,42" />
+            <polyline points="22,18 32,8 42,18" />
+            <polyline points="22,46 32,56 42,46" />
           </g>
+          <rect x="29" y="25" width="6" height="14" fill="currentColor" fillOpacity="0.6" />
+        </g>
+        <pattern
+          id={pattern}
+          width="56"
+          height="56"
+          patternUnits="userSpaceOnUse"
+          patternTransform="rotate(-8)"
+        >
+          <use href={`#${mark}`} x="28" y="28" />
+          <use href={`#${mark}`} x="0" y="0" />
+          <use href={`#${mark}`} x="56" y="0" />
+          <use href={`#${mark}`} x="0" y="56" />
+          <use href={`#${mark}`} x="56" y="56" />
         </pattern>
       </defs>
       <rect width="640" height="240" fill={`url(#${pattern})`} />
