@@ -195,7 +195,8 @@ describe("Switching terminals in Focus", () => {
     await expect.poll(() => scroll.scrollTop).toBe(100)
 
     await terminalTab("Refactor auth").click()
-    await expect.element(terminal("Build Studio")).not.toBeInTheDocument()
+    // Past its fade out, parked.
+    await expect.poll(() => scroll.closest("[data-parked]")).not.toBeNull()
     await terminalTab("Build Studio").click()
 
     await expect.element(path).toBeVisible()

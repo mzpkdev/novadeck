@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react"
 
 import type { Tile } from "../../model/types"
 import type { TerminalLayoutControls } from "../../terminals/WindowShell"
+import { Shown } from "../../ui-toolkit/shown"
 import { backgroundPointerHandlers } from "../background"
 import { useTerminalVisibility } from "../useTerminalVisibility"
 import { keptTerminals } from "./kept"
@@ -53,7 +54,7 @@ export const Focus = ({
             aria-hidden={hidden[terminal.id]}
             inert={hidden[terminal.id]}
           >
-            {render(terminal, {})}
+            <Shown value={!hidden[terminal.id]}>{render(terminal, {})}</Shown>
           </div>
         ))}
     </div>
