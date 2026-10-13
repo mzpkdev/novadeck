@@ -1,5 +1,5 @@
 /* The welcome recipe: the first-run dialog. Its content arrives in reading order behind
-   the assembling Deck mark, and the headline's second line types itself. Its agent and
+   the assembling Nova mark, and the headline's second line types itself. Its agent and
    transcript choices are `.choice-card`s (settings.css).
 
    Parts:

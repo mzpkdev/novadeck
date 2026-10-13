@@ -48,6 +48,10 @@
   --workspace-zen-dots-opacity: 0;
   --workspace-zen-spotlight-opacity: 0;
 
+  /* The Nova mark: the chevrons stay in the phosphor's text colour and the cursor takes
+     the brighter glow, so it reads as the lit part. */
+  --nova-mark-core-fg: var(--color-strong-hover);
+
   /* Selection glows: the beam lingers where the person is. */
   --item-selected-indicator-shadow: 0 0 8px var(--color-strong);
   --tabs-indicator-shadow: 0 0 8px var(--color-strong);

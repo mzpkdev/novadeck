@@ -3,10 +3,10 @@ import { useRef, useState, type ComponentType, type CSSProperties, type RefObjec
 
 import { harnesses } from "../model/harnesses"
 import { Checkbox } from "../ui-toolkit/Checkbox"
-import { deckName, DeckMark, DeckPattern, DeckWordmark } from "../ui-toolkit/DeckLogo"
 import { Dialog, DialogDescription, DialogTitle } from "../ui-toolkit/Dialog"
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../ui-toolkit/icons/CodexIcon"
+import { deckName, NovaMark, DeckPattern, DeckWordmark } from "../ui-toolkit/NovaLogo"
 import { agentLabels, agentNote, type AgentSwitch } from "./AgentSwitches"
 import { WelcomePreview } from "./WelcomePreview"
 
@@ -39,7 +39,7 @@ const pluginNote = (names: readonly string[]): string =>
 
 const headline = "Room to build."
 
-// One choice as a card: the icon tile takes the Deck mark's face once chosen.
+// One choice as a card: the icon tile takes the brand tile once chosen.
 const ChoiceCard = ({
   icon: Icon,
   label,
@@ -143,7 +143,7 @@ const WelcomeForm = ({
           role="img"
           aria-label={deckName}
         >
-          <DeckMark size={35} animated />
+          <NovaMark size={35} animated />
           <DeckWordmark animated />
         </div>
         <div className="mt-10 max-[819px]:mt-6">

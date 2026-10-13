@@ -2,10 +2,19 @@ import { useId, type CSSProperties } from "react"
 
 import { cn } from "../class-name"
 
-// The Deck mark: the brand tile's ">_" square with two terminal cards fanned behind it,
-// up and to the right (the deck-logo recipe). `size` is the whole footprint in pixels,
-// cards included.
-export const DeckMark = ({
+// The Nova mark: four chevrons, < > ^ v, firing outward from a block cursor. It is a
+// shape, not a style: the chevrons take the mark colour and the cursor the core colour,
+// so each theme restyles it through tokens alone. The website's NovaMark.astro and the
+// host's icons draw the same geometry; change them together. `size` is the whole square
+// in pixels.
+const chevrons = [
+  { name: "right", points: "46,22 56,32 46,42" },
+  { name: "left", points: "18,22 8,32 18,42" },
+  { name: "up", points: "22,18 32,8 42,18" },
+  { name: "down", points: "22,46 32,56 42,46" },
+] as const
+
+export const NovaMark = ({
   size = 28,
   animated = false,
   className,
@@ -14,45 +23,22 @@ export const DeckMark = ({
   // Assembles itself, as on the boot splash; still when motion is reduced.
   readonly animated?: boolean
   readonly className?: string | undefined
-}): React.JSX.Element => {
-  // The prototype's proportions: an 80px face in a 94px footprint, cards 7px apart.
-  const face = (size * 80) / 94
-  const style = {
-    width: size,
-    height: size,
-    "--_face": `${face}px`,
-    "--_k1": `${(size * 7) / 94}px`,
-    "--_k2": `${(size * 14) / 94}px`,
-    "--_radius": `${Math.max(2, (face * 6) / 80)}px`,
-  } as CSSProperties
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "deck-mark relative inline-block flex-none",
-        animated && "animated",
-        size >= 64 && "large",
-        className,
-      )}
-      style={style}
-    >
-      <span className="deck-card far" />
-      <span className="deck-card near" />
-      <span className="deck-face">
-        <svg
-          className="deck-glyph relative z-1 size-[64%] overflow-visible"
-          viewBox="0 0 24 24"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path className="deck-chevron" pathLength={1} d="m5 16.5 5.5-5.5-5.5-5.5" />
-          <path className="deck-cursor" pathLength={1} d="M12.5 18.5h6.5" />
-        </svg>
-        {animated && <i className="deck-scan" />}
-      </span>
-    </span>
-  )
-}
+}): React.JSX.Element => (
+  <svg
+    aria-hidden="true"
+    viewBox="3 3 58 58"
+    width={size}
+    height={size}
+    className={cn("nova-mark flex-none", animated && "animated", className)}
+  >
+    <g fill="none" strokeWidth="7">
+      {chevrons.map(({ name, points }) => (
+        <polyline key={name} className={`nova-chevron ${name}`} points={points} />
+      ))}
+    </g>
+    <rect className="nova-cursor" x="28" y="23" width="8" height="18" />
+  </svg>
+)
 
 // The wordmark: "Nova" regular and "deck" semibold. Sized by the
 // surrounding font size; `animated` raises it letter by letter.
