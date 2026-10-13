@@ -221,6 +221,7 @@ for (const setup of setups) {
         after: calls,
       })
       await t1.reached("working", { after: mark })
+      if (setup.running) await t1.until(setup.running)
       await t1.escape()
 
       const ended = await t1.reached("unknown", { after: mark })
