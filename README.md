@@ -741,7 +741,7 @@ App:
   sandbox chip and its fix command; "No sandbox, no fix" as one with no command to offer;
   and "Sandboxed" back to normal.
 - **Guides:** "Toggle icon guides" draws a dashed box over every icon (`svg.lucide`) and a
-  dashed line through its middle, 20 px past each side, both 1 px and half see-through, for
+  dashed line through its middle, 20 px past each side, both 1 px and half see-through (`--icon-guide-color` changes them), for
   checking how icons line up with their text; it stays on through the demo's boots and
   reloads in this tab.
 - **Portable:** boot again as a portable copy, which never updates itself and is the way to
