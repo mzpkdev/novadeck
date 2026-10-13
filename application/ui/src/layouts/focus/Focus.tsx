@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react"
 
 import type { Tile } from "../../model/types"
 import type { TerminalLayoutControls } from "../../terminals/WindowShell"
-import { Shown } from "../../ui-toolkit/shown"
+import { Shown, useShown } from "../../ui-toolkit/shown"
 import { backgroundPointerHandlers } from "../background"
 import { useTerminalVisibility } from "../useTerminalVisibility"
 import { keptTerminals } from "./kept"
@@ -23,6 +23,8 @@ export const Focus = ({
     [terminals, displayed],
   )
   const removed = useTerminalVisibility(hidden)
+  // Shown only while Focus itself is.
+  const shown = useShown()
   const ids = useMemo(() => terminals.map((terminal) => terminal.id), [terminals])
   const [kept, setKept] = useState<readonly string[]>(() => [displayed])
   const keeping = keptTerminals(kept, displayed, ids)
@@ -54,7 +56,7 @@ export const Focus = ({
             aria-hidden={hidden[terminal.id]}
             inert={hidden[terminal.id]}
           >
-            <Shown value={!hidden[terminal.id]}>{render(terminal, {})}</Shown>
+            <Shown value={shown && !hidden[terminal.id]}>{render(terminal, {})}</Shown>
           </div>
         ))}
     </div>
