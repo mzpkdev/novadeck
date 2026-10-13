@@ -207,6 +207,22 @@ describe("Switching terminals in Focus", () => {
 })
 
 describe("Switching views", () => {
+  it("opens a plan that wasn't scrolled at its very top again", async () => {
+    await openShowcase("grid")
+    await taskbarIcon("Refactor auth", "Plan: refactor-auth.md").click()
+    const plan = (): HTMLElement | null | undefined =>
+      companionPane("Refactor auth").element().querySelector<HTMLElement>(".plan-document-scroll")
+    await expect.poll(() => plan()?.querySelector(".cm-content")).toBeTruthy()
+
+    await chooseView("Focus")
+    await chooseView("Grid")
+
+    await expect.poll(() => plan()?.querySelector(".cm-content")).toBeTruthy()
+    // Past the half second a restore may take.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(plan()!.scrollTop).toBe(0)
+  })
+
   it("opens a plan's editor as it was left: scrolled, and with what can be undone", async () => {
     await openShowcase("grid")
     await taskbarIcon("Build Studio", "Plan: A home for Studio").click()

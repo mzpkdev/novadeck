@@ -85,12 +85,14 @@ export const followScroll = (view: EditorView, on: (scroll: PlanScroll) => void)
   const note = (): void => {
     // Out of sight it has no size, and no place to note.
     if (!scroller.clientHeight) return
-    const height = Math.max(0, heightAtTop(view, scroller))
+    // Above the first line, in the editor's padding, it's a negative share of it.
+    const height = heightAtTop(view, scroller)
     const line = view.lineBlockAtHeight(height)
     on({ at: line.from, into: line.height ? (height - line.top) / line.height : 0 })
   }
-  // Where it is now counts too, as a scroll that ended a restore and came before this.
-  note()
+  // Where it is now counts too, as a scroll that ended a restore and came before this,
+  // once the editor has measured its padding.
+  view.requestMeasure({ read: note })
   scroller.addEventListener("scroll", note, { passive: true })
   return () => scroller.removeEventListener("scroll", note)
 }
