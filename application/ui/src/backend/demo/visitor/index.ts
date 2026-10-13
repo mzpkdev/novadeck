@@ -1,5 +1,5 @@
-import type { ConversationKey } from "../../../model/conversation"
-import { createStore } from "../../../model/store"
+import type { ConversationKey, Conversations } from "../../../model/conversation"
+import { createStore, type MutableStore } from "../../../model/store"
 import type { Workspace } from "../../../model/types"
 import type { Backend } from "../../port"
 import { createDemoEngine } from "../engine"
@@ -23,6 +23,17 @@ export const answersCheckoutReview = (key: ConversationKey, request: string): bo
     demoTerminalId({ projectId: "storefront", workspaceSessionId: "initial" }, 4) &&
   request === "04:permission"
 
+// The conversations, ticking `answered` when the person answers that request.
+export const tickingAnswers =
+  (answered: MutableStore<boolean>) =>
+  (conversations: Conversations): Conversations => ({
+    ...conversations,
+    answer: async (key, request, answer) => {
+      await conversations.answer(key, request, answer)
+      if (answersCheckoutReview(key, request)) answered.update(() => true)
+    },
+  })
+
 // The demo for a website's visitors: the agents demo's storefront and its other projects,
 // with their agents played by a scenario that goes on beside the person (see
 // `playScenario`), and without what a browser page can't offer: the debug panel, the chat
@@ -44,13 +55,7 @@ export const visitorDemo = (): Backend => {
     transcripts: _transcripts,
     agents: _agents,
     ...backend
-  } = withConversations(base, agentTranscripts(now), turns, (conversations) => ({
-    ...conversations,
-    answer: async (key, request, answer) => {
-      await conversations.answer(key, request, answer)
-      if (answersCheckoutReview(key, request)) answered.update(() => true)
-    },
-  }))
+  } = withConversations(base, agentTranscripts(now), turns, tickingAnswers(answered))
   let latest: Workspace | undefined
   let touched = -Infinity
   const touch = (): void => void (touched = Date.now())

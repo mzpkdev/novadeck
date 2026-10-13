@@ -42,4 +42,17 @@ describe("the visitor build", () => {
     expect(document.activeElement?.closest("[inert]") ?? null).toBeNull()
     expect(document.activeElement).not.toBe(preferences)
   })
+
+  it("closes a dialog that is open when the window narrows, leaving the panel the only thing to reach", async () => {
+    await openVisitor()
+    await page.getByRole("button", { name: "Workspace preferences" }).click()
+    await expect.element(page.getByRole("dialog", { name: "Preferences" })).toBeVisible()
+    await page.viewport(390, 800)
+    await expect.element(panel()).toBeVisible()
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument()
+    expect(panel().element().closest("[inert], [aria-hidden='true']")).toBeNull()
+    expect(getComputedStyle(document.body).pointerEvents).not.toBe("none")
+    await press("{Tab}")
+    await expect.element(download()).toHaveFocus()
+  })
 })

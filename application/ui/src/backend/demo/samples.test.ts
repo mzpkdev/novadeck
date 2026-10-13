@@ -21,8 +21,22 @@ describe("the demo shell", () => {
     expect(mockReply("git status", shell)).toContain("working tree clean")
   })
 
-  it("sends claude and codex to the terminals that run an agent", () => {
-    expect(mockReply("claude", shell)).toContain("Checkout implementation")
+  it("sends claude and codex to a terminal that runs an agent, without naming one", () => {
+    for (const line of ["claude", "codex"]) {
+      const reply = mockReply(line, shell)
+
+      expect(reply).toContain("running one")
+      expect(reply).not.toContain("Checkout")
+    }
+  })
+
+  it("matches a program by its own name, not one on the object prototype", () => {
+    for (const line of ["__proto__", "constructor", "toString", "hasOwnProperty valueOf"]) {
+      const reply = mockReply(line, shell)
+
+      expect(reply).toBeTypeOf("string")
+      expect(reply).toContain(`command not found: ${line.split(" ")[0]}`)
+    }
   })
 
   it("answers a shell's everyday commands with a note, not an error", () => {

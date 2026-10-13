@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest"
 
+import type { Conversations } from "../../../model/conversation"
 import { workspaceFromSeed } from "../../../model/seed"
+import { createStore } from "../../../model/store"
 import type { Workspace } from "../../../model/types"
 import type { BackendSink } from "../../port"
 import type { DemoAgentVerbs } from "../agent-link"
 import { demoSeed, demoTerminalId } from "../samples"
 import { visitorBeats } from "./beats"
-import { answersCheckoutReview, visitorDemo } from "./index"
+import { answersCheckoutReview, tickingAnswers, visitorDemo } from "./index"
 import { playScenario, selectedKey, stillCheckMs, type Beat, type Stage } from "./scenario"
 
 const workspace: Workspace = workspaceFromSeed(demoSeed(0, true), {
@@ -181,6 +183,20 @@ describe("the visitor demo", () => {
     expect(answersCheckoutReview(review, "04:other")).toBe(false)
     expect(answersCheckoutReview(at("storefront", 5), "05:raw")).toBe(false)
     expect(answersCheckoutReview(at("mobile-app", 4), "04:permission")).toBe(false)
+  })
+
+  it("ticks the hint for Checkout review's answer and no other", async () => {
+    const answered = createStore(false)
+    const answer = vi.fn<Conversations["answer"]>(async () => {})
+    const reply = { type: "chat", dialog: "d", text: "y" } as const
+    const conversations = tickingAnswers(answered)({ answer } as unknown as Conversations)
+
+    await conversations.answer(at("storefront", 5), "05:raw", reply)
+    expect(answer).toHaveBeenCalledTimes(1)
+    expect(answered.getSnapshot()).toBe(false)
+    await conversations.answer(at("storefront", 4), "04:permission", reply)
+    expect(answer).toHaveBeenCalledTimes(2)
+    expect(answered.getSnapshot()).toBe(true)
   })
 })
 

@@ -1,11 +1,12 @@
 import { Check, Circle, X } from "lucide-react"
-import { useCallback, useId, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useId, useState, useSyncExternalStore } from "react"
 
 import { focusTerminalInput } from "../interaction/dom"
 import type { Store } from "../model/store"
 import type { Workspace } from "../model/types"
 import { projectStatuses } from "../projects/project-status"
 import { unreadEnd } from "../terminals/unread-state"
+import { Portal } from "../ui-toolkit/Portal"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { currentState, shallowEqual } from "./selectors"
 import { done, hints, noticed, openedMarked, type Seen } from "./visitor-hints"
@@ -169,27 +170,53 @@ export const useVisitorNarrow = (): boolean => {
   return backend.visitor !== undefined && narrow
 }
 
+// While the panel covers the app, closes what is open above it and keeps the rest from
+// opening: dialogs and the switcher render outside the app's inert tree, and a shortcut can
+// still ask for one.
+export const useYieldToPhone = (covered: boolean): void => {
+  const { commands, navigation } = useWorkspaceServices()
+  const { closeSwitcher, cancelClose } = commands
+  const { closeDialog } = navigation
+  const open = useUiState(
+    (state) => ({
+      dialog: state.location.route.dialog !== null,
+      closing: state.closing !== null,
+      switcher: state.recent.switcher !== null,
+    }),
+    shallowEqual,
+  )
+  useEffect(() => {
+    if (!covered) return
+    if (open.dialog) closeDialog()
+    if (open.closing) cancelClose()
+    if (open.switcher) closeSwitcher()
+  }, [covered, open, closeDialog, cancelClose, closeSwitcher])
+}
+
 // The panel that takes the narrow window: it points to a desktop browser, or the download.
-// The app beside it is inert (see `App`), so the panel is all a keyboard or a screen
-// reader reaches.
+// It renders in the page's body, outside the app, which is inert while the panel shows (see
+// `App`), so the panel is all a keyboard or a screen reader reaches.
 export const VisitorPhone = (): React.JSX.Element | null => {
   if (!useVisitorNarrow()) return null
   return (
-    <div
-      className="visitor-phone fixed inset-0 z-100 flex items-center justify-center p-6"
-      role="region"
-      aria-label="Best on a desktop browser"
-    >
-      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-        <h2 className="visitor-phone-title m-0 text-title font-medium">
-          Best on a desktop browser
-        </h2>
-        <p className="visitor-phone-text m-0 text-body">
-          Novadeck lays terminals out in Focus, Grid and Canvas, which needs a window about 760
-          pixels wide. Open this page on a computer to try the demo, where the agents are simulated.
-        </p>
-        <Download className="button primary visitor-phone-download" />
+    <Portal>
+      <div
+        className="visitor-phone fixed inset-0 z-100 flex items-center justify-center p-6"
+        role="region"
+        aria-label="Best on a desktop browser"
+      >
+        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+          <h2 className="visitor-phone-title m-0 text-title font-medium">
+            Best on a desktop browser
+          </h2>
+          <p className="visitor-phone-text m-0 text-body">
+            Novadeck lays terminals out in Focus, Grid and Canvas, which needs a window about 760
+            pixels wide. Open this page on a computer to try the demo, where the agents are
+            simulated.
+          </p>
+          <Download className="button primary visitor-phone-download" />
+        </div>
       </div>
-    </div>
+    </Portal>
   )
 }
