@@ -167,18 +167,6 @@ const subscribeNarrow = (notify: () => void): (() => void) => {
   return () => media.removeEventListener("change", notify)
 }
 
-// Whether this is a visitor build in a window too narrow for the app, under about 760px,
-// where it has no room to lay out: a panel takes its place.
-export const useVisitorNarrow = (): boolean => {
-  const { backend } = useWorkspaceServices()
-  const narrow = useSyncExternalStore(
-    subscribeNarrow,
-    () => window.matchMedia(narrowQuery).matches,
-    () => false,
-  )
-  return backend.visitor !== undefined && narrow
-}
-
 // The panel that takes the narrow window: it points to a desktop browser, or the download.
 const VisitorPhone = (): React.JSX.Element => (
   <main
@@ -199,13 +187,13 @@ const VisitorPhone = (): React.JSX.Element => (
 // Where focus goes when the app comes back: it was lost with the panel, so it returns to
 // the selected terminal, or to the strip's link, unless a dialog the address still names
 // has taken it.
-const refocus = (store: Store<Workspace>, frames = 20): void => {
+const refocus = (store: Store<Workspace>, later: (run: () => void) => void, frames = 20): void => {
   if (document.activeElement && document.activeElement !== document.body) return
   const terminal = currentState(store.getSnapshot()).selected
   if (terminal && focusTerminalInput(terminal)) return
   const link = document.querySelector<HTMLElement>(".visitor-bar .visitor-download")
   if (link) link.focus()
-  else if (frames > 0) requestAnimationFrame(() => refocus(store, frames - 1))
+  else if (frames > 0) later(() => refocus(store, later, frames - 1))
 }
 
 // In a visitor build in a window too narrow for the app, under about 760px where it has no
@@ -223,10 +211,19 @@ export const VisitorCover = ({ children }: { readonly children: ReactNode }): Re
   const was = useRef(false)
   useEffect(() => {
     if (was.current && !covered) {
+      // Every frame still pending is cancelled when the window narrows again.
+      const pending = new Set<number>()
+      const later = (run: () => void): void => {
+        const frame = requestAnimationFrame(() => {
+          pending.delete(frame)
+          run()
+        })
+        pending.add(frame)
+      }
       // Waits for the app and a dialog to mount and take their own focus.
-      const frame = requestAnimationFrame(() => requestAnimationFrame(() => refocus(workspace)))
+      later(() => later(() => refocus(workspace, later)))
       was.current = covered
-      return () => cancelAnimationFrame(frame)
+      return () => pending.forEach(cancelAnimationFrame)
     }
     was.current = covered
   }, [covered, workspace])

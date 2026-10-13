@@ -3,7 +3,14 @@ import { page } from "vitest/browser"
 
 import { pressShortcut, terminalCount } from "./support/keyboard"
 import { workspaceSwitcher } from "./support/sessions"
-import { expectStaysAbsent, openWorkspace, press, sidebar, sidebarPanel } from "./support/workspace"
+import {
+  chooseView,
+  expectStaysAbsent,
+  openWorkspace,
+  press,
+  sidebar,
+  sidebarPanel,
+} from "./support/workspace"
 
 // The website's demo, as far as the app's own parts of it go.
 const openVisitor = async (): Promise<void> => {
@@ -15,6 +22,17 @@ const download = () => panel().getByRole("link", { name: "Download Novadeck" })
 const edge = (selector: string): DOMRect =>
   document.querySelector(selector)!.getBoundingClientRect()
 const card = () => page.getByRole("region", { name: "Things to try" })
+const hint = (text: string) => card().getByRole("listitem").filter({ hasText: text })
+const framesPass = (count: number): Promise<void> =>
+  count === 0
+    ? Promise.resolve()
+    : new Promise((resolve) => requestAnimationFrame(resolve)).then(() => framesPass(count - 1))
+const narrowAndWiden = async (): Promise<void> => {
+  await page.viewport(390, 800)
+  await expect.element(panel()).toBeVisible()
+  await page.viewport(1440, 900)
+  await expect.element(workspaceSwitcher()).toBeVisible()
+}
 
 describe("the visitor build", () => {
   afterEach(() => page.viewport(1440, 900))
@@ -107,6 +125,42 @@ describe("the visitor build", () => {
       await page.viewport(1440, 900)
       await expect.element(panel()).not.toBeInTheDocument()
       await expect.poll(() => document.activeElement).not.toBe(document.body)
+    })
+
+    it("leaves focus where it already is when the app comes back", async () => {
+      await openVisitor()
+      await page.viewport(390, 800)
+      await expect.element(panel()).toBeVisible()
+      // Takes focus the moment the header mounts, ahead of the refocus a few frames on.
+      const button = "[aria-label='Workspace preferences']"
+      const taken = new Promise<HTMLElement>((resolve) => {
+        const watch = new MutationObserver(() => {
+          const element = document.querySelector<HTMLElement>(button)
+          if (!element) return
+          watch.disconnect()
+          element.focus()
+          resolve(element)
+        })
+        watch.observe(document.body, { childList: true, subtree: true })
+      })
+      await page.viewport(1440, 900)
+      const element = await taken
+      await framesPass(10)
+      expect(document.activeElement).toBe(element)
+    })
+
+    it("keeps the views hint halfway, then ticked, as the person left it", async () => {
+      await openVisitor()
+      const views = "Switch to Grid, then Canvas"
+      await chooseView("Grid")
+      await narrowAndWiden()
+      // Only Canvas is on screen now; Grid was seen before the app unmounted.
+      await expect.element(hint(views)).toHaveAttribute("data-done", "false")
+      await chooseView("Canvas")
+      await expect.element(hint(views)).toHaveAttribute("data-done", "true")
+      await narrowAndWiden()
+      await chooseView("Focus")
+      await expect.element(hint(views)).toHaveAttribute("data-done", "true")
     })
 
     it("keeps the things to try as the person left them", async () => {
