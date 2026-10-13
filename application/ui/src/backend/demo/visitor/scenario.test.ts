@@ -1,11 +1,13 @@
+import type { ReactElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest"
 
-import type { Conversations } from "../../../model/conversation"
+import type { ChatDialog, Conversations } from "../../../model/conversation"
 import { workspaceFromSeed } from "../../../model/seed"
 import { createStore } from "../../../model/store"
 import type { Workspace } from "../../../model/types"
 import type { BackendSink } from "../../port"
-import type { DemoAgentVerbs } from "../agent-link"
+import type { DemoAgentLink, DemoAgentVerbs } from "../agent-link"
+import { answeredMs, answerMs } from "../chat"
 import { demoSeed, demoTerminalId } from "../samples"
 import { visitorBeats } from "./beats"
 import { answersCheckoutReview, tickingAnswers, visitorDemo } from "./index"
@@ -197,6 +199,35 @@ describe("the visitor demo", () => {
     await conversations.answer(at("storefront", 4), "04:permission", reply)
     expect(answer).toHaveBeenCalledTimes(2)
     expect(answered.getSnapshot()).toBe(true)
+  })
+
+  it("ticks the hint when the person answers through the terminal screens' conversations", async () => {
+    const backend = visitorDemo()
+    backend.commit(workspace, [])
+    // The conversations the terminal screens read are the ones the demo composes.
+    const element = (backend.TerminalSurface as (props: never) => unknown)(
+      {} as never,
+    ) as ReactElement<{
+      value: DemoAgentLink
+    }>
+    const { conversations } = element.props.value
+    const review = at("storefront", 4)
+    const request = conversations
+      .conversation(review)
+      .getSnapshot()
+      .requests.find((each) => each.id === "04:permission")
+    expect(request?.dialog?.type).toBe("choices")
+    const dialog = request!.dialog as Extract<ChatDialog, { type: "choices" }>
+
+    expect(backend.visitor!.answered.getSnapshot()).toBe(false)
+    const answering = conversations.answer(review, "04:permission", {
+      type: "choice",
+      dialog: dialog.id,
+      option: dialog.options[0]!.id,
+    })
+    await vi.advanceTimersByTimeAsync(answerMs + answeredMs + 1000)
+    await answering
+    expect(backend.visitor!.answered.getSnapshot()).toBe(true)
   })
 })
 

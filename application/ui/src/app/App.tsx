@@ -22,13 +22,7 @@ import { HeaderSection } from "./HeaderSection"
 import { currentState, currentTarget, shallowEqual } from "./selectors"
 import { SidebarSection } from "./SidebarSection"
 import { useNotificationBadge } from "./useNotifications"
-import {
-  useVisitorNarrow,
-  useYieldToPhone,
-  VisitorBar,
-  VisitorHints,
-  VisitorPhone,
-} from "./Visitor"
+import { VisitorBar, VisitorCover, VisitorHints } from "./Visitor"
 import { WorkspaceFooter } from "./WorkspaceFooter"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
 import { WorkspaceProvider } from "./WorkspaceProvider"
@@ -46,7 +40,9 @@ export const App = ({ createBackend }: AppProps): React.JSX.Element => (
       <HashRouter useTransitions={false}>
         <WorkspaceProvider createBackend={create}>
           <BootReporter report={boot} />
-          <WorkspaceApp />
+          <VisitorCover>
+            <WorkspaceApp />
+          </VisitorCover>
         </WorkspaceProvider>
       </HashRouter>
     )}
@@ -110,8 +106,6 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const { zen, sidebar, sidebarCollapsed, sidebarPanel, fontSize, enabledViews } = shell
   const view = useWorkspaceState((workspace) => currentState(workspace).view)
   const voice = useDictationController(services)
-  const covered = useVisitorNarrow()
-  useYieldToPhone(covered)
   useKeyboard(voice?.dictation)
   const sidebarRail = (mobile = false): React.JSX.Element => (
     <RailWithBadge
@@ -128,8 +122,6 @@ export const WorkspaceApp = (): React.JSX.Element => {
       <main
         className="workspace flex h-dvh min-h-100 flex-col overflow-hidden"
         data-zen={zen}
-        // Inert while the visitor panel stands in for the app.
-        inert={covered}
         onPointerDownCapture={cancelTerminalTransition}
         onKeyDownCapture={cancelTerminalTransition}
         style={
@@ -175,7 +167,6 @@ export const WorkspaceApp = (): React.JSX.Element => {
         <DebugSection />
         <VisitorHints />
       </main>
-      <VisitorPhone />
     </DictationContext.Provider>
   )
 }

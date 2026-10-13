@@ -1,12 +1,12 @@
 import { Check, Circle, X } from "lucide-react"
-import { useCallback, useEffect, useId, useState, useSyncExternalStore } from "react"
+import type { ReactNode } from "react"
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
 
 import { focusTerminalInput } from "../interaction/dom"
 import type { Store } from "../model/store"
 import type { Workspace } from "../model/types"
 import { projectStatuses } from "../projects/project-status"
 import { unreadEnd } from "../terminals/unread-state"
-import { Portal } from "../ui-toolkit/Portal"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { currentState, shallowEqual } from "./selectors"
 import { done, hints, noticed, openedMarked, type Seen } from "./visitor-hints"
@@ -45,6 +45,10 @@ export const VisitorHints = (): React.JSX.Element | null => {
   return <Hints answered={answered} />
 }
 
+// What the card showed, kept per backend: the app unmounts in a narrow window and the person
+// should find the tour as they left it.
+const remembered = new WeakMap<object, { seen: ReadonlySet<Seen>; open: boolean }>()
+
 const Hints = ({ answered }: { readonly answered: Store<boolean> }): React.JSX.Element | null => {
   const { workspace: store } = useWorkspaceServices()
   const unread = useUiState((state) => state.unread)
@@ -68,9 +72,14 @@ const Hints = ({ answered }: { readonly answered: Store<boolean> }): React.JSX.E
   // person's mark is the one that was there when they opened a project, not what it shows
   // once they are in it.
   const [before, setBefore] = useState({ project, statuses })
-  const [seen, setSeen] = useState<ReadonlySet<Seen>>(new Set())
+  const [seen, setSeen] = useState<ReadonlySet<Seen>>(
+    () => remembered.get(answered)?.seen ?? new Set(),
+  )
   const [announcement, setAnnouncement] = useState("")
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(() => remembered.get(answered)?.open ?? true)
+  useEffect(() => {
+    remembered.set(answered, { seen, open })
+  }, [answered, seen, open])
   if (before.project !== project || before.statuses !== statuses) setBefore({ project, statuses })
   // What the person did so far, kept as it shows now.
   const now = noticed(seen, {
@@ -102,7 +111,7 @@ const Hints = ({ answered }: { readonly answered: Store<boolean> }): React.JSX.E
   }
   return (
     <section
-      className="visitor-hints card fixed right-3 bottom-10 z-30 w-72 p-3"
+      className="visitor-hints card fixed right-3 z-30 w-72 p-3"
       aria-labelledby={titleId}
       // Plain Escape dismisses it; with Shift it goes on to the workspace.
       onKeyDown={(event) => {
@@ -170,53 +179,56 @@ export const useVisitorNarrow = (): boolean => {
   return backend.visitor !== undefined && narrow
 }
 
-// While the panel covers the app, closes what is open above it and keeps the rest from
-// opening: dialogs and the switcher render outside the app's inert tree, and a shortcut can
-// still ask for one.
-export const useYieldToPhone = (covered: boolean): void => {
-  const { commands, navigation } = useWorkspaceServices()
-  const { closeSwitcher, cancelClose } = commands
-  const { closeDialog } = navigation
-  const open = useUiState(
-    (state) => ({
-      dialog: state.location.route.dialog !== null,
-      closing: state.closing !== null,
-      switcher: state.recent.switcher !== null,
-    }),
-    shallowEqual,
-  )
-  useEffect(() => {
-    if (!covered) return
-    if (open.dialog) closeDialog()
-    if (open.closing) cancelClose()
-    if (open.switcher) closeSwitcher()
-  }, [covered, open, closeDialog, cancelClose, closeSwitcher])
+// The panel that takes the narrow window: it points to a desktop browser, or the download.
+const VisitorPhone = (): React.JSX.Element => (
+  <main
+    className="visitor-phone fixed inset-0 z-100 flex items-center justify-center p-6"
+    aria-label="Best on a desktop browser"
+  >
+    <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+      <h2 className="visitor-phone-title m-0 text-title font-medium">Best on a desktop browser</h2>
+      <p className="visitor-phone-text m-0 text-body">
+        Novadeck lays terminals out in Focus, Grid and Canvas, which needs a window about 760 pixels
+        wide. Open this page on a computer to try the demo, where the agents are simulated.
+      </p>
+      <Download className="button primary visitor-phone-download" />
+    </div>
+  </main>
+)
+
+// Where focus goes when the app comes back: it was lost with the panel, so it returns to
+// the selected terminal, or to the strip's link, unless a dialog the address still names
+// has taken it.
+const refocus = (store: Store<Workspace>, frames = 20): void => {
+  if (document.activeElement && document.activeElement !== document.body) return
+  const terminal = currentState(store.getSnapshot()).selected
+  if (terminal && focusTerminalInput(terminal)) return
+  const link = document.querySelector<HTMLElement>(".visitor-bar .visitor-download")
+  if (link) link.focus()
+  else if (frames > 0) requestAnimationFrame(() => refocus(store, frames - 1))
 }
 
-// The panel that takes the narrow window: it points to a desktop browser, or the download.
-// It renders in the page's body, outside the app, which is inert while the panel shows (see
-// `App`), so the panel is all a keyboard or a screen reader reaches.
-export const VisitorPhone = (): React.JSX.Element | null => {
-  if (!useVisitorNarrow()) return null
-  return (
-    <Portal>
-      <div
-        className="visitor-phone fixed inset-0 z-100 flex items-center justify-center p-6"
-        role="region"
-        aria-label="Best on a desktop browser"
-      >
-        <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-          <h2 className="visitor-phone-title m-0 text-title font-medium">
-            Best on a desktop browser
-          </h2>
-          <p className="visitor-phone-text m-0 text-body">
-            Novadeck lays terminals out in Focus, Grid and Canvas, which needs a window about 760
-            pixels wide. Open this page on a computer to try the demo, where the agents are
-            simulated.
-          </p>
-          <Download className="button primary visitor-phone-download" />
-        </div>
-      </div>
-    </Portal>
+// In a visitor build in a window too narrow for the app, under about 760px where it has no
+// room to lay out, shows the panel instead of the app. The app is not mounted at all, so
+// nothing of it can be reached, and what it kept in its stores waits for the window to
+// widen: a dialog the address names opens again.
+export const VisitorCover = ({ children }: { readonly children: ReactNode }): ReactNode => {
+  const { backend, workspace } = useWorkspaceServices()
+  const narrow = useSyncExternalStore(
+    subscribeNarrow,
+    () => window.matchMedia(narrowQuery).matches,
+    () => false,
   )
+  const covered = backend.visitor !== undefined && narrow
+  const was = useRef(false)
+  useEffect(() => {
+    if (was.current && !covered) {
+      // Waits for the app and a dialog to mount and take their own focus.
+      const frame = requestAnimationFrame(() => requestAnimationFrame(() => refocus(workspace)))
+      was.current = covered
+      return () => cancelAnimationFrame(frame)
+    }
+    was.current = covered
+  }, [covered, workspace])
+  return covered ? <VisitorPhone /> : children
 }

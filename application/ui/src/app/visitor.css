@@ -32,6 +32,12 @@
 }
 .visitor-hints {
   --_shadow: var(--visitor-hints-shadow, var(--shadow-floating));
+  bottom: 2.5rem;
+}
+/* Zen's dock sits at the same corner, and open it is taller than the footer the card
+   clears: the card rises above it. */
+[data-zen="true"] .visitor-hints {
+  bottom: 4.75rem;
 }
 .visitor-hints-list {
   list-style: none;

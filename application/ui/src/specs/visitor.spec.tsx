@@ -1,15 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { page } from "vitest/browser"
 
-import { openWorkspace, press } from "./support/workspace"
+import { pressShortcut, terminalCount } from "./support/keyboard"
+import { workspaceSwitcher } from "./support/sessions"
+import { expectStaysAbsent, openWorkspace, press, sidebar, sidebarPanel } from "./support/workspace"
 
 // The website's demo, as far as the app's own parts of it go.
 const openVisitor = async (): Promise<void> => {
   await openWorkspace("/?visitor=on")
 }
 
-const panel = () => page.getByRole("region", { name: "Best on a desktop browser" })
+const panel = () => page.getByRole("main", { name: "Best on a desktop browser" })
 const download = () => panel().getByRole("link", { name: "Download Novadeck" })
+const edge = (selector: string): DOMRect =>
+  document.querySelector(selector)!.getBoundingClientRect()
 const card = () => page.getByRole("region", { name: "Things to try" })
 
 describe("the visitor build", () => {
@@ -30,29 +34,91 @@ describe("the visitor build", () => {
     expect(document.activeElement).not.toBe(document.body)
   })
 
-  it("leaves nothing of the app to reach under the phone panel", async () => {
-    await page.viewport(390, 800)
+  it("keeps the things to try clear of Zen's open dock", async () => {
     await openVisitor()
-    await expect.element(panel()).toBeVisible()
-    const preferences = page.getByRole("button", { name: "Workspace preferences" }).element()
-    expect(preferences.closest("[inert]")).not.toBeNull()
-    await press("{Tab}")
-    await expect.element(download()).toHaveFocus()
-    await press("{Tab}")
-    expect(document.activeElement?.closest("[inert]") ?? null).toBeNull()
-    expect(document.activeElement).not.toBe(preferences)
+    await page.getByRole("button", { name: "Enter Zen mode" }).first().click()
+    await expect.poll(() => document.querySelector(".zen-dock")).not.toBeNull()
+    await expect.element(card()).toBeVisible()
+    expect(edge(".visitor-hints").bottom).toBeLessThanOrEqual(edge(".zen-dock").top)
   })
 
-  it("closes a dialog that is open when the window narrows, leaving the panel the only thing to reach", async () => {
-    await openVisitor()
-    await page.getByRole("button", { name: "Workspace preferences" }).click()
-    await expect.element(page.getByRole("dialog", { name: "Preferences" })).toBeVisible()
-    await page.viewport(390, 800)
-    await expect.element(panel()).toBeVisible()
-    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument()
-    expect(panel().element().closest("[inert], [aria-hidden='true']")).toBeNull()
-    expect(getComputedStyle(document.body).pointerEvents).not.toBe("none")
-    await press("{Tab}")
-    await expect.element(download()).toHaveFocus()
+  describe("in a window too narrow for the app", () => {
+    // Everything the person may have open when the window narrows.
+    const openers: Record<string, () => Promise<unknown>> = {
+      Preferences: async () => {
+        await page.getByRole("button", { name: "Workspace preferences" }).click()
+        await expect.element(page.getByRole("dialog", { name: "Preferences" })).toBeVisible()
+      },
+      "the sidebar, as a drawer": async () => {
+        await sidebarPanel("Sessions").click()
+        await expect.element(sidebar()).toBeVisible()
+      },
+      "the workspace switcher": async () => {
+        await workspaceSwitcher().click()
+        await expect.element(page.getByRole("dialog", { name: "Switch workspace" })).toBeVisible()
+      },
+    }
+
+    for (const [name, open] of Object.entries(openers))
+      it(`leaves only the panel to reach with ${name} open`, async () => {
+        await openVisitor()
+        await open()
+        await page.viewport(390, 800)
+        await expect.element(panel()).toBeVisible()
+        // The app is gone, not hidden: no dialog, sidebar or header is left to reach.
+        expect(page.getByRole("dialog").query()).toBeNull()
+        expect(page.getByRole("complementary").query()).toBeNull()
+        expect(workspaceSwitcher().query()).toBeNull()
+        expect(
+          document.querySelector("[inert], [aria-hidden='true'], [data-aria-hidden]"),
+        ).toBeNull()
+        expect(getComputedStyle(document.body).pointerEvents).not.toBe("none")
+        await press("{Tab}")
+        await expect.element(download()).toHaveFocus()
+      })
+
+    it("does not act on the app's shortcuts", async () => {
+      await openVisitor()
+      await expect.element(terminalCount(6)).toBeVisible()
+      await page.viewport(390, 800)
+      await expect.element(panel()).toBeVisible()
+      await pressShortcut("newTerminal")
+      await page.viewport(1440, 900)
+      await expect.element(terminalCount(6)).toBeVisible()
+      await expectStaysAbsent(terminalCount(7))
+    })
+
+    it("brings a dialog the address names back when the window widens, with focus inside", async () => {
+      await openVisitor()
+      await page.getByRole("button", { name: "Workspace preferences" }).click()
+      await expect.element(page.getByRole("dialog", { name: "Preferences" })).toBeVisible()
+      await page.viewport(390, 800)
+      await expect.element(panel()).toBeVisible()
+      await page.viewport(1440, 900)
+      const dialog = page.getByRole("dialog", { name: "Preferences" })
+      await expect.element(dialog).toBeVisible()
+      await expect.poll(() => dialog.element().contains(document.activeElement)).toBe(true)
+    })
+
+    it("puts focus on the page's controls, not the body, when it widens", async () => {
+      await openVisitor()
+      await page.viewport(390, 800)
+      await expect.element(panel()).toBeVisible()
+      await page.viewport(1440, 900)
+      await expect.element(panel()).not.toBeInTheDocument()
+      await expect.poll(() => document.activeElement).not.toBe(document.body)
+    })
+
+    it("keeps the things to try as the person left them", async () => {
+      await openVisitor()
+      await card().getByRole("button", { name: "Dismiss the things to try" }).click()
+      await page.viewport(390, 800)
+      await expect.element(panel()).toBeVisible()
+      await page.viewport(1440, 900)
+      await expect
+        .element(page.getByRole("button", { name: "Workspace preferences" }))
+        .toBeVisible()
+      await expectStaysAbsent(card())
+    })
   })
 })
