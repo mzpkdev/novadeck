@@ -64,7 +64,7 @@ const extensions = (readOnly: boolean) => [
     const followers = followersOf.get(update.view)
     if (!followers || !update.docChanged) return
     const { scroll } = followers
-    if (scroll) followers.scroll = { ...scroll, at: update.changes.mapPos(scroll.at, -1) }
+    if (scroll) followers.scroll = { ...scroll, at: update.changes.mapPos(scroll.at, 1) }
     if (
       update.transactions.some(
         (transaction) => transaction.docChanged && !transaction.annotation(fromAgent),
@@ -119,14 +119,13 @@ export const PlanEditor = ({
     editor.dispatch({ effects: setMarks.of(latest.current.marks) })
     // Where the pane is scrolled counts once it's back where it was left.
     let stopScroll = (): void => {}
-    let closed = false
     const follow = (): void => {
-      if (closed) return
       stopScroll = followScroll(editor, (at) => {
         followers.scroll = at
       })
     }
-    if (followers.scroll) restoreScroll(editor, () => followers.scroll, follow)
+    let stopRestore = (): void => {}
+    if (followers.scroll) stopRestore = restoreScroll(editor, () => followers.scroll, follow)
     else follow()
     view.current = editor
     latest.current.onReady({
@@ -135,7 +134,7 @@ export const PlanEditor = ({
     return () => {
       // Closing the pane leaves no empty note behind: none of the editor's updates follow.
       latest.current.onClose()
-      closed = true
+      stopRestore()
       stopScroll()
       savedEditors.keep(plan, { state: editor.state, scroll: followers.scroll })
       editor.destroy()

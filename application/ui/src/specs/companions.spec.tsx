@@ -221,7 +221,20 @@ describe("Switching views", () => {
     plan().scrollTop = 200
     await expect.poll(() => plan().scrollTop).toBe(200)
 
+    // The line at the pane's top, wherever the pane is and however wide.
+    const lineAtTop = (): string | undefined => {
+      const { left, width, top } = plan().getBoundingClientRect()
+      return (
+        document.elementFromPoint(left + width / 2, top + 10)?.closest(".cm-line")?.textContent ??
+        undefined
+      )
+    }
+    const reading = lineAtTop()
+    expect(reading).toBeTruthy()
+
     await chooseView("Focus")
+    await terminalTab("Build Studio").click()
+    await expect.poll(lineAtTop).toBe(reading)
     await chooseView("Canvas")
     await chooseView("Grid")
 

@@ -68,12 +68,13 @@ export const scrollLineToTop = (view: EditorView, at: number): void => {
 export type PlanScroll = { readonly at: number; readonly into: number }
 
 // How far the pane's top is into the document, in the editor's own pixels: the page's
-// are scaled where Canvas zooms. The scale is the scroller's own, which holds before the
-// editor first measures it.
+// are scaled where Canvas zooms. The scale is the editor's, measured here since it holds
+// before the editor first measures it, and over the whole document, so rounding its
+// height to whole pixels hardly matters.
 const heightAtTop = (view: EditorView, scroller: HTMLElement): number => {
-  const box = scroller.getBoundingClientRect()
-  const scale = scroller.offsetHeight ? box.height / scroller.offsetHeight : 1
-  return (box.top - view.documentTop) / scale
+  const tall = view.dom.offsetHeight
+  const scale = tall ? view.dom.getBoundingClientRect().height / tall : 1
+  return (scroller.getBoundingClientRect().top - view.documentTop) / scale
 }
 
 // Follows where the pane is scrolled in the plan, while it's on screen; returns the stop.
@@ -93,14 +94,19 @@ export const followScroll = (view: EditorView, on: (scroll: PlanScroll) => void)
 
 // Scrolls the pane back to where `scroll` says, at once, then again each frame while the
 // editor measures the lines that came into view, whose heights it had only estimated, or
-// an edit moves the place; `done` once it holds still, or after a few frames.
+// an edit moves the place; `done` once it holds still, after a few frames, or once the
+// person scrolls themselves. Out of sight, it waits until the pane shows. Returns the
+// cancel, for an editor that closes meanwhile.
 export const restoreScroll = (
   view: EditorView,
   scroll: () => PlanScroll | null,
   done: () => void,
-): void => {
+): (() => void) => {
   const scroller = scrollerOf(view.dom)
-  if (!scroller) return done()
+  if (!scroller) {
+    done()
+    return () => {}
+  }
   const target = (): number | null => {
     const now = scroll()
     if (!now) return null
@@ -118,11 +124,38 @@ export const restoreScroll = (
     scroller.scrollTo({ top, behavior: "instant" })
     return true
   }
-  go()
+  const stop = new AbortController()
+  const { signal } = stop
+  let frame = 0
+  const finish = (): void => {
+    if (signal.aborted) return
+    stop.abort()
+    cancelAnimationFrame(frame)
+    done()
+  }
+  for (const type of ["wheel", "touchstart", "pointerdown", "keydown"])
+    scroller.addEventListener(type, finish, { signal, passive: true })
   let frames = 0
   const settle = (): void => {
-    if ((go() || frames === 0) && ++frames < 6) requestAnimationFrame(settle)
-    else done()
+    if ((go() || frames === 0) && ++frames < 6) frame = requestAnimationFrame(settle)
+    else finish()
   }
-  requestAnimationFrame(settle)
+  const start = (): void => {
+    go()
+    frame = requestAnimationFrame(settle)
+  }
+  if (scroller.clientHeight) start()
+  else {
+    const shows = new ResizeObserver(() => {
+      if (!scroller.clientHeight) return
+      shows.disconnect()
+      start()
+    })
+    shows.observe(scroller)
+    signal.addEventListener("abort", () => shows.disconnect())
+  }
+  return () => {
+    stop.abort()
+    cancelAnimationFrame(frame)
+  }
 }
