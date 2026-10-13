@@ -155,7 +155,8 @@ const show: Tool<Shown> = {
   said: (answer) =>
     (answer.moved !== undefined
       ? `${answer.name} was moved by the user ${answer.moved}, so it's updated there` +
-        (answer.opened ? " and opened." : ".")
+        (answer.opened ? " and opened." : ".") +
+        (answer.held ? " It may hold secrets, so it doesn't open by itself." : "")
       : answer.opened
         ? "Showing " +
           answer.name +
