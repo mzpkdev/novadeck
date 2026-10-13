@@ -29,6 +29,9 @@
   --_fg: var(--region-header-fg, var(--color-ink));
   --_border-color: var(--region-header-border-color, var(--color-line));
   border-bottom: var(--border-width) solid var(--_border-color);
+  /* As much above as the edge below, so the bar's even height leaves an even box and
+     what it centres lands on whole pixels, not half a pixel low. */
+  padding-top: var(--border-width);
   background-color: var(--_bg);
   background-image: var(--region-header-image, none);
   color: var(--_fg);
