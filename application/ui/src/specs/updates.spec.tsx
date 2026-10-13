@@ -96,7 +96,7 @@ describe("the update notice", () => {
 
     it("counts on the chip without raising the notice, then raises the ready one", async () => {
       await openWorkspace("/?demo=update-downloading")
-      await expect.element(chip(/^Downloading update, \d+%: Novadeck 0.0.80$/)).toBeVisible()
+      await expect.element(chip(/^Downloading update: Novadeck 0.0.80$/)).toBeVisible()
       await expect.element(downloading()).not.toBeInTheDocument()
       await expect.element(ready(), { timeout: 10_000 }).toBeVisible()
       await expect.element(restart()).toBeVisible()

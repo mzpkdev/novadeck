@@ -756,7 +756,7 @@ App:
   a delayed portable answer) opens variants for specs.
 - **Updates:** have an update downloaded, available (the app can't install it itself), with
   no notes, or with notes at the caps, for the notice above the footer's "Update ready" or
-  "Update available" chip. Downloading counts the chip up to 100% (its notice, opened from the
+  "Update available" chip. Downloading counts the chip up in steps (its notice, opened from the
   chip, shows the progress with Later alone), then brings up the Ready notice. Each press offers a newer version, so the notice comes up
   again; Later leaves the chip, which opens it again. Install failed turns the update
   waiting from ready to available, and the notice comes up again with Download. Restart

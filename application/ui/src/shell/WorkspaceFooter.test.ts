@@ -173,14 +173,15 @@ describe("workspace footer", () => {
       expect(chip(page).getAttribute("aria-label")).toBe("Update available: Novadeck 0.0.80")
     })
 
-    it("shows a download's progress on the chip, announcing only that it started", () => {
+    it("shows a download's progress on the chip, announcing and naming only that it started", () => {
       const downloading: UpdateOffer = { ...ready, kind: "downloading", percent: 42 }
       const page = withUpdate("ok", downloading)
-      expect(chip(page).getAttribute("aria-label")).toBe("Downloading update, 42%: Novadeck 0.0.80")
-      expect(chip(page).textContent).toBe("Downloading update… 42%42%")
+      expect(chip(page).getAttribute("aria-label")).toBe("Downloading update: Novadeck 0.0.80")
+      expect(chip(page).textContent).toBe("Downloading update… 42%Update 42%")
       expect(announcer(page).textContent).toBe("Downloading Novadeck update")
       page.rerender(createElement(WorkspaceFooter, props("ok", { ...downloading, percent: 43 })))
-      expect(chip(page).textContent).toBe("Downloading update… 43%43%")
+      expect(chip(page).textContent).toBe("Downloading update… 43%Update 43%")
+      expect(chip(page).getAttribute("aria-label")).toBe("Downloading update: Novadeck 0.0.80")
       expect(announcer(page).textContent).toBe("Downloading Novadeck update")
     })
 

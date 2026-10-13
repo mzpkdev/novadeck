@@ -294,7 +294,7 @@ export const FooterUpdate = ({
       : offer.kind === "available"
         ? "Update available"
         : "Update ready"
-  const narrow = !offer ? "Install" : percent === undefined ? "Update" : `${percent}%`
+  const narrow = !offer ? "Install" : percent === undefined ? "Update" : `Update ${percent}%`
   const startInstall = (): void => {
     if (!portable || !update || waiting) return
     setInstall({ phase: "running" })
@@ -348,7 +348,8 @@ export const FooterUpdate = ({
                 : installing
                   ? "Restarting…"
                   : offer?.kind === "downloading"
-                    ? `Downloading update, ${percent}%: Novadeck ${offer.version}`
+                    ? // No percent: a focused chip whose name changed would be read again at each.
+                      `Downloading update: Novadeck ${offer.version}`
                     : offer
                       ? `${word}: Novadeck ${offer.version}`
                       : word

@@ -66,31 +66,35 @@ build checks its own signature once at launch with `codesign`. See
 ### Installing and telling
 
 - **Installing** builds download in the background and show it. The update is offered to
-  the page as `downloading` when its download starts, at 0 percent, and again at each whole
-  percent electron-updater reports (`download-progress`); only the progress of the download
-  the host started counts. It becomes `ready` once downloaded (on macOS, once Squirrel has
-  staged it, with the percent staying where it was until then), and the page then offers a
-  restart; the update installs on the next quit or when the person restarts. A download
-  that fails is offered as `available`, so the person can install from the release page
-  until a later check downloads it. One download is tracked at a time, and a release found
-  while it is under way waits for the next check.
+  the page as `downloading` at each whole percent electron-updater reports
+  (`download-progress`), from the first; only the progress of the download the host started
+  counts. A download already on disk from an earlier launch reports none and is `ready` at
+  once, without a flash of progress. It becomes `ready` once downloaded (on macOS, once
+  Squirrel has staged it, with the percent staying where it was until then), and the page
+  then raises the notice with Restart now; the update installs on the next quit or when the
+  person restarts. The chip shows the progress meanwhile and raises no notice. One download
+  is tracked at a time, and a release found while it is under way waits for the next check.
+- **A failed download** is tried again by a check five minutes later, then as usual. Once its
+  progress (or an update it replaces) was offered, it is offered as `available` meanwhile:
+  the chip reads Update available, but no notice comes up, as the page raises none for a
+  download that turned `available`. One that failed before any progress goes untold, as a
+  failed check does.
 - **A newer release** found while an update waits replaces it, so one restart lands on the
   latest release rather than one restart per release missed. No release file carries a
   version in its name (`electron-builder.yml`), so electron-updater downloads the newer one
   beside the waiting file and renames it over that file once complete; a quit meanwhile
   installs the waiting update on Windows and Linux. The offer turns from `ready` into
-  `downloading` the newer release, so the page shows its progress and no restart until it
-  is in; a restart asked for before the page learned of that waits for the download and
-  goes ahead into it. Should the download fail, electron-updater
-  clears its download folder, which likely takes the waiting file too: the newer release is
-  offered as `available` and the next check downloads it. Quitting and restarting end the
-  schedule first, so no new download starts on the way out; one under way goes on, and a quit
-  after it lands installs the newer release. On Windows the newer one costs its changed ranges and then the
-  whole file: electron-updater's differential download pairs the waiting update's blockmap
-  with the installed build's installer, and the result fails its checksum, so it falls back
-  to a full download. macOS keeps the update Squirrel
-  staged and checks again at the next launch, as staging one update over another is
-  untried. `updater.test.ts` pins the file names and electron-updater's handling of the
+  `downloading` the newer release as its progress comes in, so the page shows it and offers
+  no restart until it is in. Should the download fail, electron-updater clears its download
+  folder, which likely takes the waiting file too: the newer release is offered as
+  `available` until the retry downloads it. Quitting and restarting end the schedule first,
+  so no new download starts on the way out; one under way goes on, and a quit after it
+  lands installs the newer release. On Windows the newer one costs its changed ranges and
+  then the whole file, and its percent starts over once: electron-updater's differential
+  download pairs the waiting update's blockmap with the installed build's installer, the
+  result fails its checksum, and it falls back to a full download. macOS keeps the update
+  Squirrel staged and checks again at the next launch, as staging one update over another
+  is untried. `updater.test.ts` pins the file names and electron-updater's handling of the
   waiting file: were the folder emptied while the updater still names the file, quitting
   would delete the running AppImage and install nothing.
 - **Telling** builds download nothing and keep checking, so a newer release replaces the
@@ -336,6 +340,6 @@ full one.
 - **Offers are not retracted.** After switching from `early` to `stable`, an `available`
   offer for an early-only release stays until a later check offers another version; the
   bridge has no way to withdraw one. A downloaded update stays `ready` as well, and a `downloading` offer is replaced only by
-  its own outcome or a newer download.
+  its own outcome.
 - **Windows installs are not watched past the call.** The NSIS installer is started
   asynchronously as the app exits, so an error there is not seen by the app.

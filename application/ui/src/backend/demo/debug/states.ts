@@ -595,7 +595,7 @@ export const createDemoStates = (verbs: DemoAgentVerbs): DemoStates => {
         },
         {
           label: "Downloading",
-          hint: "Chip counts up to 100%, its card has Later only; then the Ready notice comes up",
+          hint: "Chip counts up, its card has Later only; then the Ready notice comes up",
           run: () => download(nextVersion(), sampleNotes),
         },
         {

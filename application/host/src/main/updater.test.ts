@@ -24,6 +24,7 @@ import {
   checkIntervalMs,
   developerIdSigned,
   firstCheckMs,
+  retryCheckMs,
   installFallbackMs,
   installOnlyOnOrderlyQuit,
   installUpdate,
@@ -662,6 +663,7 @@ describe("checking for updates", () => {
       }
       updater.emit("update-available", info)
       const notes = ["Faster & smaller.", "Fixes."]
+      updater.emit("download-progress", { percent: 0 })
       expect(offered).toEqual([["downloading", "1.2.3", notes, 0]])
       updater.emit("update-downloaded", info)
       expect(offered).toEqual([
@@ -670,10 +672,19 @@ describe("checking for updates", () => {
       ])
     })
 
+    it("offers a download already on disk from an earlier launch as ready, without progress", () => {
+      const { updater, offered } = checking()
+      updater.emit("update-available", { version: "1.2.3" })
+      expect(offered).toEqual([])
+      updater.emit("update-downloaded", { version: "1.2.3" })
+      expect(offered).toEqual([["ready", "1.2.3", []]])
+    })
+
     it("on macOS offers the update as ready only once Squirrel has staged it, downloading until then", () => {
       const native = new EventEmitter()
       const { updater, offered } = checking({ native })
       updater.emit("update-available", { version: "1.2.3" })
+      updater.emit("download-progress", { percent: 0 })
       updater.emit("download-progress", { percent: 99.6 })
       updater.emit("update-downloaded", { version: "1.2.3" })
       expect(offered).toEqual([
@@ -709,23 +720,27 @@ describe("checking for updates", () => {
         updater.emit("download-progress", { percent: 30 })
         expect(offered).toEqual([])
         updater.emit("update-available", { version: "1.2.3" })
+        updater.emit("download-progress", { percent: 10 })
         updater.emit("update-downloaded", { version: "1.2.3" })
         await vi.advanceTimersByTimeAsync(0)
         updater.emit("download-progress", { percent: 50 })
         expect(offered).toEqual([
-          ["downloading", "1.2.3", [], 0],
+          ["downloading", "1.2.3", [], 10],
           ["ready", "1.2.3", []],
         ])
       })
 
-      it("offers it as available when the first download fails, which the error event logs", async () => {
+      it("offers it as available when the first download fails partway, which the error event logs", async () => {
         const { updater, offered, failed, logged, settled } = checking()
-        updater.downloadResult = () => Promise.reject(new Error("download failed"))
+        const download = deferred<unknown>()
+        updater.downloadResult = () => download.promise
         updater.emit("update-available", { version: "1.2.3" })
+        updater.emit("download-progress", { percent: 30 })
         updater.emit("error", new Error("download failed"))
+        download.reject(new Error("download failed"))
         await vi.advanceTimersByTimeAsync(0)
         expect(offered).toEqual([
-          ["downloading", "1.2.3", [], 0],
+          ["downloading", "1.2.3", [], 30],
           ["available", "1.2.3", []],
         ])
         expect(logged).toEqual(["The update check failed."])
@@ -733,6 +748,36 @@ describe("checking for updates", () => {
         await expect(settled()).resolves.toBe(false)
         updater.emit("download-progress", { percent: 80 })
         expect(offered).toHaveLength(2)
+      })
+
+      it("tells nothing of a download that fails before any progress, as of a failed check", async () => {
+        const { updater, offered } = checking()
+        updater.downloadResult = () => Promise.reject(new Error("download failed"))
+        updater.emit("update-available", { version: "1.2.3" })
+        await vi.advanceTimersByTimeAsync(0)
+        expect(offered).toEqual([])
+      })
+
+      it("tries a failed download again a few minutes later, and then as usual", async () => {
+        const { updater } = checking()
+        await vi.advanceTimersByTimeAsync(firstCheckMs)
+        updater.downloadResult = () => Promise.reject(new Error("download failed"))
+        updater.emit("update-available", { version: "1.2.3" })
+        await vi.advanceTimersByTimeAsync(retryCheckMs - 1)
+        expect(updater.checks).toBe(1)
+        await vi.advanceTimersByTimeAsync(1)
+        expect(updater.checks).toBe(2)
+        await vi.advanceTimersByTimeAsync(checkIntervalMs - retryCheckMs - firstCheckMs)
+        expect(updater.checks).toBe(3)
+      })
+
+      it("does not try again once stopped", async () => {
+        const { updater, stop } = checking()
+        updater.downloadResult = () => Promise.reject(new Error("download failed"))
+        updater.emit("update-available", { version: "1.2.3" })
+        stop()
+        await vi.advanceTimersByTimeAsync(retryCheckMs * 2)
+        expect(updater.checks).toBe(0)
       })
 
       it("keeps a download ready that fails only after it was reported in", async () => {
@@ -797,6 +842,8 @@ describe("checking for updates", () => {
       it("downloads it in place of the waiting one, showing its progress until it is in, and offers it as ready", async () => {
         const { updater, offered, download } = waiting()
         expect(updater.downloads).toHaveLength(1)
+        expect(offered).toEqual([["ready", "1.2.3", []]])
+        updater.emit("download-progress", { percent: 0 })
         updater.emit("download-progress", { percent: 40.2 })
         updater.emit("update-downloaded", { version: "1.3.0" })
         download.resolve(undefined)
@@ -843,8 +890,9 @@ describe("checking for updates", () => {
         await vi.advanceTimersByTimeAsync(0)
         await expect(ready).resolves.toBe(false)
         await expect(settled()).resolves.toBe(false)
-        expect(offered.slice(-2)).toEqual([
-          ["downloading", "1.3.0", [], 0],
+        // The ready update is likely gone, so the page hears even without any progress.
+        expect(offered).toEqual([
+          ["ready", "1.2.3", []],
           ["available", "1.3.0", []],
         ])
         expect(logged).toEqual(["The update check failed."])

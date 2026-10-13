@@ -37,7 +37,9 @@ export const portableNagged = (offer: UpdateOffer, now: number): boolean =>
   offer.kind === "available" && offerStale(offer, now)
 
 // Whether an offer's notice comes up as the offer is heard. A download never raises it:
-// the notice comes when it turns `ready`, or `available`. Otherwise it does once per version and
+// the notice comes when it turns `ready`. Nor does a download that failed, which turns
+// `available` after `previous`, the offer heard before, was its `downloading`: the host
+// tries it again soon, and the chip shows the release meanwhile. Otherwise it does once per version and
 // kind (`seen` is what was shown last). A portable copy, which can't update itself, is
 // asked again at every launch once its release is stale: `shownThisRun` is whether this
 // run has shown the offer's notice already, so a repeated offer does not bring it back
@@ -45,11 +47,13 @@ export const portableNagged = (offer: UpdateOffer, now: number): boolean =>
 export const noticeRaised = (
   offer: UpdateOffer,
   {
+    previous,
     seen,
     portable,
     shownThisRun,
     now,
   }: {
+    readonly previous: UpdateOffer | null
     readonly seen: string | null
     readonly portable: boolean
     readonly shownThisRun: boolean
@@ -57,4 +61,9 @@ export const noticeRaised = (
   },
 ): boolean =>
   offer.kind !== "downloading" &&
+  !(
+    offer.kind === "available" &&
+    previous?.kind === "downloading" &&
+    previous.version === offer.version
+  ) &&
   (updateKey(offer) !== seen || (portable && !shownThisRun && portableNagged(offer, now)))
