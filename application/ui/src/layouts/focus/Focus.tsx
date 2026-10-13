@@ -1,9 +1,10 @@
-import { useMemo, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 
 import type { Tile } from "../../model/types"
 import type { TerminalLayoutControls } from "../../terminals/WindowShell"
 import { backgroundPointerHandlers } from "../background"
 import { useTerminalVisibility } from "../useTerminalVisibility"
+import { keptTerminals } from "./kept"
 
 export const Focus = ({
   terminals,
@@ -21,6 +22,10 @@ export const Focus = ({
     [terminals, displayed],
   )
   const removed = useTerminalVisibility(hidden)
+  const ids = useMemo(() => terminals.map((terminal) => terminal.id), [terminals])
+  const [kept, setKept] = useState<readonly string[]>(() => [displayed])
+  const keeping = keptTerminals(kept, displayed, ids)
+  if (keeping !== kept) setKept(keeping)
   return (
     <div
       data-workspace-viewport
@@ -36,13 +41,15 @@ export const Focus = ({
     >
       <div className="workspace-dots absolute inset-0 canvas-grid" aria-hidden="true" />
       <div className="workspace-dots absolute inset-0 canvas-grid-spotlight" aria-hidden="true" />
+      {/* Once hidden, a terminal Focus keeps is parked out of sight instead of unmounting. */}
       {terminals
-        .filter((terminal) => !removed[terminal.id])
+        .filter((terminal) => !removed[terminal.id] || keeping.includes(terminal.id))
         .map((terminal) => (
           <div
             key={terminal.id}
             className="terminal-visibility absolute data-[hiding=false]:z-1"
             data-hiding={hidden[terminal.id]}
+            data-parked={removed[terminal.id] || undefined}
             aria-hidden={hidden[terminal.id]}
             inert={hidden[terminal.id]}
           >
