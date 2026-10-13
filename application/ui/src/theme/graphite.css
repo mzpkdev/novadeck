@@ -204,7 +204,7 @@
   --demo-form-bg: oklch(from var(--color-paper) calc(l - 0.021) c h);
   --demo-form-shadow: var(--field-shadow);
 
-  /* Brand: the logo tile is dark in both schemes, its glyph the bright cyan. */
+  /* Brand: the choice-card tiles are dark in both schemes, their glyphs the bright cyan. */
   --brand-tile-bg: linear-gradient(180deg, #2e2d2a, #181816);
   --brand-tile-fg: #00e5d6;
 
@@ -359,7 +359,7 @@
 }
 
 /* The welcome's start button is the dialog's one primary action, so it takes the accent
-   as its fill, where the logo and icon tiles carry it only in their glyph. */
+   as its fill, where the choice-card tiles carry it only in their glyph. */
 :root:where(:not([data-theme]), [data-theme="graphite"]) .welcome-start {
   --brand-tile-bg: linear-gradient(180deg, #00877e, var(--color-strong));
   --brand-tile-fg: var(--color-on-strong);

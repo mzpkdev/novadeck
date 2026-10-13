@@ -6,6 +6,10 @@
    Tokens, each optional (its fallback in brackets):
    --nova-mark-fg (ink): the chevrons. --nova-mark-core-fg (strong): the cursor.
    --deck-word-fg (ink): the wordmark. */
+.nova-mark {
+  /* The chevrons' miter tips sit just inside the viewBox; let the fire's overshoot pass it. */
+  overflow: visible;
+}
 .nova-chevron {
   stroke: var(--nova-mark-fg, var(--color-ink));
   stroke-linecap: butt;
@@ -34,7 +38,7 @@
   color: var(--deck-word-fg, var(--color-ink));
 }
 
-/* Assembling: the cursor lights first and blinks once, then the chevrons fire outward
+/* Assembling: the cursor lights first (about 0.45s in) and blinks once, then the chevrons fire outward
    from it into place, a beat apart, and the letters rise. The cursor ends lit. */
 @media (prefers-reduced-motion: no-preference) {
   .nova-mark.animated .nova-cursor {
