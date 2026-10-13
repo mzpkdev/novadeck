@@ -18,6 +18,8 @@ type View = "treemap" | "graph"
 
 export const AreasPage = () => {
   const [params, setParams] = useSearchParams()
+  // Where the treemap docks its "too small to draw" control, among the header tools.
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
   const view: View = params.get("view") === "graph" ? "graph" : "treemap"
   if (atlas.areas.length === 0) {
     return (
@@ -32,6 +34,7 @@ export const AreasPage = () => {
       flush
       tools={
         <>
+          <span ref={setSlot} />
           {view === "treemap" ? (
             <span className="pane floating flex h-9 items-center gap-2 px-3 text-caption text-muted">
               area = lines
@@ -51,7 +54,7 @@ export const AreasPage = () => {
       }
     >
       <div className={view === "treemap" ? "min-h-0 flex-1 px-1.5 pb-1.5" : "min-h-0 flex-1"}>
-        {view === "treemap" ? <TreemapView /> : <GraphView />}
+        {view === "treemap" ? <TreemapView slot={slot} /> : <GraphView />}
       </div>
     </Ground>
   )

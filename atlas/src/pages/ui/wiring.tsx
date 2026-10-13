@@ -232,7 +232,7 @@ export const Wiring = ({
           data-lit="2"
         />
         <text x={col(0) + 50} y={mid("port") + 30} className="uw-note">
-          dark: the path you picked
+          bold: the path you picked
         </text>
         <rect
           x={col(0)}

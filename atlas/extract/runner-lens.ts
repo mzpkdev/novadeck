@@ -256,7 +256,23 @@ export const extractRunnerLens = (input: LensInput): RunnerLens => {
       ? undefined
       : unitsByFile.get(anchor.file)?.find((unit) => unit.line === anchor.line)
 
-  // What a file calls the store: identifiers it declares with the store's type
+  // The store's shapes: WorkspaceStore, and every object type in the runner whose members
+  // are all store methods (`TerminalRecords`, `VoiceSettingsStore`…), so an unrelated
+  // `FooStore` with its own methods never counts as the store.
+  const storeTypes = new Set(["WorkspaceStore"])
+  for (const file of files)
+    for (const match of (anchors.read(file) ?? "").matchAll(
+      /^export type (\w+) = \{\n([\s\S]*?)^\}/gm,
+    )) {
+      const members = [...match[2]!.matchAll(/^ {2}(?:readonly\s+)?(\w+)\??\s*[(:<]/gm)].map(
+        (member) => member[1]!,
+      )
+      if (members.length > 0 && members.every((name) => storeNames.has(name)))
+        storeTypes.add(match[1]!)
+    }
+  const typeAlternatives = [...storeTypes].join("|")
+
+  // What a file calls the store: identifiers it declares with one of the store's types
   // (`store: WorkspaceStore`, `records?: TerminalRecords`) or assigns `new WorkspaceStore(`.
   // A name the file also uses for a Map or Set counts only behind another object
   // (`options.records`), never as `this.records`.
@@ -268,7 +284,7 @@ export const extractRunnerLens = (input: LensInput): RunnerLens => {
     const names = new Set(
       [
         ...text.matchAll(
-          /\b(\w+)\??\s*:\s*(?:readonly\s+)?(?:WorkspaceStore|\w*(?:Store|Records))\b/g,
+          new RegExp(`\\b(\\w+)\\??\\s*:\\s*(?:readonly\\s+)?(?:${typeAlternatives})\\b`, "g"),
         ),
         ...text.matchAll(/\b(\w+)\s*=\s*new WorkspaceStore\(/g),
       ].map((match) => match[1]!),

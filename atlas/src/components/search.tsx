@@ -52,8 +52,23 @@ const Dialog = ({ onClose }: { onClose: () => void }) => {
   const list = useRef<HTMLUListElement>(null)
   const navigate = useNavigate()
 
+  // Closing hands focus back to whatever had it before the dialog opened. It is deferred,
+  // because focusing a button inside the Enter keydown would let that key press it, and a
+  // remount (StrictMode) cancels it.
+  const before = useRef<Element | null>(document.activeElement)
+  const restore = useRef<number | undefined>(undefined)
   useEffect(() => {
+    clearTimeout(restore.current)
     input.current?.focus()
+    const el = before.current
+    return () => {
+      restore.current = window.setTimeout(() => {
+        if (el instanceof HTMLElement && el.isConnected) el.focus()
+      })
+    }
+  }, [])
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose()
     }

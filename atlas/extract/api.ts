@@ -212,6 +212,20 @@ export const extractApi = async (repo: string, anchors: Anchors): Promise<Api> =
   const resolved = procedures.filter(
     (procedure) => procedure.handler !== null && procedure.handler.file !== routerFile,
   ).length
+  // A namespace whose handlers all stay in the router has lost its service (an import the
+  // scan no longer reads); a lone procedure the router answers itself (handshake) is fine.
+  for (const namespace of new Set(procedures.map((p) => p.namespace))) {
+    const members = procedures.filter((p) => p.namespace === namespace)
+    if (
+      members.length > 1 &&
+      members.every((p) => p.handler === null || p.handler.file === routerFile)
+    )
+      anchors.report(
+        "api handlers",
+        routerFile,
+        `no handler in ${namespace}.* resolves to a service method`,
+      )
+  }
   if (resolved * 2 < procedures.length)
     anchors.report(
       "api handlers",

@@ -31,11 +31,15 @@
   stroke: var(--accent);
   stroke-width: 1.75;
 }
-/* Dashed warning outline is the one mark for "not traced"; nothing else is dashed. */
+/* Dashed outline is the one mark for "not traced"; nothing else is dashed. Selected, it
+   keeps the dashes and takes the accent. */
+.uw-box[data-gap="true"] rect.face,
+.uw-key-gap {
+  stroke-dasharray: 4 3;
+}
 .uw-box[data-gap="true"]:not([data-selected="true"]) rect.face,
 .uw-key-gap {
   stroke: var(--color-warning-fg);
-  stroke-dasharray: 4 3;
 }
 .uw-key-gap {
   fill: none;

@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useNavigate } from "react-router"
 
 import { atlas, groupBy } from "../../atlas-data.ts"
@@ -17,10 +18,58 @@ const MIN = 6
 // The whole codebase: a window per top-level token (`runner`, `ui`, `harness`…), a rect per
 // area inside it, area = lines.
 // Hatching along the bottom of an area is its share of test files.
-export const TreemapView = () => {
+const HiddenAreas = ({ hidden }: { hidden: Area[] }) => {
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const outside = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false)
+    }
+    window.addEventListener("mousedown", outside)
+    window.addEventListener("keydown", escape)
+    return () => {
+      window.removeEventListener("mousedown", outside)
+      window.removeEventListener("keydown", escape)
+    }
+  }, [open])
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="pane floating flex h-9 cursor-pointer items-center px-3 text-caption text-muted"
+      >
+        +{hidden.length} too small to draw
+      </button>
+      {open ? (
+        <ul className="pane floating absolute top-full right-0 z-30 m-0 mt-2 max-h-72 w-64 list-none overflow-auto p-1.5 text-[12px]">
+          {hidden.map((a) => (
+            <li key={a.id}>
+              <button
+                type="button"
+                onClick={() => navigate(areaPath(a.id))}
+                className="item flex w-full items-center gap-3 px-2 py-0.5 text-left"
+              >
+                <Token id={a.id} />
+                <span className="ml-auto font-mono text-[11px] text-muted">{compact(a.lines)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+export const TreemapView = ({ slot }: { slot: HTMLElement | null }) => {
   const { ref, w, h } = useSize<HTMLDivElement>()
   const navigate = useNavigate()
-  const [listing, setListing] = useState(false)
   const [hover, setHover] = useState<{ area: Area; x: number; y: number } | null>(null)
 
   const groups = useMemo(() => {
@@ -117,36 +166,7 @@ export const TreemapView = () => {
           )
         }),
       )}
-      {hidden.length > 0 ? (
-        <div className="absolute right-3 bottom-3 z-10 flex flex-col items-end gap-1">
-          {listing ? (
-            <ul className="pane floating m-0 max-h-60 list-none overflow-auto p-1.5 text-[12px]">
-              {hidden.map((a) => (
-                <li key={a.id}>
-                  <button
-                    type="button"
-                    onClick={() => navigate(areaPath(a.id))}
-                    className="item flex w-full items-center gap-3 px-2 py-0.5 text-left"
-                  >
-                    <Token id={a.id} />
-                    <span className="ml-auto font-mono text-[11px] text-muted">
-                      {compact(a.lines)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <button
-            type="button"
-            aria-expanded={listing}
-            onClick={() => setListing(!listing)}
-            className="item pane floating cursor-pointer px-2 py-1 text-[12px] text-muted"
-          >
-            +{hidden.length} too small to draw
-          </button>
-        </div>
-      ) : null}
+      {slot && hidden.length > 0 ? createPortal(<HiddenAreas hidden={hidden} />, slot) : null}
       {hover ? (
         <div
           className="pane floating pointer-events-none fixed z-20 px-2 py-1 text-[12px]"

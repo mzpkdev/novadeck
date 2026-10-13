@@ -1,5 +1,4 @@
-import { existsSync, readdirSync } from "node:fs"
-import { join } from "node:path"
+import { execFileSync } from "node:child_process"
 
 import type {
   AgentSurface,
@@ -123,13 +122,15 @@ const titles: Record<string, string> = {
 
 // Every `harnesses/*` package but the shared core is an adapter.
 const findAdapters = (repo: string, anchors: Anchors): Adapter[] => {
-  const dir = join(repo, "harnesses")
-  const ids = existsSync(dir)
-    ? readdirSync(dir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() && entry.name !== "core")
-        .map((entry) => entry.name)
-        .toSorted()
-    : []
+  // Tracked packages only: a folder left behind with just an ignored node_modules is none.
+  const ids = execFileSync("git", ["ls-files", "--", "harnesses/*/package.json"], {
+    cwd: repo,
+    encoding: "utf8",
+  })
+    .split("\n")
+    .map((file) => file.split("/")[1])
+    .filter((id): id is string => id !== undefined && id !== "core")
+    .toSorted()
   if (ids.length === 0) anchors.report("harness adapters", "harnesses", "found 0 adapter packages")
   return ids.map((id) => {
     const manifest = `harnesses/${id}/package.json`

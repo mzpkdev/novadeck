@@ -86,7 +86,8 @@ const usage = (anchors: Anchors, files: string[], tables: Table[]): void => {
 }
 
 // A write that says `RETURNING` also reads the row it wrote; the statement spans lines, so
-// it is found from the keyword back to the write that opened it.
+// it is found from the keyword back to the write that opened it: the first write in it, as
+// an upsert's `ON CONFLICT … DO UPDATE SET` comes after its `INSERT INTO`.
 const returning = (anchors: Anchors, files: string[], tables: Table[]): void => {
   for (const file of files) {
     const source = anchors.read(file) ?? ""
@@ -97,7 +98,7 @@ const returning = (anchors: Anchors, files: string[], tables: Table[]): void => 
         ...statement.matchAll(
           /\b(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE(?:\s+OR\s+\w+)?|DELETE\s+FROM)\s+(\w+)/gi,
         ),
-      ].at(-1)
+      ][0]
       const table = tables.find((each) => each.name === write?.[1])
       if (table) table.readers.push({ file, line: lineAt(source, match.index) })
     }

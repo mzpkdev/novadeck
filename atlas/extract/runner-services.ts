@@ -51,7 +51,10 @@ export const findDefinition = (
     .toSorted((a, b) => Number(/manager|service/.test(b)) - Number(/manager|service/.test(a)))
   for (const file of new Set([service.file, ...siblings])) {
     const lines = anchors.read(file)?.split("\n") ?? []
-    const index = lines.findIndex((text) => pattern.test(text) && /[{(]$/.test(text.trimEnd()))
+    // A definition opens a body (`{` or `(` ends the line) or holds it on one line.
+    const index = lines.findIndex(
+      (text) => pattern.test(text) && /[{(]$|\)[^{}]*\{.*\}$/.test(text.trimEnd()),
+    )
     if (index !== -1) return { file, line: index + 1 }
   }
   return null

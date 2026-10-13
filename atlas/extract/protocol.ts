@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process"
 import { existsSync, readdirSync, statSync } from "node:fs"
-import { join } from "node:path"
+import { createRequire } from "node:module"
+import { dirname, join } from "node:path"
 
 const newest = (dir: string): number =>
   readdirSync(dir, { withFileTypes: true }).reduce((latest, entry) => {
@@ -9,17 +10,22 @@ const newest = (dir: string): number =>
   }, 0)
 
 // The extractor reads the contract from the built protocol package; build it when it is
-// missing or older than its source. The build's own output goes to stderr, so a failing
-// build explains itself and stdout stays the caller's.
+// missing or older than its source. It runs the package's own build (`tsc -p
+// tsconfig.build.json`) with the TypeScript the package resolves, through Node: not
+// through pnpm, which may first run an install, and which is a different executable on
+// Windows. The build's own output goes to stderr, so a failing build explains itself and
+// stdout stays the caller's.
 export const ensureProtocol = (repo: string): void => {
   const protocol = join(repo, "application/protocol")
   const built = join(protocol, "dist/index.js")
   if (existsSync(built) && statSync(built).mtimeMs >= newest(join(protocol, "src"))) return
   process.stderr.write("atlas: building @novadeck/protocol…\n")
-  const windows = process.platform === "win32"
-  execFileSync(windows ? "pnpm.cmd" : "pnpm", ["--filter", "@novadeck/protocol", "build"], {
-    cwd: repo,
+  const typescript = createRequire(join(protocol, "package.json")).resolve(
+    "typescript/package.json",
+  )
+  const tsc = join(dirname(typescript), "bin/tsc")
+  execFileSync(process.execPath, [tsc, "-p", "tsconfig.build.json"], {
+    cwd: protocol,
     stdio: ["ignore", 2, 2],
-    shell: windows,
   })
 }

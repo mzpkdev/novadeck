@@ -10,7 +10,7 @@ import {
   TriangleAlert,
   Workflow,
 } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Link, NavLink, Outlet, useLocation } from "react-router"
 
 import { atlas } from "../atlas-data.ts"
@@ -130,6 +130,7 @@ const Footer = () => {
 export const Layout = () => {
   const [searching, setSearching] = useState(false)
   const { key } = useLocation()
+  const closeSearch = useCallback(() => setSearching(false), [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -151,7 +152,7 @@ export const Layout = () => {
         </ErrorBoundary>
       </main>
       <Footer />
-      <Search open={searching} onClose={() => setSearching(false)} />
+      <Search open={searching} onClose={closeSearch} />
     </div>
   )
 }

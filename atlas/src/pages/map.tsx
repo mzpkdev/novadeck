@@ -286,7 +286,10 @@ export const MapPage = () => {
           nodeTypes={nodeTypes}
           colorMode="system"
           fitView
-          fitViewOptions={{ padding: 0.12 }}
+          // Room on the right for the selection panel, so it never covers a node.
+          fitViewOptions={{
+            padding: { top: "48px", left: "48px", bottom: "48px", right: "336px" },
+          }}
           nodesDraggable={false}
           nodesConnectable={false}
           proOptions={{ hideAttribution: true }}
