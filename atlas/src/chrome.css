@@ -287,16 +287,13 @@ kbd.hint {
   stroke-width: 2;
 }
 
-/* A faint dot grid in the accent over the workspace, as behind the app's windows. */
-.workspace.dots {
-  position: relative;
-}
-.workspace.dots::before {
+/* The dot grid behind the app's Focus and Grid windows, in the accent. */
+.workspace.dots::after {
   content: "";
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(var(--color-strong) 0.7px, transparent 0.7px);
-  background-size: 18px 18px;
+  background-image: radial-gradient(circle, var(--color-strong) 0.8px, transparent 0.8px);
+  background-size: 24px 24px;
   opacity: var(--canvas-dots-opacity);
   pointer-events: none;
 }

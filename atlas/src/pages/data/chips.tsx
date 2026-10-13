@@ -39,7 +39,7 @@ export const StorageStrip = ({ initial }: { initial: "settings" | "local" | null
     ["local", "Browser storage", local.length],
   ] as const
   return (
-    <div className="shrink-0 border-t border-[var(--color-outline)] bg-panel">
+    <div className="pane floating overflow-hidden">
       <div className="flex items-center gap-1 px-3">
         {tabs.map(([id, label, n]) => (
           <button

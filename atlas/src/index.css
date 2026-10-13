@@ -76,6 +76,8 @@
     inset 0 6px 10px -8px color-mix(in srgb, var(--color-shadow) 16%, transparent),
     inset 6px 0 10px -8px color-mix(in srgb, var(--color-shadow) 12%, transparent);
   --canvas-dots-opacity: 0.12;
+  --canvas-grain-opacity: 0.045;
+  --workspace-spotlight-opacity: 0.36;
   /* Windows, sidebar rows and controls */
   --window-border-color: oklch(from var(--color-paper) calc(l - 0.091) c h);
   --window-selected-border-color: #bbb6ad;
@@ -155,6 +157,7 @@
       inset 0 8px 12px -8px color-mix(in srgb, var(--color-shadow) 70%, transparent),
       inset 8px 0 12px -8px color-mix(in srgb, var(--color-shadow) 55%, transparent);
     --canvas-dots-opacity: 0.07;
+    --workspace-spotlight-opacity: 0.48;
     --window-border-color: oklch(from var(--color-paper) calc(l + 0.053) c h);
     --window-selected-border-color: #3d4047;
     --field-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-shadow) 40%, transparent);
@@ -261,15 +264,26 @@
   border-color: var(--color-outline);
 }
 
-/* The map's canvas, as the app's workspace: recessed, lit in the middle. */
+/* The app's workspace, behind Focus, Grid and Canvas: recessed, lit off-centre toward the
+   top left, under a faint grain (layouts/workspace.css). */
 .workspace {
-  background: radial-gradient(
-    ellipse at 50% 45%,
-    var(--workspace-glow-bg),
-    var(--workspace-bg) 55%,
-    var(--workspace-edge-bg)
+  background-color: var(--workspace-bg);
+  background-image: radial-gradient(
+    ellipse at 45% 32%,
+    var(--workspace-glow-bg) 0%,
+    var(--workspace-bg) 65%,
+    var(--workspace-edge-bg) 100%
   );
   box-shadow: var(--workspace-inset-shadow);
+}
+.workspace::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("./assets/canvas-grain.svg");
+  background-size: 192px 192px;
+  opacity: var(--canvas-grain-opacity);
 }
 
 .react-flow {
@@ -283,6 +297,30 @@
 
 .react-flow__background {
   opacity: var(--canvas-dots-opacity);
+}
+
+/* The Canvas view's dot grid, in the accent, and the brighter dots that follow the
+   pointer (components/canvas-background.tsx). */
+.canvas-grid,
+.canvas-grid-spotlight {
+  --xy-background-pattern-color: var(--color-strong);
+  pointer-events: none;
+}
+.canvas-grid-spotlight {
+  opacity: 0;
+  mask-image: radial-gradient(
+    circle 210px at var(--canvas-pointer-x, -1000px) var(--canvas-pointer-y, -1000px),
+    var(--color-ink) 0%,
+    color-mix(in srgb, var(--color-ink) 75%, transparent) 30%,
+    color-mix(in srgb, var(--color-ink) 25%, transparent) 65%,
+    transparent 100%
+  );
+  transition: opacity 220ms ease-out;
+}
+@media (hover: hover) and (pointer: fine) {
+  .workspace[data-pointer-inside="true"] .canvas-grid-spotlight {
+    opacity: var(--workspace-spotlight-opacity);
+  }
 }
 
 :target,

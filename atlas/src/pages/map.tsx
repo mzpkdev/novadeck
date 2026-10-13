@@ -1,5 +1,4 @@
 import {
-  Background,
   Controls,
   Handle,
   MarkerType,
@@ -16,6 +15,7 @@ import { Link, useNavigate, useSearchParams } from "react-router"
 import { areaById, atlas, nodeById, nodeTitle } from "../atlas-data.ts"
 import type { RuntimeEdge, RuntimeNode } from "../atlas.ts"
 import { AnchorIcon } from "../components/anchor.tsx"
+import { CanvasBackground, canvasPointer } from "../components/canvas-background.tsx"
 import { squarify } from "../components/treemap.ts"
 import { Badge } from "../components/ui.tsx"
 import { compact, Dot, hue } from "../components/viz.tsx"
@@ -260,7 +260,7 @@ export const MapPage = () => {
 
   return (
     <div className="relative min-w-0 flex-1">
-      <div className="workspace absolute inset-0">
+      <div className="workspace absolute inset-0" {...canvasPointer}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -278,7 +278,7 @@ export const MapPage = () => {
           }}
           onPaneClick={() => setSelection(null)}
         >
-          <Background color="var(--accent)" gap={18} size={1.4} />
+          <CanvasBackground />
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>

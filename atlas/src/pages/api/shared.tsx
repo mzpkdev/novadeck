@@ -50,9 +50,7 @@ export const SidePanel = ({
   children: ReactNode
   className?: string
 }) => (
-  <aside
-    className={`flex min-h-0 w-80 shrink-0 flex-col border-l border-[var(--window-border-color)] bg-panel ${className}`}
-  >
+  <aside className={`flex min-h-0 w-80 shrink-0 flex-col bg-panel ${className}`}>
     <div className="pane-heading flex h-12 shrink-0 items-center gap-2 px-3">
       <div className="min-w-0 flex-1 truncate font-mono text-body font-medium">{title}</div>
       <button type="button" onClick={onClose} aria-label="Close" className="icon-button small">

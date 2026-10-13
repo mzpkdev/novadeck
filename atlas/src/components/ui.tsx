@@ -23,7 +23,7 @@ export const Page = ({
 }) => (
   <div className="flex min-h-0 min-w-0 flex-1">
     {side}
-    <div className="workspace dots flex min-w-0 flex-1 p-3">
+    <div className="workspace dots relative flex min-w-0 flex-1 p-3">
       <section className="pane relative z-[1] flex min-w-0 flex-1 flex-col overflow-hidden">
         <header className="pane-heading flex h-12 shrink-0 items-center gap-3 px-4">
           {crumbs ? (

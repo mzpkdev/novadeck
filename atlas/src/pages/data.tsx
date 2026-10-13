@@ -1,18 +1,10 @@
-import {
-  Background,
-  BackgroundVariant,
-  ConnectionMode,
-  Controls,
-  ReactFlow,
-  ReactFlowProvider,
-  useReactFlow,
-} from "@xyflow/react"
+import { ConnectionMode, Controls, ReactFlow, ReactFlowProvider, useReactFlow } from "@xyflow/react"
 import type { Edge } from "@xyflow/react"
 import { useEffect, useMemo, useState } from "react"
 import { useLocation } from "react-router"
 
 import { atlas, tableByName } from "../atlas-data.ts"
-import { Page } from "../components/ui.tsx"
+import { CanvasBackground, canvasPointer } from "../components/canvas-background.tsx"
 import { StorageStrip } from "./data/chips.tsx"
 import { NODE_W, nodeHeight, positions, relations } from "./data/model.ts"
 import type { TableNode } from "./data/model.ts"
@@ -90,7 +82,7 @@ const Canvas = ({
       nodeTypes={nodeTypes}
       connectionMode={ConnectionMode.Loose}
       fitView
-      fitViewOptions={{ padding: 0.08 }}
+      fitViewOptions={{ padding: 0.12 }}
       minZoom={0.3}
       nodesConnectable={false}
       elementsSelectable={false}
@@ -98,8 +90,8 @@ const Canvas = ({
       onNodeClick={(_, n) => onSelect(n.id)}
       onPaneClick={() => onSelect(null)}
     >
-      <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} color="var(--accent)" />
-      <Controls showInteractive={false} />
+      <CanvasBackground />
+      <Controls showInteractive={false} position="bottom-right" />
     </ReactFlow>
   )
 }
@@ -127,37 +119,33 @@ export const DataPage = () => {
   const setSelected = (name: string | null) => setPicked({ hash: id, name })
   const table = selected ? (tableByName.get(selected) ?? null) : null
   return (
-    <Page
-      title="Data"
-      flush
-      tools={
-        <span className="flex items-center gap-4 text-caption text-muted">
-          <span className="flex items-center gap-1">
-            {line()}
-            foreign key
-          </span>
-          <span className="flex items-center gap-1">
-            {line("4 3")}
-            implied by name
-          </span>
+    <div className="workspace relative min-w-0 flex-1 overflow-hidden" {...canvasPointer}>
+      <ReactFlowProvider>
+        <Canvas selected={selected} onSelect={setSelected} />
+      </ReactFlowProvider>
+      <div className="pane floating pointer-events-none absolute top-3 left-3 z-10 flex items-center gap-4 px-3 py-1.5 text-caption text-muted">
+        <span className="text-body font-medium text-fg">Data</span>
+        <span className="flex items-center gap-1">
+          {line()}
+          foreign key
         </span>
-      }
-    >
-      <div className="flex min-h-0 flex-1">
-        <div className="relative min-w-0 flex-1">
-          <ReactFlowProvider>
-            <Canvas selected={selected} onSelect={setSelected} />
-          </ReactFlowProvider>
-          {table ? (
-            <div className="absolute inset-y-0 right-0 z-10 flex shadow-lg">
-              <TablePanel table={table} onClose={() => setSelected(null)} />
-            </div>
-          ) : null}
-        </div>
+        <span className="flex items-center gap-1">
+          {line("4 3")}
+          implied by name
+        </span>
       </div>
-      <StorageStrip
-        initial={id.startsWith("setting:") ? "settings" : id.startsWith("local:") ? "local" : null}
-      />
-    </Page>
+      <div className="absolute bottom-3 left-3 z-10 w-[min(720px,calc(100%-24px))]">
+        <StorageStrip
+          initial={
+            id.startsWith("setting:") ? "settings" : id.startsWith("local:") ? "local" : null
+          }
+        />
+      </div>
+      {table ? (
+        <div className="pane floating absolute top-3 right-3 bottom-3 z-10 flex overflow-hidden">
+          <TablePanel table={table} onClose={() => setSelected(null)} />
+        </div>
+      ) : null}
+    </div>
   )
 }
