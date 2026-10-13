@@ -319,12 +319,18 @@ const follow = (
   return entry
 }
 
-// Starts what the backend reports for an item, as it's followed now.
+// Starts what the backend reports for an item, as it's followed now. A report that
+// comes after it stops, as one held back before the item was revealed, is let go.
 const listen = (session: Session, id: ItemId, entry: Followed): void => {
   const { target, reveal } = entry
-  entry.stop = session.companions.follow(target, id, { reveal }, (content) => {
-    if (session.followed.get(id) === entry) received(session, target, id, content)
+  let live = true
+  const stop = session.companions.follow(target, id, { reveal }, (content) => {
+    if (live && session.followed.get(id) === entry) received(session, target, id, content)
   })
+  entry.stop = () => {
+    live = false
+    stop()
+  }
 }
 
 const unfollow = (session: Session, id: ItemId): void => {

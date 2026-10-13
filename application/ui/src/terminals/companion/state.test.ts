@@ -81,6 +81,7 @@ const backend = () => {
     saves,
     follows,
     stopped,
+    listeners,
     emit: (version: PlanVersion) => listeners.get(planItem.id)?.(contentOf(version)),
   }
 }
@@ -332,6 +333,17 @@ describe("following items", () => {
     vi.advanceTimersByTime(30_000)
     expect(stopped).toEqual([hero.id, hero.id])
     expect(panes.store.getSnapshot().content).not.toHaveProperty(hero.id)
+  })
+
+  it("ignores what it held before it was revealed, should that come late", () => {
+    const { companions, listeners } = backend()
+    const { panes } = connected(companions)
+    panes.watch(target, hero.id)
+    const unrevealed = listeners.get(hero.id)!
+    panes.reveal(hero.id)
+    listeners.get(hero.id)!({ state: "unavailable", reason: "missing", size: null })
+    unrevealed({ state: "unavailable", reason: "held", size: null })
+    expect(panes.store.getSnapshot().content[hero.id]).toMatchObject({ reason: "missing" })
   })
 
   it("lets go of what's revealed while nothing shows it", () => {
