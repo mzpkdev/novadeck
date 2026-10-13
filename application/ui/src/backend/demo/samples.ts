@@ -319,18 +319,27 @@ export const createMockTerminal = (
   }
 }
 
+// What the demo's shell answers: a few commands it fakes, and for any other a line that
+// says it is a simulation and where to go, since a person who types into it expects a shell.
 export const mockReply = (command: string, terminal: TerminalMetadata): string => {
   const input = command.trim()
+  const [program = ""] = input.split(/\s+/)
   if (input === "help")
-    return "Local demo commands: help, pwd, ls, whoami, date, echo <text>, clear"
+    return "Local demo commands: help, pwd, ls, whoami, date, echo <text>, git status, claude, clear.\nThis is a simulated shell: the real app runs your own."
   if (input === "pwd") return terminal.directory.replace("~", "/Users/alex")
-  if (input === "ls")
+  if (program === "ls")
     return "application/   node_modules/   package.json   pnpm-lock.yaml   README.md"
   if (input === "whoami") return "alex"
   if (input === "date") return new Date().toLocaleString()
   if (input === "echo") return ""
   if (input.startsWith("echo ")) return input.slice(5)
+  if (input === "git status")
+    return "On branch main\nYour branch is up to date with 'origin/main'.\n\nnothing to commit, working tree clean"
+  if (program === "git")
+    return "This is a simulated shell, so git only answers `git status`. In the real app it is your own."
+  if (program === "claude" || program === "codex")
+    return "Agents are simulated here. Open a terminal already running one, such as Checkout implementation or Checkout review, and answer what it asks."
   if (demoAgent(terminal))
     return "This is a mock AI session. Your message is saved here, but no model is connected."
-  return `Preview shell: “${input}” isn't connected to a process. Type help to explore.`
+  return `zsh: command not found: ${program}\nThis is a simulated shell. Type help to see what works, or try ls, git status or claude.`
 }

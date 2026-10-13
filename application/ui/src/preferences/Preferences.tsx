@@ -104,6 +104,7 @@ export const Preferences = ({
   updates,
   notices = false,
   chat = false,
+  visitor = false,
 }: {
   open: boolean
   tab: PreferencesTab
@@ -122,6 +123,9 @@ export const Preferences = ({
   notices?: boolean
   // Whether the backend reads agents' conversations, which the chat view shows.
   chat?: boolean
+  // Whether this is the website's demo, whose Addons (chat view, voice input, murmur)
+  // all need the desktop app, so it has no tab for them.
+  visitor?: boolean
   // Agents whose sessions resume once connected; absent where the backend has none.
   agents?: {
     readonly list: readonly AgentSwitch[]
@@ -192,11 +196,13 @@ export const Preferences = ({
             label="Preference sections"
             indicatorClassName="bottom-[-1px] h-0.5"
           >
-            {preferencesTabs.map(({ id, label }) => (
-              <Tab key={id} value={id} className="relative min-h-9 px-0.5 text-left text-body">
-                {label}
-              </Tab>
-            ))}
+            {preferencesTabs
+              .filter(({ id }) => !(visitor && id === "addons"))
+              .map(({ id, label }) => (
+                <Tab key={id} value={id} className="relative min-h-9 px-0.5 text-left text-body">
+                  {label}
+                </Tab>
+              ))}
           </TabList>
         </div>
         <div ref={panels} className="preferences-panels grid min-h-0 flex-1 overflow-y-auto">

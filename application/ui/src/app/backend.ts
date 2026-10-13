@@ -12,7 +12,8 @@ import type { UpdateOffer } from "../model/update"
 // The only place that chooses a backend adapter. Tests and specs run on the demo;
 // every build, development or production, connects to a runner, whose client and
 // terminal emulator load with the connection instead of the entry point. The content
-// preview connects to the demo, with its debug panel.
+// preview connects to the demo, with its debug panel; the `try` mode, a build for a
+// website's visitors, to the demo that plays itself.
 const runnerSelection = (): BackendSelection => ({
   connect: async (signal, progress) =>
     (await import("../backend/runner")).connectRunnerBackend(signal, progress),
@@ -119,9 +120,18 @@ const testBackend = (): ReturnType<typeof createDemoBackend> => {
     : withSandbox
 }
 
+// The visitor build, for a website, loads its demo with the connection, so no other build
+// carries it.
+const visitorSelection = (): BackendSelection => ({
+  connect: async (signal, progress) =>
+    (await import("../backend/demo/visitor/connect")).connectVisitor(signal, progress),
+})
+
 export const selectBackend: BackendSelection =
   import.meta.env.MODE === "content-preview"
     ? demoSelection()
-    : import.meta.env.MODE === "test"
-      ? { createBackend: testBackend }
-      : runnerSelection()
+    : import.meta.env.MODE === "try"
+      ? visitorSelection()
+      : import.meta.env.MODE === "test"
+        ? { createBackend: testBackend }
+        : runnerSelection()

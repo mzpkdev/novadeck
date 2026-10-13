@@ -22,6 +22,7 @@ import { HeaderSection } from "./HeaderSection"
 import { currentState, currentTarget, shallowEqual } from "./selectors"
 import { SidebarSection } from "./SidebarSection"
 import { useNotificationBadge } from "./useNotifications"
+import { VisitorBar, VisitorHints, VisitorPhone } from "./Visitor"
 import { WorkspaceFooter } from "./WorkspaceFooter"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
 import { WorkspaceProvider } from "./WorkspaceProvider"
@@ -128,6 +129,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
         }
       >
         <WorkspaceEffects />
+        <VisitorBar />
         <HeaderSection />
         <div className="workspace-body relative flex min-h-0 flex-1">
           {sidebarRail()}
@@ -161,6 +163,8 @@ export const WorkspaceApp = (): React.JSX.Element => {
         <WorkspaceOverlays />
         {voice && <DictationOverlay view={voice.view} level={voice.level} docks={voice.docks} />}
         <DebugSection />
+        <VisitorHints />
+        <VisitorPhone />
       </main>
     </DictationContext.Provider>
   )
