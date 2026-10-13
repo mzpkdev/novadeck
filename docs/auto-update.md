@@ -31,8 +31,9 @@ which is logged as a failed check; nothing is offered and nothing crashes.
 
 Switching applies to the next check, and one runs about two seconds later. Switching
 back to `stable` never downgrades: an `early` build newer than stable waits until stable
-passes it. Once an update has downloaded the schedule has ended, so a switch then applies
-from the next launch; it does not discard the download.
+passes it. A switch never discards a downloaded update; a newer release on the new channel
+replaces it, as any newer release does (see "Installing and telling"). On macOS the schedule
+ends once an update has downloaded, so a switch then applies from the next launch.
 
 electron-updater decides the release in `GitHubProvider.getLatestVersion`. With
 `allowPrerelease` false it asks `/releases/latest`, which GitHub answers with the latest
@@ -65,6 +66,17 @@ build checks its own signature once at launch with `codesign`. See
 - **Installing** builds download in the background. The update is offered to the page as
   `ready` once downloaded (on macOS, once Squirrel has staged it) and installs on the next
   quit or when the person restarts.
+- **A newer release** found while an update waits replaces it, so one restart lands on the
+  latest release rather than one restart per release missed. Downloading it empties the
+  folder the waiting file is in (electron-updater's `getValidCachedUpdateFile`) while the
+  updater still names that file, so installing on quit is off until the newer file is in;
+  a quit meanwhile installs nothing, and the next launch finds the newer file cached. The
+  offer stays `ready`, and a restart asked for meanwhile waits for the download and goes
+  ahead into it. Should the download fail, the waiting file is gone with it: the newer
+  release is offered as `available` and the next check downloads it. Quitting and
+  restarting end the schedule first, so nothing downloads on the way out. macOS keeps the
+  update Squirrel staged and checks again at the next launch: electron-updater hands a
+  download to Squirrel only while installing on quit is on.
 - **Telling** builds download nothing and keep checking, so a newer release replaces the
   offer. The offer is `available`, and the page's button opens the release page,
   `https://github.com/<owner>/<repo>/releases/tag/v<version>`, in the browser.

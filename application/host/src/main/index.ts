@@ -656,10 +656,12 @@ const launch = async (): Promise<void> => {
     install: () =>
       installUpdate({
         downloaded: () => offers.current()?.kind === "ready" && updater !== undefined,
+        settled: () => updates?.settled() ?? Promise.resolve(false),
         stopping: () => stopping,
         stop: () => {
           stopping = true
           orderlyQuit = true
+          updates?.stop()
         },
         shutdown: shutDown,
         install: () => {
@@ -831,6 +833,8 @@ const declineUnorderlyInstall = installOnlyOnOrderlyQuit(
 )
 
 app.on("before-quit", (event) => {
+  // Nothing more downloads on the way out, nor switches installing on quit back on.
+  updates?.stop()
   if (process.platform === "linux") declineUnorderlyInstall()
   if ((!server && !runner) || stopping) return
 

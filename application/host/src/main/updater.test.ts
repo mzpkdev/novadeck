@@ -377,8 +377,20 @@ describe("taking the page's requests about updates", () => {
 // An updater whose quitAndInstall behaves as electron-updater's does when installing
 // fails: it logs and returns, without quitting or throwing. `ends` is how it behaves
 // when installing works: the app quits (as BaseUpdater does after a setImmediate).
+// A promise and what settles it, as the host's lib has no Promise.withResolvers.
+const deferred = <T>() => {
+  const settle: { resolve?: (value: T) => void; reject?: (error: unknown) => void } = {}
+  const promise = new Promise<T>((resolve, reject) => Object.assign(settle, { resolve, reject }))
+  return {
+    promise,
+    resolve: (value: T) => settle.resolve?.(value),
+    reject: (error: unknown) => settle.reject?.(error),
+  }
+}
+
 const installing = ({
   downloaded = true,
+  settled = () => Promise.resolve(true),
   ends = true,
   throws = false,
   shutdownMs = 0,
@@ -394,6 +406,7 @@ const installing = ({
   const run = (): void =>
     installUpdate({
       downloaded: () => downloaded,
+      settled,
       stopping: () => stopping,
       stop: () => {
         stopping = true
@@ -433,6 +446,25 @@ describe("restarting into the update", () => {
 
   it("does nothing while no update is downloaded", async () => {
     const { run, steps } = installing({ downloaded: false })
+    run()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(steps).toEqual([])
+  })
+
+  it("waits for a newer release downloading in place of the update, then restarts into it", async () => {
+    const { promise, resolve } = deferred<boolean>()
+    const { run, steps } = installing({ settled: () => promise })
+    run()
+    run()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(steps).toEqual([])
+    resolve(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(steps).toEqual(["stop", "shutdown", "shut down", "install", "quit by updater"])
+  })
+
+  it("does not restart when that download fails, as nothing is left to install", async () => {
+    const { run, steps } = installing({ settled: () => Promise.resolve(false) })
     run()
     await vi.advanceTimersByTimeAsync(60_000)
     expect(steps).toEqual([])
@@ -624,21 +656,124 @@ describe("checking for updates", () => {
       expect(offered).toHaveLength(1)
     })
 
-    it("stops checking once an update has downloaded, so a newer one cannot replace it", async () => {
+    it("keeps checking once an update has downloaded, so a newer release is found", async () => {
       const { updater } = checking()
       await vi.advanceTimersByTimeAsync(firstCheckMs)
       updater.emit("update-downloaded", { version: "1.2.3" })
       await vi.advanceTimersByTimeAsync(checkIntervalMs * 3)
-      expect(updater.checks).toBe(1)
+      expect(updater.checks).toBe(4)
     })
 
-    it("downloads an update it finds, and nothing more once one has downloaded", () => {
+    it("on macOS stops checking once an update has downloaded, as Squirrel keeps the one it staged", async () => {
+      const native = new EventEmitter()
+      const { updater } = checking({ native })
+      await vi.advanceTimersByTimeAsync(firstCheckMs)
+      updater.emit("update-downloaded", { version: "1.2.3" })
+      updater.emit("update-available", { version: "1.3.0" })
+      await vi.advanceTimersByTimeAsync(checkIntervalMs * 3)
+      expect(updater.checks).toBe(1)
+      expect(updater.downloads).toHaveLength(0)
+    })
+
+    it("does not download the update it has again", () => {
       const { updater } = checking()
       updater.emit("update-available", { version: "1.2.3" })
       expect(updater.downloads).toHaveLength(1)
       updater.emit("update-downloaded", { version: "1.2.3" })
-      updater.emit("update-available", { version: "1.3.0" })
+      updater.emit("update-available", { version: "1.2.3" })
       expect(updater.downloads).toHaveLength(1)
+    })
+
+    context("when a newer release comes out while an update waits", () => {
+      const waiting = () => {
+        const checks = checking()
+        checks.updater.emit("update-downloaded", { version: "1.2.3" })
+        const download = deferred<unknown>()
+        checks.updater.downloadResult = () => download.promise
+        checks.updater.emit("update-available", { version: "1.3.0" })
+        return { ...checks, download }
+      }
+
+      it("downloads it in place of the waiting one, and offers it as ready", async () => {
+        const { updater, offered, download } = waiting()
+        expect(updater.downloads).toHaveLength(1)
+        updater.emit("update-downloaded", { version: "1.3.0" })
+        download.resolve(undefined)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(offered).toEqual([
+          ["ready", "1.2.3", []],
+          ["ready", "1.3.0", []],
+        ])
+      })
+
+      it("installs nothing on quit until it is in, as the waiting file is gone", async () => {
+        const { updater, download } = waiting()
+        expect(updater.autoInstallOnAppQuit).toBe(false)
+        updater.emit("update-downloaded", { version: "1.3.0" })
+        download.resolve(undefined)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(updater.autoInstallOnAppQuit).toBe(true)
+      })
+
+      it("lets a restart wait for it, and tells whether it came through", async () => {
+        const { updater, settled, download } = waiting()
+        let ready: boolean | undefined
+        void settled().then((value) => void (ready = value))
+        await vi.advanceTimersByTimeAsync(0)
+        expect(ready).toBeUndefined()
+        updater.emit("update-downloaded", { version: "1.3.0" })
+        download.resolve(undefined)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(ready).toBe(true)
+        await expect(settled()).resolves.toBe(true)
+      })
+
+      it("leaves a release found meanwhile to a later check", () => {
+        const { updater } = waiting()
+        updater.emit("update-available", { version: "1.4.0" })
+        updater.emit("update-available", { version: "1.3.0" })
+        expect(updater.downloads).toHaveLength(1)
+      })
+
+      it("offers it as available when its download fails, and downloads it at a later check", async () => {
+        const { updater, offered, settled, download } = waiting()
+        const ready = settled()
+        download.reject(new Error("download failed"))
+        await vi.advanceTimersByTimeAsync(0)
+        await expect(ready).resolves.toBe(false)
+        await expect(settled()).resolves.toBe(false)
+        expect(offered.at(-1)).toEqual(["available", "1.3.0", []])
+        expect(updater.autoInstallOnAppQuit).toBe(false)
+        updater.downloadResult = undefined
+        updater.emit("update-available", { version: "1.3.0" })
+        expect(updater.downloads).toHaveLength(2)
+        updater.emit("update-downloaded", { version: "1.3.0" })
+        expect(updater.autoInstallOnAppQuit).toBe(true)
+        expect(offered.at(-1)).toEqual(["ready", "1.3.0", []])
+      })
+
+      it("does not switch installing on quit back on once quitting has stopped the schedule", async () => {
+        const { updater, stop, download } = waiting()
+        stop()
+        updater.emit("update-downloaded", { version: "1.3.0" })
+        download.resolve(undefined)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(updater.autoInstallOnAppQuit).toBe(false)
+      })
+    })
+
+    it("downloads nothing once stopped", () => {
+      const { updater, stop } = checking()
+      stop()
+      updater.emit("update-available", { version: "1.2.3" })
+      expect(updater.downloads).toHaveLength(0)
+    })
+
+    it("has no update to install before one has downloaded", async () => {
+      const { updater, settled } = checking()
+      await expect(settled()).resolves.toBe(false)
+      updater.emit("update-downloaded", { version: "1.2.3" })
+      await expect(settled()).resolves.toBe(true)
     })
 
     context("after an install failed on a version", () => {
@@ -813,8 +948,16 @@ describe("checking for updates", () => {
       expect(checks.updater.checks).toBe(1)
     })
 
-    it("applies from the next launch once an update has downloaded, which ended the schedule", async () => {
+    it("checks soon after an update has downloaded too, as a newer release replaces it", async () => {
       const checks = checking()
+      checks.updater.emit("update-downloaded", { version: "1.2.3" })
+      checks.setChannel("early")
+      await vi.advanceTimersByTimeAsync(switchCheckMs)
+      expect(checks.updater.checks).toBe(1)
+    })
+
+    it("applies from the next launch once the schedule has ended", async () => {
+      const checks = checking({ native: new EventEmitter() })
       checks.updater.emit("update-downloaded", { version: "1.2.3" })
       checks.setChannel("early")
       expect(checks.updater.allowPrerelease).toBe(true)
