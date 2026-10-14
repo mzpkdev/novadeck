@@ -501,6 +501,7 @@ for (const setup of setups) {
         await t1.poll(
           () => (t1.history().at(-1)?.delivery !== "working" ? true : undefined),
           "delivery to take the turn as over",
+          5_000,
         )
       } finally {
         harness.decode = decode
@@ -532,6 +533,7 @@ for (const setup of setups) {
       await t1.poll(
         () => (t1.history().at(-1)?.delivery !== "working" ? true : undefined),
         "delivery to take the failed turn as over",
+        5_000,
       )
     })
   })

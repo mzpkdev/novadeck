@@ -82,7 +82,7 @@ public static class NovadeckReap {
         // One that has exited keeps its process object, and its memory for a moment, while
         // anything holds a handle to it or its threads wind down: it runs no longer, as the
         // relay and a signal to its pid also find, and counts as no leftover.
-        try { if (process.HasExited) continue; } catch { continue; }
+        try { if (process.HasExited) continue; } catch (Exception) { /* Unreadable: the start and parameters below say. */ }
         DateTime created;
         try { created = process.StartTime.ToUniversalTime(); } catch { continue; }
         if (created < since) continue;
