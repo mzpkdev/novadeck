@@ -67,7 +67,7 @@ export const demoBackend = (
   let latest: Workspace | undefined
   return {
     seed,
-    newTerminal: ({ target, directory, title }) => {
+    newTerminal: ({ target, directory, title, launch }) => {
       const session = latest?.projects
         .find((project) => project.id === target.projectId)
         ?.history.find((each) => each.id === target.workspaceSessionId)
@@ -80,7 +80,7 @@ export const demoBackend = (
       const address = addressOf(target.projectId, target.workspaceSessionId)
       const number = Math.max(numbers.get(address) ?? highest, highest) + 1
       numbers.set(address, number)
-      const terminal = createMockTerminal(target, number, directory)
+      const terminal = createMockTerminal(target, number, directory, launch?.command)
       return title ? { ...terminal, name: title } : terminal
     },
     commit: (workspace, actions) => {
@@ -147,11 +147,11 @@ const namings: Readonly<
   Record<string, { readonly source: TitleSource; readonly automatic: string }>
 > = {
   "01": { source: { kind: "person" }, automatic: "Checkout flow" },
-  "02": { source: { kind: "person" }, automatic: "Terminal 02" },
+  "02": { source: { kind: "person" }, automatic: "Terminal" },
   "03": { source: { kind: "murmur" }, automatic: "Tests" },
   "04": { source: { kind: "agent", by: "moth" }, automatic: "Checkout review" },
-  "05": { source: { kind: "person" }, automatic: "Terminal 05" },
-  "06": { source: { kind: "person" }, automatic: "Terminal 06" },
+  "05": { source: { kind: "person" }, automatic: "Terminal" },
+  "06": { source: { kind: "person" }, automatic: "Terminal" },
 }
 
 // What a reset names a sample terminal: the agent's name for the first, else the
@@ -208,7 +208,7 @@ export const withMessages = (backend: Backend, now: number): Backend => {
                 type: "terminal/update",
                 target: { projectId, workspaceSessionId },
                 terminalId,
-                name: namings[slot]?.automatic ?? `Terminal ${slot}`,
+                name: namings[slot]?.automatic ?? "Terminal",
                 titleSource: automaticSource(slot),
               },
             ],
