@@ -63,19 +63,18 @@ const Permission = (
             >
               {plan ? "Approve" : "Allow"}
             </button>
-          ) : (
-            choices.unsure.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className="button text-control"
-                disabled={answering}
-                onClick={() => answer(option, `Answered. ${agent} is working again.`)}
-              >
-                <Text text={option.label} />
-              </button>
-            ))
-          )}
+          ) : null}
+          {choices.unsure.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className="button text-control"
+              disabled={answering}
+              onClick={() => answer(option, `Answered. ${agent} is working again.`)}
+            >
+              <Text text={option.label} />
+            </button>
+          ))}
           {canDeny && (
             <button
               type="button"

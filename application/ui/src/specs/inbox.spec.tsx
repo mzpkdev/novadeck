@@ -422,3 +422,40 @@ describe("Marking updates read", () => {
       .not.toBeInTheDocument()
   })
 })
+
+describe("The Inbox on a phone", () => {
+  afterEach(async () => {
+    await page.viewport(1440, 900)
+  })
+
+  it("gives the screen to a sheet, with focus in it, and back to the list", async () => {
+    await page.viewport(400, 800)
+    await openInbox()
+    await row("Run pnpm add").click()
+    const screen = page.getByRole("dialog", { name: "Checkout review" })
+
+    await expect.element(screen).toBeVisible()
+    await expect
+      .poll(() => document.activeElement?.closest(".inbox-fullscreen") !== null)
+      .toBe(true)
+    await screen.getByRole("button", { name: "Back to the Inbox" }).click()
+    await expect.element(screen).not.toBeInTheDocument()
+    await expect.element(row("Run pnpm add")).toBeVisible()
+  })
+
+  it("closes both the sheet and the list on Show terminal", async () => {
+    await page.viewport(400, 800)
+    await openInbox()
+    await row("Run pnpm add").click()
+    await page
+      .getByRole("dialog", { name: "Checkout review" })
+      .getByRole("button", { name: "Show terminal" })
+      .click()
+
+    await expect
+      .element(page.getByRole("dialog", { name: "Checkout review" }))
+      .not.toBeInTheDocument()
+    await expect.element(row("Run pnpm add")).not.toBeInTheDocument()
+    await expect.element(terminal("Checkout review")).toBeVisible()
+  })
+})

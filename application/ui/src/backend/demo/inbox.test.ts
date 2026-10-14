@@ -10,7 +10,8 @@ import {
   demoInboxItemsAll,
   isDemoInbox,
 } from "./inbox"
-import { createDemo } from "./variants"
+import { createDemo, demoVariants } from "./variants"
+import { visitorDemo } from "./visitor"
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -119,6 +120,24 @@ describe("the demo Inbox", () => {
     })
   })
 
+  context("when auto-resume is turned on after a failed answer", () => {
+    it("clears the error", () => {
+      const inbox = createDemoInbox(now)
+      inbox.failNext()
+      inbox.answer(demoInboxIds.limit, {
+        kind: "trouble",
+        action: { type: "auto-resume", on: false },
+      })
+      expect(inbox.state.getSnapshot().failed[demoInboxIds.limit]).toBeDefined()
+
+      inbox.answer(demoInboxIds.limit, {
+        kind: "trouble",
+        action: { type: "auto-resume", on: false },
+      })
+      expect(inbox.state.getSnapshot().failed[demoInboxIds.limit]).toBeUndefined()
+    })
+  })
+
   context("when an item is seen", () => {
     it("marks only that item", () => {
       const inbox = createDemoInbox(now)
@@ -153,7 +172,8 @@ describe("the demo Inbox", () => {
 describe("the demo variants' Inbox", () => {
   it("is in the inbox variant alone", () => {
     expect(isDemoInbox(createDemo("inbox").inbox)).toBe(true)
-    for (const variant of ["showcase", "plain", "agents", "messages", "welcome"] as const)
+    for (const variant of demoVariants.filter((each) => each !== "inbox"))
       expect(createDemo(variant).inbox).toBeUndefined()
+    expect(visitorDemo().inbox).toBeUndefined()
   })
 })

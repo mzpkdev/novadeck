@@ -153,6 +153,14 @@ export const InboxProvider = ({
       ),
     [sent, state.items],
   )
+  // A draft for an item that is gone, and not shown answered, is dropped.
+  const gone = Object.keys(drafts).filter(
+    (id) => !(id in ghosts) && !state.items.some((item) => item.id === id),
+  )
+  if (gone.length > 0)
+    setDrafts((record) =>
+      Object.fromEntries(Object.entries(record).filter(([id]) => !gone.includes(id))),
+    )
   const shown = useMemo(() => visible(view, state.items, ghosts), [view, state.items, ghosts])
 
   // What the handlers below read, as of the last commit.

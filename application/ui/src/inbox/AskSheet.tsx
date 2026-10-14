@@ -222,7 +222,7 @@ const Asked = (props: SheetContentProps & { readonly ask: AgentAsk }): React.JSX
                   id={`secret-${item.id}`}
                   className="field inbox-secret-input text-control"
                   type="password"
-                  autoComplete="off"
+                  autoComplete="new-password"
                   spellCheck={false}
                   value={secret}
                   onChange={(event) => setSecret(event.target.value)}

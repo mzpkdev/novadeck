@@ -178,7 +178,7 @@ export type Choices = {
   // The plain yes that leads; null where no yes is plain.
   readonly allow: ChatDialogOption | null
   readonly standing: readonly ChatDialogOption[]
-  // With no plain yes, every yes, to be offered as it words itself.
+  // The yeses that are neither plain nor standing, offered as they word themselves.
   readonly unsure: readonly ChatDialogOption[]
   // The no that takes the person's words, and the plain one.
   readonly note: ChatDialogOption | null
@@ -190,25 +190,29 @@ const no = /^(no|deny|reject)\b/i
 const standing =
   /don't ask again|do not ask again|always|allow all|all edits|this session|for session|auto-accept/i
 
-// A yes that is plain says nothing more than yes ("Allow once", "Yes, proceed"); one that
-// goes on ("Yes, and bypass permissions", "Yes, and don't ask again") changes more than this
-// answer, and "manually" is the plan's own safe one.
-const plainYes = (label: string): boolean =>
-  !standing.test(label) && (!/\band\b/i.test(label) || /manually/i.test(label))
+// Only these lead as the primary Allow or Approve: a bare yes, Codex's "Yes, proceed" and
+// Claude's plan "manually approve edits". Everything else is a yes that may change more than
+// this answer, whatever it says, so it never leads.
+const bareYes = /^(yes|allow|approve)( once)?[.!]?$/i
+const knownYes = /^yes,( and)? (proceed|manually approve edits)[.!]?$/i
 
-// Null where nothing says yes: the person answers in the terminal. Only a plain yes leads;
-// the others are quiet links, and where none is plain they are all offered as buttons in
-// their own words (`unsure`), none guessed at. A yes is never offered as a no; where
-// nothing says no, there is no Deny.
+// Null where nothing says yes: the person answers in the terminal. A bare yes leads, else
+// a known one; the other yeses are quiet links where they set something standing and else
+// plain buttons in their own words (`unsure`). Nothing is guessed at. A yes is never
+// offered as a no; where nothing says no, there is no Deny.
 export const choicesOf = (options: readonly ChatDialogOption[]): Choices | null => {
   const yeses = options.filter((each) => yes.test(each.label.trim()))
   if (yeses.length === 0) return null
-  const allow = yeses.find((each) => plainYes(each.label)) ?? null
+  const allow =
+    yeses.find((each) => bareYes.test(each.label.trim())) ??
+    yeses.find((each) => knownYes.test(each.label.trim())) ??
+    null
+  const others = yeses.filter((each) => each !== allow)
   const nos = options.filter((each) => no.test(each.label.trim()))
   return {
     allow,
-    standing: allow ? yeses.filter((each) => each !== allow) : [],
-    unsure: allow ? [] : yeses,
+    standing: others.filter((each) => standing.test(each.label)),
+    unsure: others.filter((each) => !standing.test(each.label)),
     note: nos.find((each) => each.text !== null) ?? null,
     plain: nos.find((each) => each.text === null) ?? null,
   }

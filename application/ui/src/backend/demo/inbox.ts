@@ -562,6 +562,7 @@ export const createDemoInbox = (now: number, items = demoInboxItems(now)): DemoI
         return change((current) => ({
           ...current,
           items: current.items.map((each) => (each.id === id ? resumed(each, on) : each)),
+          failed: withoutKey(current.failed, id),
         }))
       }
       change((current) => ({

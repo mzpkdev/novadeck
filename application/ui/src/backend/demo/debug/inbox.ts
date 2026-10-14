@@ -59,7 +59,7 @@ const kinds: readonly { readonly label: string; readonly name: Named; readonly h
   {
     label: "Plan approval",
     name: "plan",
-    hint: "Approve row with Claude's plan: the plain yes leads, bypass permissions is a quiet link",
+    hint: "Approve row with Claude's plan: the plain yes leads, bypass permissions is a plain button",
   },
   {
     label: "Failed turn",

@@ -265,18 +265,57 @@ describe("A permission's options", () => {
 
     it("leads with the manual yes alone, leaving the rest as quiet links", () => {
       expect(choices?.allow?.id).toBe("3")
-      expect(choices?.standing.map(({ id }) => id)).toEqual(["1", "2"])
+      // Auto-accept sets something standing; bypass is neither, and is a plain button.
+      expect(choices?.standing.map(({ id }) => id)).toEqual(["2"])
+      expect(choices?.unsure.map(({ id }) => id)).toEqual(["1"])
     })
   })
 
-  it("offers every yes as it words itself where none is plain", () => {
+  it("leads with no yes where none is bare or known, offering each as it words itself", () => {
     const choices = choicesOf([
       option("1", "Yes, and bypass permissions"),
       option("2", "Yes, and don't ask again"),
     ])
 
     expect(choices?.allow).toBeNull()
-    expect(choices?.unsure.map(({ id }) => id)).toEqual(["1", "2"])
+    expect(choices?.standing.map(({ id }) => id)).toEqual(["2"])
+    expect(choices?.unsure.map(({ id }) => id)).toEqual(["1"])
+  })
+
+  it.each([
+    "Yes, auto mode",
+    "Yes, permanently",
+    "Yes, for the whole project",
+    "Yes, allow this tool from now on",
+    "Yes, but skip the sandbox",
+    "Yes, bypass permissions",
+    "Yes, clear context and manually approve edits",
+  ])("never leads with %s", (label) => {
+    const choices = choicesOf([option("a", label), option("n", "No")])
+
+    expect(choices?.allow).toBeNull()
+    expect([...(choices?.standing ?? []), ...(choices?.unsure ?? [])].map(({ id }) => id)).toEqual([
+      "a",
+    ])
+  })
+
+  it.each([
+    "Yes",
+    "Allow",
+    "Approve",
+    "Allow once",
+    "Yes.",
+    "Yes, proceed",
+    "Yes, manually approve edits",
+  ])("leads with %s", (label) => {
+    expect(choicesOf([option("a", label)])?.allow?.id).toBe("a")
+  })
+
+  it("prefers a bare yes over a known one", () => {
+    const choices = choicesOf([option("1", "Yes, proceed"), option("2", "Yes")])
+
+    expect(choices?.allow?.id).toBe("2")
+    expect(choices?.unsure.map(({ id }) => id)).toEqual(["1"])
   })
 
   it("offers no Deny where nothing says no, and never a yes in its place", () => {
