@@ -42,6 +42,10 @@ describe("The notification center", () => {
       await expect
         .element(row.getByRole("button", { name: /^Go to / }))
         .toHaveAccessibleDescription(/^Asks a question\. docs-site · /)
+      // Named by its terminal and that terminal's handle, as every control for it is.
+      await expect
+        .element(row.getByRole("button", { name: /^Go to / }))
+        .toHaveAccessibleName(/^Go to Checkout implementation, @[a-z]+$/)
       await row.getByRole("button", { name: /^Go to / }).click()
 
       await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")

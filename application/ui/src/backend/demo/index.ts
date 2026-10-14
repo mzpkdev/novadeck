@@ -15,13 +15,21 @@ import type {
 } from "../port"
 import { DemoAgentContext, type DemoAgentLink } from "./agent-link"
 import { createDemoChat } from "./chat"
+import { terminalOf } from "./debug/terminals"
 import type { DemoSurfaceRuntime } from "./debug/types"
 import { createDemoTerminal } from "./DemoTerminal"
 import { createDemoEngine, type DemoEngine } from "./engine"
 import { demoHandle } from "./handles"
 import { checkoutMailboxes, createDemoMessages } from "./messages"
 import { createDemoMurmur } from "./murmur"
-import { createMockTerminal, demoFinishes, demoSeed, demoTerminalId, terminalSlot } from "./samples"
+import {
+  createMockTerminal,
+  defaultName,
+  demoFinishes,
+  demoSeed,
+  demoTerminalId,
+  terminalSlot,
+} from "./samples"
 import { createShowcase } from "./showcase/simulation"
 import { storefrontArtifacts } from "./showcase/storefront"
 import { agentTranscripts, type DemoTranscript } from "./transcripts"
@@ -144,14 +152,14 @@ export const windowReset = (
 
 // Who named each sample terminal, and the name Novadeck gives it back on a reset.
 const namings: Readonly<
-  Record<string, { readonly source: TitleSource; readonly automatic: string }>
+  Record<string, { readonly source: TitleSource; readonly automatic?: string }>
 > = {
   "01": { source: { kind: "person" }, automatic: "Checkout flow" },
-  "02": { source: { kind: "person" }, automatic: "Terminal" },
+  "02": { source: { kind: "person" } },
   "03": { source: { kind: "murmur" }, automatic: "Tests" },
   "04": { source: { kind: "agent", by: "moth" }, automatic: "Checkout review" },
-  "05": { source: { kind: "person" }, automatic: "Terminal" },
-  "06": { source: { kind: "person" }, automatic: "Terminal" },
+  "05": { source: { kind: "person" } },
+  "06": { source: { kind: "person" } },
 }
 
 // What a reset names a sample terminal: the agent's name for the first, else the
@@ -208,7 +216,7 @@ export const withMessages = (backend: Backend, now: number): Backend => {
                 type: "terminal/update",
                 target: { projectId, workspaceSessionId },
                 terminalId,
-                name: namings[slot]?.automatic ?? "Terminal",
+                name: namings[slot]?.automatic ?? defaultName(terminalOf(latest, key)?.command),
                 titleSource: automaticSource(slot),
               },
             ],

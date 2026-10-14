@@ -220,7 +220,14 @@ describe("terminal handles", () => {
           .element(tabAction("Close Dev server"))
           .toHaveAccessibleName("Close Dev server, @fox")
 
+        await expect
+          .element(headerAction("Dev server", "Close Dev server"))
+          .toHaveAccessibleName("Close Dev server, @fox")
+
         await headerName("Dev server").dblClick()
+        await expect
+          .element(headerRenameField("Dev server"))
+          .toHaveAccessibleName("Rename Dev server, @fox")
         await press("Renamed server{Enter}")
 
         await expect.element(headerName("Renamed server")).toBeVisible()

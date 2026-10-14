@@ -50,7 +50,6 @@ export const SidebarItem = ({
   emphasized?: boolean
   // What describes the row to a screen reader, by id, such as how to reorder it.
   describedBy?: string
-  // The id of the handle chip in the row, which describes it too.
   onSelect: () => void
   actions?: ReactNode
   editor?: ReactNode

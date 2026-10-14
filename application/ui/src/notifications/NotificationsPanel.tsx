@@ -207,7 +207,7 @@ export const NotificationsPanel = ({
                         <button
                           className="notification-dismiss icon-button small dim quiet"
                           type="button"
-                          aria-label={`Mark ${item.terminalName} read`}
+                          aria-label={`Mark ${terminalLabel(item.terminalName, item.handle)} read`}
                           onClick={dismiss}
                         >
                           <Check size={14} strokeWidth={1.5} />

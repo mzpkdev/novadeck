@@ -289,5 +289,5 @@ export const TerminalTab = ({
       />
     </div>
   )
-  return <ContextMenu label={`${terminal.name} actions`} items={menu} trigger={tab} />
+  return <ContextMenu label={`${label} actions`} items={menu} trigger={tab} />
 }

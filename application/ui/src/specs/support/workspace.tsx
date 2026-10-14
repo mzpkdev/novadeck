@@ -210,7 +210,7 @@ export const expectTypingIn = async (name: string): Promise<void> => {
 }
 
 export const commandInput = (name: string): Locator =>
-  page.getByRole("textbox", { name: `Command for ${name}` })
+  page.getByRole("textbox", { name: labelled("Command for ", name) })
 
 /** Terminal names in sidebar order. */
 export const terminalTabNames = (): string[] =>

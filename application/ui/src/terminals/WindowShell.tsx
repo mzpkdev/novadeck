@@ -280,8 +280,8 @@ export const WindowShell = ({
               className={`${headerActionClasses} dictation-action nodrag nopan ${dictation.recording ? "dictation-active" : ""}`}
               aria-label={
                 dictation.ready === false
-                  ? `Set up voice input for ${terminal.name}`
-                  : `Dictate into ${terminal.name}`
+                  ? `Set up voice input for ${label}`
+                  : `Dictate into ${label}`
               }
               aria-pressed={dictation.ready === false ? undefined : dictation.recording}
               onClick={(event) => {
@@ -372,11 +372,7 @@ export const WindowShell = ({
       data-new={fresh}
     >
       <div className="terminal-heading relative shrink-0">
-        {menu ? (
-          <ContextMenu label={`${terminal.name} actions`} items={menu} trigger={header} />
-        ) : (
-          header
-        )}
+        {menu ? <ContextMenu label={`${label} actions`} items={menu} trigger={header} /> : header}
       </div>
       {children}
     </section>
