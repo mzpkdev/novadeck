@@ -347,9 +347,15 @@ export const startTrace = (name: string, model: FakeModel) => {
       first: ScreenText,
       ...rest: unknown[]
     ) => Promise<unknown>
+    landed: (
+      terminalId: string,
+      typed: string,
+      profile: BoxProfile,
+      ...rest: unknown[]
+    ) => Promise<unknown>
   }
-  methods(prompting, "Prompts", ["emptied"])
-  const { emptied } = prompting
+  methods(prompting, "Prompts", ["emptied", "landed"])
+  const { emptied, landed } = prompting
   const lastRead = new Map<string, { time: number; screen: ScreenText | undefined }>()
   prompting.emptied = async function (terminalId, profile, first, ...rest) {
     watch(this.host, (id, screen) => lastRead.set(id, { time: Date.now(), screen }))
@@ -366,6 +372,22 @@ export const startTrace = (name: string, model: FakeModel) => {
       )
       throw error
     }
+  }
+
+  // Where a pasted prompt is not found in the box, within the time it is given: the box as
+  // it was last read, and when, to tell a screen that never showed it from one that was
+  // read late (a runner busy for seconds at a time).
+  prompting.landed = async function (terminalId, typed, profile, ...rest) {
+    watch(this.host, (id, screen) => lastRead.set(id, { time: Date.now(), screen }))
+    const began = Date.now()
+    const result = await landed.call(this, terminalId, typed, profile, ...rest)
+    if (result !== true) {
+      const read = lastRead.get(terminalId)
+      add(
+        `prompt ${named(terminalId)} paste of ${typed.length} chars not found (${brief(result, 40)}) after ${Date.now() - began} ms; last read at ${read ? at(read.time) : "never"}: ${boxOf(read?.screen, profile)}`,
+      )
+    }
+    return result
   }
 
   // A terminal's tree as the runner reads and ends it as the terminal closes (Windows'
@@ -430,7 +452,7 @@ export const startTrace = (name: string, model: FakeModel) => {
       Object.assign(treeing, { read: readTree, end: endTree })
       Object.assign(closing, { kill })
       Object.assign(interrupting, { once, settled })
-      Object.assign(prompting, { emptied })
+      Object.assign(prompting, { emptied, landed })
       for (const [host, original] of seeing) Object.assign(host, original)
       Object.assign(runner, {
         queue,
