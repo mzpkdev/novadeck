@@ -195,6 +195,37 @@ describe("creating terminals", () => {
   })
 })
 
+describe("terminal handles", () => {
+  for (const name of views) {
+    context(`in ${name}`, () => {
+      it("shows @handle on the window and the tab, and keeps it through a rename", async () => {
+        await openWorkspace()
+        await chooseView(name)
+        await terminalTab("Dev server").click()
+
+        // The demo's second terminal is the second word a fresh session gives.
+        await expect
+          .element(terminal("Dev server").getByText("@fox", { exact: true }))
+          .toBeVisible()
+        await expect
+          .element(terminalTab("Dev server").getByText("@fox", { exact: true }))
+          .toBeVisible()
+
+        await headerName("Dev server").dblClick()
+        await press("Renamed server{Enter}")
+
+        await expect.element(headerName("Renamed server")).toBeVisible()
+        await expect
+          .element(terminal("Renamed server").getByText("@fox", { exact: true }))
+          .toBeVisible()
+        await expect
+          .element(terminalTab("Renamed server").getByText("@fox", { exact: true }))
+          .toBeVisible()
+      })
+    })
+  }
+})
+
 describe("renaming terminals", () => {
   for (const name of views) {
     context(`when double-clicking the header name in ${name}`, () => {

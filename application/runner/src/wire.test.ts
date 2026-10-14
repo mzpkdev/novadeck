@@ -413,7 +413,7 @@ describe("terminal title API", () => {
     const { client } = await app.connect()
     const { session } = await app.setup(client)
     const terminal = await client.terminals.create(shell(session.id))
-    expect(terminal).toMatchObject({ title: "Terminal 01", titleSource: { kind: "default" } })
+    expect(terminal).toMatchObject({ title: "Terminal", titleSource: { kind: "default" } })
     await client.terminals.rename({ terminalId: terminal.id, title: "API" })
     const titled = async () =>
       (await client.terminals.list({ sessionId: session.id })).find(({ id }) => id === terminal.id)
@@ -423,7 +423,7 @@ describe("terminal title API", () => {
     })
     await client.terminals.resetTitle({ terminalId: terminal.id })
     await expect(titled()).resolves.toMatchObject({
-      title: "Terminal 01",
+      title: "Terminal",
       titleSource: { kind: "default" },
     })
     await expect(client.terminals.resetTitle({ terminalId: randomUUID() })).rejects.toMatchObject({

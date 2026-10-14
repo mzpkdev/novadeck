@@ -22,6 +22,7 @@ import type { ItemRecord, ItemRecords, Placed, WindowRecord } from "../companion
 import { DomainError } from "../errors.js"
 import type { Message, Thread } from "../messaging/mailbox.js"
 import type { MailboxRecords } from "../messaging/records.js"
+import { nextHandle, wordOf } from "../terminals/handles.js"
 import type { Naming } from "../terminals/naming.js"
 import type {
   ListedTerminal,
@@ -79,7 +80,7 @@ const extras = `
   CREATE TABLE IF NOT EXISTS terminals (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
-    -- Its handle in its session, t3, from the same count as its default title.
+    -- Its handle in its session, a word such as moth, given once (see session_handles).
     handle TEXT NOT NULL,
     -- The shell's last reported directory.
     cwd TEXT NOT NULL,
@@ -109,12 +110,14 @@ const extras = `
     -- The program in its foreground when its shell was last seen.
     last_program TEXT,
     -- What its root agent session worked on, for agents messaging each other, as JSON.
-    work TEXT
+    work TEXT,
+    UNIQUE (session_id, handle)
   ) STRICT;
-  -- The last number given to a session's terminals, for their handles and default titles.
-  CREATE TABLE IF NOT EXISTS terminal_numbers (
-    session_id TEXT PRIMARY KEY,
-    last INTEGER NOT NULL
+  -- Every handle a session ever gave its terminals, closed ones' too, so none is given twice.
+  CREATE TABLE IF NOT EXISTS session_handles (
+    session_id TEXT NOT NULL,
+    handle TEXT NOT NULL,
+    PRIMARY KEY (session_id, handle)
   ) STRICT;
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -541,6 +544,9 @@ const windowOf = (row: WindowRow): WindowRecord => ({
   personTitle: row.person_title,
 })
 
+// The handles in rows selected for them.
+const column = (rows: unknown): string[] => (rows as { handle: string }[]).map((row) => row.handle)
+
 export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemRecords {
   private readonly database: DatabaseSync
   private readonly queries: SQLTagStore
@@ -608,7 +614,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   /**
    * Deletes the project, its sessions, what they kept of their terminals and their
-   * numbering, and its agents' messages and threads, all at once; an unknown project is
+   * handles, and its agents' messages and threads, all at once; an unknown project is
    * `NOT_FOUND`. Its terminals' shells are the caller's to end first.
    */
   removeProject(projectId: string): void {
@@ -621,7 +627,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
           "DELETE FROM messages WHERE project_id = ?",
           "DELETE FROM message_threads WHERE project_id = ?",
           `DELETE FROM terminals WHERE session_id IN (${sessions})`,
-          `DELETE FROM terminal_numbers WHERE session_id IN (${sessions})`,
+          `DELETE FROM session_handles WHERE session_id IN (${sessions})`,
           "DELETE FROM sessions WHERE project_id = ?",
           "DELETE FROM projects WHERE id = ?",
         ])
@@ -695,24 +701,36 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
           SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
             person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by, led_by,
             command, last_program, work
-          FROM terminals ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
+          FROM terminals ORDER BY rowid`
         : this.queries.all`
           SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
             person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by, led_by,
             command, last_program, work
           FROM terminals WHERE session_id = ${sessionId}
-          ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
+          ORDER BY rowid`
     ) as Omit<TerminalRow, "transcript">[]
     return rows.map(listed)
   }
 
-  nextTerminalNumber(sessionId: string): number {
-    const row = this.queries.get`
-      INSERT INTO terminal_numbers (session_id, last) VALUES (${sessionId}, 1)
-      ON CONFLICT (session_id) DO UPDATE SET last = last + 1
-      RETURNING last
-    ` as { last: number }
-    return row.last
+  giveHandle(sessionId: string): string {
+    return this.transaction(() => {
+      const given = column(
+        this.queries.all`SELECT handle FROM session_handles WHERE session_id = ${sessionId}`,
+      )
+      const open = column(
+        this.queries.all`SELECT handle FROM terminals WHERE session_id = ${sessionId}`,
+      )
+      const elsewhere = column(
+        this.queries.all`SELECT handle FROM terminals WHERE session_id != ${sessionId}`,
+      )
+      const handle = nextHandle(
+        { given: new Set([...given, ...open]), open },
+        new Set(elsewhere.map(wordOf)),
+      )
+      void this.queries
+        .run`INSERT INTO session_handles (session_id, handle) VALUES (${sessionId}, ${handle})`
+      return handle
+    })
   }
 
   renameTerminal(terminalId: string, title: string | null): boolean {

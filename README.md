@@ -166,7 +166,7 @@ for a terminal it parks, and leaves that to what is on screen.
 
 The runner owns every terminal: which terminals a session has, their names (the ones
 you give them; else one an agent gave, or your first prompt to its agent, shortened;
-else its own "Terminal 01", "Terminal 02", … per session), directories, what
+else the program it was opened to run, or "Terminal"), directories, what
 they run and the program each last had in its foreground (only its name, never its
 command line, which can hold secrets). The UI shows them, renames through the runner,
 and saves only how it shows them: layouts, sidebar order, the view and the selection,
@@ -204,7 +204,7 @@ Double-clicking or double-tapping a Focus or Grid terminal header outside its
 name has no effect; use the header action to move between those views.
 
 A terminal tab's tooltip says who its name is from: you, the agent in another terminal
-(`t2`), your first prompt there, or the default. Right-click a tab for **Rename**,
+(`@fox`), your first prompt there, or the default. Right-click a tab for **Rename**,
 **Close**, and, for a name you gave, **Reset to automatic**, which hands the name back
 to Novadeck.
 
@@ -224,12 +224,12 @@ once that terminal is the selected one of the session on screen while Novadeck's
 has focus, or once its agent starts another turn. A completed turn is marked, and
 announced, about 0.7 s after it ends, in case its harness then says your Escape stopped
 it. The desktop app also shows one system
-notification for each such finish, "t1 is done: <its name>", with the start of the
+notification for each such finish, "@moth is done: <its name>", with the start of the
 agent's last reply (Claude Code's and Codex's Stop hooks name it; Antigravity's
 transcript records it); clicking it brings Novadeck to the front with that terminal
 selected. **Notify when an agent finishes** in Preferences turns the notification off;
 the mark stays. A turn that ended on an error is marked the same way in red, "error ·
-unread" and "Stopped with an error · reply unread", and its notification says "t1 stopped
+unread" and "Stopped with an error · reply unread", and its notification says "@moth stopped
 with an error: <its name>". Marks belong to the window that showed them: another window
 keeps its own, and a reload or a restart forgets them. The browser build (`pnpm dev:web`)
 shows no notifications. The behaviour
@@ -332,8 +332,9 @@ agent.
   terminal it runs in which session it is, and does nothing when the agent runs
   anywhere else. It adds nothing to the model's context but the messages other agents in
   Novadeck send it, wrapped as theirs (see [Agent messaging](docs/agent-messaging.md)).
-  Agents address each other by terminal handle, `t3` for "Terminal 03", which stays
-  the terminal's when you rename it.
+  Agents address each other by terminal handle: a word its session gives each terminal,
+  never twice, such as `moth`, which Novadeck shows as `@moth` beside the terminal's name
+  and which stays the terminal's when you rename it.
   Without a connected agent
   there is no resume, even for sessions it reported before: disconnecting forgets them,
   and the terminal comes back as a plain shell with its transcript.

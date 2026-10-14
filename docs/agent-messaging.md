@@ -147,7 +147,7 @@ An agent weighs what reaches it at three levels:
    restore within the same Novadeck session only; a terminal restored under another
    session takes nothing from a record saved in a different one. `ledBy` on a summary is
    the stored value: clients work out whether the lead is running from the roster (the UI
-   shows "led by t1 · Name" only while the lead's terminal runs). The lead's messages are
+   shows "led by @moth · Name" only while the lead's terminal runs). The lead's messages are
    instructions: the agent acts on them as on the person's request.
 3. **Peers**: every other agent. Their messages serve the work the person or the lead
    gave: the agent acts on one where it serves that work. Work it wasn't given is not
@@ -220,21 +220,29 @@ Delivery marks the messages whose `fromLead` is set.
 
 ### Handles
 
-Each terminal has a **handle**, `t3`: part of the terminal's record, assigned by the
-terminal manager when the terminal is created and shown on its summary. It takes its
-number from the same never-reused counter of the Novadeck session as the default title,
-and every terminal draws one, even one created with its own title, so "Terminal 03" is
-`t3`. A handle never changes, not when the terminal is renamed, and is never given
-again in that session: a closed terminal's handle stays unanswered rather than reaching
-another terminal. Handles exist because a title is text a person, or an agent through
+Each terminal has a **handle**, a word such as `moth`: part of the terminal's record,
+assigned by the terminal manager when the terminal is created and shown on its summary.
+Agents and people write it as `@moth`; tools that take a handle accept it with or
+without the `@`, and a delivered message's `from` is the bare word. The session draws it
+from a ranked list of short words (`terminals/handles.ts`), and every terminal draws
+one, even one created with its own title. Each pick prefers a word whose first letter no
+open terminal of the session starts with, so a jump by letter lands in one key, then one
+open in no other session. The session records every handle it gives (`session_handles`),
+because terminal rows are deleted on close, and `(session_id, handle)` is unique on
+terminals. Terminals sort by creation order, never by their handle. A handle never
+changes, not when the terminal is renamed, and is never given again in that session: a
+closed terminal's handle stays unanswered rather than reaching another terminal. Once a
+session has given every word, they come again numbered (`moth2`, then `moth3`). Agents
+tell the person about a terminal as `@fox · api-server`: its handle and its title. Handles exist because a title is text a person, or an agent through
 `open_terminal`'s `title`, can set, and must never reach a prompt.
 
 The terminal's **title** is the runner's too: it keeps what names the terminal in its
 record, every client shows the title from there, and `agents()` reads it from the same
 record. The record says who the title is from: the person (renaming, or creating it), murmur (the
 local model that describes terminals, see [Naming](#naming)), an agent by its terminal's
-handle (through `open_terminal`'s `title`), or the session's default "Terminal 01";
-`agents()` shows an agent's title as that agent's ("set by t2, not the user"), never as
+handle (through `open_terminal`'s `title`), or the default, which is the program the
+terminal was opened to run (`claude`), else "Terminal" and never comes from its handle;
+`agents()` shows an agent's title as that agent's ("set by @fox, not the user"), never as
 the person's. Terminals are kept until closed, with no
 pruning, so a close that never reached the runner brings the terminal back.
 
@@ -246,7 +254,7 @@ others are never listed or reached.
   the agent picks by title, folder and work, or asks the person.
 - `from` in a delivered message is exactly the sender's handle, so replying is
   `send(from, …)`.
-- `open_terminal` answers with the new terminal's handle.
+- `open_terminal` answers with the new terminal's handle and title, as `@fox · api-server`.
 
 ### Messages
 
