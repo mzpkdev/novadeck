@@ -474,6 +474,22 @@ describe("a host's uninstall", () => {
     })
   })
 
+  it("keeps a reason of the length the host's preload takes, with the advice it ends in", () => {
+    const advice = " Novadeck has stopped your terminals; quit it and open it again."
+    const reason = `${"a".repeat(266 - advice.length)}${advice}`
+    expect(reason).toHaveLength(266)
+    expect(hostUninstallResult({ kind: "failed", reason })).toEqual({ kind: "failed", reason })
+    const longest = "b".repeat(300)
+    expect(hostUninstallResult({ kind: "failed", reason: longest })).toEqual({
+      kind: "failed",
+      reason: longest,
+    })
+    expect(hostUninstallResult({ kind: "failed", reason: "b".repeat(301) })).toEqual({
+      kind: "failed",
+      reason: "Something went wrong.",
+    })
+  })
+
   it("takes any other answer for a failure the person can read", () => {
     const unknown = { kind: "failed", reason: "Something went wrong." }
     expect(hostUninstallResult(undefined)).toEqual(unknown)

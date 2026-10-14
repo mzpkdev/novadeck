@@ -8,6 +8,8 @@ import type { DemoLaunch } from "./with-debug"
 export type DemoUninstall = {
   readonly plan: UninstallPlan
   readonly result: UninstallResult
+  // How every run after the first ends, where it ends otherwise than the first did.
+  readonly retried?: UninstallResult
 }
 
 // Long enough to see Removing….
@@ -17,6 +19,15 @@ export const uninstallMs = 1500
 export const sampleBrewCommand = "brew uninstall --cask novadeck"
 export const sampleLeftover = "sudo rm /etc/apparmor.d/novadeck"
 
+// The reason the host gives once it has stopped the terminals: ending in its advice, and
+// the same on every retry.
+export const stoppedReason =
+  "Novadeck couldn't remove its files: permission denied. Novadeck has stopped your terminals; quit it and open it again."
+
+// What macOS says when it won't let the app move itself to the Trash.
+export const trashReason =
+  "macOS didn't let Novadeck move itself to the Trash. Allow it under System Settings > Privacy & Security > App Management, then try again."
+
 const dataFolders = ["/home/mzpk/.config/novadeck", "/home/mzpk/Novadeck"] as const
 
 // The browser's stand-in for the desktop host's uninstall: it says what it would do, and
@@ -25,6 +36,7 @@ const dataFolders = ["/home/mzpk/.config/novadeck", "/home/mzpk/Novadeck"] as co
 export const createDemoUninstall = ({
   plan,
   result,
+  retried,
 }: DemoUninstall): {
   readonly uninstall: NonNullable<Backend["uninstall"]>
   readonly runs: () => readonly boolean[]
@@ -37,7 +49,8 @@ export const createDemoUninstall = ({
       plan: () => Promise.resolve(plan),
       run: ({ keepData }) => {
         runs.push(keepData)
-        return new Promise((resolve) => setTimeout(() => resolve(result), uninstallMs))
+        const ends = runs.length > 1 && retried ? retried : result
+        return new Promise((resolve) => setTimeout(() => resolve(ends), uninstallMs))
       },
       quit: () => void (quits += 1),
     },
@@ -65,6 +78,16 @@ export const uninstallScenarios = {
   failed: {
     plan: ready("app"),
     result: { kind: "failed", reason: "Novadeck is in a folder you can't change." },
+  },
+  stopped: {
+    plan: ready("app"),
+    result: { kind: "failed", reason: stoppedReason },
+    retried: { kind: "failed", reason: stoppedReason },
+  },
+  trash: {
+    plan: ready("app"),
+    result: { kind: "failed", reason: trashReason },
+    retried: { kind: "removed" },
   },
   windows: { plan: ready("uninstaller"), result: { kind: "uninstalling" } },
   "windows-failed": {
@@ -118,6 +141,18 @@ export const uninstallGroup = (launch: DemoLaunch): DemoActionGroup => {
         hint: "Dialog stays open with the reason; Uninstall retries",
         reboots: true,
         run: boot("failed"),
+      },
+      {
+        label: "Fails after terminals ended",
+        hint: "Reason ends in quit it and open it again; every retry fails the same",
+        reboots: true,
+        run: boot("stopped"),
+      },
+      {
+        label: "Trash refused",
+        hint: "macOS App Management reason; Uninstall again then succeeds",
+        reboots: true,
+        run: boot("trash"),
       },
       {
         label: "Windows uninstaller",

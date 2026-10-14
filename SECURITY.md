@@ -96,7 +96,8 @@ plan to run. On Linux the host removes the sandbox profile through `pkexec`, whi
 system's own password prompt; it never runs `sudo`, and when `pkexec` fails it returns the
 command for the person to run themselves, built from the profile's path alone. On Windows it
 starts the installer's own uninstaller, and, to delete data, a hidden PowerShell helper that
-waits for the app to exit. A compromised UI can end the app's shells and remove the app and,
+waits for the app to exit and then, for up to ten minutes, for the uninstaller's file to be
+gone; it deletes nothing if the file is still there, as after a cancelled uninstall. A compromised UI can end the app's shells and remove the app and,
 by sending `keepData: false`, the app's data folder, which it could already do through the
 runner; it can remove no other path through this channel.
 

@@ -16,6 +16,7 @@ import { maxReasonLength, type InstallResult, type PortableState } from "../../m
 import { maxFixLength, type SandboxState } from "../../model/sandbox"
 import {
   maxUninstallPath,
+  maxUninstallReason,
   maxUninstallText,
   type UninstallPlan,
   type UninstallResult,
@@ -254,8 +255,9 @@ export const hostUninstallResult = (result: unknown): UninstallResult => {
   if (kind === "uninstalling") return { kind }
   if (kind === "removed") return plainLine(leftover) ? { kind, leftover } : { kind }
   if (kind !== "failed") return unknown
-  const text = typeof reason === "string" ? noticeText(reason, maxReasonLength) : ""
-  return text ? { kind, reason: text } : unknown
+  // One more than fits, so a reason too long for the page is noticed, not cut.
+  const text = typeof reason === "string" ? noticeText(reason, maxUninstallReason + 1) : ""
+  return text && text.length <= maxUninstallReason ? { kind, reason: text } : unknown
 }
 
 // The host's uninstall, where it has one: asked what it would do, told to do it, and told

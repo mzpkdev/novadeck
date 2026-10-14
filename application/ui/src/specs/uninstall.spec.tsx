@@ -90,6 +90,32 @@ describe("Preferences' Uninstall Novadeck", () => {
         .toBeEnabled()
     })
 
+    it("keeps the advice of a failure after the terminals ended, on every retry", async () => {
+      await openWorkspace("/?uninstall=stopped")
+      await openPreferences()
+      await row().click()
+      const retry = async (): Promise<void> => {
+        await dialog().getByRole("button", { name: "Uninstall", exact: true }).click()
+        await expect
+          .poll(() => dialog().getByRole("alert").element().textContent, slow)
+          .toMatch(/quit it and open it again\.$/)
+      }
+      await retry()
+      await retry()
+    })
+
+    it("lets a Trash refusal succeed on the second try", async () => {
+      await openWorkspace("/?uninstall=trash")
+      await openPreferences()
+      await row().click()
+      await dialog().getByRole("button", { name: "Uninstall", exact: true }).click()
+      await expect
+        .poll(() => dialog().getByRole("alert").element().textContent, slow)
+        .toMatch(/App Management/)
+      await dialog().getByRole("button", { name: "Uninstall", exact: true }).click()
+      await expect.element(dialog().getByText("Novadeck is uninstalled."), slow).toBeVisible()
+    })
+
     it("hands over to the platform's uninstaller, which finishes the job", async () => {
       await openWorkspace("/?uninstall=windows")
       await openPreferences()

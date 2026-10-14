@@ -53,7 +53,8 @@ agents you connected, ends your terminals, and removes the app: on Linux the App
 `novadeck` command, menu entry and icon, and, through a password prompt, the sandbox profile
 (if the prompt is not available it shows the command to run instead); on macOS it moves the
 app to the Trash; on Windows it starts the uninstaller. Your projects and sessions stay unless
-you untick **Keep my projects and sessions**. A portable copy has nothing installed and shows
+you untick **Keep my projects and sessions** (there is no such box when Novadeck runs with
+its own `--user-data-dir`, whose folder it never deletes). A portable copy has nothing installed and shows
 no such button, and a Homebrew install shows the `brew uninstall --cask novadeck` command to
 run instead. On Linux and macOS the script does the same without the app, and leaves your data
 and agent plugins alone, printing how to remove them:
@@ -787,11 +788,13 @@ App:
   brew command with Copy and no button; "Ready, no data folder" has no Keep my projects checkbox, as when the app runs with its own data folder; "Removed" goes through Removing… to Novadeck is
   uninstalled with Quit, and "Removed, leftover" adds the command to copy (the Linux sandbox
   profile when no password prompt was available); "Removal fails" keeps the dialog open with
-  the reason; "Windows uninstaller" reads Continue and ends on Novadeck closing for its
+  the reason; "Fails after terminals ended" ends on a reason telling you to quit and open Novadeck
+  again, which every retry repeats, and "Trash refused" fails once on macOS' App Management and
+  then succeeds; "Windows uninstaller" reads Continue and ends on Novadeck closing for its
   uninstaller, and "Windows uninstaller fails" ends on the reason. Connect agents in
   Preferences first to see them named in the dialog; Agents' "Fail next" makes a disconnect
   fail before the run. `?uninstall=` opens `unavailable`, `manual`, `removed`, `leftover`,
-  `failed`, `windows`, `windows-failed` or `no-data` for specs.
+  `failed`, `stopped`, `trash`, `windows`, `windows-failed` or `no-data` for specs.
 - **Updates:** have an update downloaded, available (the app can't install it itself), with
   no notes, or with notes at the caps, for the notice above the footer's "Update ready" or
   "Update available" chip. Downloading counts the chip up in steps (its notice, opened from the

@@ -31,3 +31,7 @@ export const maxUninstallText = 300
 
 // The longest data folder path the page takes: what the host's preload takes.
 export const maxUninstallPath = 1000
+
+// The longest failure reason the page takes: what the host's preload takes, so the advice
+// the host ends a reason with is never cut.
+export const maxUninstallReason = 300
