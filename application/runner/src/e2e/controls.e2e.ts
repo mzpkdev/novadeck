@@ -496,8 +496,12 @@ for (const setup of setups) {
           "the turn to end",
         )
         // Delivery takes it as over too: Settled where the records say it completed,
-        // Unknown where only an idle status line says it ended.
-        expect(t1.history().at(-1)?.delivery).not.toBe("working")
+        // Unknown where only an idle status line says it ended. Its step follows the
+        // activity's within the same report, which a slow runner can take a while over.
+        await t1.poll(
+          () => (t1.history().at(-1)?.delivery !== "working" ? true : undefined),
+          "delivery to take the turn as over",
+        )
       } finally {
         harness.decode = decode
       }
@@ -523,7 +527,12 @@ for (const setup of setups) {
         "the failed turn to end",
         60_000,
       )
-      expect(t1.history().at(-1)?.delivery).not.toBe("working")
+      // Delivery's step follows the activity's within the same report, which a slow runner
+      // can take a while over (seen on macOS CI: 7 ms apart in a 346 ms report).
+      await t1.poll(
+        () => (t1.history().at(-1)?.delivery !== "working" ? true : undefined),
+        "delivery to take the failed turn as over",
+      )
     })
   })
 
