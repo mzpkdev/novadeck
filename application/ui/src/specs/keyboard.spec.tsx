@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe as context, describe, expect, it } from "vitest"
+import {
+  afterEach,
+  beforeEach,
+  describe as context,
+  describe,
+  expect,
+  it,
+  onTestFailed,
+} from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
 import { clickBackground } from "./support/canvas"
@@ -1047,10 +1055,45 @@ const saidWhile = async (
   }
 }
 
+/**
+ * Records what dictation shows and the page's state for a whole test, every 50 ms and only
+ * as it changes, and prints it where the test fails: its strip, the microphone's live tracks,
+ * and whether the page has focus and shows. A failure of the first wait of a test, before
+ * `saidWhile` is in place, would not otherwise say what the strip did meanwhile.
+ */
+const watchDictation = (microphone: { readonly live: () => number }): (() => void) => {
+  const began = performance.now()
+  const history: string[] = []
+  let last = ""
+  const note = (): void => {
+    const strip = page
+      .getByRole("status")
+      .elements()
+      .filter((one) => one.classList.contains("dictation-strip"))
+      .map((one) => one.textContent?.trim())
+      .filter(Boolean)
+      .join(" | ")
+    const now = `${strip || "-"} | ${microphone.live()} track(s) live | focus ${document.hasFocus()} | ${document.visibilityState}`
+    if (now === last) return
+    last = now
+    history.push(`+${Math.round(performance.now() - began)} ms ${now}`)
+  }
+  const timer = setInterval(note, 50)
+  onTestFailed(() => console.error(`Dictation, as it changed:\n${history.join("\n")}`))
+  return () => clearInterval(timer)
+}
+
 describe("dictation", () => {
   let microphone: ReturnType<typeof fakeMicrophone>
-  beforeEach(() => void (microphone = fakeMicrophone()))
-  afterEach(() => microphone.restore())
+  let unwatch: () => void
+  beforeEach(() => {
+    microphone = fakeMicrophone()
+    unwatch = watchDictation(microphone)
+  })
+  afterEach(() => {
+    unwatch()
+    microphone.restore()
+  })
 
   context("when voice input is not installed", () => {
     it("points to Preferences instead of recording", async () => {

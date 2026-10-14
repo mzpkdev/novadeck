@@ -1,4 +1,4 @@
-import { describe as context, describe, expect, it } from "vitest"
+import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { page, userEvent } from "vitest/browser"
 
 import { boxOf, canvasView, dragBackground, settled, viewBox } from "./support/canvas"
@@ -210,6 +210,7 @@ describe("Switching terminals in Focus", () => {
  * Keeps the page's main thread busy for `milliseconds`, in stretches longer than a frame, as a
  * loaded CI machine does: seen to end a restored scroll too early (Windows and Linux CI).
  */
+const starving = new Set<ReturnType<typeof setInterval>>()
 const starve = (milliseconds: number): void => {
   const timer = setInterval(() => {
     const end = performance.now() + 220
@@ -217,10 +218,21 @@ const starve = (milliseconds: number): void => {
       // Busy.
     }
   }, 260)
-  setTimeout(() => clearInterval(timer), milliseconds)
+  starving.add(timer)
+  setTimeout(() => {
+    clearInterval(timer)
+    starving.delete(timer)
+  }, milliseconds)
+}
+/** Ends any stalls still running, so none reaches the next test. */
+const calm = (): void => {
+  for (const timer of starving) clearInterval(timer)
+  starving.clear()
 }
 
 describe("Switching views", () => {
+  afterEach(calm)
+
   it("opens a plan that wasn't scrolled at its very top again", async () => {
     await openShowcase("grid")
     await taskbarIcon("Refactor auth", "Plan: refactor-auth.md").click()
