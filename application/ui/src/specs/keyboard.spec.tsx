@@ -1012,10 +1012,11 @@ const layer = (element: Element): number => Number(getComputedStyle(element).zIn
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
 /**
- * Waits for `until`, and where it fails says what the dictation status line showed meanwhile
- * and how many microphone tracks were live: a clip's notice fades in four seconds, long
- * before a wait for the words ends, and a clip too short to keep leaves none, so a failure
- * would not otherwise say which of them it was.
+ * Waits for `until`, and where it fails says what the dictation strip showed meanwhile and
+ * how many microphone tracks were live: a clip's notice fades in four seconds, long before a
+ * wait for the words ends, and a clip too short to keep leaves none, so a failure would not
+ * otherwise say which of them it was. `until` waits less than the test does, so this
+ * reports before the test's own timeout does.
  */
 const saidWhile = async (
   microphone: { readonly live: () => number },
@@ -1026,6 +1027,7 @@ const saidWhile = async (
     const text = page
       .getByRole("status")
       .elements()
+      .filter((one) => one.classList.contains("dictation-strip"))
       .map((one) => one.textContent?.trim())
       .filter(Boolean)
       .join(" | ")
@@ -1117,7 +1119,7 @@ describe("dictation", () => {
       // "Transcribing" shows only as long as the demo takes, too briefly to wait for.
       await saidWhile(microphone, async () => {
         await expect
-          .element(commandInput("Checkout implementation"))
+          .element(commandInput("Checkout implementation"), { timeout: 15_000 })
           .toHaveValue("Add a retry to the checkout request and run the tests.")
       })
       expect(microphone.live()).toBe(0)
@@ -1137,7 +1139,7 @@ describe("dictation", () => {
       // "Transcribing" shows only as long as the demo takes, too briefly to wait for.
       await saidWhile(microphone, async () => {
         await expect
-          .element(commandInput("Checkout implementation"))
+          .element(commandInput("Checkout implementation"), { timeout: 15_000 })
           .toHaveValue("Add a retry to the checkout request and run the tests.")
       })
     })
