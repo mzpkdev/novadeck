@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { once } from "node:events"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -278,6 +278,28 @@ describe("WebSocket authentication and protocol", () => {
       code: "WORKSPACE_TOO_NEW",
     })
     await expect(client.projects.list()).rejects.toBeDefined()
+  })
+
+  it("a workspace an earlier build wrote, set aside for a new one", async ({ resources }) => {
+    const directory = await mkdtemp(join(tmpdir(), "novadeck-earlier-"))
+    resources.defer(() => rm(directory, { recursive: true, force: true }))
+    const path = join(directory, "workspace.sqlite")
+    const old = new DatabaseSync(path)
+    old.exec(
+      "CREATE TABLE projects (id TEXT); INSERT INTO projects VALUES ('kept'); PRAGMA user_version = 1",
+    )
+    old.close()
+    const app = await fixture(resources, { database: path })
+    const { client } = await app.connect()
+    await expect(client.projects.list()).resolves.toEqual([])
+    const [aside, ...more] = (await readdir(directory)).filter((name) => name.includes(".earlier-"))
+    expect(more).toEqual([])
+    const kept = new DatabaseSync(join(directory, aside!))
+    try {
+      expect(kept.prepare("SELECT id FROM projects").all()).toEqual([{ id: "kept" }])
+    } finally {
+      kept.close()
+    }
   })
 
   it("WebSocket browser origin validation", async ({ resources }) => {

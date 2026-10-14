@@ -534,9 +534,10 @@ no notification when an agent finishes; its terminals are still marked done. For
 `VITE_NOVADECK_RUNNER_TOKEN` pointing at a runner you started.
 
 Novadeck has no database migrations before its first release. A runner that opens a
-`workspace.sqlite` an earlier build wrote, whose tables differ from its own, refuses to
-start and names the file: delete it (it holds your projects, sessions and kept
-terminals) and start again. A standalone runner keeps it at
+`workspace.sqlite` an earlier build wrote, whose tables or schema version differ from its
+own, sets it aside as `workspace.sqlite.earlier-<time>` (with its `-wal` and `-shm`) and
+starts a new one, so your projects, sessions and kept terminals start over; the old file
+stays for you to delete. A standalone runner keeps it at
 `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set; the
 desktop app keeps it in its data folder, `novadeck` on every platform:
 `~/.config/novadeck/workspace.sqlite` on Linux, `~/Library/Application

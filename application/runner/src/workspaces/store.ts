@@ -1,6 +1,14 @@
-import { chmodSync, closeSync, mkdirSync, openSync, statSync } from "node:fs"
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  statSync,
+} from "node:fs"
 import { realpath, stat } from "node:fs/promises"
-import { basename, dirname, isAbsolute } from "node:path"
+import { dirname, isAbsolute } from "node:path"
 import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 
 import {
@@ -295,10 +303,36 @@ export class WorkspaceTooNewError extends Error {
 }
 
 /**
+ * The database was written by an earlier build, whose tables or schema version differ.
+ * Novadeck has no migrations before its first release, so it is never changed here: the
+ * runner sets it aside and starts a new one (`setAsideWorkspace`).
+ */
+export class EarlierWorkspaceError extends Error {
+  constructor(path: string, reason: string) {
+    super(
+      `Novadeck's workspace database at ${path} was written by an earlier build: ${reason}. ` +
+        "Novadeck has no migrations before its first release.",
+    )
+    this.name = "EarlierWorkspaceError"
+  }
+}
+
+/**
+ * Moves an earlier build's workspace database aside, with the write-ahead log and index
+ * beside it, so a new one can start at `path`; the old one stays, renamed with the time,
+ * for whoever wants what it held. Returns where it went.
+ */
+export const setAsideWorkspace = (path: string, now = new Date()): string => {
+  const aside = `${path}.earlier-${now.toISOString().replace(/[:.]/g, "-")}`
+  for (const suffix of ["", "-wal", "-shm"])
+    if (existsSync(`${path}${suffix}`)) renameSync(`${path}${suffix}`, `${aside}${suffix}`)
+  return aside
+}
+
+/**
  * Creates the schema in a new database, and refuses one written by a newer runner, by its
  * version or by columns this one doesn't know, or by an earlier build whose tables
- * differ: Novadeck has no migrations before its first release, so an earlier build's
- * database is to be deleted, never changed here.
+ * differ or whose schema version is lower (`EarlierWorkspaceError`), changing neither.
  */
 const prepareSchema = (database: DatabaseSync, path: string): void => {
   database.exec("BEGIN IMMEDIATE")
@@ -318,13 +352,7 @@ const prepareSchema = (database: DatabaseSync, path: string): void => {
       (version !== 0 && version < schemaVersion
         ? `its schema is version ${version}, before ${schemaVersion}`
         : undefined)
-    if (earlier)
-      throw new Error(
-        `Novadeck's workspace database at ${path} was written by an earlier build: ` +
-          `${earlier}. Novadeck has no migrations before its first release, so delete ` +
-          `it and the files beside it named ${basename(path)}-wal and -shm (they hold your ` +
-          "projects, sessions and kept terminals) and start again.",
-      )
+    if (earlier) throw new EarlierWorkspaceError(path, earlier)
     database.exec("COMMIT")
   } catch (error) {
     database.exec("ROLLBACK")

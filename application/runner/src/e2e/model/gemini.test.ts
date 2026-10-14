@@ -60,7 +60,7 @@ const conversation = {
           functionResponse: {
             id: "call_1",
             name: "call_mcp_tool",
-            response: { output: "Message m-1 to fox is queued." },
+            response: { output: "Message m-1 to @fox is queued." },
           },
         },
       ],
@@ -113,7 +113,7 @@ describe("gemini", () => {
             },
           ],
         },
-        { role: "tool", id: "call_1", text: "Message m-1 to fox is queued." },
+        { role: "tool", id: "call_1", text: "Message m-1 to @fox is queued." },
       ],
       tools: [
         "run_command",
@@ -268,7 +268,7 @@ describe("gemini", () => {
       `${stamp}Encountered error in tool validation: invalid arguments: - missing property 'toolSummary'`,
     ]
     const tools = [
-      `${stamp}Encountered error in tool execution: fox has no agent Novadeck can deliver to.`,
+      `${stamp}Encountered error in tool execution: @fox has no agent Novadeck can deliver to.`,
     ]
 
     expect(refused.map((text) => gemini.rejection?.test(text))).toEqual([true, true])

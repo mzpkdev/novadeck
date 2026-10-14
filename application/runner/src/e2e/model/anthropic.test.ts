@@ -175,7 +175,7 @@ describe("anthropic", () => {
     const tools = [
       "<tool_use_error>File does not exist.</tool_use_error>",
       "A message needs `to`, a terminal's handle, and its `text`.",
-      "fox has no agent Novadeck can deliver to.",
+      "@fox has no agent Novadeck can deliver to.",
     ]
 
     expect(refused.map((text) => anthropic.rejection?.test(text))).toEqual([true, true])

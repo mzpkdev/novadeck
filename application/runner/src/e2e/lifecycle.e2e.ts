@@ -176,7 +176,7 @@ for (const setup of setups) {
         after: calls,
       })
       expect(result(told)).toContain(
-        `Your earlier message ${first!.id} to moth won't arrive: the agent session it was for ended there.`,
+        `Your earlier message ${first!.id} to @moth won't arrive: the agent session it was for ended there.`,
       )
       const rung = await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
       expect(deliveries(rung)).toEqual([{ from: "fox", text: "Any word at all?" }])
@@ -239,7 +239,7 @@ for (const setup of setups) {
         after: calls,
       })
       expect(result(told)).toContain(
-        `Your earlier message ${first!.id} to moth won't arrive: the agent session it was for ended there.`,
+        `Your earlier message ${first!.id} to @moth won't arrive: the agent session it was for ended there.`,
       )
       const rung = await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
       expect(deliveries(rung)).toEqual([{ from: "fox", text: "Any word at all?" }])

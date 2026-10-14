@@ -1147,7 +1147,9 @@ export class Terminals {
     const { records } = this.options
     if (!records) {
       const given = this.handles.get(sessionId) ?? new Set<string>()
-      const live = [...this.records.values()].map((record) => record.summary)
+      const live = [...this.records.values()]
+        .filter((record) => !record.closed)
+        .map((record) => record.summary)
       const handle = nextHandle(
         {
           given,

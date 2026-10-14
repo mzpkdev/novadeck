@@ -32,6 +32,7 @@ import {
   press,
   sidebar,
   terminal,
+  tabHandleDescription,
   terminalTab,
   terminalTabNames,
   visibleTerminalCounts,
@@ -210,6 +211,9 @@ describe("terminal handles", () => {
         await expect
           .element(terminalTab("Dev server").getByText("@fox", { exact: true }))
           .toBeVisible()
+
+        // The tab's name stays its accessible name; the handle is its description.
+        expect(tabHandleDescription("Dev server")).toBe("@fox")
 
         await headerName("Dev server").dblClick()
         await press("Renamed server{Enter}")

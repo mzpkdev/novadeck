@@ -28,14 +28,42 @@ export const unnamed: Naming = { person: null, agent: null, murmur: null, summar
 export const summaryChars = 200
 export const summaryLines = 2
 
+const separators = new Set(["&&", ";"])
+
+/**
+ * The words of a command that name its program: past leading `VAR=value` assignments
+ * and `env`, and past `cd <dir>` followed by `&&` or `;`, which may repeat.
+ */
+const programWord = (words: readonly string[]): string | undefined => {
+  let rest = words
+  for (;;) {
+    const [first, second, third] = rest
+    if (first === "cd" && second !== undefined && second.length > 1 && second.endsWith(";")) {
+      rest = rest.slice(2)
+    } else if (first === "cd" && third !== undefined && separators.has(third)) {
+      rest = rest.slice(3)
+    } else if (first !== undefined && (first === "env" || /^[A-Za-z_]\w*=/.test(first))) {
+      rest = rest.slice(1)
+    } else return first
+  }
+}
+
 /**
  * The default title of a terminal nothing named: the program it was opened to run, as
- * `claude` for `claude --resume`, else "Terminal".
+ * `claude` for `claude --resume`, else "Terminal". It is always a valid title: trimmed,
+ * at most 200 characters, without control characters.
  */
 export const defaultTitle = (command: string | null): string => {
-  const [first = ""] = command === null ? [] : commandWords(command)
+  const first = command === null ? undefined : programWord(commandWords(command))
+  if (first === undefined) return "Terminal"
   const base = process.platform === "win32" ? win32.basename(first) : basename(first)
-  return base.replace(/\.(?:exe|cmd)$/i, "") || "Terminal"
+  const title = [
+    ...base
+      .replace(/\.(?:exe|cmd)$/i, "")
+      .replace(control, "")
+      .trim(),
+  ]
+  return title.length >= 1 && title.length <= 200 ? title.join("") : "Terminal"
 }
 
 // Characters no summary keeps: C0 and C1 control characters, and DEL.

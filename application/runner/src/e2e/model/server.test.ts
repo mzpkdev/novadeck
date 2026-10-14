@@ -363,7 +363,7 @@ describe("startFakeModel's rejections", () => {
   it("leaves a tool's own error, and a result that came before the model last spoke, alone", async ({
     model,
   }) => {
-    await turns(model, sent("fox has no agent Novadeck can deliver to."))
+    await turns(model, sent("@fox has no agent Novadeck can deliver to."))
     await turns(
       model,
       sent(

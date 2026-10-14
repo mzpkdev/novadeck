@@ -23,6 +23,7 @@ export const SidebarItem = ({
   badge,
   emphasized = false,
   describedBy,
+  handleId,
   onSelect,
   actions,
   editor,
@@ -50,6 +51,8 @@ export const SidebarItem = ({
   emphasized?: boolean
   // What describes the row to a screen reader, by id, such as how to reorder it.
   describedBy?: string
+  // The id of the handle chip in the row, which describes it too.
+  handleId?: string
   onSelect: () => void
   actions?: ReactNode
   editor?: ReactNode
@@ -61,7 +64,8 @@ export const SidebarItem = ({
   // describes the row its own description is named by id too.
   const descriptionId = useId()
   const describers =
-    describedBy && [description && descriptionId, describedBy].filter(Boolean).join(" ")
+    (describedBy || handleId) &&
+    [description && descriptionId, describedBy, handleId].filter(Boolean).join(" ")
   const nameClasses = `truncate text-body leading-[18px] ${emphasized ? "font-bold" : "font-medium"}`
   const select = (
     <button
@@ -109,7 +113,7 @@ export const SidebarItem = ({
       ) : (
         select
       )}
-      {describedBy && description && (
+      {describers && description && (
         <span id={descriptionId} hidden>
           {description}
         </span>

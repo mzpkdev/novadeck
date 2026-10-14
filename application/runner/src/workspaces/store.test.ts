@@ -22,7 +22,12 @@ import { DomainError } from "../errors.js"
 import type { Message, Thread } from "../messaging/mailbox.js"
 import { handleWords } from "../terminals/handles.js"
 import { describe, expect, it as base } from "../test.js"
-import { WorkspaceStore, WorkspaceTooNewError } from "./store.js"
+import {
+  EarlierWorkspaceError,
+  setAsideWorkspace,
+  WorkspaceStore,
+  WorkspaceTooNewError,
+} from "./store.js"
 
 const it = base.extend<{
   directory: () => string
@@ -331,7 +336,7 @@ describe("workspace metadata", () => {
     `)
     old.close()
     expect(() => new WorkspaceStore(path)).toThrow(
-      /earlier build: its schema is version 1, before 2\. .*delete/,
+      /earlier build: its schema is version 1, before 2\./,
     )
     const database = new DatabaseSync(path)
     try {
@@ -351,9 +356,20 @@ describe("workspace metadata", () => {
     expect(() => new WorkspaceStore(path)).toThrow(/expects murmur_title TEXT/)
   })
 
-  it("refuses a database an earlier build wrote, naming it and saying to delete it", ({
+  it("sets an earlier build's database aside with its log, so a new one starts in its place", ({
     directory,
   }) => {
+    const path = join(directory(), "workspace.sqlite")
+    for (const suffix of ["", "-wal", "-shm"]) writeFileSync(`${path}${suffix}`, suffix || "db")
+    const aside = setAsideWorkspace(path, new Date("2026-10-14T12:00:00.000Z"))
+    expect(aside).toBe(`${path}.earlier-2026-10-14T12-00-00-000Z`)
+    for (const suffix of ["", "-wal", "-shm"]) {
+      expect(existsSync(`${path}${suffix}`)).toBe(false)
+      expect(readFileSync(`${aside}${suffix}`, "utf8")).toBe(suffix || "db")
+    }
+  })
+
+  it("refuses a database an earlier build wrote, naming it and why", ({ directory }) => {
     const path = join(directory(), "workspace.sqlite")
     // The terminals table as main's runner writes it, before handles and titles.
     const old = new DatabaseSync(path)
@@ -373,7 +389,7 @@ describe("workspace metadata", () => {
     const { message } = refusal as Error
     expect(message).toContain(path)
     expect(message).toContain("expects handle TEXT NOT NULL")
-    expect(message).toContain("workspace.sqlite-wal and -shm")
+    expect(refusal).toBeInstanceOf(EarlierWorkspaceError)
     // Nothing was changed: the old terminal is there, and nothing was added.
     const database = new DatabaseSync(path)
     try {

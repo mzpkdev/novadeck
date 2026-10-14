@@ -79,7 +79,7 @@ describe.skipIf(!supported)(order.map((setup) => setup.name).join(", "), () => {
         after: calls,
       })
       expect(result(told)).toContain(
-        `Your earlier message ${first!.id} to moth won't arrive: the agent session it was for ended there.`,
+        `Your earlier message ${first!.id} to @moth won't arrive: the agent session it was for ended there.`,
       )
       const rung = await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
       expect(rung.api).toBe(other.dialect.api)

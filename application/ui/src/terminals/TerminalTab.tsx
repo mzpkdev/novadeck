@@ -81,6 +81,7 @@ export const TerminalTab = ({
   const terminal = tile
   const shell = isWindow(tile) ? undefined : tile
   const icon = <Icon size={14} strokeWidth={1.5} />
+  const handleId = `terminal-handle-${terminal.id}`
   // The detail line shows the phase: a glyph (a spinner while a program runs) beside
   // the program, or a note while the shell starts. A tab that has ended is hatched (styles.css);
   // assistive technology says how it ended.
@@ -143,7 +144,7 @@ export const TerminalTab = ({
             />
             {shell?.handle && (
               <>
-                <HandleChip handle={shell.handle} className="handle-plain" />
+                <HandleChip id={handleId} handle={shell.handle} className="handle-plain" />
                 <span aria-hidden className="shrink-0">
                   ·
                 </span>
@@ -174,6 +175,7 @@ export const TerminalTab = ({
         {...(description ? { description } : {})}
         {...(companion ? { badge: companion } : {})}
         describedBy={tabInstructionsId}
+        {...(shell?.handle ? { handleId } : {})}
         onSelect={onSelect}
         data-terminal-tab-id={terminal.id}
         data-terminal-phase={phase}

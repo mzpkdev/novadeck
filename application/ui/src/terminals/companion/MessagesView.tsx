@@ -171,7 +171,7 @@ export const MessagesView = ({
     <div className="mail-view">
       <div className="artifact-meta mail-meta">
         <code>Messages</code>
-        {mail.mail && <span>{mail.mail.handle}</span>}
+        {mail.mail && <span>{handleText(mail.mail.handle)}</span>}
         <span className="artifact-meta-push" />
         <span className="mail-pause">
           <span id={label} className="mail-pause-label">
