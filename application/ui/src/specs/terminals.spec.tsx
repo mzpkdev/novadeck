@@ -434,7 +434,7 @@ describe("closing terminals", () => {
       const dialog = closeConfirmation()
       await expect.element(dialog).toBeVisible()
       await expect
-        .element(dialog.getByRole("heading", { name: "Close “Checkout implementation”?" }))
+        .element(dialog.getByRole("heading", { name: "Close @moth · “Checkout implementation”?" }))
         .toBeVisible()
       await expect.element(dialog.getByText("zsh is still running in it.")).toBeVisible()
       await expect.element(dialog.getByRole("button", { name: "Cancel" })).toHaveFocus()

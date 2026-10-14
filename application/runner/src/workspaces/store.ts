@@ -728,20 +728,24 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     return row && { ...listed(row), transcript: row.transcript }
   }
 
+  // In the order their handles were given, which is the order they were asked for: a
+  // terminal whose create waited longer is saved later, though it was named first.
   terminals(sessionId?: string): ListedTerminal[] {
     const rows = (
       sessionId === undefined
         ? this.queries.all`
-          SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
-            person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by, led_by,
-            command, last_program, work
-          FROM terminals ORDER BY rowid`
+          SELECT t.id, t.session_id, t.cwd, t.agents, t.prompted_at, t.updated_at, t.handle,
+            t.person_title, t.agent_title, t.agent_titled_by, t.murmur_title, t.summary,
+            t.opened_by, t.led_by, t.command, t.last_program, t.work
+          FROM terminals t LEFT JOIN session_handles h USING (session_id, handle)
+          ORDER BY h.rowid, t.rowid`
         : this.queries.all`
-          SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
-            person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by, led_by,
-            command, last_program, work
-          FROM terminals WHERE session_id = ${sessionId}
-          ORDER BY rowid`
+          SELECT t.id, t.session_id, t.cwd, t.agents, t.prompted_at, t.updated_at, t.handle,
+            t.person_title, t.agent_title, t.agent_titled_by, t.murmur_title, t.summary,
+            t.opened_by, t.led_by, t.command, t.last_program, t.work
+          FROM terminals t LEFT JOIN session_handles h USING (session_id, handle)
+          WHERE t.session_id = ${sessionId}
+          ORDER BY h.rowid, t.rowid`
     ) as Omit<TerminalRow, "transcript">[]
     return rows.map(listed)
   }

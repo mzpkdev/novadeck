@@ -86,6 +86,9 @@ describe("a handle as written", () => {
   it("is the same handle with or without its @", () => {
     expect(bareHandle("@moth")).toBe("moth")
     expect(bareHandle(" moth ")).toBe("moth")
+    expect(bareHandle("@Moth")).toBe("moth")
+    expect(bareHandle("@moth · api-server")).toBe("moth")
+    expect(bareHandle("moth2")).toBe("moth2")
     expect(mention("moth")).toBe("@moth")
   })
 

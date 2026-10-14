@@ -71,7 +71,7 @@ for (const setup of setups) {
       await t1.submit("Close fox")
 
       const after = await run.model.waitFor((call) => closed(call, "fox"), { after: calls })
-      expect(result(after)).toMatch(/Closed t2, which ran \S/)
+      expect(result(after)).toMatch(/Closed @fox(?: · [^,]+)?, which ran \S/)
       await t1.until("Closed it.")
       await t1.reached("settled", { after: mark })
       // Gone from the runner, as the person's close leaves it: its shell ended and forgotten.

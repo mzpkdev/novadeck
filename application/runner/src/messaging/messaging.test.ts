@@ -237,7 +237,7 @@ describe("sending", () => {
 
   it("refuses anything but a current handle, describing every terminal there", () => {
     const { messaging, send } = create()
-    for (const to of ["codex", "Fox", "haze"])
+    for (const to of ["codex", "haze", "fo"])
       expect(send("A", to, "hi")).toEqual({
         ok: false,
         reason: [
@@ -255,6 +255,8 @@ describe("sending", () => {
     // A handle is written with or without its @, as people read it.
     expect(send("A", "@fox", "hi")).toMatchObject({ ok: true, to: "fox" })
     expect(send("A", " fox ", "hi")).toMatchObject({ ok: true, to: "fox" })
+    // And as agents show terminals to people, in any case.
+    expect(send("A", "@Fox · Codex", "hi")).toMatchObject({ ok: true, to: "fox" })
     // A handle stays its terminal's: a closed one's is refused, never another's.
     messaging.unregister("B")
     expect(send("A", "fox", "hi")).toMatchObject({

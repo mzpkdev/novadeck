@@ -745,6 +745,19 @@ describe("saved terminals", () => {
     expect(workspace.terminals().map(({ id }) => id)).toEqual(["b", "j", "a"])
   })
 
+  it("list terminals in the order their handles were given, though saved in another", ({
+    store,
+  }) => {
+    const workspace = store()
+    const moth = workspace.giveHandle("s")
+    const fox = workspace.giveHandle("s")
+    // fox's create finished first, so its row was saved before moth's.
+    workspace.saveTerminal(numbered("second", fox))
+    workspace.saveTerminal(numbered("first", moth))
+    expect(workspace.terminals("s").map(({ id }) => id)).toEqual(["first", "second"])
+    expect(workspace.terminals().map(({ id }) => id)).toEqual(["first", "second"])
+  })
+
   it("rename a kept terminal, and keep each session's given handles across restarts", ({
     directory,
     store,
