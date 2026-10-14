@@ -258,10 +258,6 @@ export const tooltipOf = async (trigger: Locator): Promise<string> => {
 /** The platform modifier: Cmd on macOS, Ctrl elsewhere. Chromium on Linux/Windows uses Ctrl. */
 export const isMac = (): boolean => /Mac|iPhone|iPad/.test(navigator.platform)
 
-/**
- * What a screen reader hears describe a terminal's tab, as aria-describedby resolves it,
- * less the instructions for reordering tabs every tab has; null when that's all.
- */
 /** What a screen reader hears of a tab's handle: the row's description that names its chip. */
 export const tabHandleDescription = (name: string): string | undefined => {
   const ids = terminalTab(name).element().getAttribute("aria-describedby")?.split(/\s+/) ?? []
@@ -269,6 +265,10 @@ export const tabHandleDescription = (name: string): string | undefined => {
   return id ? document.getElementById(id)?.textContent : undefined
 }
 
+/**
+ * What a screen reader hears describe a terminal's tab, as aria-describedby resolves it,
+ * less the instructions for reordering tabs every tab has; null when that's all.
+ */
 export const tabDescription = (name: string): string | null => {
   const tab = terminalTab(name).element()
   const ids = tab.getAttribute("aria-describedby")
