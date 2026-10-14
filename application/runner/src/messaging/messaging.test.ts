@@ -14,6 +14,7 @@ import { harnesses } from "../harnesses/registry.js"
 import { followRoot, type Root } from "../harnesses/roots.js"
 import { typedPromptStart } from "../harnesses/typed-prompts.js"
 import { handleWords } from "../terminals/handles.js"
+import { bareHandle } from "../terminals/handles.js"
 import { keysOf } from "../terminals/keys.js"
 import { describe, expect, it } from "../test.js"
 import { running, submitWindowMs } from "./delivery.js"
@@ -237,11 +238,11 @@ describe("sending", () => {
 
   it("refuses anything but a current handle, describing every terminal there", () => {
     const { messaging, send } = create()
-    for (const to of ["codex", "haze", "fo"])
+    for (const to of ["codex", "haze", "fo", "fox owl", "fox · Codex"])
       expect(send("A", to, "hi")).toEqual({
         ok: false,
         reason: [
-          `"${to}" is no terminal's handle here. Send to one of these by its exact handle, ` +
+          `"${bareHandle(to)}" is no terminal's handle here. Send to one of these by its exact handle, ` +
             "picking by its title, folder and work; if more than one could be meant, ask the " +
             "user rather than guess.",
           "Other terminals in this project and session:",
@@ -255,8 +256,8 @@ describe("sending", () => {
     // A handle is written with or without its @, as people read it.
     expect(send("A", "@fox", "hi")).toMatchObject({ ok: true, to: "fox" })
     expect(send("A", " fox ", "hi")).toMatchObject({ ok: true, to: "fox" })
-    // And as agents show terminals to people, in any case.
-    expect(send("A", "@Fox · Codex", "hi")).toMatchObject({ ok: true, to: "fox" })
+    // In any case.
+    expect(send("A", "@Fox", "hi")).toMatchObject({ ok: true, to: "fox" })
     // A handle stays its terminal's: a closed one's is refused, never another's.
     messaging.unregister("B")
     expect(send("A", "fox", "hi")).toMatchObject({

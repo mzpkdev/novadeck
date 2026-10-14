@@ -738,14 +738,14 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
             t.person_title, t.agent_title, t.agent_titled_by, t.murmur_title, t.summary,
             t.opened_by, t.led_by, t.command, t.last_program, t.work
           FROM terminals t LEFT JOIN session_handles h USING (session_id, handle)
-          ORDER BY h.rowid, t.rowid`
+          ORDER BY h.rowid IS NULL, h.rowid, t.rowid`
         : this.queries.all`
           SELECT t.id, t.session_id, t.cwd, t.agents, t.prompted_at, t.updated_at, t.handle,
             t.person_title, t.agent_title, t.agent_titled_by, t.murmur_title, t.summary,
             t.opened_by, t.led_by, t.command, t.last_program, t.work
           FROM terminals t LEFT JOIN session_handles h USING (session_id, handle)
           WHERE t.session_id = ${sessionId}
-          ORDER BY h.rowid, t.rowid`
+          ORDER BY h.rowid IS NULL, h.rowid, t.rowid`
     ) as Omit<TerminalRow, "transcript">[]
     return rows.map(listed)
   }

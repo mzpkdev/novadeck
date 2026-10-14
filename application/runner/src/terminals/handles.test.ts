@@ -87,7 +87,8 @@ describe("a handle as written", () => {
     expect(bareHandle("@moth")).toBe("moth")
     expect(bareHandle(" moth ")).toBe("moth")
     expect(bareHandle("@Moth")).toBe("moth")
-    expect(bareHandle("@moth · api-server")).toBe("moth")
+    // Only the handle: nothing after it is dropped quietly, so a title or a second handle is refused.
+    expect(bareHandle("@moth · api-server")).toBe("moth · api-server")
     expect(bareHandle("moth2")).toBe("moth2")
     expect(mention("moth")).toBe("@moth")
   })

@@ -124,16 +124,9 @@ export const nextHandle = (session: HandleSession, elsewhere: ReadonlySet<string
 /** A handle's word, without the number a later round gives it: `moth2` is `moth`. */
 export const wordOf = (handle: string): string => handle.replace(/[0-9]+$/, "")
 
-/**
- * The handle an agent wrote, the way sessions keep it: `@moth`, `moth`, `@Moth` and
- * `@moth · api-server`, the way agents show terminals to people, are all `moth`.
- */
+/** The handle an agent wrote, as `@moth`, `moth` or `@Moth`, the way sessions keep it. */
 export const bareHandle = (written: string): string =>
-  written
-    .trim()
-    .replace(/^@/, "")
-    .split(/[\s·]/, 1)[0]!
-    .toLowerCase()
+  written.trim().replace(/^@/, "").trim().toLowerCase()
 
 /** A handle as people and agents read it: `@moth`. */
 export const mention = (handle: string): string => `@${handle}`
