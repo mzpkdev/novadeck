@@ -243,7 +243,7 @@ const plainDenyRequest: ChatRequest = {
     type: "choices",
     id: "demo-plain-deny",
     title: null,
-    detail: "~/projects/storefront\n$ git push origin main",
+    detail: "~/projects/api-service\n$ git push origin main",
     options: [
       { id: "once", label: "Allow once", text: null },
       { id: "session", label: "Allow for this session", text: null },
@@ -299,7 +299,7 @@ const extraFixtures: readonly Fixture[] = [
   },
   {
     id: demoInboxIds.plainDeny,
-    project: "storefront",
+    project: "api-service",
     terminal: 4,
     agent: "codex",
     minutes: 1,

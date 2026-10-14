@@ -39,7 +39,8 @@ describe("the demo Inbox's items", () => {
   })
 
   it("puts one item on each sample terminal, none seen, none from the future", () => {
-    const items = demoInboxItems(now)
+    // The states the debug panel adds too: each on a terminal of its own.
+    const items = demoInboxItemsAll(now)
     const terminals = items.map((each) => each.source.terminalId)
     expect(new Set(terminals).size).toBe(terminals.length)
     expect(items.every((each) => !each.seen && each.at <= now)).toBe(true)
