@@ -1011,6 +1011,39 @@ const saying = (text: string | RegExp): Locator =>
 const layer = (element: Element): number => Number(getComputedStyle(element).zIndex)
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
+/**
+ * Waits for `until`, and where it fails says what the dictation status line showed meanwhile
+ * and how many microphone tracks were live: a clip's notice fades in four seconds, long
+ * before a wait for the words ends, and a clip too short to keep leaves none, so a failure
+ * would not otherwise say which of them it was.
+ */
+const saidWhile = async (
+  microphone: { readonly live: () => number },
+  until: () => Promise<unknown>,
+): Promise<void> => {
+  const said: string[] = []
+  const timer = setInterval(() => {
+    const text = page
+      .getByRole("status")
+      .elements()
+      .map((one) => one.textContent?.trim())
+      .filter(Boolean)
+      .join(" | ")
+    if (text && said.at(-1) !== text) said.push(text)
+  }, 100)
+  try {
+    await until()
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\n` +
+        `The status line said: ${said.length > 0 ? said.join(" → ") : "nothing"}; ` +
+        `${microphone.live()} microphone track(s) live.`,
+      { cause: error },
+    )
+  } finally {
+    clearInterval(timer)
+  }
+}
 
 describe("dictation", () => {
   let microphone: ReturnType<typeof fakeMicrophone>
@@ -1082,9 +1115,11 @@ describe("dictation", () => {
       await press("{/M}")
 
       // "Transcribing" shows only as long as the demo takes, too briefly to wait for.
-      await expect
-        .element(commandInput("Checkout implementation"))
-        .toHaveValue("Add a retry to the checkout request and run the tests.")
+      await saidWhile(microphone, async () => {
+        await expect
+          .element(commandInput("Checkout implementation"))
+          .toHaveValue("Add a retry to the checkout request and run the tests.")
+      })
       expect(microphone.live()).toBe(0)
     })
 
@@ -1100,9 +1135,11 @@ describe("dictation", () => {
 
       await press(`${dictateKeys}${releaseKeys}`)
       // "Transcribing" shows only as long as the demo takes, too briefly to wait for.
-      await expect
-        .element(commandInput("Checkout implementation"))
-        .toHaveValue("Add a retry to the checkout request and run the tests.")
+      await saidWhile(microphone, async () => {
+        await expect
+          .element(commandInput("Checkout implementation"))
+          .toHaveValue("Add a retry to the checkout request and run the tests.")
+      })
     })
 
     it("shows its strip over a terminal's chat, not under it", async () => {
