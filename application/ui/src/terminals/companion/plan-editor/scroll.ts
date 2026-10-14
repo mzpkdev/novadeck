@@ -158,16 +158,27 @@ export const restoreScroll = (
     },
     { signal, passive: true },
   )
+  // What the place depends on in the layout: the zoom, and the heights the editor holds,
+  // which it estimates again as the zoom changes and corrects once it has measured.
+  const layoutOf = (): string =>
+    `${scaleOf(view).toFixed(3)}|${view.contentHeight.toFixed(1)}|${scroller.scrollHeight}|${scroller.clientHeight}`
   // The editor may still correct heights it estimated a while on, as it measures again
-  // after a resize settles: it holds still once nothing moved it for 150ms and eight
-  // frames, or after half a second and twenty frames, and at the latest after three seconds.
-  let began = 0
+  // after a resize settles: it holds still once neither the pane nor the layout changed for
+  // 150ms and eight frames, or after half a second and twenty frames, and at the latest
+  // after three seconds. Times are the frames' own, so a busy page's long frames count.
+  let began = -1
   let moved = 0
   let frames = 0
   let still = 0
+  let layout = ""
   const settle = (now: number): void => {
+    if (began < 0) began = moved = now
     frames += 1
-    if (go()) {
+    const moving = go()
+    const seen = layoutOf()
+    const changed = seen !== layout
+    layout = seen
+    if (moving || changed) {
       moved = now
       still = 0
     } else still += 1
@@ -179,7 +190,7 @@ export const restoreScroll = (
   const start = (): void => {
     placed = scroller.scrollTop
     go()
-    began = moved = performance.now()
+    layout = layoutOf()
     frame = requestAnimationFrame(settle)
   }
   if (scroller.clientHeight) start()
