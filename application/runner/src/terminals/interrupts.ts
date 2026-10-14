@@ -192,13 +192,17 @@ export class Interrupts {
   /**
    * Clears the text of the box with the profile's keys, written, not typed (the box is
    * empty after them, which the person's keys never say), and looks that it reads empty,
-   * writing them again up to twice if not. False where it does not.
+   * writing them again up to twice if not, as the screen then calls for. False where it
+   * does not.
    */
   private async cleared(terminalId: string, profile: BoxProfile, box: InputBox): Promise<boolean> {
     const { host } = this
     let now = box
+    // What the screen shows as each try is made: a harness's keys may need to follow what it
+    // has taken of the last (Claude Code's second Escape, once its first has come).
+    let seen = await host.screen(terminalId)
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      host.write(terminalId, profile.clear!(now))
+      host.write(terminalId, profile.clear!(now, seen))
       const until = Date.now() + this.restoreCalmMs
       while (Date.now() < until) {
         // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
@@ -207,6 +211,7 @@ export class Interrupts {
         const after = await host.screen(terminalId)
         const read = after && profile.read(after)
         if (!after || !host.alive(terminalId)) return false
+        seen = after
         if (read === undefined) continue
         if (isEmpty(read)) return true
         now = read
