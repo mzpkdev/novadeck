@@ -134,7 +134,7 @@ const Asked = (props: SheetContentProps & { readonly ask: AgentAsk }): React.JSX
   const reply = (option: number | null, words: string): void =>
     submit(
       { kind: "ask", answer: { type: "reply", option, text: words.trim() } },
-      `Sent to ${agent} in ${item.source.handle}. It's working again.`,
+      `Sent to ${agent} in @${item.source.handle}. It's working again.`,
     )
   const { shape } = ask
   const footerReply = (
@@ -306,7 +306,7 @@ const Questions = (
   const send = (): void =>
     submit(
       { kind: "request", answer: questionsAnswer(dialog, picks, questions) },
-      `Sent to ${agent} in ${item.source.handle}. It's working again.`,
+      `Sent to ${agent} in @${item.source.handle}. It's working again.`,
     )
   const pick = (question: ChatQuestion, option: string): void =>
     setPicks(

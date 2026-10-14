@@ -21,7 +21,7 @@ const source: InboxItem["source"] = {
   projectId: "p",
   workspaceSessionId: "s",
   terminalId: "t",
-  handle: "t1",
+  handle: "moth",
   agent: "claude",
   title: "Title",
   projectName: "Project",

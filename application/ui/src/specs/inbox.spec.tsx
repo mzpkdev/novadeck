@@ -292,7 +292,7 @@ describe("An item's sheet", () => {
       )
       await open.getByRole("button", { name: "Send B" }).click()
 
-      await expect.element(confirmation()).toMatchTextContent("Sent to Codex in t2")
+      await expect.element(confirmation()).toMatchTextContent("Sent to Codex in @fox")
     })
 
     it("keeps a reply it has not sent as a draft on the row", async () => {

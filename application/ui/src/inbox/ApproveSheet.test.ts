@@ -33,7 +33,7 @@ const item = (
     projectId: "p",
     workspaceSessionId: "s",
     terminalId: "t",
-    handle: "t1",
+    handle: "moth",
     agent: "codex",
     title: "Title",
     projectName: "Project",

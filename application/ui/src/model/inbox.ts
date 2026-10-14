@@ -22,7 +22,7 @@ export type InboxSource = {
   readonly projectId: string
   readonly workspaceSessionId: string
   readonly terminalId: string
-  // The terminal's handle, such as `t4`.
+  // The terminal's handle, bare, such as `moth`: the UI writes it `@moth`.
   readonly handle: string
   readonly agent: AgentName
   readonly title: string

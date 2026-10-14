@@ -2,6 +2,7 @@ import { ArrowLeft, CircleCheck, Terminal, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import { inboxType, type InboxItem } from "../model/inbox"
+import { HandleChip } from "../ui-toolkit/HandleChip"
 import { Sheet } from "../ui-toolkit/Sheet"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { ApproveSheet } from "./ApproveSheet"
@@ -82,7 +83,7 @@ const SheetBody = ({ item }: { readonly item: InboxItem }): React.JSX.Element =>
           {source.title}
         </h2>
         <span className="inbox-sheet-meta text-caption">
-          {source.projectName} · {source.agent} · {source.handle}
+          {source.projectName} · {source.agent} · <HandleChip handle={source.handle} />
         </span>
         <Tooltip content="Show terminal">
           <button

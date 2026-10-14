@@ -3,6 +3,7 @@ import { useState } from "react"
 
 import type { ChatAnswer, ChatDialogOption } from "../model/conversation"
 import type { HeldMessage } from "../model/inbox"
+import { HandleChip } from "../ui-toolkit/HandleChip"
 import {
   agentName,
   actionOf,
@@ -149,7 +150,7 @@ export const Unanswerable = (
       <Lead {...props} />
       {text && (
         <>
-          <span className="inbox-caption">What the prompt shows in {item.source.handle}</span>
+          <span className="inbox-caption">What the prompt shows in @{item.source.handle}</span>
           <pre
             className="inbox-screen"
             tabIndex={0}
@@ -181,11 +182,11 @@ const Held = (props: SheetContentProps & { readonly held: HeldMessage }): React.
       <Lead {...props} />
       <div className="inbox-route">
         <span>
-          {held.from.title} <span className="inbox-handle">{held.from.handle}</span>
+          {held.from.title} <HandleChip handle={held.from.handle} />
         </span>
         <span aria-hidden="true">→</span>
         <span>
-          {held.to.title} <span className="inbox-handle">{held.to.handle}</span>
+          {held.to.title} <HandleChip handle={held.to.handle} />
         </span>
       </div>
       <blockquote className="inbox-quote">{held.text}</blockquote>

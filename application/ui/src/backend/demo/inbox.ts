@@ -10,6 +10,7 @@ import {
   type InboxState,
 } from "../../model/inbox"
 import { createStore } from "../../model/store"
+import { demoHandle } from "./handles"
 import { demoTerminalId, terminals } from "./samples"
 
 // The demo's Inbox: hardcoded items on the sample terminals, answered for a moment and
@@ -38,7 +39,7 @@ const sourceOf = (projectId: string, number: number, agent: AgentName) => ({
   projectId,
   workspaceSessionId: "initial",
   terminalId: demoTerminalId({ projectId, workspaceSessionId: "initial" }, number),
-  handle: `t${number}`,
+  handle: demoHandle(number),
   agent,
   title: terminals.find((terminal) => Number(terminal.id) === number)?.name ?? `Terminal ${number}`,
   projectName: projectId,
@@ -363,8 +364,8 @@ const fixtures: readonly Fixture[] = [
       kind: "held",
       held: {
         threadId: "demo-thread",
-        from: { handle: "t3", title: "Tests" },
-        to: { handle: "t1", title: "Checkout implementation" },
+        from: { handle: demoHandle(3), title: "Tests" },
+        to: { handle: demoHandle(1), title: "Checkout implementation" },
         text: 'One more: the changelog says the search is "instant". Can you confirm the index loads under 200 ms, or should I soften it?',
         hop: 6,
         allowed: 6,

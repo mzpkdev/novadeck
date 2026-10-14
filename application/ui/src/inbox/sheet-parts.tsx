@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react"
 
+import { HandleChip } from "../ui-toolkit/HandleChip"
 import { NovaMark } from "../ui-toolkit/NovaLogo"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { codeParts } from "./inbox-text"
@@ -180,7 +181,9 @@ export const Evidence = ({
   }[]
 }): React.JSX.Element => (
   <div className="inbox-evidence">
-    <span className="inbox-evidence-label">In {handle}</span>
+    <span className="inbox-evidence-label">
+      In <HandleChip handle={handle} />
+    </span>
     {lines.map((line, index) => (
       <div className="inbox-evidence-line" key={index}>
         <span className="min-w-0">
