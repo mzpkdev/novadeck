@@ -54,7 +54,8 @@ export type SettingsChange = {
 // earlier build's. A build that only adds columns may leave it, as a runner reads columns
 // it doesn't know, on a database of its own version, as a newer build's; an added table,
 // index or constraint goes unseen.
-const schemaVersion = 1
+// 2: word handles, given once per session (session_handles), each unique in its session.
+const schemaVersion = 2
 const schema = `
   CREATE TABLE projects (
     position INTEGER PRIMARY KEY,
@@ -312,10 +313,15 @@ const prepareSchema = (database: DatabaseSync, path: string): void => {
     // Only a database of this version can be a newer build's by its columns; one of a
     // lower version is an earlier build's whatever it holds.
     if (difference?.newer && version === schemaVersion) throw new WorkspaceTooNewError()
-    if (difference)
+    const earlier =
+      difference?.text ??
+      (version !== 0 && version < schemaVersion
+        ? `its schema is version ${version}, before ${schemaVersion}`
+        : undefined)
+    if (earlier)
       throw new Error(
         `Novadeck's workspace database at ${path} was written by an earlier build: ` +
-          `${difference.text}. Novadeck has no migrations before its first release, so delete ` +
+          `${earlier}. Novadeck has no migrations before its first release, so delete ` +
           `it and the files beside it named ${basename(path)}-wal and -shm (they hold your ` +
           "projects, sessions and kept terminals) and start again.",
       )

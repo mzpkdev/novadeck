@@ -78,7 +78,7 @@ describe("workspace metadata", () => {
     expect(first.id).toMatch(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/)
     const database = new DatabaseSync(path)
     try {
-      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(1)
+      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(2)
       expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([])
       expect(() =>
         database
@@ -268,13 +268,13 @@ describe("workspace metadata", () => {
     const path = join(directory(), "workspace.sqlite")
     const future = new DatabaseSync(path)
     future.exec(
-      "CREATE TABLE future_data (value TEXT); INSERT INTO future_data VALUES ('saved'); PRAGMA user_version = 2",
+      "CREATE TABLE future_data (value TEXT); INSERT INTO future_data VALUES ('saved'); PRAGMA user_version = 3",
     )
     future.close()
     expect(() => new WorkspaceStore(path)).toThrow(/newer/)
     const database = new DatabaseSync(path)
     try {
-      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(2)
+      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(3)
       expect(database.prepare("SELECT value FROM future_data").get()?.value).toBe("saved")
     } finally {
       database.close()
@@ -315,6 +315,31 @@ describe("workspace metadata", () => {
     )
     old.close()
     expect(() => new WorkspaceStore(path)).toThrow(/earlier build: .*expects murmur_title TEXT/)
+  })
+
+  it("refuses a database from before word handles by its schema version, keeping its terminals", ({
+    directory,
+  }) => {
+    const path = join(directory(), "workspace.sqlite")
+    new WorkspaceStore(path).close()
+    const old = new DatabaseSync(path)
+    // Numbered handles' tables had the same columns; only the version tells them apart.
+    old.exec(`
+      PRAGMA user_version = 1;
+      INSERT INTO terminals (id, session_id, cwd, agents, updated_at, handle)
+        VALUES ('a', 's', '/', '{}', 1, 't3');
+    `)
+    old.close()
+    expect(() => new WorkspaceStore(path)).toThrow(
+      /earlier build: its schema is version 1, before 2\. .*delete/,
+    )
+    const database = new DatabaseSync(path)
+    try {
+      expect(database.prepare("SELECT handle FROM terminals").all()).toEqual([{ handle: "t3" }])
+      expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(1)
+    } finally {
+      database.close()
+    }
   })
 
   it("refuses a database from before murmur titles, which has no murmur_title", ({ directory }) => {
