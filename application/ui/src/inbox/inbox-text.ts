@@ -171,14 +171,14 @@ export const toneOf = (item: InboxItem): Tone => {
   return inboxType(item) === "trouble" && !limit ? "urgent" : "waiting"
 }
 
-// A permission's or plan's options, as the buttons the sheet offers. Allow is the first
-// plain yes; a yes that sets something standing ("don't ask again", "allow all edits") is
-// a quiet link in its own words; the rest say no, one of which may take words.
+// A permission's or plan's options, as the buttons the sheet offers. Allow is a plain yes;
+// the other yeses are quiet links in their own words, or plain buttons where none is plain;
+// the rest say no, one of which may take words.
 export type Choices = {
   // The plain yes that leads; null where no yes is plain.
   readonly allow: ChatDialogOption | null
   readonly standing: readonly ChatDialogOption[]
-  // The yeses that are neither plain nor standing, offered as they word themselves.
+  // Where no yes leads, the ones that set nothing standing, offered as they word themselves.
   readonly unsure: readonly ChatDialogOption[]
   // The no that takes the person's words, and the plain one.
   readonly note: ChatDialogOption | null
@@ -196,23 +196,29 @@ const standing =
 const bareYes = /^(yes|allow|approve)( once)?[.!]?$/i
 const knownYes = /^yes,( and)? (proceed|manually approve edits)[.!]?$/i
 
+// A label as the rule reads it: trimmed, and without a key hint the harness prints after
+// it, as Codex's "(y)".
+const bare = (label: string): string => label.trim().replace(/\s*\([^()]{1,3}\)$/, "")
+
 // Null where nothing says yes: the person answers in the terminal. A bare yes leads, else
-// a known one; the other yeses are quiet links where they set something standing and else
-// plain buttons in their own words (`unsure`). Nothing is guessed at. A yes is never
-// offered as a no; where nothing says no, there is no Deny.
+// a known one. With one leading, every other yes is a quiet link in its own words, so
+// nothing that may change more than this answer ("bypass permissions") sits beside it as a
+// button; with none leading, the yeses are plain buttons in their own words (`unsure`),
+// none of them primary. Nothing is guessed at. A yes is never offered as a no; where
+// nothing says no, there is no Deny.
 export const choicesOf = (options: readonly ChatDialogOption[]): Choices | null => {
-  const yeses = options.filter((each) => yes.test(each.label.trim()))
+  const yeses = options.filter((each) => yes.test(bare(each.label)))
   if (yeses.length === 0) return null
   const allow =
-    yeses.find((each) => bareYes.test(each.label.trim())) ??
-    yeses.find((each) => knownYes.test(each.label.trim())) ??
+    yeses.find((each) => bareYes.test(bare(each.label))) ??
+    yeses.find((each) => knownYes.test(bare(each.label))) ??
     null
   const others = yeses.filter((each) => each !== allow)
-  const nos = options.filter((each) => no.test(each.label.trim()))
+  const nos = options.filter((each) => no.test(bare(each.label)))
   return {
     allow,
-    standing: others.filter((each) => standing.test(each.label)),
-    unsure: others.filter((each) => !standing.test(each.label)),
+    standing: allow ? others : others.filter((each) => standing.test(each.label)),
+    unsure: allow ? [] : others.filter((each) => !standing.test(each.label)),
     note: nos.find((each) => each.text !== null) ?? null,
     plain: nos.find((each) => each.text === null) ?? null,
   }

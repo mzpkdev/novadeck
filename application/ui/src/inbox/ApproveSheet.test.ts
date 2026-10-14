@@ -176,19 +176,16 @@ describe("A plan's sheet", () => {
     { id: "keep", label: "No, keep planning", text: "prompt" },
   ]
 
-  it("approves with the plain yes, and offers bypass only as a plain button", () => {
+  it("approves with the plain yes, and offers bypass only as a quiet link", () => {
     const sheet = mount(plan, { kind: "plan" })
     const text = document.querySelector(".inbox-sheet")?.textContent ?? ""
 
     expect(text).toContain("Approve")
     expect(document.querySelector(".inbox-sheet .button.primary")?.textContent).toBe("Approve")
-    // Bypass is no quiet link and never leads: a plain button in its own words.
+    // Bypass never leads, nor sits beside Approve as a button: a quiet link in its own words.
     const buttons = Array.from(document.querySelectorAll(".inbox-sheet .inbox-actions .button"))
-    expect(buttons.map((button) => button.textContent)).toEqual([
-      "Approve",
-      "Yes, and bypass permissions",
-      "Deny",
-    ])
+    expect(buttons.map((button) => button.textContent)).toEqual(["Approve", "Deny"])
+    expect(text).toContain("Yes, and bypass permissions")
     sheet.press("Approve")
     expect(sheet.sent).toEqual([
       { kind: "request", answer: { type: "choice", dialog: "d", option: "manual" } },

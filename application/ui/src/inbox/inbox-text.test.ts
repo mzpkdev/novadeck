@@ -265,9 +265,9 @@ describe("A permission's options", () => {
 
     it("leads with the manual yes alone, leaving the rest as quiet links", () => {
       expect(choices?.allow?.id).toBe("3")
-      // Auto-accept sets something standing; bypass is neither, and is a plain button.
-      expect(choices?.standing.map(({ id }) => id)).toEqual(["2"])
-      expect(choices?.unsure.map(({ id }) => id)).toEqual(["1"])
+      // With a yes leading, bypass is no button beside it: a quiet link, as auto-accept is.
+      expect(choices?.standing.map(({ id }) => id)).toEqual(["1", "2"])
+      expect(choices?.unsure).toEqual([])
     })
   })
 
@@ -315,7 +315,14 @@ describe("A permission's options", () => {
     const choices = choicesOf([option("1", "Yes, proceed"), option("2", "Yes")])
 
     expect(choices?.allow?.id).toBe("2")
-    expect(choices?.unsure.map(({ id }) => id)).toEqual(["1"])
+    expect(choices?.standing.map(({ id }) => id)).toEqual(["1"])
+  })
+
+  it("reads a yes past the key hint its harness prints after it", () => {
+    const choices = choicesOf([option("1", "Yes, proceed (y)"), option("2", "No (esc)")])
+
+    expect(choices?.allow?.id).toBe("1")
+    expect(choices?.plain?.id).toBe("2")
   })
 
   it("offers no Deny where nothing says no, and never a yes in its place", () => {
