@@ -83,7 +83,7 @@ describe("The notification center", () => {
       await expect.element(done, { timeout: 10_000 }).toBeVisible()
       await expect.element(notification("infra"), { timeout: 10_000 }).toBeVisible()
 
-      await done.getByRole("button", { name: /^Mark .* read$/ }).click()
+      await done.getByRole("button", { name: /^Mark .*, @[a-z]+ read$/ }).click()
 
       await expect.element(done).not.toBeInTheDocument()
       await expect.element(notification("infra")).toBeVisible()
@@ -109,10 +109,10 @@ describe("The notification center", () => {
       await expect.element(done, { timeout: 10_000 }).toBeVisible()
       await expect.element(notification("infra"), { timeout: 10_000 }).toBeVisible()
 
-      const dismiss = done.getByRole("button", { name: /^Mark .* read$/ })
+      const dismiss = done.getByRole("button", { name: /^Mark .*, @[a-z]+ read$/ })
       dismiss.element().focus()
       await expect.element(dismiss).toHaveFocus()
-      await done.getByRole("button", { name: /^Mark .* read$/ }).click()
+      await done.getByRole("button", { name: /^Mark .*, @[a-z]+ read$/ }).click()
 
       await expect.element(done).not.toBeInTheDocument()
       await expect
