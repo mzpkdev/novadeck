@@ -34,10 +34,11 @@
   animation: sheet-out var(--motion-feedback) var(--ease-interface) forwards;
   pointer-events: none;
 }
-/* The arrow's tip is a rotated square on the card's ground, ruled on its two outer
-   sides, and sits over the card's own edge so the two read as one shape. */
+/* The arrow's tip is a square on the card's ground that Ark rotates to face the anchor,
+   so its top and left sides are the outer two on every side the card opens: ruled like
+   the card's edge, they meet it as one shape. */
 .sheet-arrow > div {
-  border-bottom: var(--border-width) solid var(--_border-color);
+  border-top: var(--border-width) solid var(--_border-color);
   border-left: var(--border-width) solid var(--_border-color);
 }
 @keyframes sheet-in {
