@@ -1,5 +1,5 @@
 import type { InboxItem } from "../../../model/inbox"
-import { demoInboxIds, demoInboxItems, type DemoInbox } from "../inbox"
+import { demoInboxIds, demoInboxItemsAll, type DemoInbox } from "../inbox"
 import type { DemoActionGroup } from "./types"
 
 type Named = keyof typeof demoInboxIds
@@ -57,6 +57,26 @@ const kinds: readonly { readonly label: string; readonly name: Named; readonly h
     hint: "Update row for something an agent told you",
   },
   {
+    label: "Plan approval",
+    name: "plan",
+    hint: "Approve row with Claude's plan: the plain yes leads, bypass permissions is a quiet link",
+  },
+  {
+    label: "Failed turn",
+    name: "failed",
+    hint: "Trouble row with the error an agent's turn ended on and Ask it to fix",
+  },
+  {
+    label: "Free-text ask",
+    name: "text",
+    hint: "Ask row with no options, answered in words from the reply box",
+  },
+  {
+    label: "Permission with a plain Deny",
+    name: "plainDeny",
+    hint: "Approve row whose Deny answers at once, with no note to write",
+  },
+  {
     label: "Finished turn",
     name: "finished",
     hint: "Update row with the reply and the files an agent wrote",
@@ -66,7 +86,7 @@ const kinds: readonly { readonly label: string; readonly name: Named; readonly h
 // A fixture as a fresh item, waiting from now.
 const fresh = (id: string): InboxItem | undefined => {
   const now = Date.now()
-  const found = demoInboxItems(now).find((each) => each.id === id)
+  const found = demoInboxItemsAll(now).find((each) => each.id === id)
   return found && { ...found, at: now }
 }
 
@@ -101,6 +121,11 @@ export const inboxGroups = (inbox: DemoInbox | undefined): readonly DemoActionGr
               trouble: { ...item.trouble, autoResume: false, resetsAt: Date.now() - 60_000 },
             })
           },
+        },
+        {
+          label: "Fail the next answer",
+          hint: "The next answer to any item fails and the sheet says so, leaving the item to answer again",
+          run: () => inbox.failNext(),
         },
         {
           label: "A new item arrives",

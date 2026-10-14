@@ -6,7 +6,9 @@
 
    Tokens, each optional (its fallback in brackets):
    --sheet-bg (paper), --sheet-fg (ink), --sheet-border-color (line-strong),
-   --sheet-shadow (shadow-modal), --sheet-radius (radius-panel): the card. */
+   --sheet-shadow (shadow-modal), --sheet-radius (radius-panel): the card.
+   --sheet-arrow-border-color (the card's border): the arrow's two ruled sides, for a theme
+   whose card edge is more than its border, as a glow ring is. */
 .sheet {
   --_bg: var(--sheet-bg, var(--color-paper));
   --_border-color: var(--sheet-border-color, var(--color-line-strong));
@@ -38,8 +40,8 @@
    so its top and left sides are the outer two on every side the card opens: ruled like
    the card's edge, they meet it as one shape. */
 .sheet-arrow > div {
-  border-top: var(--border-width) solid var(--_border-color);
-  border-left: var(--border-width) solid var(--_border-color);
+  border-top: var(--border-width) solid var(--sheet-arrow-border-color, var(--_border-color));
+  border-left: var(--border-width) solid var(--sheet-arrow-border-color, var(--_border-color));
 }
 @keyframes sheet-in {
   from {

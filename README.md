@@ -755,8 +755,10 @@ App:
 - **Inbox:** only in the `inbox` variant. Each action adds one item of its kind to the Inbox,
   waiting from now and in place of the one of its kind already there: a stuck agent, Codex's
   command permission, an unreadable dialog, a held message, a decision with options, a
-  detected question, a secret request, a login request, the 5-hour limit, a heads-up and a
-  finished turn. "Usage limit, reset passed" adds the limit with auto-resume off and its
+  detected question, a secret request, a login request, the 5-hour limit, a plan approval
+  (its bypass-permissions yes a quiet link), a failed turn, a free-text ask, a permission
+  whose Deny is a plain no, a heads-up and a finished turn. "Fail the next answer" makes
+  the next answer to any item fail, so its sheet shows why and keeps the item. "Usage limit, reset passed" adds the limit with auto-resume off and its
   window reset, offering Continue now. "A new item arrives" adds the next kind not there
   yet, and "Clear the Inbox" empties it.
 - **Startup:** "Hold the splash" keeps it until you press Escape; "Slow attach" counts

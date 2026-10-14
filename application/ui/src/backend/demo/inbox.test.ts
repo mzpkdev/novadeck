@@ -2,7 +2,14 @@ import { afterEach, beforeEach, vi } from "vitest"
 
 import { inboxType, type InboxItem } from "../../model/inbox"
 import { context, describe, expect, it } from "../../test"
-import { answerMs, createDemoInbox, demoInboxIds, demoInboxItems, isDemoInbox } from "./inbox"
+import {
+  answerMs,
+  createDemoInbox,
+  demoInboxIds,
+  demoInboxItems,
+  demoInboxItemsAll,
+  isDemoInbox,
+} from "./inbox"
 import { createDemo } from "./variants"
 
 beforeEach(() => vi.useFakeTimers())
@@ -15,13 +22,20 @@ const ids = (inbox: ReturnType<typeof createDemoInbox>): string[] =>
 
 describe("the demo Inbox's items", () => {
   it("covers every type, each kind and every ask shape", () => {
-    const items = demoInboxItems(now)
+    // The list starts with most of them; the debug panel adds the rest.
+    const items = demoInboxItemsAll(now)
     expect(new Set(items.map(inboxType))).toEqual(new Set(["approve", "ask", "trouble", "update"]))
     expect(new Set(items.map((each) => each.kind))).toEqual(
       new Set(["request", "held", "ask", "trouble", "update"]),
     )
     const shapes = items.flatMap((each) => (each.kind === "ask" ? [each.ask.shape.type] : []))
-    expect(new Set(shapes)).toEqual(new Set(["options", "secret", "action"]))
+    expect(new Set(shapes)).toEqual(new Set(["options", "secret", "action", "text"]))
+    const troubles = items.flatMap((each) => (each.kind === "trouble" ? [each.trouble.type] : []))
+    expect(new Set(troubles)).toEqual(new Set(["stuck", "limit", "failed"]))
+    const requests = items.flatMap((each) => (each.kind === "request" ? [each.request.kind] : []))
+    expect(new Set(requests)).toEqual(new Set(["permission", "question", "plan"]))
+    const updates = items.flatMap((each) => (each.kind === "update" ? [each.update.type] : []))
+    expect(new Set(updates)).toEqual(new Set(["finished", "told"]))
   })
 
   it("puts one item on each sample terminal, none seen, none from the future", () => {
@@ -44,6 +58,21 @@ describe("the demo Inbox's items", () => {
 })
 
 describe("the demo Inbox", () => {
+  context("when the next answer is made to fail", () => {
+    it("keeps the item and says why, then answers normally", () => {
+      const inbox = createDemoInbox(now)
+      inbox.failNext()
+      inbox.answer(demoInboxIds.held, { kind: "held", action: "release" })
+      vi.advanceTimersByTime(answerMs)
+      expect(ids(inbox)).toContain(demoInboxIds.held)
+      expect(inbox.state.getSnapshot().failed[demoInboxIds.held]).toMatch(/Try again/)
+
+      inbox.answer(demoInboxIds.held, { kind: "held", action: "release" })
+      vi.advanceTimersByTime(answerMs)
+      expect(ids(inbox)).not.toContain(demoInboxIds.held)
+    })
+  })
+
   context("when an answer is sent", () => {
     it("marks the item answering, then removes it", () => {
       const inbox = createDemoInbox(now)

@@ -213,7 +213,7 @@ const Asked = (props: SheetContentProps & { readonly ask: AgentAsk }): React.JSX
                   event.preventDefault()
                   if (secret.trim() === "" || answering) return
                   submit(
-                    { kind: "ask", answer: { type: "secret", value: secret } },
+                    { kind: "ask", answer: { type: "secret", value: secret.trim() } },
                     `Saved ${shape.name} to ${shape.file}.`,
                   )
                 }}

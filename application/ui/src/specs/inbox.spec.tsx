@@ -169,6 +169,19 @@ describe("An item's sheet", () => {
       await expect.element(confirmation()).toMatchTextContent("Allowed. Codex is working again.")
     })
 
+    it("returns from its title to the row on Shift+Tab, as from its first control", async () => {
+      await openInbox()
+      row("Run pnpm add").element().focus()
+      await userEvent.keyboard("{Enter}")
+      await expect
+        .element(sheet("Checkout review").getByRole("heading", { name: "Checkout review" }))
+        .toHaveFocus()
+
+      await userEvent.tab({ shift: true })
+      await expect.element(row("Run pnpm add")).toHaveFocus()
+      await expect.element(sheet("Checkout review")).toBeVisible()
+    })
+
     it("lets Tab go on past the last row, closing the sheet, rather than looping", async () => {
       await openInbox()
       await row("Heads-up").click()

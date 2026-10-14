@@ -43,12 +43,20 @@ describe("the debug panel's Inbox group", () => {
   it("adds the next kind that is missing, until every kind is there", () => {
     const inbox = createDemoInbox(1, [])
     const notes: string[] = []
-    // Every action but the reset limit, the arrival and the clear adds a kind.
-    const kinds = inboxGroups(inbox)[0]!.actions.length - 3
+    // Every action but the reset limit, the failing answer, the arrival and the clear adds a kind.
+    const kinds = inboxGroups(inbox)[0]!.actions.length - 4
     for (let each = 0; each < kinds; each += 1) run(inbox, "A new item arrives", notes)
     expect(inbox.state.getSnapshot().items).toHaveLength(kinds)
     run(inbox, "A new item arrives", notes)
     expect(notes).toEqual(["Every kind is in the Inbox already."])
+  })
+
+  it("makes the next answer fail", () => {
+    const inbox = createDemoInbox(1)
+    run(inbox, "Fail the next answer")
+    inbox.answer(inbox.state.getSnapshot().items[0]!.id, { kind: "update", action: "read" })
+
+    expect(Object.keys(inbox.state.getSnapshot().failed)).toHaveLength(1)
   })
 
   it("clears the Inbox", () => {

@@ -175,8 +175,11 @@ export const toneOf = (item: InboxItem): Tone => {
 // plain yes; a yes that sets something standing ("don't ask again", "allow all edits") is
 // a quiet link in its own words; the rest say no, one of which may take words.
 export type Choices = {
-  readonly allow: ChatDialogOption
+  // The plain yes that leads; null where no yes is plain.
+  readonly allow: ChatDialogOption | null
   readonly standing: readonly ChatDialogOption[]
+  // With no plain yes, every yes, to be offered as it words itself.
+  readonly unsure: readonly ChatDialogOption[]
   // The no that takes the person's words, and the plain one.
   readonly note: ChatDialogOption | null
   readonly plain: ChatDialogOption | null
@@ -187,16 +190,25 @@ const no = /^(no|deny|reject)\b/i
 const standing =
   /don't ask again|do not ask again|always|allow all|all edits|this session|for session|auto-accept/i
 
-// Null where there is no option that plainly says yes: the person answers in the terminal.
-// A yes is never offered as a no; where nothing says no, there is no Deny.
+// A yes that is plain says nothing more than yes ("Allow once", "Yes, proceed"); one that
+// goes on ("Yes, and bypass permissions", "Yes, and don't ask again") changes more than this
+// answer, and "manually" is the plan's own safe one.
+const plainYes = (label: string): boolean =>
+  !standing.test(label) && (!/\band\b/i.test(label) || /manually/i.test(label))
+
+// Null where nothing says yes: the person answers in the terminal. Only a plain yes leads;
+// the others are quiet links, and where none is plain they are all offered as buttons in
+// their own words (`unsure`), none guessed at. A yes is never offered as a no; where
+// nothing says no, there is no Deny.
 export const choicesOf = (options: readonly ChatDialogOption[]): Choices | null => {
   const yeses = options.filter((each) => yes.test(each.label.trim()))
-  const allow = yeses.find((each) => !standing.test(each.label)) ?? yeses[0]
-  if (!allow) return null
+  if (yeses.length === 0) return null
+  const allow = yeses.find((each) => plainYes(each.label)) ?? null
   const nos = options.filter((each) => no.test(each.label.trim()))
   return {
     allow,
-    standing: yeses.filter((each) => each !== allow),
+    standing: allow ? yeses.filter((each) => each !== allow) : [],
+    unsure: allow ? [] : yeses,
     note: nos.find((each) => each.text !== null) ?? null,
     plain: nos.find((each) => each.text === null) ?? null,
   }
@@ -236,7 +248,13 @@ export const standingOf = (item: InboxItem, now: number, answered: boolean): Sta
     return { status: ago === "now" ? "just now" : `${ago} ago`, tone: "calm" }
   }
   if (item.kind === "trouble" && item.trouble.type === "limit" && item.trouble.autoResume)
-    return { status: `resumes in ${waitLabel(now, item.trouble.resetsAt)}`, tone: "calm" }
+    return {
+      status:
+        item.trouble.resetsAt <= now
+          ? "resuming"
+          : `resumes in ${waitLabel(now, item.trouble.resetsAt)}`,
+      tone: "calm",
+    }
   if (item.stopped)
     return {
       status: `waiting ${waitLabel(item.at, now)}`,

@@ -49,19 +49,33 @@ const Permission = (
       <CommandCard folder={folder} command={command} />
       {!sent && !denying && (
         <div className="inbox-actions">
-          <button
-            type="button"
-            className="button primary text-control"
-            disabled={answering}
-            onClick={() =>
-              answer(
-                choices.allow,
-                plan ? `Approved. ${agent} is on it.` : `Allowed. ${agent} is working again.`,
-              )
-            }
-          >
-            {plan ? "Approve" : "Allow"}
-          </button>
+          {choices.allow ? (
+            <button
+              type="button"
+              className="button primary text-control"
+              disabled={answering}
+              onClick={() =>
+                answer(
+                  choices.allow!,
+                  plan ? `Approved. ${agent} is on it.` : `Allowed. ${agent} is working again.`,
+                )
+              }
+            >
+              {plan ? "Approve" : "Allow"}
+            </button>
+          ) : (
+            choices.unsure.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className="button text-control"
+                disabled={answering}
+                onClick={() => answer(option, `Answered. ${agent} is working again.`)}
+              >
+                <Text text={option.label} />
+              </button>
+            ))
+          )}
           {canDeny && (
             <button
               type="button"

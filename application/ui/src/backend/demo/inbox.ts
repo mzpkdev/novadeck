@@ -22,11 +22,13 @@ export const answerMs = 600
 export type DemoInbox = Inbox & {
   readonly add: (item: InboxItem) => void
   readonly clear: () => void
+  // The next answer fails instead of taking, so the sheet shows why.
+  readonly failNext: () => void
 }
 
 // Whether a backend's Inbox is the demo's, which the debug panel adds items to.
 export const isDemoInbox = (inbox: Inbox | undefined): inbox is DemoInbox =>
-  inbox !== undefined && "add" in inbox && "clear" in inbox
+  inbox !== undefined && "add" in inbox && "clear" in inbox && "failNext" in inbox
 
 const minute = 60_000
 
@@ -198,7 +200,113 @@ export const demoInboxIds = {
   limit: "demo-limit",
   told: "demo-told",
   finished: "demo-finished",
+  plan: "demo-plan",
+  failed: "demo-failed",
+  text: "demo-text-ask",
+  plainDeny: "demo-plain-deny",
 } as const
+
+// Claude's plan dialog: the first yes sets something standing, so it is a quiet link and
+// the plain yes leads.
+const planRequest: ChatRequest = {
+  id: "demo-claude-plan",
+  kind: "plan",
+  tool: "ExitPlanMode",
+  subject: "Checkout plan",
+  choices: [],
+  subagent: false,
+  answered: false,
+  dialog: {
+    type: "choices",
+    id: "demo-claude-plan",
+    title: "Claude has written up a plan and is ready to execute. Would you like to proceed?",
+    detail:
+      "1. Cart summary in src/cart/CartSummary.tsx\n2. Address form\n3. Payment step, behind a provider interface",
+    options: [
+      { id: "bypass", label: "Yes, and bypass permissions", text: null },
+      { id: "manual", label: "Yes, and manually approve edits", text: null },
+      { id: "keep", label: "No, keep planning", text: "prompt" },
+    ],
+  },
+}
+
+// A permission whose only no is a plain one: Deny answers at once, with no note to write.
+const plainDenyRequest: ChatRequest = {
+  id: "demo-plain-deny",
+  kind: "permission",
+  tool: "Bash",
+  subject: "git push origin main",
+  choices: [],
+  subagent: false,
+  answered: false,
+  dialog: {
+    type: "choices",
+    id: "demo-plain-deny",
+    title: null,
+    detail: "~/projects/storefront\n$ git push origin main",
+    options: [
+      { id: "once", label: "Allow once", text: null },
+      { id: "session", label: "Allow for this session", text: null },
+      { id: "deny", label: "Deny", text: null },
+    ],
+  },
+}
+
+// The states the list does not start with, which the debug panel adds: a plan, a failed
+// turn, a free-text ask and a permission with a plain Deny.
+const extraFixtures: readonly Fixture[] = [
+  {
+    id: demoInboxIds.plan,
+    project: "storefront",
+    terminal: 6,
+    agent: "claude",
+    minutes: 2,
+    stopped: true,
+    content: { kind: "request", request: planRequest },
+  },
+  {
+    id: demoInboxIds.failed,
+    project: "api-service",
+    terminal: 3,
+    agent: "claude",
+    minutes: 4,
+    stopped: true,
+    content: {
+      kind: "trouble",
+      trouble: {
+        type: "failed",
+        error: "API Error: 529 overloaded_error: the service is temporarily overloaded.",
+      },
+    },
+  },
+  {
+    id: demoInboxIds.text,
+    project: "docs-site",
+    terminal: 4,
+    agent: "codex",
+    minutes: 5,
+    stopped: true,
+    content: {
+      kind: "ask",
+      ask: {
+        subject: "What should the new endpoint be called?",
+        body: "The handler for retrying a webhook needs a route, and the existing ones don't settle it: `/events/:id/retry` or `/webhooks/:id/replay`. I'd rather not pick a name you'll have to change.",
+        details: null,
+        hardToUndo: null,
+        shape: { type: "text" },
+      },
+    },
+  },
+  {
+    id: demoInboxIds.plainDeny,
+    project: "storefront",
+    terminal: 4,
+    agent: "codex",
+    minutes: 1,
+    stopped: true,
+    content: { kind: "request", request: plainDenyRequest },
+  },
+]
 
 const fixtures: readonly Fixture[] = [
   {
@@ -388,8 +496,14 @@ const fixtures: readonly Fixture[] = [
 
 // The hardcoded items, as they stand at `now`: each waited as long as the sample says, and
 // the limit resets in 1 h 12 min.
-export const demoInboxItems = (now: number): InboxItem[] =>
-  fixtures.map((fixture) =>
+export const demoInboxItems = (now: number): InboxItem[] => itemsOf(fixtures, now)
+
+// Those, and the states the debug panel adds.
+export const demoInboxItemsAll = (now: number): InboxItem[] =>
+  itemsOf([...fixtures, ...extraFixtures], now)
+
+const itemsOf = (all: readonly Fixture[], now: number): InboxItem[] =>
+  all.map((fixture) =>
     item(
       fixture.content.kind === "trouble" && fixture.content.trouble.type === "limit"
         ? {
@@ -422,6 +536,7 @@ export const createDemoInbox = (now: number, items = demoInboxItems(now)): DemoI
   const change = (next: (current: InboxState) => InboxState): void => {
     state.update(next)
   }
+  let failing = false
   const find = (id: string): InboxItem | undefined =>
     state.getSnapshot().items.find((each) => each.id === id)
   return {
@@ -434,6 +549,13 @@ export const createDemoInbox = (now: number, items = demoInboxItems(now)): DemoI
           ...current,
           failed: { ...current.failed, [id]: "That answer isn't for this item." },
         }))
+      if (failing) {
+        failing = false
+        return change((current) => ({
+          ...current,
+          failed: { ...current.failed, [id]: "The agent didn't take that answer. Try again." },
+        }))
+      }
       // Auto-resume only changes how the agent goes on; the item stays.
       if (answer.kind === "trouble" && answer.action.type === "auto-resume") {
         const { on } = answer.action
@@ -477,5 +599,8 @@ export const createDemoInbox = (now: number, items = demoInboxItems(now)): DemoI
         items: [...current.items.filter((each) => each.id !== added.id), added],
       })),
     clear: () => change(() => emptyInbox),
+    failNext: () => {
+      failing = true
+    },
   }
 }

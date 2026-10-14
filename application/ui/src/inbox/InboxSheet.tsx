@@ -58,7 +58,10 @@ const SheetBody = ({ item }: { readonly item: InboxItem }): React.JSX.Element =>
         // Tab order inside the sheet is the title bar, then its page.
         const order = [...head, ...page]
         const active = document.activeElement
-        if (event.shiftKey && active === order[0]) {
+        if (
+          event.shiftKey &&
+          (active === order[0] || active?.classList.contains("inbox-sheet-title"))
+        ) {
           event.preventDefault()
           rowOf(item.id)?.querySelector<HTMLElement>(".inbox-row-select")?.focus()
         } else if (!event.shiftKey && active === order.at(-1)) {

@@ -9,8 +9,8 @@ export const rowOf = (id: string | null): HTMLElement | null =>
 const controls =
   'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
-// The sheet's controls in tab order, those of its page first (its title bar's buttons last),
-// which is where focus goes on entering it.
+// The controls of the sheet's page in tab order, not the buttons of its title bar, which
+// come before them. The first is where Tab from its row lands.
 export const sheetControls = (sheet: ParentNode = document): HTMLElement[] => {
   const page = sheet.querySelectorAll<HTMLElement>(
     `.inbox-sheet-scroll :is(${controls}), .inbox-sheet-footer :is(${controls})`,

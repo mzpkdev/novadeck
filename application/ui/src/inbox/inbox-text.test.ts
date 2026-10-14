@@ -175,6 +175,18 @@ describe("How an item stands", () => {
     )
   })
 
+  it("says a limit whose reset has passed is resuming, not resuming in now", () => {
+    const limit: InboxItem = {
+      ...base,
+      stopped: false,
+      kind: "trouble",
+      trouble: { type: "limit", minutes: 300, resetsAt: 1000, autoResume: true, evidence: [] },
+    }
+
+    expect(standingOf(limit, 5000, false).status).toBe("resuming")
+    expect(standingOf(limit, 0, false).status).toMatch(/^resumes in/)
+  })
+
   it("says answered once the person answered", () => {
     expect(standingOf(permission("Bash", "x"), 0, true).status).toBe("answered")
   })
@@ -190,7 +202,7 @@ describe("A permission's options", () => {
     ])
 
     it("allows with the plain yes and keeps the standing one as a link", () => {
-      expect(choices?.allow.id).toBe("yes")
+      expect(choices?.allow?.id).toBe("yes")
       expect(choices?.standing.map(({ id }) => id)).toEqual(["always"])
     })
 
@@ -208,7 +220,7 @@ describe("A permission's options", () => {
         option("3", "No, keep planning"),
       ])
 
-      expect(choices?.allow.id).toBe("2")
+      expect(choices?.allow?.id).toBe("2")
       expect(choices?.standing.map(({ id }) => id)).toEqual(["1"])
       expect(choices?.plain?.id).toBe("3")
     })
@@ -222,7 +234,7 @@ describe("A permission's options", () => {
     ])
 
     it("allows with the plain yes, links the standing one, and denies only with words", () => {
-      expect(choices?.allow.id).toBe("1")
+      expect(choices?.allow?.id).toBe("1")
       expect(choices?.standing.map(({ id }) => id)).toEqual(["2"])
       expect(choices?.note?.id).toBe("3")
       expect(choices?.plain).toBeNull()
@@ -237,10 +249,34 @@ describe("A permission's options", () => {
     ])
 
     it("allows once, and denies with Deny", () => {
-      expect(choices?.allow.id).toBe("a")
+      expect(choices?.allow?.id).toBe("a")
       expect(choices?.standing.map(({ id }) => id)).toEqual(["b"])
       expect(choices?.plain?.id).toBe("c")
     })
+  })
+
+  context("with Claude's plan, bypass first", () => {
+    const choices = choicesOf([
+      option("1", "Yes, and bypass permissions"),
+      option("2", "Yes, clear context and auto-accept edits"),
+      option("3", "Yes, and manually approve edits"),
+      option("4", "No, keep planning", "prompt"),
+    ])
+
+    it("leads with the manual yes alone, leaving the rest as quiet links", () => {
+      expect(choices?.allow?.id).toBe("3")
+      expect(choices?.standing.map(({ id }) => id)).toEqual(["1", "2"])
+    })
+  })
+
+  it("offers every yes as it words itself where none is plain", () => {
+    const choices = choicesOf([
+      option("1", "Yes, and bypass permissions"),
+      option("2", "Yes, and don't ask again"),
+    ])
+
+    expect(choices?.allow).toBeNull()
+    expect(choices?.unsure.map(({ id }) => id)).toEqual(["1", "2"])
   })
 
   it("offers no Deny where nothing says no, and never a yes in its place", () => {

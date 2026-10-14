@@ -24,7 +24,10 @@ Object.assign(globalThis, {
   },
 })
 
-const item = (options: readonly ChatDialogOption[]): InboxItem => ({
+const item = (
+  options: readonly ChatDialogOption[],
+  kind: "permission" | "plan" = "permission",
+): InboxItem => ({
   id: "i",
   source: {
     projectId: "p",
@@ -41,8 +44,8 @@ const item = (options: readonly ChatDialogOption[]): InboxItem => ({
   kind: "request",
   request: {
     id: "r",
-    kind: "permission",
-    tool: "Bash",
+    kind,
+    tool: kind === "plan" ? "ExitPlanMode" : "Bash",
     subject: "pnpm add x",
     choices: [],
     subagent: false,
@@ -63,12 +66,23 @@ const codex: readonly ChatDialogOption[] = [
 ]
 
 // The sheet of one item, and the answers it gives the Inbox.
-const mount = (options: readonly ChatDialogOption[]) => {
-  const state = createStore<InboxState>({ ...emptyInbox, items: [item(options)] })
+const mount = (
+  options: readonly ChatDialogOption[],
+  {
+    kind = "permission",
+    failing = false,
+  }: { kind?: "permission" | "plan"; failing?: boolean } = {},
+) => {
+  const state = createStore<InboxState>({ ...emptyInbox, items: [item(options, kind)] })
   const sent: InboxAnswer[] = []
   const inbox: Inbox = {
     state,
-    answer: (_id, answer) => sent.push(answer),
+    answer: (id, answer) => {
+      sent.push(answer)
+      // An answer that doesn't take leaves the item and says why.
+      if (failing)
+        state.update((current) => ({ ...current, failed: { [id]: "The agent didn't take that." } }))
+    },
     see: () => {},
     readAll: () => {},
   }
@@ -94,7 +108,7 @@ const mount = (options: readonly ChatDialogOption[]) => {
       set.call(field, text)
       field.dispatchEvent(new Event("input", { bubbles: true }))
     })
-  return { view, sent, press, type }
+  return { view, sent, press, type, state }
 }
 
 describe("A command permission's answers", () => {
@@ -151,6 +165,64 @@ describe("A command permission's answers", () => {
     const sheet = mount([{ id: "a", label: "Yes", text: null }])
 
     expect(document.querySelector(".inbox-sheet")?.textContent).not.toContain("Deny")
+    sheet.view.unmount()
+  })
+})
+
+describe("A plan's sheet", () => {
+  const plan: readonly ChatDialogOption[] = [
+    { id: "bypass", label: "Yes, and bypass permissions", text: null },
+    { id: "manual", label: "Yes, and manually approve edits", text: null },
+    { id: "keep", label: "No, keep planning", text: "prompt" },
+  ]
+
+  it("approves with the plain yes, and keeps bypass as a quiet link", () => {
+    const sheet = mount(plan, { kind: "plan" })
+    const text = document.querySelector(".inbox-sheet")?.textContent ?? ""
+
+    expect(text).toContain("Approve")
+    expect(document.querySelector(".inbox-sheet .button.primary")?.textContent).toBe("Approve")
+    expect(document.querySelector(".inbox-quiet-links")?.textContent).toContain(
+      "bypass permissions",
+    )
+    sheet.press("Approve")
+    expect(sheet.sent).toEqual([
+      { kind: "request", answer: { type: "choice", dialog: "d", option: "manual" } },
+    ])
+    sheet.view.unmount()
+  })
+})
+
+describe("An answer that does not take", () => {
+  it("shows why, offers the answer again, and confirms nothing", () => {
+    const sheet = mount(codex, { failing: true })
+    sheet.press("Allow")
+
+    expect(document.querySelector(".inbox-failure")?.textContent).toBe(
+      "The agent didn't take that.",
+    )
+    expect(document.querySelector(".inbox-sent")).toBeNull()
+    expect(
+      Array.from(document.querySelectorAll(".inbox-sheet button")).some(
+        (button) => button.textContent === "Allow",
+      ),
+    ).toBe(true)
+    sheet.view.unmount()
+  })
+})
+
+describe("An item that takes the place of one answered", () => {
+  it("shows as waiting, not as the old answer", () => {
+    const sheet = mount(codex)
+    sheet.press("Allow")
+    expect(document.querySelector(".inbox-sent")).not.toBeNull()
+    // The backend drops it; the same id arrives again, waiting from later.
+    act(() => {
+      sheet.state.update((current) => ({ ...current, items: [{ ...item(codex), at: 5000 }] }))
+    })
+
+    expect(document.querySelector(".inbox-sent")).toBeNull()
+    expect(document.querySelector(".inbox-sheet .button.primary")?.textContent).toBe("Allow")
     sheet.view.unmount()
   })
 })

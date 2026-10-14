@@ -115,7 +115,7 @@ export const InboxProvider = ({
 }): React.JSX.Element => {
   const state = useSyncExternalStore(inbox.state.subscribe, inbox.state.getSnapshot)
   const [view, setView] = useState<InboxView>(initialView)
-  const [sent, setSent] = useState<Readonly<Record<string, Sent>>>({})
+  const [answered, setAnswered] = useState<Readonly<Record<string, Sent>>>({})
   const [drafts, setDrafts] = useState<Readonly<Record<string, Draft>>>({})
   const [now, setNow] = useState(() => Date.now())
 
@@ -133,6 +133,17 @@ export const InboxProvider = ({
     return () => window.clearTimeout(timer)
   }, [view.arrived])
 
+  // An answer is no answer to a newer item that has taken its id.
+  const sent = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(answered).filter(([id, answer]) => {
+          const live = state.items.find((item) => item.id === id)
+          return live === undefined || live.at === answer.item.at
+        }),
+      ),
+    [answered, state.items],
+  )
   const ghosts = useMemo(
     () =>
       Object.fromEntries(
@@ -156,7 +167,7 @@ export const InboxProvider = ({
 
   const dropSent = useCallback((id: string | null): void => {
     if (id !== null)
-      setSent((record) =>
+      setAnswered((record) =>
         id in record
           ? Object.fromEntries(Object.entries(record).filter(([key]) => key !== id))
           : record,
@@ -207,7 +218,7 @@ export const InboxProvider = ({
 
   const submit = useCallback(
     (item: InboxItem, answer: InboxAnswer, note: string): void => {
-      setSent((record) => ({ ...record, [item.id]: { item, note } }))
+      setAnswered((record) => ({ ...record, [item.id]: { item, note } }))
       setDraft(item.id, noDraft)
       inbox.answer(item.id, answer)
     },
