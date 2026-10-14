@@ -318,6 +318,13 @@ describe("A permission's options", () => {
     expect(choices?.standing.map(({ id }) => id)).toEqual(["1"])
   })
 
+  it("keeps a bracket that may qualify the yes, so it doesn't lead", () => {
+    expect(choicesOf([option("1", "Yes (all)"), option("2", "No")])?.allow).toBeNull()
+    const both = choicesOf([option("1", "Yes (a)"), option("2", "Yes (y)"), option("3", "No")])
+    expect(both?.allow?.id).toBe("2")
+    expect(both?.standing.map(({ id }) => id)).toEqual(["1"])
+  })
+
   it("reads a yes past the key hint its harness prints after it", () => {
     const choices = choicesOf([option("1", "Yes, proceed (y)"), option("2", "No (esc)")])
 

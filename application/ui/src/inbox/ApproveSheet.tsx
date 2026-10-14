@@ -3,7 +3,14 @@ import { useState } from "react"
 
 import type { ChatAnswer, ChatDialogOption } from "../model/conversation"
 import type { HeldMessage } from "../model/inbox"
-import { agentName, actionOf, choicesOf, splitDetail, type Choices } from "./inbox-text"
+import {
+  agentName,
+  actionOf,
+  choicesOf,
+  setsStanding,
+  splitDetail,
+  type Choices,
+} from "./inbox-text"
 import { Lead, Page, type SheetContentProps } from "./Page"
 import { CommandCard, Failure, QuietLink, ReplyBox, Sent, Text } from "./sheet-parts"
 
@@ -113,7 +120,12 @@ const Permission = (
               key={option.id}
               disabled={answering}
               onClick={() =>
-                answer(option, `Allowed, and ${agent} won't ask again. It's working again.`)
+                answer(
+                  option,
+                  setsStanding(option)
+                    ? `Allowed, and ${agent} won't ask again. It's working again.`
+                    : `Answered. ${agent} is working again.`,
+                )
               }
             >
               <Text text={option.label} />

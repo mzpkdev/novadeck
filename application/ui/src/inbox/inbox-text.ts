@@ -197,8 +197,13 @@ const bareYes = /^(yes|allow|approve)( once)?[.!]?$/i
 const knownYes = /^yes,( and)? (proceed|manually approve edits)[.!]?$/i
 
 // A label as the rule reads it: trimmed, and without a key hint the harness prints after
-// it, as Codex's "(y)".
-const bare = (label: string): string => label.trim().replace(/\s*\([^()]{1,3}\)$/, "")
+// it, as Codex's "(y)". Only these keys: any other bracket ("(all)", "(a)" for always) may
+// qualify the answer, so it stays and the label is no bare yes.
+const keyHint = /\s*\((y|n|esc|enter|tab|shift\+tab)\)$/i
+const bare = (label: string): string => label.trim().replace(keyHint, "")
+
+// Whether a yes sets something standing, by its own words: what its quiet link confirms.
+export const setsStanding = (option: ChatDialogOption): boolean => standing.test(option.label)
 
 // Null where nothing says yes: the person answers in the terminal. A bare yes leads, else
 // a known one. With one leading, every other yes is a quiet link in its own words, so
