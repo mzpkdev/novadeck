@@ -384,7 +384,7 @@ export const startTrace = (name: string, model: FakeModel) => {
     if (result !== true) {
       const read = lastRead.get(terminalId)
       add(
-        `prompt ${named(terminalId)} paste of ${typed.length} chars not found (${brief(result, 40)}) after ${Date.now() - began} ms; last read at ${read ? at(read.time) : "never"}: ${boxOf(read?.screen, profile)}`,
+        `prompt ${named(terminalId)} paste of ${typed.length} chars ended as ${brief(result, 40)} (not found, or placeholder, or the hold lapsed) after ${Date.now() - began} ms; last read at ${read ? at(read.time) : "never"}: ${boxOf(read?.screen, profile)}`,
       )
     }
     return result

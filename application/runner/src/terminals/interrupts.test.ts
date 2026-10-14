@@ -33,6 +33,8 @@ const terminal = (
      * only a single key then empties it.
      */
     slow?: boolean
+    /** How long after the first clear keys the screen shows any sign of them (a hint). */
+    hintAfterMs?: number
     /** What the box holds once the nth Escape has come. */
     /** The most rows the box shows of a taller text, as its harness's `viewport` says. */
     viewport?: number
@@ -91,8 +93,10 @@ const terminal = (
     },
     write: (_id, data) => {
       written.push(data)
-      if (data === CLEAR && options.slow) pending = true
-      else if (data === CLEAR && options.clears !== false) box = ""
+      if (data === CLEAR && options.slow) {
+        if (options.hintAfterMs === undefined) pending = true
+        else setTimeout(() => (pending = true), options.hintAfterMs).unref()
+      } else if (data === CLEAR && options.clears !== false) box = ""
       else if (data === ONE) {
         box = ""
         pending = false
@@ -195,6 +199,20 @@ describe("interrupts", () => {
     const t = terminal({ slow: true, prompt: "Say hi", after: () => "Say hi" })
     expect(await t.interrupt()).toEqual({ returned: null })
     expect(t.written).toEqual([CLEAR, ONE])
+  })
+
+  it("waits for a harness slow to take the first clear keys, not writing a pair over them", async () => {
+    // The screen shows no sign of them for longer than the calm a box is given, as Claude
+    // Code did on a busy Windows machine; its hint then says one more key clears it.
+    const t = terminal({ slow: true, hintAfterMs: 300, prompt: "Say hi", after: () => "Say hi" })
+    expect(await t.interrupt()).toEqual({ returned: null })
+    expect(t.written).toEqual([CLEAR, ONE])
+  })
+
+  it("writes the keys again once nothing of them shows within the time it waits", async () => {
+    const t = terminal({ slow: true, hintAfterMs: 5_000, prompt: "Say hi", after: () => "Say hi" })
+    await expect(t.interrupt()).rejects.toMatchObject({ code: "BOX_NOT_CLEARED" })
+    expect(t.written).toEqual([CLEAR, CLEAR, CLEAR])
   })
 
   it("presses Escape again for queued messages and returns what came back, cleared", async () => {
