@@ -100,8 +100,11 @@ export const followScroll = (view: EditorView, on: (scroll: PlanScroll) => void)
 // Scrolls the pane back to where `scroll` says, at once, then again each frame while the
 // editor measures the lines that came into view, whose heights it had only estimated, or
 // an edit moves the place; `done` once it holds still, after half a second, or once the
-// person, or anything else, scrolls the pane. Out of sight, it waits until the pane
-// shows. Returns the finish, for an editor that closes or jumps elsewhere meanwhile.
+// person, or anything else, scrolls the pane. Holding still counts frames as well as time,
+// and half a second frames as well as time: a busy machine draws few of them, and the
+// editor measures and Canvas zooms the pane only in the ones it does (seen in CI, a restore
+// that ended before either and left the pane a few lines off). Out of sight, it waits until
+// the pane shows. Returns the finish, for an editor that closes or jumps elsewhere meanwhile.
 export const restoreScroll = (
   view: EditorView,
   scroll: () => PlanScroll | null,
@@ -156,14 +159,22 @@ export const restoreScroll = (
     { signal, passive: true },
   )
   // The editor may still correct heights it estimated a while on, as it measures again
-  // after a resize settles: it holds still once nothing moved it for 150ms, or after
-  // half a second.
+  // after a resize settles: it holds still once nothing moved it for 150ms and eight
+  // frames, or after half a second and twenty frames, and at the latest after three seconds.
   let began = 0
   let moved = 0
+  let frames = 0
+  let still = 0
   const settle = (now: number): void => {
-    if (go()) moved = now
-    if (now - moved < 150 && now - began < 500) frame = requestAnimationFrame(settle)
-    else finish()
+    frames += 1
+    if (go()) {
+      moved = now
+      still = 0
+    } else still += 1
+    const held = now - moved >= 150 && still >= 8
+    const late = (now - began >= 500 && frames >= 20) || now - began >= 3000
+    if (held || late) finish()
+    else frame = requestAnimationFrame(settle)
   }
   const start = (): void => {
     placed = scroller.scrollTop
