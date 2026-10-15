@@ -13,17 +13,27 @@ export type Line = {
 
 export const emptyLine: Line = { length: 0, unknown: false }
 
-// An escape sequence: CSI (arrows, bracketed paste marks, function keys) or SS3 (application
-// arrows), whole, so none of its characters is counted as typed.
+// An escape sequence: CSI (arrows, function keys, bracketed paste marks, focus reports) or
+// SS3 (application arrows, F1 to F4), whole, so none of its characters is counted as typed.
 // eslint-disable-next-line no-control-regex -- Escape sequences, whole.
 const escapes = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001bO[@-~]/y
 
+// What moves the cursor or reports focus and changes no text: ← → and Home/End in CSI and
+// SS3 forms (`ESC [ H`, `ESC [ 1 ~`, `ESC [ 4 ~`, `ESC O F`), and the focus reports.
+// eslint-disable-next-line no-control-regex -- Escape sequences, whole.
+const harmless = /^\u001b(?:\[(?:[0-9;]*[CDHF]|[1478]~|[IO])|O[CDHF])$/
+
+// Ctrl+A, Ctrl+B, Ctrl+E, Ctrl+F (cursor moves) and Ctrl+L (redraw).
+const calm = new Set(["\u0001", "\u0002", "\u0005", "\u0006", "\u000c"])
+
 /**
  * The line after `data` was sent, and whether an Enter in it entered a line that had
- * something on it (the count above 0, or unknown). Backspace and DEL remove a character;
- * Ctrl+U, Ctrl+C and Ctrl+W empty the line (Ctrl+W removes a word, taken for all);
- * Ctrl+L changes nothing; ↑ and ↓ (history), Ctrl+R, Tab and a bracketed paste make it
- * unknown; any other printable character adds one.
+ * something on it (the count above 0, or unknown). Characters (code points) add one;
+ * Backspace and DEL remove one; Ctrl+U, Ctrl+C and Ctrl+W empty the line (Ctrl+W removes a
+ * word, taken for all). Cursor moves, Ctrl+L and focus reports change nothing. Anything
+ * else that is not a printable character (history with ↑, ↓, Ctrl+P, Ctrl+N, search,
+ * completion, yank, F3 or F8 recalls, a paste, Alt keys) may bring text in that this cannot
+ * see, so it makes the line unknown, which counts as typed.
  */
 export const afterKeys = (line: Line, data: string): { line: Line; entered: boolean } => {
   let { length, unknown } = line
@@ -32,20 +42,19 @@ export const afterKeys = (line: Line, data: string): { line: Line; entered: bool
   while (at < data.length) {
     if (data[at] === "\u001b") {
       escapes.lastIndex = at
-      const match = escapes.exec(data)
-      if (!match) {
-        // A lone Escape, or Alt with a key: nothing on the line changes.
+      const sequence = escapes.exec(data)?.[0]
+      if (!sequence) {
+        // A lone Escape, or Alt with a key: it may do anything.
+        unknown = true
         at += 1
         continue
       }
-      const sequence = match[0]
-      const final = sequence.at(-1)
-      if (final === "A" || final === "B" || sequence === "\u001b[200~") unknown = true
+      if (!harmless.test(sequence)) unknown = true
       at += sequence.length
       continue
     }
-    const char = data[at]!
-    at += 1
+    const char = String.fromCodePoint(data.codePointAt(at)!)
+    at += char.length
     if (char === "\r" || char === "\n") {
       if (length > 0 || unknown) entered = true
       length = 0
@@ -54,8 +63,9 @@ export const afterKeys = (line: Line, data: string): { line: Line; entered: bool
     else if (char === "\u0015" || char === "\u0003" || char === "\u0017") {
       length = 0
       unknown = false
-    } else if (char === "\u0012" || char === "\t") unknown = true
-    else if (char >= " ") length += 1
+    } else if (calm.has(char)) continue
+    else if (char < " ") unknown = true
+    else length += 1
   }
   return { line: { length, unknown }, entered }
 }

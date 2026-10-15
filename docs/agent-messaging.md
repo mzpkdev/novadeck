@@ -1347,7 +1347,8 @@ A **plain shell** is titled (never summarized) on:
 1. every return to its prompt at which a line was entered since the last one
    (`record.lineEntered`: the keys sent left something on the line, counted roughly in
    `terminals/line.ts`: characters add one, Backspace removes one, Ctrl+U, Ctrl+C and Ctrl+W
-   empty it, Ctrl+L changes nothing, and history, search, completion or a paste make it
+   empty it, cursor moves and Ctrl+L change nothing, and any other control key or escape
+   sequence (history, search, completion, yank, F3 or F8 recalls, a paste) makes it
    unknown, which counts as typed), 3 seconds after (`shellSettleMs`) so rapid commands make one
    description, so `tree`, `cat` or `git status` rename it too. It is skipped when the
    directory, command and screen's rows are the same as at the last description (a command
