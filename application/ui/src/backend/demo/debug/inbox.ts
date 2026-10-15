@@ -77,6 +77,11 @@ const kinds: readonly { readonly label: string; readonly name: Named; readonly h
     hint: "Approve row whose Deny answers at once, with no note to write",
   },
   {
+    label: "Usage limit, no auto-resume",
+    name: "limitManual",
+    hint: "Trouble row for a usage limit of unknown length, with no switch: it stays stopped until reset and Continue",
+  },
+  {
     label: "Finished turn",
     name: "finished",
     hint: "Update row with the reply and the files an agent wrote",
@@ -111,14 +116,14 @@ export const inboxGroups = (inbox: DemoInbox | undefined): readonly DemoActionGr
         })),
         {
           label: "Usage limit, reset passed",
-          hint: "Trouble row for a 5-hour limit that has reset with auto-resume off, offering Continue now",
+          hint: "Trouble row for a 5-hour limit that has reset and Novadeck can't resume, offering Continue now",
           run: () => {
             const item = fresh(demoInboxIds.limit)
             if (item?.kind !== "trouble" || item.trouble.type !== "limit") return
             inbox.add({
               ...item,
               stopped: true,
-              trouble: { ...item.trouble, autoResume: false, resetsAt: Date.now() - 60_000 },
+              trouble: { ...item.trouble, autoResume: null, resetsAt: Date.now() - 60_000 },
             })
           },
         },

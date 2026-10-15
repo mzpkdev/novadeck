@@ -247,9 +247,11 @@ export const splitDetail = (
   return { folder: null, command: detail.replace(/^\$\s+/, "") }
 }
 
-// The agent's words for a limit's window.
-export const limitWindow = (minutes: number): string =>
-  minutes % 60 === 0 ? `${minutes / 60}-hour` : `${minutes}-minute`
+// The agent's words for a limit's window; "usage" where its length is unknown (0).
+export const limitWindow = (minutes: number): string => {
+  if (minutes <= 0) return "usage"
+  return minutes % 60 === 0 ? `${minutes / 60}-hour` : `${minutes}-minute`
+}
 
 // How an item stands, for the line over its sheet's title.
 export type Standing = {

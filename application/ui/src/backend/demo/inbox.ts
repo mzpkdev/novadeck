@@ -199,6 +199,7 @@ export const demoInboxIds = {
   secret: "demo-secret",
   login: "demo-login",
   limit: "demo-limit",
+  limitManual: "demo-limit-manual",
   told: "demo-told",
   finished: "demo-finished",
   plan: "demo-plan",
@@ -254,7 +255,7 @@ const plainDenyRequest: ChatRequest = {
 }
 
 // The states the list does not start with, which the debug panel adds: a plan, a failed
-// turn, a free-text ask and a permission with a plain Deny.
+// turn, a free-text ask, a permission with a plain Deny and a limit Novadeck can't resume.
 const extraFixtures: readonly Fixture[] = [
   {
     id: demoInboxIds.plan,
@@ -264,6 +265,25 @@ const extraFixtures: readonly Fixture[] = [
     minutes: 2,
     stopped: true,
     content: { kind: "request", request: planRequest },
+  },
+  {
+    id: demoInboxIds.limitManual,
+    project: "api-service",
+    terminal: 1,
+    agent: "codex",
+    minutes: 22,
+    stopped: true,
+    content: {
+      kind: "trouble",
+      trouble: {
+        type: "limit",
+        minutes: 0,
+        // Set by `demoInboxItems`, which knows now.
+        resetsAt: 0,
+        autoResume: null,
+        evidence: [{ text: "Usage limit reached", result: null, times: 1 }],
+      },
+    },
   },
   {
     id: demoInboxIds.failed,
