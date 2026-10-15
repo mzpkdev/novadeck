@@ -841,7 +841,8 @@ mode `try` (http://127.0.0.1:5190); `pnpm build:try` writes static files to
 paths and a hash router, so any static host serves them from any path, and
 `pnpm preview:try` serves them on http://127.0.0.1:5191. The [Try
 workflow](.github/workflows/try.yml) deploys it to GitHub Pages at https://try.novadeck.dev
-on every push to main, as Release ships the app; Quality builds it on every pull request.
+on every push to main, so it follows main rather than the latest release; Quality builds
+it on every pull request.
 
 It runs the agents demo's storefront and its other projects with no debug panel, chat
 view, voice, murmur, agent connections, notices or updates, and no Welcome dialog

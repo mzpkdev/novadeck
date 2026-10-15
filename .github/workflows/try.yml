@@ -1,8 +1,8 @@
 name: Try
 
 # The visitor build (`pnpm build:try`) on GitHub Pages, at try.novadeck.dev: every push to
-# main deploys it, as Release ships the app, so the demo keeps step with what visitors
-# download. Quality's "Build (try)" builds it on every pull request first.
+# main deploys it, so the demo follows main, at times ahead of the latest release. Quality's
+# "Build (try)" builds it on every pull request first.
 
 on:
   push:
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build
+    name: Build Visitor Demo
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -46,7 +46,7 @@ jobs:
           cache: true
           require-lockfile: true
 
-      - name: Build Visitor Demo
+      - name: Build
         run: pnpm build:try
 
       - name: Upload Pages Artifact
@@ -55,7 +55,7 @@ jobs:
           path: application/ui/dist-try
 
   deploy:
-    name: Deploy
+    name: Deploy Visitor Demo
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
