@@ -25,12 +25,17 @@ if (import.meta.env.MODE === "try")
     window.location.reload()
   })
 
+// The visitor build framed in another page, as the website's hero frames it, is addressed
+// with `?embed` (see README "Visitor build").
+const embedded =
+  import.meta.env.MODE === "try" && new URLSearchParams(window.location.search).has("embed")
+
 const root = document.getElementById("root")
 
 if (!root) throw new Error("Renderer root element is missing")
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <App embedded={embedded} />
   </StrictMode>,
 )

@@ -3,7 +3,16 @@ import { page } from "vitest/browser"
 
 import { pressShortcut, terminalCount } from "./support/keyboard"
 import { workspaceSwitcher } from "./support/sessions"
-import { expectStaysAbsent, openWorkspace, press, sidebar, sidebarPanel } from "./support/workspace"
+import {
+  chooseView,
+  expectStaysAbsent,
+  openWorkspace,
+  press,
+  sidebar,
+  sidebarPanel,
+  view,
+  viewSwitcher,
+} from "./support/workspace"
 
 // The website's demo, as far as the app's own parts of it go.
 const openVisitor = async (): Promise<void> => {
@@ -125,6 +134,41 @@ describe("the visitor build", () => {
       const element = await taken
       await framesPass(10)
       expect(document.activeElement).toBe(element)
+    })
+  })
+
+  describe("framed in another page", () => {
+    const openEmbedded = async (): Promise<void> => {
+      await openWorkspace("/?visitor=on", { embedded: true })
+    }
+
+    it("leaves saying what it is to the page around it", async () => {
+      await openEmbedded()
+      await expect.element(workspaceSwitcher()).toBeVisible()
+      expect(page.getByText(/agents are simulated/).query()).toBeNull()
+      expect(page.getByRole("link", { name: "Download Novadeck" }).query()).toBeNull()
+    })
+
+    it("keeps the app in a narrow frame", async () => {
+      await openEmbedded()
+      await page.viewport(390, 800)
+      await expectStaysAbsent(panel())
+      await expect.element(viewSwitcher()).toBeInTheDocument()
+    })
+
+    it("adds nothing to the page's Back button as the person moves around", async () => {
+      await openEmbedded()
+      const entries = window.history.length
+      await chooseView("Grid")
+      await chooseView("Canvas")
+      await expect.element(view("Canvas")).toBeChecked()
+      expect(window.history.length).toBe(entries)
+    })
+
+    it("takes no focus until the person uses it", async () => {
+      await openEmbedded()
+      await framesPass(10)
+      expect(document.activeElement).toBe(document.body)
     })
   })
 })

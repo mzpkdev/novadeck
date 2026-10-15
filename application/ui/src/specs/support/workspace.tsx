@@ -17,14 +17,20 @@ import { createSpecBackend } from "../../backend/demo/spec-variants"
 
 const nextFrame = (): Promise<number> => new Promise(requestAnimationFrame)
 
-/** Opens the app, optionally at a deep link such as `/projects/storefront/sessions/initial/grid`. */
-export const openWorkspace = async (route?: string): Promise<void> => {
+/**
+ * Opens the app, optionally at a deep link such as `/projects/storefront/sessions/initial/grid`,
+ * and `embedded` as another page frames it.
+ */
+export const openWorkspace = async (
+  route?: string,
+  { embedded = false }: { readonly embedded?: boolean } = {},
+): Promise<void> => {
   // A same-page history entry below the app keeps an extra Back inside the test page.
   window.history.replaceState(null, "", "/")
   window.history.pushState(null, "", route === undefined ? "/" : `/#${route}`)
   await render(
     <StrictMode>
-      <App createBackend={createSpecBackend} />
+      <App createBackend={createSpecBackend} embedded={embedded} />
     </StrictMode>,
   )
   // A link may open with a modal dialog, which hides the rest of the app.

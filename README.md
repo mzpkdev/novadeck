@@ -855,6 +855,14 @@ to a desktop browser replaces the app, whose UI unmounts behind it and comes bac
 widening. Typing into a shell answers as a simulated one (`mockReply`). A page loaded
 before a deploy reloads once when a view it loads later is gone from the host.
 
+Another page frames it at `https://try.novadeck.dev/?embed` (the query string, before any
+hash), as the website's hero does. Framed, the app shows neither the strip nor the narrow
+window's panel, since the page around it says what it is and decides what a phone gets; it
+lays out at the frame's own size, so a page scales a desktop-sized frame rather than
+shrinking it; it keeps its address in memory, adding nothing to the framing page's Back
+button; and it takes no focus until the person uses it. `?embed` means nothing outside the
+visitor build.
+
 ## Repository map
 
 This is a TypeScript monorepo using pnpm workspaces and Turborepo. `application/` holds

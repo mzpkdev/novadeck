@@ -5,6 +5,7 @@ import { focusTerminalInput } from "../interaction/dom"
 import type { Store } from "../model/store"
 import type { Workspace } from "../model/types"
 import { useWorkspaceServices } from "./controller/context"
+import { useEmbedded } from "./embedded"
 import { currentState } from "./selectors"
 
 // Where a visitor gets the app.
@@ -17,10 +18,12 @@ const Download = ({ className }: { readonly className: string }): React.JSX.Elem
 )
 
 // A slim strip above the header on a visitor build: it says the agents are simulated, and
-// where to get the real app. Part of the page's column, so it covers nothing.
+// where to get the real app. Part of the page's column, so it covers nothing. A page that
+// frames the app says so itself.
 export const VisitorBar = (): React.JSX.Element | null => {
   const { backend } = useWorkspaceServices()
-  if (!backend.visitor) return null
+  const embedded = useEmbedded()
+  if (!backend.visitor || embedded) return null
   return (
     <div className="visitor-bar flex shrink-0 items-center justify-between gap-3 px-3 text-caption">
       <p className="m-0 min-w-0 truncate">
@@ -71,17 +74,19 @@ const refocus = (store: Store<Workspace>, later: (run: () => void) => void, fram
 }
 
 // In a visitor build in a window too narrow for the app, under about 760px where it has no
-// room to lay out, shows the panel instead of the app. The app is not mounted at all, so
+// room to lay out, shows the panel instead of the app; a page that frames the app decides
+// what a narrow window gets itself. The app is not mounted at all, so
 // nothing of it can be reached, and what it kept in its stores waits for the window to
 // widen: a dialog the address names opens again.
 export const VisitorCover = ({ children }: { readonly children: ReactNode }): ReactNode => {
   const { backend, workspace } = useWorkspaceServices()
+  const embedded = useEmbedded()
   const narrow = useSyncExternalStore(
     subscribeNarrow,
     () => window.matchMedia(narrowQuery).matches,
     () => false,
   )
-  const covered = backend.visitor !== undefined && narrow
+  const covered = backend.visitor !== undefined && narrow && !embedded
   const was = useRef(false)
   useEffect(() => {
     if (was.current && !covered) {
