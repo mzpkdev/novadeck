@@ -8,15 +8,15 @@ import { chromium, type Browser } from "playwright"
 // `pnpm poster:try [dir]`: writes `poster-<scheme>-<width>.webp` into a built visitor demo
 // (`dist-try` unless a directory is given), for light and dark and for 1280 and 2560
 // pixels wide: screenshots of the demo at rest. Each width is captured at its own pixel
-// density rather than scaled down, so the text is drawn for that size. The website shows them while the live demo
-// loads, so the Try workflow makes them from the very build it deploys. Needs the build
-// and Playwright's Chromium (`playwright install chromium`).
+// density rather than scaled down, so the text is drawn for that size. The website shows
+// them while the live demo loads, so the Try workflow makes them from the very build it
+// deploys. Needs the build and Playwright's Chromium (`playwright install chromium`).
 
 // The hero's resting shape: twice as wide as tall, with the app laid out 1280 px wide.
 const viewport = { width: 1280, height: 640 }
 // A phone is served the smaller poster, a dense screen the larger.
 const scales = [1, 2] as const
-// Keeps the interface's text crisp: under 60 KB at 1280 wide, under 150 KB at 2560.
+// Keeps the interface's text crisp at around 60 KB for 1280 wide and 150 KB for 2560.
 const quality = 0.9
 const bootTimeoutMs = 30_000
 
@@ -28,7 +28,11 @@ const types: Readonly<Record<string, string>> = {
   ".css": "text/css",
   ".json": "application/json",
   ".svg": "image/svg+xml",
+  ".mjs": "text/javascript",
   ".png": "image/png",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".wasm": "application/wasm",
 }
@@ -40,7 +44,13 @@ const serve = async (
 ): Promise<{ readonly origin: string; readonly stop: () => Promise<void> }> => {
   const server = createServer((request, response) => {
     void (async () => {
-      const path = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname)
+      let path: string
+      try {
+        path = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname)
+      } catch {
+        response.writeHead(400).end()
+        return
+      }
       const file = normalize(join(root, path.endsWith("/") ? `${path}index.html` : path))
       if (file !== root && !file.startsWith(root + sep)) {
         response.writeHead(403).end()
@@ -105,8 +115,10 @@ const capture = async (
   const context = await browser.newContext({ viewport, deviceScaleFactor: scale, colorScheme })
   const page = await context.newPage()
   await page.goto(`${origin}/?embed`)
-  // Booted means the splash has left the page and the header's view choice shows.
-  await page.locator(".boot-splash").waitFor({ state: "detached", timeout: bootTimeoutMs })
+  // Booted means the splash came and has left the page, and the header's view choice shows.
+  const splash = page.locator(".boot-splash")
+  await splash.waitFor({ state: "attached", timeout: bootTimeoutMs })
+  await splash.waitFor({ state: "detached", timeout: bootTimeoutMs })
   await page
     .getByRole("radiogroup", { name: "Workspace layout" })
     .first()
@@ -129,15 +141,20 @@ const capture = async (
 export const main = async (directory = "dist-try"): Promise<void> => {
   const root = resolve(directory)
   const { origin, stop } = await serve(root)
-  const browser = await chromium.launch()
+  // The server stops on any failure, a browser that won't launch included, so the
+  // process exits rather than waiting on it.
   try {
-    await Promise.all(
-      schemes.flatMap((scheme) =>
-        scales.map((scale) => capture(browser, origin, root, scheme, scale)),
-      ),
-    )
+    const browser = await chromium.launch()
+    try {
+      await Promise.all(
+        schemes.flatMap((scheme) =>
+          scales.map((scale) => capture(browser, origin, root, scheme, scale)),
+        ),
+      )
+    } finally {
+      await browser.close()
+    }
   } finally {
-    await browser.close()
     await stop()
   }
 }

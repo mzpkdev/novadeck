@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: The release tag to deploy, such as v1.2.3 (1.2.3 works too). Any release works, so this can also roll the demo back.
+        description: The release tag to deploy, such as v1.2.3 (1.2.3 works too). Any release since the demo's posters works, so this can also roll the demo back.
         required: true
         type: string
 
@@ -107,6 +107,23 @@ jobs:
       - name: Build
         run: pnpm build:try
 
+      # A release from before the visitor build was made public-ready builds a page that
+      # search engines may index and that still plays the old tour, and one from before the
+      # posters has nothing to make them with; neither is deployed.
+      - name: Check Release Is Public-Ready
+        env:
+          TAG: ${{ steps.choose.outputs.tag }}
+        run: |
+          if ! grep -q '<meta name="robots" content="noindex"' application/ui/dist-try/index.html ||
+            [[ ! -f application/ui/dist-try/_headers ]]; then
+            echo "::error::$TAG predates the public visitor build; deploy a newer release."
+            exit 1
+          fi
+          if ! grep -q '"poster:try"' package.json; then
+            echo "::error::$TAG predates the demo's posters; deploy a newer release."
+            exit 1
+          fi
+
       # The website shows these screenshots of the demo while it loads, so they are made
       # from the build being deployed. They need Playwright's Chromium, installed like
       # Quality's test browser.
@@ -135,18 +152,8 @@ jobs:
       - name: Capture Posters
         run: pnpm poster:try
 
-      # A release from before the visitor build was made public-ready builds a page that
-      # search engines may index and that still plays the old tour; it is never deployed.
-      # The posters are made above, so a missing one means the capture broke.
-      - name: Check Page Is Public-Ready
-        env:
-          TAG: ${{ steps.choose.outputs.tag }}
+      - name: Check Posters
         run: |
-          if ! grep -q '<meta name="robots" content="noindex"' application/ui/dist-try/index.html ||
-            [[ ! -f application/ui/dist-try/_headers ]]; then
-            echo "::error::$TAG predates the public visitor build; promote a newer release."
-            exit 1
-          fi
           for scheme in light dark; do
             for width in 1280 2560; do
               if [[ ! -s "application/ui/dist-try/poster-$scheme-$width.webp" ]]; then
