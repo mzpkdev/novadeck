@@ -107,8 +107,37 @@ jobs:
       - name: Build
         run: pnpm build:try
 
+      # The website shows these screenshots of the demo while it loads, so they are made
+      # from the build being deployed. They need Playwright's Chromium, installed like
+      # Quality's test browser.
+      - name: Locate Poster Browser
+        id: playwright
+        run: |
+          echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright" >> "$GITHUB_ENV"
+          echo "version=$(pnpm --filter @novadeck/ui exec playwright --version | awk '{ print $2 }')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Poster Browser
+        id: browser-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Poster Browser
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @novadeck/ui exec playwright install --with-deps chromium
+
+      # A cached browser still needs its system libraries.
+      - name: Install Poster Browser Dependencies
+        if: steps.browser-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @novadeck/ui exec playwright install-deps chromium
+
+      - name: Capture Posters
+        run: pnpm poster:try
+
       # A release from before the visitor build was made public-ready builds a page that
       # search engines may index and that still plays the old tour; it is never deployed.
+      # The posters are made above, so a missing one means the capture broke.
       - name: Check Page Is Public-Ready
         env:
           TAG: ${{ steps.choose.outputs.tag }}
@@ -118,6 +147,14 @@ jobs:
             echo "::error::$TAG predates the public visitor build; promote a newer release."
             exit 1
           fi
+          for scheme in light dark; do
+            for width in 1280 2560; do
+              if [[ ! -s "application/ui/dist-try/poster-$scheme-$width.webp" ]]; then
+                echo "::error::The $scheme poster at $width px wasn't made."
+                exit 1
+              fi
+            done
+          done
 
       - name: Deploy to Cloudflare Pages
         env:
