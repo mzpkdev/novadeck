@@ -151,8 +151,8 @@ behind a random API key made for each launch and passed in the environment
   title whole ("Scaffold novadeck-website" becomes "Scaffold"), but not a title that holds only
   the first part ("Novadeck" for that project).
 - Titles that echo the typed command (`pnpm test`, `sleep 15`) still come out for a shell
-  whose output says little, and a shell right after an agent exits may be named from the
-  agent's leftover screen.
+  whose output says little. A shell right after an agent exits is not described until its next
+  entered command, so the agent's leftover screen names nothing.
 - Redaction is best effort, and weakest on a narrow pane that splits a secret across rows.
   Rows that run to the pane's edge are read together with the next; a group that redacts
   differently as one is masked whole (so a neighbouring row can go with a secret). A quote left

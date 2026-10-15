@@ -20,6 +20,7 @@ import type {
   ReplyDigest,
   ShellDigest,
 } from "../murmur/describer.js"
+import { sharesContentWord } from "../murmur/description.js"
 import type { Facts } from "./nudges.js"
 import type { PeerTerminal } from "./peers.js"
 import { busiestFolders, promptChars, shorten, type Work } from "./work.js"
@@ -641,8 +642,8 @@ const formingChecks = 4
 type Watch = {
   /**
    * Where an agent terminal's name stands. `forming`: the session's work is still taking
-   * shape (its first turns, or just after a pivot), and each check may replace the name
-   * freely. `settled`: the name has held, and is replaced only when the work changed.
+   * shape (its first turns, or just after a pivot), and a better name replaces the previous
+   * one when the model judges the work changed. `settled`: the name has held, and is replaced only when the work changed.
    */
   stage: "forming" | "settled"
   /** In the forming stage, how many checks since it began, and how many in a row kept the name. */
@@ -695,8 +696,9 @@ type Watch = {
    */
   waiting: boolean
   /**
-   * The plan and branch as they were at the last stored title, which a hard signal is
-   * told by; null until a check has seen them. The busiest folder is not among them: it
+   * The plan and branch as they were at the last check that ran (stored title or not), which
+   * a hard signal is told by; a plan or branch a check could not read keeps the one before.
+   * Null until a check has seen them. The busiest folder is not among them: it
    * moves with every task inside a project, and would pivot too readily.
    */
   baseline: Facts | null
@@ -722,6 +724,8 @@ type Watch = {
   retryTimer: NodeJS.Timeout | undefined
   /** The program in a plain shell's foreground, as a key, and since when; null at the prompt. */
   program: { readonly key: string | null; readonly since: number }
+  /** An agent was bound during the run in the foreground, whose end owes the shell no description. */
+  agentRan: boolean
   /** A shell's description is owed (it returned to its prompt, or has none yet) and not built. */
   shellOwed: boolean
   /** A hash of what the last description of the shell was made from (see `screenKey`); null before any. */
@@ -742,6 +746,17 @@ const headlineKey = (terminalId: string, request: Request): string =>
   `${terminalId}\0headline\0${request.requestId}\0${request.askedAt}`
 
 const gistKey = (terminalId: string): string => `${terminalId}\0gist`
+
+/**
+ * Whether a shell's screen shows only prompts: every row is the bottom row, or the line
+ * the last command was typed on is, so nothing was entered after that prompt.
+ */
+const bare = (digest: ShellDigest): boolean => {
+  const bottom = digest.screen.at(-1)
+  if (bottom === undefined) return false
+  if (digest.screen.every((row) => row === bottom)) return true
+  return digest.commandAt !== undefined && digest.screen[digest.commandAt] === bottom
+}
 
 /**
  * What a shell's description is made from, as a short hash: its directory, its command and
@@ -788,6 +803,10 @@ const turnEndOf = (activity: Activity): number | null => {
     : null
 }
 
+// A summary as compared: lower case, spaces collapsed; null is none.
+const words = (text: string | null): string =>
+  (text ?? "").toLowerCase().replace(/\s+/g, " ").trim()
+
 const programKey = (program: ForegroundProcess | null): string | null =>
   program === null ? null : JSON.stringify([program.name, program.argv])
 
@@ -801,7 +820,8 @@ const programKey = (program: ForegroundProcess | null): string | null =>
  * - Forming (a new root session, or just after a pivot): the first check is made
  *   `settleMs` after the person's first substantial prompt (its mission; not "hey!" nor
  *   "try again") or the agent's first summary. Then it is checked at every turn end that
- *   brought new evidence, with no rate limit, and each check may replace the name freely.
+ *   brought new evidence, with no rate limit, and a check replaces the name when the model
+ *   judges the work changed (or there is none yet).
  *   Two checks in a row that kept the name, or four checks in all, settle it.
  * - Settled: it is checked at a turn end with new evidence, at most once in `settledGapMs`.
  *   Evidence that comes inside the gap sets one timer for when it ends, so a window that
@@ -811,7 +831,7 @@ const programKey = (program: ForegroundProcess | null): string | null =>
  *   hard signal came with it, else the name is kept and the candidate remembered.
  *
  * New evidence is a substantial prompt not seen at the last check, a new summary, or a
- * change of the git branch or the plan's title since the last stored title. A turn whose
+ * change of the git branch or the plan's title since the last check. A turn whose
  * only prompt was "ok" or "go on" brings none. A hard signal (a new `summarize` summary,
  * a changed branch or plan) ignores the settled gap and renames directly (it is shown a forming digest). A turn
  * end is told by the activity going idle with a new `lastTurn.at`, which every harness's
@@ -1056,7 +1076,7 @@ export class Murmur {
     const summary = this.currentSummary(subject)
     return (
       (prompt !== null && prompt !== watch.prompt) ||
-      (summary !== null && summary !== watch.summary)
+      (summary !== null && words(summary) !== words(watch.summary))
     )
   }
 
@@ -1091,20 +1111,31 @@ export class Murmur {
     watch.summarySession = subject.work?.session ?? null
     if (subject.naming.person !== null) return
     // A summary murmur could not use is owed a check once it can.
+    // Only a summary that says something other than the last one seen is a hard signal: the
+    // same again, as the agent's nudges (drift, every 15 prompts) bring it, is evidence like
+    // any other.
+    const fresh = this.freshSummary(subject, watch)
     if (!this.usable) {
       watch.owed = true
-      watch.owedHard = true
+      watch.owedHard ||= fresh
       return
     }
-    this.check(terminalId, this.times.settleMs, true)
+    if (fresh) this.check(terminalId, this.times.settleMs, true)
+    else this.turnEnded(terminalId)
   }
 
   /** A plain shell's foreground program changed (sampled, so never on Windows). */
   sampled(terminalId: string): void {
     if (!this.usable) return
     const subject = this.host.subject(terminalId)
-    if (!subject || subject.agent) return
+    if (!subject) return
     const watch = this.watch(terminalId)
+    // An agent holds the foreground: its run is the agent's, whatever program the sampler
+    // took it for before it bound, and what its end leaves on screen is the agent's.
+    if (subject.agent) {
+      watch.agentRan = true
+      return
+    }
     // The shell's own name is its prompt: no program.
     const key = subject.atPrompt ? null : programKey(subject.program)
     if (key === watch.program.key) return
@@ -1120,7 +1151,8 @@ export class Murmur {
     // the foreground when the run ends: a brief program before the prompt (a prompt hook,
     // a status helper, or the shell caught between two processes) must not lose it, nor
     // must a run's own description still in flight.
-    if (was !== null && ranMs >= this.times.shellRunMs) watch.shellOwed = true
+    if (was !== null && ranMs >= this.times.shellRunMs && !watch.agentRan) watch.shellOwed = true
+    watch.agentRan = false
     if (key === null) {
       if (watch.shellOwed) this.ask(terminalId, this.times.shellSettleMs)
       return
@@ -1335,6 +1367,7 @@ export class Murmur {
         retryAt: 0,
         retryTimer: undefined,
         program: { key: null, since: Date.now() },
+        agentRan: false,
         shellOwed: false,
         screenKey: null,
         since: Date.now(),
@@ -1428,7 +1461,7 @@ export class Murmur {
   // Whether the agent's current summary is one the last check did not see.
   private freshSummary(subject: MurmurSubject, watch: Watch): boolean {
     const summary = this.currentSummary(subject)
-    return summary !== null && summary !== watch.summary
+    return summary !== null && words(summary) !== words(watch.summary)
   }
 
   // Evidence came inside the settled gap: one timer checks when it ends, however much more
@@ -1617,7 +1650,12 @@ export class Murmur {
       // A title an agent's check wrote names its work, not what the shell does now.
       previous: watch.titledFrom === "agent" ? null : now.naming.murmur,
     })
-    return digest ? { digest, key } : undefined
+    if (!digest) return undefined
+    // A bare prompt with nothing typed after it (the last command's line is a prompt like
+    // the one at the bottom, or every row is) says nothing new: an empty Enter, Ctrl+L or a
+    // line typed and erased. It is skipped, not refused.
+    if (command === null && bare(digest)) return undefined
+    return { digest, key }
   }
 
   // A shell's job ended: its title, if it got one, names the terminal.
@@ -1673,9 +1711,12 @@ export class Murmur {
     const same = title === ran.previous
     const kept = !outcome.changed || same
     if (watch.stage === "forming") {
-      // Forming, the name follows the work freely; it settles once it has held twice in a
+      // Forming, the name follows the work; it settles once it has held twice in a
       // row, or after four checks whatever they said.
-      if (!same) this.store(terminalId, title, ran.facts, watch)
+      // A better name replaces the previous one only when the model judges the work changed
+      // (or there is none yet); a verdict that it did not is a keep.
+      if (!same && (outcome.changed || ran.previous === null))
+        this.store(terminalId, title, ran.facts, watch)
       watch.checks += 1
       watch.keeps = kept ? watch.keeps + 1 : 0
       if (watch.keeps >= keepsToSettle || watch.checks >= formingChecks) {
@@ -1688,7 +1729,11 @@ export class Murmur {
     // forming digest): a title that differs is a new phase, and forms again.
     if (ran.hard) {
       watch.candidate = false
+      // Renamed on the model's word that the work changed, or when the new name shares no
+      // content word with the old one; a rewording of the same work keeps the name.
       if (same) return
+      if (!outcome.changed && ran.previous !== null && sharesContentWord(title, ran.previous))
+        return
       this.store(terminalId, title, ran.facts, watch)
       watch.stage = "forming"
       watch.checks = 0

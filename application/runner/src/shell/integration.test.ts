@@ -3576,6 +3576,47 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(digest.commandAt).toBeUndefined()
     })
 
+    it("forms an agent typed into a titled shell afresh, and its exit does not retitle from its screen", async ({
+      shell,
+    }) => {
+      const bin = standIn(shell.home)
+      const env = { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` }
+      // Shells are described here, as they are for a person's terminal.
+      const describer = new FakeDescriber({
+        reply: (digest) => ({ title: digest.kind === "shell" ? "Shell work" : "Login fix" }),
+      })
+      const manager = shell.manager({ env, describer, murmurTimes, processPollMs: 50 })
+      const terminal = await create(manager, shell)
+      await shell.until(manager, terminal.id, "$ ")
+      manager.write({ terminalId: terminal.id, data: "echo hello\r" }, "owner")
+      await expect
+        .poll(() => manager.get(terminal.id).title, { timeout: 30_000 })
+        .toBe("Shell work")
+      // An agent is typed into it and given its first prompt.
+      const { start, step } = driver(shell, manager)
+      await start(terminal.id, "claude", "s-claude")
+      await step(terminal.id, {
+        hook: "UserPromptSubmit",
+        payload: { prompt: "Fix the login bug" },
+      })
+      await expect
+        .poll(() => describer.digests.some((digest) => digest.kind === "agent"), {
+          timeout: 30_000,
+        })
+        .toBe(true)
+      // It is named afresh: the shell's title is not shown to the model as its previous one.
+      expect(describer.digests.find((digest) => digest.kind === "agent")).toMatchObject({
+        stage: "forming",
+        previous: null,
+      })
+      await expect.poll(() => manager.get(terminal.id).title, { timeout: 30_000 }).toBe("Login fix")
+      // Whatever its exit leaves on the screen does not name the terminal again.
+      const shells = describer.digests.filter((digest) => digest.kind === "shell").length
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      expect(describer.digests.filter((digest) => digest.kind === "shell")).toHaveLength(shells)
+      expect(manager.get(terminal.id).title).toBe("Login fix")
+    })
+
     it("drops a restarted terminal's job in flight, and the stale answer lands nowhere", async ({
       shell,
     }) => {

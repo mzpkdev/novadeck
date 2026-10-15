@@ -1314,7 +1314,8 @@ Antigravity are treated the same.
    seconds after the person's first substantial prompt (a new conversation: start or
    `/clear`; not a runner restart or a resume of the same session) or the agent's first
    summary. Then it is checked at every turn end that brought new evidence, with no rate
-   limit, and each check may replace the name freely. Two checks in a row whose verdict
+   limit, and a check replaces the name only when the model judges the work changed (or
+   there is no name yet); a verdict that it did not is a keep. Two checks in a row whose verdict
    kept the name (`changed` false, or the same title), or four checks in all, settle it.
 2. **Settled**: checked at a turn end with new evidence, at most once in 5 minutes
    (`settledGapMs`) since the last check. Evidence inside the gap sets one timer for when
@@ -1324,11 +1325,14 @@ Antigravity are treated the same.
    previous settled check said the same too, or when a hard signal came with it;
    otherwise the name is kept and the candidate remembered, and a check that finds the
    work unchanged forgets it.
-3. **Hard signals** ignore the gap and rename directly: a check that carries one (a new
-   `summarize` summary, or the branch or the plan's title differing from those at the last
-   check) is shown a forming digest, whatever the stage, and a title that differs from the
-   name is stored with no `changed` verdict needed. The terminal then forms again, as a
-   summary or new plan often marks a new phase; the same name leaves it settled.
+3. **Hard signals** ignore the gap and rename directly: a check that carries one (a
+   `summarize` summary that says something other than the last one seen, in other words
+   not the same text again in other letters or spaces, or the branch or the plan's title
+   differing from those at the last check) is shown a forming digest, whatever the stage.
+   A title that differs from the name is stored when the model says the work changed, or
+   when it shares no content word with the name; a rewording of the same work keeps it.
+   The terminal then forms again, as a summary or new plan often marks a new phase; a
+   kept name leaves it settled.
 
 A new root session returns the terminal to forming but keeps its name until the new session
 brings evidence. A terminal opened by an agent with a title (`open_terminal`) starts
@@ -1341,15 +1345,19 @@ after a minute), never locks out evidence: the next evidence asks again.
 A **plain shell** is titled (never summarized) on:
 
 1. every return to its prompt at which a line was entered since the last one
-   (`record.submitted`), 3 seconds after (`shellSettleMs`) so rapid commands make one
+   (`record.lineEntered`: something typed before the Enter), 3 seconds after (`shellSettleMs`) so rapid commands make one
    description, so `tree`, `cat` or `git status` rename it too. It is skipped when the
    directory, command and screen's rows are the same as at the last description (a command
-   that printed nothing, a cleared screen); a changed directory always describes;
+   that printed nothing, a cleared screen) and when the screen shows only prompts (the line
+   the last command was typed on is a prompt like the bottom one, as after Ctrl+L or a line
+   typed and erased); a changed directory always describes;
 2. the foreground program changed and has run for 5 seconds (`shellRunMs`): a dev server or
    a build is named while it runs. The prompt is the shell itself holding the foreground
    (told by the foreground process group on Linux), so a script its own interpreter
    runs, `./build.sh` or `bash deploy.sh`, is a program;
-3. the shell is back at its prompt after such a run, which is trigger 1 too.
+3. the shell is back at its prompt after such a run, which is trigger 1 too. A run during
+   which an agent was bound is the agent's: its end owes the shell nothing, and the shell
+   is described at its next entered command.
 
 A shell's description is always applied (`changed` is true for a shell). A prompt a
 bound agent just left is not described until the next one.

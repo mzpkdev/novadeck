@@ -553,6 +553,7 @@ const create = (
   const rows: { current: readonly string[] } = { current: ["$ ls", "a b", "$ "] }
   const wrapped: { current: readonly boolean[] | undefined } = { current: undefined }
   const alternate = { current: false }
+  const commandRow: { current: number | undefined } = { current: undefined }
   // The terminals are there only once murmur is built, as when the runner starts.
   let ready = false
   const reads = { facts: 0, screens: 0 }
@@ -576,6 +577,7 @@ const create = (
       return Promise.resolve({
         rows: rows.current,
         alternate: alternate.current,
+        ...(commandRow.current !== undefined && { commandRow: commandRow.current }),
         ...(wrapped.current && { wrapped: wrapped.current }),
       })
     },
@@ -645,6 +647,7 @@ const create = (
     rows,
     wrapped,
     alternate,
+    commandRow,
     reads,
     replies,
     written,
@@ -1466,6 +1469,55 @@ describe("when an agent's terminal is checked at the end of its turns", () => {
     expect(describer.digests.at(-1)).toMatchObject({ stage: "forming" })
   })
 
+  it("treats the same summary again as ordinary evidence, not a hard signal", async () => {
+    const { murmur, describer, change } = await settledAfterThree(() => ({
+      title: "Billing",
+      changed: true,
+    }))
+    change({
+      naming: { ...unnamed, murmur: { title: "Login" }, summary: "Builds invoice export." },
+    })
+    murmur.summarized("a")
+    await settle()
+    expect(describer.jobs).toHaveLength(4)
+    // The nudges bring the summary again, in other letters and spaces: nothing is new.
+    change({
+      naming: { ...unnamed, murmur: { title: "Billing" }, summary: "builds  Invoice export." },
+    })
+    murmur.summarized("a")
+    murmur.summarized("a")
+    await settle()
+    expect(describer.jobs).toHaveLength(4)
+  })
+
+  it("keeps the name when a hard check only rewords it, and stays settled", async () => {
+    const { murmur, describer, change, written, turn } = await settledAfterThree(() => ({
+      title: "Login flow",
+      changed: false,
+    }))
+    change({ naming: { ...unnamed, murmur: { title: "Login" }, summary: "Fixes the login." } })
+    murmur.summarized("a")
+    await settle()
+    expect(describer.jobs).toHaveLength(4)
+    expect(written).toEqual([{ title: "Login" }])
+    // Settled still: the next prompt inside the gap waits.
+    await turn("Add a PDF export for the invoices")
+    expect(describer.jobs).toHaveLength(4)
+  })
+
+  it("keeps the name in the forming stage when the model says the work did not change", async () => {
+    const answers = [
+      { title: "Login defect", changed: true },
+      { title: "Login issue fix", changed: false },
+    ]
+    const { murmur, describer, written, turn } = start((call) => answers[call - 1])
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    await turn("Also the cookie expires too early")
+    expect(describer.jobs).toHaveLength(2)
+    expect(written).toEqual([{ title: "Login defect" }])
+  })
+
   it("keeps the name for a new root session until the session has evidence of its own", async () => {
     const { murmur, describer, change, written, turn } = await settledAfterThree(() => ({
       title: "Docs",
@@ -2088,6 +2140,43 @@ describe("when a plain shell's terminal is described", () => {
     murmur.prompted("a", true)
     await settle(times.shellSettleMs + 50)
     expect(describer.jobs).toHaveLength(1)
+  })
+
+  it("describes nothing from a screen of bare prompts, which nothing was entered after", async () => {
+    const { murmur, describer, rows, commandRow, times } = create({ agent: null })
+    // Ctrl+L, a line typed and erased, or arrows, then an empty Enter: only prompts remain.
+    rows.current = ["user@host:~$", "user@host:~$"]
+    murmur.prompted("a")
+    await settle(times.shellSettleMs + 50)
+    expect(describer.jobs).toHaveLength(0)
+    // The line the last command was typed on is a prompt like the bottom one.
+    rows.current = ["user@host:~$", "output of nothing known", "user@host:~$"]
+    commandRow.current = 0
+    murmur.prompted("a")
+    await settle(times.shellSettleMs + 50)
+    expect(describer.jobs).toHaveLength(0)
+    // With a command on that line, it is described.
+    rows.current = ["user@host:~$ ls", "a b", "user@host:~$"]
+    murmur.prompted("a")
+    await settle(times.shellSettleMs + 50)
+    expect(describer.jobs).toHaveLength(1)
+    expect(describer.digests[0]).toMatchObject({ commandAt: 0 })
+  })
+
+  it("owes a shell nothing for a run during which an agent was bound", async () => {
+    const { murmur, describer, change, times } = create({ agent: null })
+    change({ program: { name: "claude", argv: ["claude"] } })
+    murmur.sampled("a")
+    await settle(times.shellRunMs - 100)
+    // The agent binds while the sampler still has the program it took it for.
+    change({ agent: "claude" })
+    murmur.sampled("a")
+    await settle(300)
+    // It exits and the shell is back at its prompt: its leftover screen names nothing.
+    change({ agent: null, program: { name: "bash", argv: null } })
+    murmur.sampled("a")
+    await settle(times.shellSettleMs + times.shellRunMs + 200)
+    expect(describer.jobs).toHaveLength(0)
   })
 
   it("is not asked for a shell the person titled", async () => {
