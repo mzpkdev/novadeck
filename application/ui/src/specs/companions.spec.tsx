@@ -315,6 +315,7 @@ describe("Switching views", () => {
     const plan = (): HTMLElement =>
       companionPane("Build Studio").element().querySelector<HTMLElement>(".plan-document-scroll")!
     await expect.poll(() => plan()?.querySelector(".cm-content")).not.toBeNull()
+    plan().dispatchEvent(new WheelEvent("wheel"))
     plan().scrollTop = 200
     await expect.poll(() => plan().scrollTop).toBe(200)
     const place = (): { line: string; top: number } => {
