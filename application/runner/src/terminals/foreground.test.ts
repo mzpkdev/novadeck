@@ -1,3 +1,11 @@
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { spawn } from "node-pty"
+import { vi } from "vitest"
+
 import { describe, expect, it } from "../test.js"
 import { parseCommandLine, parseProcessStat, sampleForeground, statName } from "./foreground.js"
 
@@ -62,4 +70,26 @@ describe("a process's name, as /proc names it", () => {
     expect(statName("42 (node ) helper) S 1 42")).toBe("node ) helper")
     expect(statName("garbage")).toBeNull()
   })
+})
+
+describe("macOS foreground naming", () => {
+  it.skipIf(process.platform !== "darwin")(
+    "names a program by the link it ran through, not the versioned file the link points at",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "novadeck-version-"))
+      // A system binary copied here is killed for its broken signature, so build one.
+      writeFileSync(join(dir, "wait.c"), "#include <unistd.h>\nint main(){sleep(30);return 0;}")
+      execFileSync("cc", [join(dir, "wait.c"), "-o", join(dir, "2.1.300")])
+      symlinkSync(join(dir, "2.1.300"), join(dir, "claude"))
+      const child = spawn(join(dir, "claude"), [], { name: "xterm-256color" })
+      try {
+        // The name is the program's only once the spawned process has run exec.
+        await vi.waitFor(() => expect(child.process).toBe("2.1.300"))
+        expect(sampleForeground(child, undefined).process?.name).toBe("claude")
+      } finally {
+        child.kill()
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
 })

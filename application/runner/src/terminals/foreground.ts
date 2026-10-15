@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process"
+import { execFile, execFileSync } from "node:child_process"
 import { readdirSync, readFileSync, readlinkSync } from "node:fs"
 import { basename } from "node:path"
 import { promisify } from "node:util"
@@ -245,6 +245,34 @@ export type Foreground = {
   readonly group: number | null
 }
 
+// macOS names a process from the file it ran, symlinks resolved, so a program installed as
+// a link into a versioned file, as Claude Code is (`claude` -> `versions/2.1.300`), shows as
+// its version.
+const versionName = /^\d+(\.\d+)+$/
+
+const ps = (args: string[]): string =>
+  execFileSync("ps", args, {
+    encoding: "utf8",
+    timeout: 2_000,
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim()
+
+// The name the person ran a macOS foreground program by, from its argv[0]; null when it
+// can't be read or is no better. The first word of the command line stands in for argv[0],
+// which `ps` does not set apart.
+const invokedName = (shellPid: number): { name: string; group: number } | null => {
+  try {
+    const group = Number(ps(["-o", "tpgid=", "-p", String(shellPid)]))
+    if (!Number.isSafeInteger(group) || group <= 0) return null
+    const name = basename(ps(["-o", "command=", "-p", String(group)]).split(" ")[0] ?? "")
+      .replace(/^-/, "")
+      .slice(0, nameChars)
+    return name && !versionName.test(name) ? { name, group } : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * The terminal's foreground process. node-pty names it from the group leader's argv[0],
  * so a Node CLI shows as "node"; on Linux the leader's command line tells scripts apart.
@@ -264,6 +292,10 @@ export const sampleForeground = (
     return { process: null, group: null }
   }
   if (!name) return { process: null, group: null }
+  if (process.platform === "darwin" && versionName.test(name)) {
+    const invoked = invokedName(child.pid)
+    if (invoked) return { process: { name: invoked.name, argv: null }, group: invoked.group }
+  }
   if (process.platform !== "linux") return { process: { name, argv: null }, group: null }
   try {
     const group = foregroundGroup(child.pid)
