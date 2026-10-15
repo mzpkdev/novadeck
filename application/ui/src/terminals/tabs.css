@@ -71,14 +71,17 @@
   .terminal-tab:not(:hover, :has(:focus-visible), .editing) .terminal-tab-slot > * {
     transform: translateX(200%);
   }
-  /* Laid over the slot, beside Close, from the line it belongs to. */
+  /* At the end of its line, reaching back into the room the line keeps for its actions
+     (--_sidebar-actions-space, 76px) to sit beside Close, at least the slot's width. A
+     longer handle takes what it needs beyond the slot from the line, so the program
+     gives way to it rather than running under it; it stays there while hidden, so the
+     line never moves. */
   .terminal-tab-handle {
-    position: absolute;
-    right: calc(0.5rem + 24px + 2px);
-    bottom: 9px;
     display: flex;
-    align-items: center;
-    height: 24px;
+    justify-content: flex-end;
+    min-width: 46px;
+    margin-left: auto;
+    margin-right: calc(26px - var(--_sidebar-actions-space, 76px));
     pointer-events: none;
     transition:
       opacity var(--motion-feedback) var(--ease-interface),
@@ -311,9 +314,8 @@
 .terminal-tab.selected .terminal-tab-subagents .terminal-tab-subagent::before {
   animation-play-state: paused;
 }
-/* Its actions, and the handle in their slot, stay beside its line, however tall the rows
-   make the tab. */
-.terminal-tab:has(.terminal-tab-branches) :is(.sidebar-item-actions, .terminal-tab-handle) {
+/* Its actions stay beside its line, however tall the rows make the tab. */
+.terminal-tab:has(.terminal-tab-branches) .sidebar-item-actions {
   top: 33px;
   bottom: auto;
 }
