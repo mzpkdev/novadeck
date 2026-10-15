@@ -39,9 +39,19 @@ const visitorSelection = (): BackendSelection => ({
     (await import("../backend/demo/visitor/connect")).connectVisitor(signal, progress),
 })
 
+// Tests and specs hand App the demo's spec backend; one that forgets fails at once, saying
+// so, rather than waiting on a runner that never comes.
+const testSelection: BackendSelection = {
+  createBackend: () => {
+    throw new Error("Pass App createBackend from backend/demo/spec-variants.ts in tests")
+  },
+}
+
 export const selectBackend: BackendSelection =
   import.meta.env.MODE === "content-preview"
     ? demoSelection()
     : import.meta.env.MODE === "try"
       ? visitorSelection()
-      : runnerSelection()
+      : import.meta.env.MODE === "test"
+        ? testSelection
+        : runnerSelection()
