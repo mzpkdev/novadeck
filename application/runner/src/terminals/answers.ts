@@ -562,13 +562,17 @@ export class Answers {
       if (steady) {
         // Or the dialog is no longer the request's, and another pending request's shows at
         // once, as queued permissions do.
+        // The pending requests are read now, not as they were when the answer began: the
+        // next dialog's hook comes with its dialog (Codex's patch approvals, one after
+        // another), so its request may not have existed when the keys were pressed.
+        const current = this.host.request(terminalId, ref)
         const next = () =>
           !adapter.read(screen.rows, self.facts) &&
-          others.some(
+          (current?.others ?? others).some(
             (other) =>
               !this.host.closed(terminalId, other.ref) && adapter.read(screen.rows, other.facts),
           )
-        if (read.answered(screen.rows) || !this.host.request(terminalId, ref) || next())
+        if (read.answered(screen.rows) || !current || next())
           return { rows: screen.rows, viaTwin: false }
         // A twin's hook said it was answered: the dialog was approved all the same, and what
         // shows now may be the next of them, which is this request's to answer, not done.

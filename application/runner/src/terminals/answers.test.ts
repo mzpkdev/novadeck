@@ -36,8 +36,10 @@ const terminal = (
     unchecked?: boolean
     /** Whether the other request "r2" still waits. */
     twinWaits?: () => boolean
-    /** Other requests waiting. */
-    others?: { ref: string; actor?: string | null; facts: RequestFacts }[]
+    /** Other requests waiting; a function gives those waiting at the time it is asked. */
+    others?:
+      | { ref: string; actor?: string | null; facts: RequestFacts }[]
+      | (() => { ref: string; actor?: string | null; facts: RequestFacts }[])
     /** Whether the request is still waiting; false once it is answered elsewhere. */
     waiting?: () => boolean
     shown?: boolean
@@ -168,7 +170,9 @@ const terminal = (
               facts,
               actor: null,
               adapter: options.adapter === false ? undefined : adapter(),
-              others: (options.others ?? []).map((other) => ({ actor: null, ...other })),
+              others: (
+                (typeof options.others === "function" ? options.others() : options.others) ?? []
+              ).map((other) => ({ actor: null, ...other })),
             }
           : undefined,
     ringing: () => undefined,
@@ -608,6 +612,24 @@ describe("answering a request through its dialog", () => {
       after: (each) => {
         // At once, the next request's dialog takes its place.
         each.command = "pwd"
+      },
+    })
+    await give(tui, answers, { type: "choice", option: "1" })
+    expect(tui.written).toEqual(["1"])
+  })
+
+  it("takes the next request's dialog for an answer even where that request registered after the keys", async () => {
+    // Codex's patch approvals come one after another, and the next one's hook runs as its
+    // dialog is drawn: it is no request yet when the first is answered.
+    const next: RequestFacts = { ...facts, input: { command: "pwd" } }
+    let registered = false
+    const { tui, answers } = terminal({
+      others: () => (registered ? [{ ref: "r2", facts: next }] : []),
+      after: (each) => {
+        // The next dialog is drawn in place of the answered one, and its request exists now.
+        each.command = "pwd"
+        each.state = "ask"
+        registered = true
       },
     })
     await give(tui, answers, { type: "choice", option: "1" })

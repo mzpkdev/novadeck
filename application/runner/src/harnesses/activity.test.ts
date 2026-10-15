@@ -1714,6 +1714,31 @@ describe("what a turn wrote and how it failed", () => {
     expect(summary(stop(activity, 5)).lastTurn?.files).toEqual(["/w/a.ts", "/w/b.ts"])
   })
 
+  it("settles the permission asked to write a file once the file is written", () => {
+    const asked = (activity: Activity, requestId: string, path: string) =>
+      on(activity, {
+        type: "attention-requested",
+        requestId,
+        actor: null,
+        toolName: "apply_patch",
+        kind: "permission",
+        subject: null,
+        choices: [],
+        input: { command: `*** Begin Patch\n*** Add File: ${path}\n+x\n*** End Patch` },
+        startedAt: 2,
+      })
+    let activity = turn(started(0), 1)
+    activity = asked(asked(activity, "a", "/w/a.ts"), "b", "/w/b.ts")
+    expect(summary(activity).attention.pending).toBe(2)
+    // Its rollout names the first patch's file; no hook settled it.
+    activity = wrote(activity, "/w/a.ts", 3)
+    expect(summary(activity).attention.pending).toBe(1)
+    expect(activity.pending.map(({ requestId }) => requestId)).toEqual(["b"])
+    // A file nobody asked about settles nothing, and the file is still named.
+    activity = wrote(activity, "/w/c.ts", 4)
+    expect(activity.pending.map(({ requestId }) => requestId)).toEqual(["b"])
+  })
+
   it("keeps at most 16 files and ignores a path too long to show", () => {
     let activity = turn(started(0), 1)
     for (let n = 0; n < 20; n++)

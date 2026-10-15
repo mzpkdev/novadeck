@@ -669,22 +669,27 @@ for (const setup of setups) {
       await t1.submit("Write them")
       await t1.reached("working", { after: mark })
       // Its tools may ask the person before writing (Claude Code and Antigravity by default,
-      // Codex on some machines): the chat allows each through the dialog the adapter read.
-      // Answering is incidental to the files, so one that finds its dialog changed, or
-      // answered already, is looked at again on the next poll.
+      // Codex where its sandbox fails, one patch after another): the chat allows each
+      // through the dialog the adapter read, the oldest not yet answered first (an answered
+      // one waits for its hook or its rollout to settle it, as the Inbox shows it answering).
       await t1.poll(
         async () => {
-          const [request] = (await t1.detail()).requests
+          const request = (await t1.detail()).requests.find((each) => !each.answered)
           const { dialog } = request ?? {}
           const yes = dialog?.type === "choices" ? dialog.options[0] : undefined
           if (request && dialog?.type === "choices" && yes && yes.label.startsWith("Yes"))
-            await t1
-              .answer(request.ref, { dialog: dialog.id, type: "choice", option: yes.id })
-              .catch(() => undefined)
+            await t1.answer(request.ref, { dialog: dialog.id, type: "choice", option: yes.id })
           return t1.summary().activity?.lastTurn?.outcome === "completed" ? true : undefined
         },
         "the turn to end",
         90_000,
+      )
+      // Every permission asked is settled: a write Codex ran through its shell fires no hook,
+      // so its rollout's word on the file does (a request left pending would head the Inbox).
+      await t1.poll(
+        async () => ((await t1.detail()).requests.length === 0 ? true : undefined),
+        "the writes' requests to be settled",
+        10_000,
       )
       const files = t1.summary().activity?.lastTurn?.files
       expect(files?.map((one) => basename(one))).toEqual(["wrote.txt", "again.txt"])

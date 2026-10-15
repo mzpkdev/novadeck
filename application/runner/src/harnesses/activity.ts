@@ -1,3 +1,5 @@
+import { isAbsolute, relative } from "node:path"
+
 import type { ActivityEvent, Background, PlanSource } from "@novadeck/harness-core/events"
 import { ref } from "@novadeck/harness-core/harness"
 import type { AgentActivity } from "@novadeck/protocol"
@@ -25,6 +27,26 @@ export type Request = {
   readonly askedAt: number
   /** Murmur's line on a question or plan, for the person only; see `withHeadline`. */
   readonly headline?: string
+}
+
+/**
+ * Whether a permission request's tool input names `path`, as an absolute path or, from the
+ * directory it asked in, a relative one: the request to write that file.
+ */
+const quoted = (each: string): string => JSON.stringify(each).slice(1, -1)
+
+const namesFile = (request: Request, path: string): boolean => {
+  if (request.kind !== "permission" || request.input === undefined) return false
+  const text = JSON.stringify(request.input)
+  if (text.includes(quoted(path))) return true
+  if (request.cwd === undefined) return false
+  const inside = relative(request.cwd, path)
+  return (
+    inside !== "" &&
+    !inside.startsWith("..") &&
+    !isAbsolute(inside) &&
+    text.includes(quoted(inside))
+  )
 }
 
 /** An actor's latest plan, as the hook that named it started. */
@@ -552,8 +574,18 @@ export const apply = (
       }
       // Older than the running turn's start, it is some other turn's.
       if (activity.state !== "working" || event.startedAt < activity.turnAt) return undefined
+      // A write that landed settles the permission asked for it, even where its harness
+      // says so nowhere else: Codex fires no PostToolUse for a patch it ran through its
+      // shell, and its rollout names the file (probed 2026-10-15, 0.159.3). Left pending,
+      // that request would sit ahead of the next, the one on screen.
+      const asked = activity.pending.findIndex(
+        (each) => each.actor === event.actor && namesFile(each, event.path),
+      )
+      const pending = asked < 0 ? activity.pending : activity.pending.toSpliced(asked, 1)
       const files = withFile(activity.files, event.path)
-      return files && { ...activity, files }
+      return files || asked >= 0
+        ? { ...activity, pending, files: files ?? activity.files }
+        : undefined
     }
     case "mode-observed":
       if (event.startedAt < activity.planningAt) return undefined
