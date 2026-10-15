@@ -199,18 +199,21 @@ describe("creating terminals", () => {
 describe("terminal handles", () => {
   for (const name of views) {
     context(`in ${name}`, () => {
-      it("shows @handle on the window and the tab, and keeps it through a rename", async () => {
+      it("shows @handle on the tab, and on the window's switcher under the pointer, through a rename", async () => {
         await openWorkspace()
         await chooseView(name)
         await terminalTab("Dev server").click()
 
-        // The demo's second terminal is the second word a fresh session gives.
-        await expect
-          .element(terminal("Dev server").getByText("@fox", { exact: true }))
-          .toBeVisible()
+        // The demo's second terminal is the second word a fresh session gives. The tab
+        // shows it; the window's header keeps it folded until the pointer reaches its
+        // switcher.
         await expect
           .element(terminalTab("Dev server").getByText("@fox", { exact: true }))
           .toBeVisible()
+        const handle = terminal("Dev server").getByText("@fox", { exact: true })
+        await expect.element(handle).not.toBeVisible()
+        await headerAction("Dev server", "Switch terminal").hover()
+        await expect.element(handle).toBeVisible()
 
         // A screen reader names the tab by its handle too, right after its name.
         await expect
@@ -231,6 +234,7 @@ describe("terminal handles", () => {
         await press("Renamed server{Enter}")
 
         await expect.element(headerName("Renamed server")).toBeVisible()
+        await headerAction("Renamed server", "Switch terminal").hover()
         await expect
           .element(terminal("Renamed server").getByText("@fox", { exact: true }))
           .toBeVisible()
