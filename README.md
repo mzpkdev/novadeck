@@ -840,11 +840,24 @@ mode `try` (http://127.0.0.1:5190); `pnpm build:try` writes static files to
 `application/ui/dist-try` (beside `dist/`, which the desktop app packages), with relative
 paths and a hash router, so any static host serves them from any path, and
 `pnpm preview:try` serves them on http://127.0.0.1:5191. The [Try
-workflow](.github/workflows/try.yml) deploys a release's build to GitHub Pages at
-https://try.novadeck.dev, so the demo always shows a published version. Until launch,
-Release runs it for each version it publishes, prereleases included; at launch it moves to
-Promote to Stable, so the demo shows what Download gives people. Run workflow deploys a tag
-by hand. Quality builds it on every pull request.
+workflow](.github/workflows/try.yml) deploys a release's build to Cloudflare Pages at
+https://try.novadeck.dev, beside the website, so the demo always shows a published
+version. Until launch, Release runs it for each version it publishes, prereleases
+included; at launch it moves to Promote to Stable, so the demo shows what Download gives
+people. Run workflow deploys a tag by hand. Quality builds it on every pull request. The
+build carries a `_headers` file (`src/hosting-headers.ts`): only novadeck.dev and the
+website's preview deploys may frame it, nothing of it is indexed, and hashed assets are
+kept for good.
+
+Setting it up takes a Cloudflare Pages project named `novadeck-try`, made in the dashboard
+(Workers & Pages, Create, Pages, Upload assets) with production branch `main`: wrangler's
+`pages project create`, run by an agent, makes a Workers project instead. Add
+try.novadeck.dev to it as a custom domain, with the `try` CNAME to `novadeck-try.pages.dev`
+it asks for at the domain's DNS host; put an API token with Cloudflare Pages: Edit in the
+repository secret `CLOUDFLARE_API_TOKEN` and the account ID in the repository variable
+`CLOUDFLARE_ACCOUNT_ID`. Until both are set the workflow deploys nothing and says so; with
+only one it fails. Only releases cut with this setup can be deployed, rolled back to
+included.
 
 It runs the agents demo's storefront and its other projects as fixtures, with no debug
 panel, chat view, voice, murmur, agent connections, notices or updates, and no Welcome

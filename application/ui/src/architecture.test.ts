@@ -102,6 +102,7 @@ const rules: Record<string, readonly string[]> = {
   "content-security-policy.ts": [],
   "bundle-boundary.ts": [],
   "search-visibility.ts": [],
+  "hosting-headers.ts": [],
 }
 const adapterRule = (layer: string): readonly string[] => [
   layer,

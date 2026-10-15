@@ -1,10 +1,12 @@
 name: Try
 
-# The visitor build (`pnpm build:try`) on GitHub Pages, at try.novadeck.dev: it deploys a
-# release's source, so the demo shows a published version and never unreleased work. Until
-# launch, Release calls this with each version it publishes, prereleases included; then it
-# moves to Promote to Stable, so the demo shows what Download gives people. Run workflow
-# deploys a tag by hand. Quality's "Build (try)" builds it on every pull request first.
+# The visitor build (`pnpm build:try`) on Cloudflare Pages, at try.novadeck.dev, beside the
+# website: it deploys a release's source, so the demo shows a published version and never
+# unreleased work. Until launch, Release calls this with each version it publishes,
+# prereleases included; then it moves to Promote to Stable, so the demo shows what Download
+# gives people. Run workflow deploys a tag by hand. Quality's "Build (try)" builds it on
+# every pull request first. Without Cloudflare set up (README "Visitor build") it deploys
+# nothing and says so.
 
 on:
   workflow_call:
@@ -13,6 +15,9 @@ on:
         description: The release tag to deploy, such as v1.2.3.
         required: true
         type: string
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: false
   workflow_dispatch:
     inputs:
       tag:
@@ -30,8 +35,34 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build Visitor Demo
+  # Deploys when both are set, skips when neither is, and fails when only one is, rather
+  # than leave a half-made setup unnoticed.
+  setup:
+    name: Check Cloudflare
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Check Cloudflare Is Set Up
+        id: check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [[ -z "$CLOUDFLARE_API_TOKEN" && -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "::notice::Cloudflare isn't set up, so the visitor demo isn't deployed."
+          else
+            echo "::error::Cloudflare is only partly set up; it needs both the CLOUDFLARE_API_TOKEN secret and the CLOUDFLARE_ACCOUNT_ID variable."
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy Visitor Demo
+    needs: setup
+    if: needs.setup.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -82,28 +113,18 @@ jobs:
         env:
           TAG: ${{ steps.choose.outputs.tag }}
         run: |
-          if ! grep -q '<meta name="robots" content="noindex"' application/ui/dist-try/index.html; then
+          if ! grep -q '<meta name="robots" content="noindex"' application/ui/dist-try/index.html ||
+            [[ ! -f application/ui/dist-try/_headers ]]; then
             echo "::error::$TAG predates the public visitor build; promote a newer release."
             exit 1
           fi
 
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: application/ui/dist-try
-
-  deploy:
-    name: Deploy Visitor Demo
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          TAG: ${{ steps.choose.outputs.tag }}
+        run: >-
+          pnpm dlx wrangler@4.145.0 pages deploy application/ui/dist-try
+          --project-name=novadeck-try --branch=main
+          --commit-hash="$(git rev-parse HEAD)" --commit-message="Novadeck $TAG"

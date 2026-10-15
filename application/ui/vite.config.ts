@@ -6,6 +6,7 @@ import { defineConfig, loadEnv, type ConfigEnv, type Plugin } from "vite"
 
 import { boundaryViolations } from "./src/bundle-boundary"
 import { buildConnectSources } from "./src/content-security-policy"
+import { tryHeaders } from "./src/hosting-headers"
 import { withSearchVisibility } from "./src/search-visibility"
 
 const connectSourcesPlaceholder = "__NOVADECK_CONNECT_SOURCES__"
@@ -33,6 +34,21 @@ const contentSecurityPolicy = (): Plugin => {
         html.replace(connectSourcesPlaceholder, sources.join(" ")),
         environment.mode,
       )
+    },
+  }
+}
+
+// Gives the visitor build the response headers its host serves it with (see
+// src/hosting-headers.ts).
+const hostingHeaders = (): Plugin => {
+  let mode = ""
+  return {
+    name: "novadeck-hosting-headers",
+    apply: "build",
+    configResolved: (config) => void (mode = config.mode),
+    generateBundle() {
+      if (mode === "try")
+        this.emitFile({ type: "asset", fileName: "_headers", source: tryHeaders() })
     },
   }
 }
@@ -69,7 +85,7 @@ export default defineConfig({
     // app itself, so a small subset Vite would inline as a data: URL would be blocked.
     assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined),
   },
-  plugins: [tailwindcss(), react(), contentSecurityPolicy(), bundleBoundary()],
+  plugins: [tailwindcss(), react(), contentSecurityPolicy(), bundleBoundary(), hostingHeaders()],
   resolve: {
     alias: [{ find: /^react$/, replacement: resolve("node_modules/react/index.js") }],
     dedupe: ["react", "react-dom"],

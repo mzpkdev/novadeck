@@ -1063,10 +1063,8 @@ jobs:
     name: Visitor Demo
     if: github.event_name != 'pull_request' && needs.prepare.outputs.package == 'true'
     needs: [prepare, release]
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
     uses: ./.github/workflows/try.yml
     with:
       tag: v${{ needs.prepare.outputs.version }}
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
