@@ -211,8 +211,11 @@ describe("A plan whose edits can't be saved", () => {
       )
       .toBeVisible()
     await expect.element(pane.getByRole("button", { name: "Copy my edits" })).toBeVisible()
+    const notice = (): Element | null => pane.element().querySelector(".plan-notice")
+    const before = notice()
     await pane.getByRole("button", { name: "Try saving again" }).click()
-    // The folder still can't be written: the same message stays, and the edits with it.
+    // A new save was tried, which the folder refused again: the notice went and came back.
+    await expect.poll(() => notice() !== null && notice() !== before).toBe(true)
     await expect.element(pane.getByText(/Novadeck can't write to this plan's folder/)).toBeVisible()
     expect(pane.element().querySelector(".cm-content")!.textContent).toContain("Draft ")
   })
@@ -229,7 +232,6 @@ describe("A plan whose edits can't be saved", () => {
     await typeInto("failing")
     const pane = companionPane("Build Studio")
     await expect.element(pane.getByText("Not saved yet. Trying again.")).toBeVisible()
-    await expectStaysAbsent(pane.getByRole("button", { name: "Copy my edits" }))
   })
 })
 

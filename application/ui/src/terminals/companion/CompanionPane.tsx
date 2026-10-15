@@ -132,8 +132,9 @@ const blockedText = (reason: PlanUnwritableReason, agent: string): string => {
       return "Novadeck can't write to this plan's folder, so your edits can't be saved. They're still here."
     case "too-large":
       return "This plan is too large for Novadeck to save your edits. They're still here."
-    case "transcript":
     case "not-a-plan":
+      return "Novadeck can't write to this, since it isn't a plan file, so your edits can't be saved. They're still here."
+    case "transcript":
       return readOnlyText(agent)
   }
 }
@@ -181,6 +182,10 @@ const PlanBody = ({
   const editor = useRef<PlanEditorHandle | null>(null)
   const marks = currentMarks(plan)
   const agent = item.plan?.agent ?? "The agent"
+  // A plan the runner says lives in messages reads as one that was read-only from the start.
+  const readOnly = !plan.writable || block === "transcript"
+  // The edits as the file would hold them, with its line breaks.
+  const copyable = plan.eol === "\n" ? plan.text : plan.text.replaceAll("\n", plan.eol)
   // The header every viewer has, across the pane, then the outline beside the plan.
   return (
     <>
@@ -211,9 +216,9 @@ const PlanBody = ({
             {agent} resolved {plural(plan.resolved, "note")}
           </span>
         )}
-        {!plan.writable && (
+        {readOnly && (
           <span className="plan-meta-hint">
-            {plan.truncated && item.plan?.source === "file"
+            {!plan.writable && plan.truncated && item.plan?.source === "file"
               ? "Read-only: it's too long to edit here."
               : readOnlyText(agent)}
           </span>
@@ -230,18 +235,18 @@ const PlanBody = ({
         {actions && <span className="artifact-meta-push" />}
         {actions}
       </div>
-      {plan.writable && block && (
+      {!readOnly && block && (
         <PlanNotice
           text={blockedText(block, agent)}
-          edits={plan.text}
+          edits={copyable}
           retry={pane.retry}
           retryLabel="Try saving again"
         />
       )}
-      {plan.writable && !block && plan.stalled && (
+      {!readOnly && !block && plan.stalled && (
         <PlanNotice
           text="Novadeck couldn't save your edits after 5 tries."
-          edits={plan.text}
+          edits={copyable}
           retry={pane.retry}
           retryLabel="Retry"
         />
@@ -252,7 +257,7 @@ const PlanBody = ({
           <Suspense fallback={null}>
             <PlanEditor
               id={item.id}
-              readOnly={!plan.writable}
+              readOnly={readOnly}
               text={plan.text}
               marks={marks}
               onChange={pane.edit}
@@ -291,7 +296,7 @@ export const PlanTab = ({
   return plan ? (
     // A plan that becomes writable, or stops being so, starts its editor over.
     <PlanBody
-      key={String(plan.writable)}
+      key={String(plan.writable && blockOf(plan, content) !== "transcript")}
       item={item}
       plan={plan}
       block={blockOf(plan, content)}

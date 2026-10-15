@@ -229,12 +229,13 @@ describe("companion store", () => {
     })
 
     it("stops again when the second try is refused too", async () => {
-      const { companions, saves } = backend()
+      const { companions, saves, emitContent } = backend()
       const { actions, plan } = connected(companions)
       actions.edit(`${first}No blog.\n`, [])
       actions.flush()
       saves[0]!.refuse("too-large")
       await settle()
+      emitContent({ state: "unavailable", reason: "gone", size: null })
       actions.retry()
       saves[1]!.refuse("gone")
       await settle()
@@ -253,6 +254,87 @@ describe("companion store", () => {
       actions.edit(first, [])
       actions.flush()
       expect(plan()).toMatchObject({ blocked: null, unsaved: false })
+    })
+  })
+
+  context("when the file was put back while a save was refused as gone", () => {
+    it("takes the refusal as a failure that may pass, and goes on with the new version", async () => {
+      const { companions, saves, emit } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      // The agent deleted the plan and wrote it anew while the save was under way.
+      emit(snapshot(first.replace("alpha", "ALPHA"), "3"))
+      await settle()
+      saves[0]!.refuse("gone")
+      await settle()
+      expect(plan().blocked).toBeNull()
+      expect(plan().text).toContain("ALPHA")
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(saves.length).toBeGreaterThan(1)
+    })
+  })
+
+  context("when a save fails and the person keeps typing", () => {
+    it("leaves the wait before the next try alone, so only spaced tries count", async () => {
+      const { companions, saves } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}a\n`, [])
+      actions.flush()
+      saves[0]!.fail()
+      await settle()
+      for (const each of ["b", "c", "d", "e"]) {
+        actions.edit(`${first}a${each}\n`, [])
+        actions.flush()
+        // eslint-disable-next-line no-await-in-loop -- Each pause follows the keystroke before.
+        await vi.advanceTimersByTimeAsync(450)
+      }
+      expect(saves).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(300)
+      expect(saves).toHaveLength(2)
+      expect(saves[1]!.text).toBe(`${first}ae\n`)
+      expect(plan().stalled).toBe(false)
+    })
+
+    it("tries again once the file reports, after saves gave up", async () => {
+      const { companions, saves, emit } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      for (let each = 0; each < 5; each += 1)
+        // eslint-disable-next-line no-await-in-loop -- Each step waits for the one before.
+        await failAndWait(saves[each]!, each + 1)
+      expect(plan().stalled).toBe(true)
+      emit(snapshot(first, "1"))
+      await settle()
+      expect(plan().stalled).toBe(false)
+      expect(saves).toHaveLength(6)
+    })
+  })
+
+  context("when a plan was too large", () => {
+    it("saves again once the person edits it", async () => {
+      const { companions, saves } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      saves[0]!.refuse("too-large")
+      await settle()
+      actions.edit(`${first}Short.\n`, [])
+      expect(plan().blocked).toBeNull()
+      await vi.advanceTimersByTimeAsync(400)
+      expect(saves).toHaveLength(2)
+    })
+
+    it("takes no edits to a plan the runner says lives in messages", async () => {
+      const { companions, saves } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      saves[0]!.refuse("transcript")
+      await settle()
+      actions.edit(`${first}More.\n`, [])
+      expect(plan().text).toBe(`${first}No blog.\n`)
     })
   })
 

@@ -325,24 +325,26 @@ const reasonText = (reason: UnavailableReason, name: string, size: number | null
 
 // A button that puts `text` on the clipboard, and says so for a moment.
 export const CopyText = ({ text, label }: { text: string; label: string }): React.JSX.Element => {
-  const [copied, setCopied] = useState(false)
+  const [result, setResult] = useState<"copied" | "failed" | null>(null)
   useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 1500)
+    if (!result) return
+    const timer = setTimeout(() => setResult(null), 1500)
     return () => clearTimeout(timer)
-  }, [copied])
+  }, [result])
   return (
     <button
       type="button"
       className="artifact-open"
       onClick={() => {
-        void navigator.clipboard?.writeText(text).then(
-          () => setCopied(true),
-          () => undefined,
+        const written = navigator.clipboard?.writeText(text)
+        if (!written) return setResult("failed")
+        written.then(
+          () => setResult("copied"),
+          () => setResult("failed"),
         )
       }}
     >
-      {copied ? "Copied" : label}
+      {result === "copied" ? "Copied" : result === "failed" ? "Couldn't copy" : label}
     </button>
   )
 }

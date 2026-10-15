@@ -93,6 +93,9 @@ type Session = {
   readonly pending: Map<ItemId, PlanVersion>
   // Per plan, how many saves in a row failed, which spaces out the next try.
   readonly failures: Map<ItemId, number>
+  // Per plan, whether the wait before the next try of a failed save is running: edits and
+  // focus changes leave it alone, so only tries it spaced out count toward the cap.
+  readonly backingOff: Set<ItemId>
   // Per plan, texts sent in saves whose answer never came: the file may hold any of them.
   readonly unconfirmed: Map<ItemId, readonly string[]>
 }
@@ -125,6 +128,7 @@ const lingerMs = 30_000
 const typingPause = 400
 
 const saveSoon = (session: Session, target: WorkspaceTarget, id: ItemId): void => {
+  if (session.backingOff.has(id)) return
   clearTimeout(session.waiting.get(id))
   session.waiting.set(
     id,
@@ -137,8 +141,11 @@ const saveSoon = (session: Session, target: WorkspaceTarget, id: ItemId): void =
 
 // Saves what's waiting at once, as when the editor closes.
 const saveNow = (session: Session, target: WorkspaceTarget, id: ItemId): void => {
-  clearTimeout(session.waiting.get(id))
-  session.waiting.delete(id)
+  // While a failed save waits to be tried again, only the wait's end tries it.
+  if (!session.backingOff.has(id)) {
+    clearTimeout(session.waiting.get(id))
+    session.waiting.delete(id)
+  }
   persist(session, target, id)
 }
 
@@ -175,7 +182,7 @@ const persist = (session: Session, target: WorkspaceTarget, id: ItemId, manual =
   }
   const content = session.panes.getSnapshot().content[id]
   const gone = content?.state === "unavailable" && content.reason === "gone"
-  if (!manual && (plan.blocked || plan.stalled || gone)) return
+  if (!manual && (plan.blocked || plan.stalled || gone || session.backingOff.has(id))) return
   const sent = plan.text
   const basedOn = plan.revision
   session.saving.set(id, sent)
@@ -197,6 +204,10 @@ const persist = (session: Session, target: WorkspaceTarget, id: ItemId, manual =
   }
   // The backend said why it never will: nothing was written, and saves stop.
   const refused = (reason: PlanUnwritableReason): void => {
+    // A file that is gone while the stream shows it, or a rewrite of it waiting, was put
+    // back meanwhile: that's a failure that may pass, not a verdict.
+    const shown = session.panes.getSnapshot().content[id]?.state === "ready"
+    if (reason === "gone" && (shown || session.pending.has(id))) return failed()
     if (!settleAttempt()) return
     session.failures.delete(id)
     clearTimeout(session.waiting.get(id))
@@ -216,13 +227,16 @@ const persist = (session: Session, target: WorkspaceTarget, id: ItemId, manual =
     clearTimeout(session.waiting.get(id))
     if (stalled) {
       session.waiting.delete(id)
+      session.backingOff.delete(id)
       return
     }
+    session.backingOff.add(id)
     session.waiting.set(
       id,
       setTimeout(
         () => {
           session.waiting.delete(id)
+          session.backingOff.delete(id)
           persist(session, target, id)
         },
         Math.min(30_000, 1000 * 2 ** failures),
@@ -338,10 +352,14 @@ const received = (
   })
   if (version && known) {
     // The file is back, or can be written again: what stopped saves no longer holds.
+    // A fresh version also means the link is healthy: saves that gave up try again.
+    if (planIn(session, id)?.stalled) session.failures.delete(id)
     withPlan(session, id, (plan) =>
       plan.blocked === "gone" || (plan.blocked === "transcript" && version.plan.writable)
-        ? { ...plan, blocked: null }
-        : plan,
+        ? { ...plan, blocked: null, stalled: false }
+        : plan.stalled
+          ? { ...plan, stalled: false }
+          : plan,
     )
     void revise(session, target, id, version)
   }
@@ -423,6 +441,7 @@ const forgetPlan = (session: Session, id: ItemId): void => {
     session.unconfirmed,
   ])
     each.delete(id)
+  session.backingOff.delete(id)
 }
 
 // A record without the items that are gone.
@@ -527,6 +546,7 @@ export const createPanes = ({
     waiting: new Map(),
     pending: new Map(),
     failures: new Map(),
+    backingOff: new Set(),
     unconfirmed: new Map(),
   }
   const watch = (target: WorkspaceTarget, id: ItemId): (() => void) => {
@@ -558,10 +578,17 @@ export const createPanes = ({
   const plan = (target: WorkspaceTarget, id: ItemId): PlanActions => ({
     edit: (text, marks) => {
       const edited = withPlan(session, id, (current) =>
-        // A plan the backend can't write takes no edits.
-        text === current.text || !current.writable
+        // A plan the backend can't write takes no edits. One that was too large may not
+        // be, now.
+        text === current.text || !current.writable || current.blocked === "transcript"
           ? current
-          : { ...current, text, marks, marked: text },
+          : {
+              ...current,
+              text,
+              marks,
+              marked: text,
+              blocked: current.blocked === "too-large" ? null : current.blocked,
+            },
       )
       if (edited) saveSoon(session, target, id)
     },
@@ -579,6 +606,7 @@ export const createPanes = ({
     flush: () => saveNow(session, target, id),
     retry: () => {
       session.failures.delete(id)
+      session.backingOff.delete(id)
       withPlan(session, id, (current) =>
         current.blocked || current.stalled
           ? { ...current, blocked: null, stalled: false }
