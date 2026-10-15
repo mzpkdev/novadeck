@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from "node:path"
+import { posix, win32 } from "node:path"
 
 import type { HarnessEvent } from "@novadeck/harness-core/events"
 import {
@@ -186,6 +186,13 @@ const applied = (response: unknown): boolean =>
   typeof response !== "string" || response.trim() === "" || /^Success\b/.test(response.trim())
 
 /**
+ * The path rules the given paths are written in, whatever host this runs on: a drive
+ * letter, a backslash or a UNC prefix make them Windows paths, anything else POSIX.
+ */
+export const flavourOf = (...paths: (string | undefined)[]): typeof posix =>
+  paths.some((path) => path !== undefined && /^[A-Za-z]:[\\/]|^\\\\|\\/.test(path)) ? win32 : posix
+
+/**
  * The files a tool call's patch wrote, as Codex's apply_patch names them in its input,
  * from the session's directory; none for any other call.
  */
@@ -196,7 +203,11 @@ export const patched = (input: unknown, cwd: string | undefined): readonly strin
     [...each.matchAll(patchFile)].map(([, path]) => path!.trim()),
   )
   return paths.flatMap((path) =>
-    isAbsolute(path) ? [path] : cwd !== undefined ? [resolve(cwd, path)] : [],
+    flavourOf(path, cwd).isAbsolute(path)
+      ? [flavourOf(path).normalize(path)]
+      : cwd !== undefined
+        ? [flavourOf(path, cwd).resolve(cwd, path)]
+        : [],
   )
 }
 

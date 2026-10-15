@@ -1,6 +1,4 @@
-import { resolve } from "node:path"
-
-import { patchRequested } from "@novadeck/harness-codex/decode"
+import { flavourOf, patchRequested } from "@novadeck/harness-codex/decode"
 import type { ActivityEvent, Background, PlanSource } from "@novadeck/harness-core/events"
 import { ref } from "@novadeck/harness-core/harness"
 import type { AgentActivity } from "@novadeck/protocol"
@@ -33,7 +31,7 @@ export type Request = {
 // A path as a comparison reads it: separators alike, and case folded where it is a Windows
 // drive's.
 const comparable = (path: string): string => {
-  const slashed = path.replace(/\\/g, "/")
+  const slashed = flavourOf(path).normalize(path).replace(/\\/g, "/")
   return /^[A-Za-z]:\//.test(slashed) ? slashed.toLowerCase() : slashed
 }
 
@@ -44,7 +42,7 @@ const comparable = (path: string): string => {
 const asksToWrite = (request: Request, path: string): boolean =>
   request.kind === "permission" &&
   patchRequested(request.toolName, request.input, request.cwd).some(
-    (file) => comparable(resolve(file)) === comparable(path),
+    (file) => comparable(file) === comparable(path),
   )
 
 /** An actor's latest plan, as the hook that named it started. */

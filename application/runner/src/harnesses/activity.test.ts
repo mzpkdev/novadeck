@@ -1809,12 +1809,23 @@ describe("what a turn wrote and how it failed", () => {
       expect(waiting(several)).toEqual([])
     })
 
-    it("compares a Windows path across separators and case", () => {
-      const input = { command: patch("C:\\Work\\a.ts") }
+    it("compares Windows paths across separators and case, on any host", () => {
+      const input = { command: patch("C:\\Work\\a.ts", "src\\b.ts") }
       const activity = asked(turn(started(0), 1), "w", input, 2, { cwd: "C:\\Work" })
-      expect(waiting(settled(activity, "c:/work/A.ts", 3))).toEqual(
-        process.platform === "win32" ? [] : ["w"],
-      )
+      expect(waiting(settled(activity, "c:/work/A.ts", 3))).toEqual([])
+      // A relative file is from the request's directory, its separators either way.
+      expect(waiting(settled(activity, "C:/WORK/src/b.ts", 3))).toEqual([])
+      expect(waiting(settled(activity, "C:\\Work\\src\\c.ts", 3))).toEqual(["w"])
+      // A UNC share is a Windows path too.
+      const unc = asked(turn(started(0), 1), "u", { command: patch("\\\\host\\share\\a.ts") }, 2)
+      expect(waiting(settled(unc, "\\\\host\\share\\a.ts", 3))).toEqual([])
+    })
+
+    it("compares POSIX paths as they are, on any host", () => {
+      // Case matters, and a backslash-less path is not resolved against a drive.
+      const activity = asked(turn(started(0), 1), "p", patching("src/a.ts"), 2)
+      expect(waiting(settled(activity, "/w/SRC/a.ts", 3))).toEqual(["p"])
+      expect(waiting(settled(activity, "/w/src/../src/a.ts", 3))).toEqual([])
     })
 
     it("leaves a Claude write's PostToolUse to settle only its own request", () => {
