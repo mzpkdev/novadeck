@@ -483,9 +483,15 @@ describe("saving a plan", () => {
   it.skipIf(process.platform === "win32")("keeps the file's permissions", async ({ directory }) => {
     const path = join(directory, "p.md")
     writeFileSync(path, "# Plan\n")
-    chmodSync(path, 0o640)
-    await savePlan(filePlan(path), "# Edited\n", (await readPlanFile(path))?.stamp ?? "")
-    expect(statSync(path).mode & 0o777).toBe(0o640)
+    chmodSync(path, 0o664)
+    // Whatever the umask, as a clipped mode would show.
+    const umask = process.umask(0o022)
+    try {
+      await savePlan(filePlan(path), "# Edited\n", (await readPlanFile(path))?.stamp ?? "")
+    } finally {
+      process.umask(umask)
+    }
+    expect(statSync(path).mode & 0o777).toBe(0o664)
   })
 
   it.skipIf(process.platform === "win32")(
@@ -500,6 +506,23 @@ describe("saving a plan", () => {
       expect(lstatSync(link).isSymbolicLink()).toBe(true)
     },
   )
+
+  it("answers the stamp the file has after, and loads a plan cut short as read-only", async ({
+    directory,
+  }) => {
+    const path = join(directory, "p.md")
+    writeFileSync(path, "# Plan\n")
+    const saved = await savePlan(
+      filePlan(path),
+      "# Edited\n",
+      (await readPlanFile(path))?.stamp ?? "",
+    )
+    expect(saved).toEqual({ saved: true, stamp: (await readPlanFile(path))?.stamp })
+    writeFileSync(path, "a".repeat(256 * 1024 + 10))
+    await expect(loadPlan(filePlan(path), undefined)).resolves.toMatchObject({
+      content: { truncated: true, writable: false },
+    })
+  })
 
   it("refuses a plan in a transcript, a gone file, a too long text, and a plan cut short", async ({
     directory,

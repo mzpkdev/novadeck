@@ -482,7 +482,8 @@ export const loadPlan = async (
     return {
       state: "ready",
       stamp,
-      content: { kind: "plan", ...text, writable: true, skill: false },
+      // One past what is read whole can't be written back without cutting it.
+      content: { kind: "plan", ...text, writable: !text.truncated, skill: false },
     }
   }
   const plan = live ?? (await readTextPlan(item.plan.agent, item.path))
@@ -530,19 +531,34 @@ export const savePlan = async (
   const stats = await lstat(path)
   if (!stats.isFile()) throw new DomainError("INVALID_FILE", "The plan's file is gone.")
   const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${Date.now()}.tmp`)
+  const mode = stats.mode & 0o777
   try {
     const handle = await open(
       temporary,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
-      stats.mode & 0o777,
+      mode,
     )
+    let written: Stats
     try {
+      // The umask clipped the mode it was created with.
+      await handle.chmod(mode)
       await handle.writeFile(text)
       await handle.sync()
+      written = await handle.stat()
     } finally {
       await handle.close()
     }
+    // The agent may have rewritten the plan since it was read: its version stands.
+    const now = await readPlanFile(path)
+    if (!now) throw new Error("The plan's file is gone.")
+    if (now.stamp !== before.stamp) {
+      await unlink(temporary).catch(() => {})
+      const { text: current, truncated, stamp } = now
+      return { saved: false, current: { stamp, text: current, truncated } }
+    }
     await rename(temporary, path)
+    // Its size, change time and file survive the rename.
+    return { saved: true, stamp: stampOf(written) }
   } catch (error) {
     await unlink(temporary).catch(() => {})
     throw new DomainError(
@@ -550,9 +566,6 @@ export const savePlan = async (
       `The plan couldn't be saved: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
-  const after = await readPlanFile(path)
-  if (!after) throw new DomainError("INVALID_FILE", "The plan's file is gone.")
-  return { saved: true, stamp: after.stamp }
 }
 
 /**
