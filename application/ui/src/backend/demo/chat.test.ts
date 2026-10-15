@@ -543,6 +543,18 @@ describe("demo conversations", () => {
       ).toEqual(["05:question", "05:form", "05:raw"])
     })
 
+    it("is the transcript's own request when its agent comes to ask it later, once", () => {
+      const { chat, turns, agent } = open()
+      const subject = () => chat.conversation(key("04")).getSnapshot().requests[0]?.subject
+      turns.work(key("04"), agent("04"))
+      expect(chat.conversation(key("04")).getSnapshot().requests).toEqual([])
+      turns.ask(key("04"), agent("04"), "permission", 1)
+      expect(subject()).toBe("pnpm test --filter checkout")
+      turns.work(key("04"), agent("04"))
+      turns.ask(key("04"), agent("04"), "permission", 1)
+      expect(subject()).not.toBe("pnpm test --filter checkout")
+    })
+
     it("goes once the agent is cleared of what it asked", () => {
       const { chat, turns, agent } = open()
       turns.rest(key("04"), agent("04"))

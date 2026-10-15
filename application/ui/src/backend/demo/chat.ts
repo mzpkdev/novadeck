@@ -187,17 +187,18 @@ export const createDemoChat = (
     while (requests.length < attention.count) {
       requested += 1
       const id = `${terminalKeyId(found.key)}:ask-${requested}`
-      // A plan is the agent's own: as its transcript's plan asks, with its options.
+      // A plan is the agent's own: as its transcript's plan asks, with its options. Any
+      // other request its transcript holds it asks once, the first time it asks one of its
+      // kind, as an agent that reached it after the transcript ends.
       const transcript = transcriptOf(found)
-      const seeded =
-        attention.kind === "plan"
-          ? transcript?.requests?.find(
-              (request) =>
-                request.kind === "plan" &&
-                request.dialog?.type === "choices" &&
-                transcript.outcomes?.[request.id],
-            )
-          : undefined
+      const seeded = transcript?.requests?.find(
+        (request) =>
+          request.kind === attention.kind &&
+          request.dialog?.type === "choices" &&
+          transcript.outcomes?.[request.id] &&
+          (request.kind === "plan" ||
+            ![...made.values()].includes(transcript.outcomes[request.id]!)),
+      )
       if (seeded?.dialog?.type === "choices") {
         made.set(id, transcript!.outcomes![seeded.id]!)
         requests.push({
