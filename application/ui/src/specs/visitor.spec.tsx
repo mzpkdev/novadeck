@@ -165,6 +165,7 @@ describe("the visitor build", () => {
       expect(window.history.length).toBe(entries)
     })
 
+    // True of the app anywhere; framed, it leaves the page around it its focus.
     it("takes no focus until the person uses it", async () => {
       await openEmbedded()
       await framesPass(10)

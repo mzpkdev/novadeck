@@ -75,9 +75,9 @@ const refocus = (store: Store<Workspace>, later: (run: () => void) => void, fram
 
 // In a visitor build in a window too narrow for the app, under about 760px where it has no
 // room to lay out, shows the panel instead of the app; a page that frames the app decides
-// what a narrow window gets itself. The app is not mounted at all, so
-// nothing of it can be reached, and what it kept in its stores waits for the window to
-// widen: a dialog the address names opens again.
+// what a narrow window gets itself. The app is not mounted at all, so nothing of it can be
+// reached, and what it kept in its stores waits for the window to widen: a dialog the
+// address names opens again.
 export const VisitorCover = ({ children }: { readonly children: ReactNode }): ReactNode => {
   const { backend, workspace } = useWorkspaceServices()
   const embedded = useEmbedded()
