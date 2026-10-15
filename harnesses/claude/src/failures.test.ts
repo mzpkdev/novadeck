@@ -67,3 +67,22 @@ describe("Claude Code's StopFailure", () => {
     expect(stopFailure({ error: "rate_limit", agent_id: "a" })).toEqual([])
   })
 })
+
+describe("Claude Code's written files", () => {
+  const tool = (event: string) =>
+    decode({
+      terminalId: "t",
+      token: "0".repeat(48),
+      agent: "claude",
+      event,
+      seq: 1,
+      instance: "7",
+      env: { cursor: false },
+      payload: { session_id: "s", tool_name: "Edit", tool_input: { file_path: "/w/a.ts" } },
+    }).filter(({ type }) => type === "file-touched")
+
+  it("name a file once its tool succeeded, never when it failed", () => {
+    expect(tool("PostToolUse")).toMatchObject([{ path: "/w/a.ts" }])
+    expect(tool("PostToolUseFailure")).toEqual([])
+  })
+})

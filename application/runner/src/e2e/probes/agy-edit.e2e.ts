@@ -13,13 +13,12 @@ import { gemini } from "../model/gemini.js"
 import { asked, type Call, type Reply, type Rule } from "../model/script.js"
 import { own, start } from "../scenarios.js"
 
-// PROBE, not a regression test: what Antigravity's interactive TUI shows when it waits on
-// the person (a command's confirmation, ask_question, plan feedback), which hooks fire,
-// what its transcript and status line say meanwhile, and whether a hook can answer.
-// Everything it sees goes to a folder (AGY_PROBE_OUT, default <tmp>/agy-probe), one file
-// per scenario, for the report; the assertions only keep a probe from passing silently.
-// Run: NOVADECK_E2E_AGENTS=agy pnpm --filter @novadeck/runner exec vitest run \
-//   --config vitest.e2e.config.ts src/e2e/probes/agy-ask.e2e.ts
+// PROBE, not a regression test: Antigravity's edit tool (replace_file_content), its
+// "Accept this file edit?" confirmation, and the hooks it fires (does PostToolUse name the
+// file?), plus the tools the model is offered. Everything it sees goes to a folder
+// (AGY_PROBE_OUT, default <tmp>/agy-probe), one file per scenario.
+// Run: NOVADECK_E2E_PROBES=1 NOVADECK_E2E_AGENTS=agy pnpm --filter @novadeck/runner exec vitest run \
+//   --config vitest.e2e.config.ts src/e2e/probes/agy-edit.e2e.ts
 
 const out = process.env.AGY_PROBE_OUT ?? join(tmpdir(), "agy-probe")
 mkdirSync(out, { recursive: true })

@@ -1,4 +1,5 @@
 import { cpSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { setups } from "../agents/index.js"
@@ -12,7 +13,7 @@ import { own, start } from "../scenarios.js"
 // Run: NOVADECK_E2E_PROBES=1 NOVADECK_E2E_AGENTS=codex pnpm --filter @novadeck/runner exec vitest run \
 //   --config vitest.e2e.config.ts src/e2e/probes/codex-patch.e2e.ts
 
-const out = process.env.PATCH_PROBE_OUT ?? "/tmp/codex-patch-probe"
+const out = process.env.PATCH_PROBE_OUT ?? join(tmpdir(), "codex-patch-probe")
 const setup = setups.find((one) => one.agent === "codex")!
 
 describe.skipIf(!supported)("Codex patch (probe)", () => {

@@ -208,7 +208,8 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
           ...(payload.is_interrupt === true && { interrupted: true as const }),
         },
         ...drafted(base, actor, tool, payload),
-        ...touched(base, actor, tool, payload.tool_input),
+        // A write that failed wrote nothing.
+        ...(event === "PostToolUse" ? touched(base, actor, tool, payload.tool_input) : []),
       ]
     case "StatusLine":
       return statusLine(base, payload)
