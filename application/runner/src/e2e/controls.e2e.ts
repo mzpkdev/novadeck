@@ -668,15 +668,19 @@ for (const setup of setups) {
 
       await t1.submit("Write them")
       await t1.reached("working", { after: mark })
-      // Its tools ask the person before writing, which Claude Code and Antigravity do by
-      // default: the chat allows each, through the dialog the adapter read.
+      // Its tools may ask the person before writing (Claude Code and Antigravity by default,
+      // Codex on some machines): the chat allows each through the dialog the adapter read.
+      // Answering is incidental to the files, so one that finds its dialog changed, or
+      // answered already, is looked at again on the next poll.
       await t1.poll(
         async () => {
           const [request] = (await t1.detail()).requests
           const { dialog } = request ?? {}
           const yes = dialog?.type === "choices" ? dialog.options[0] : undefined
           if (request && dialog?.type === "choices" && yes && yes.label.startsWith("Yes"))
-            await t1.answer(request.ref, { dialog: dialog.id, type: "choice", option: yes.id })
+            await t1
+              .answer(request.ref, { dialog: dialog.id, type: "choice", option: yes.id })
+              .catch(() => undefined)
           return t1.summary().activity?.lastTurn?.outcome === "completed" ? true : undefined
         },
         "the turn to end",
