@@ -16,6 +16,32 @@ import type { AgentTelemetry } from "@novadeck/protocol"
 import { callOf, mcpTool } from "./decode.js"
 import { transcripts } from "./transcripts.js"
 
+// What a harness said of a failed turn, as plain text a person reads: escapes and control
+// characters out (a newline kept), cut to what the protocol takes. Undefined when none is left.
+const failure = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined
+  const plain = value
+    // eslint-disable-next-line no-control-regex -- These are the characters it removes.
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[@-_]?/g, "")
+    // eslint-disable-next-line no-control-regex -- As above.
+    .replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g, " ")
+    .trim()
+  return plain === "" ? undefined : plain.slice(0, 2048)
+}
+
+// A failed turn's `task_complete` error: its message, and `codex_error_info`, which is
+// "usage_limit_exceeded" for a usage limit (a rollout of 2026-10-15, codex 0.16x).
+const errored = (error: unknown): { error?: string; limited?: true } => {
+  const { message, codex_error_info: info } = (
+    typeof error === "object" && error !== null ? error : { message: error }
+  ) as { message?: unknown; codex_error_info?: unknown }
+  const text = failure(message)
+  return {
+    ...(text && { error: text }),
+    ...(info === "usage_limit_exceeded" && { limited: true as const }),
+  }
+}
+
 type Limit = AgentTelemetry["limits"][number]
 
 const number = (value: unknown): number | undefined =>
@@ -99,12 +125,10 @@ export const rolloutEvents = (
     case "task_complete":
     case "turn_aborted": {
       const turn = typeof fields.turn_id === "string" ? fields.turn_id : undefined
+      const failed =
+        fields.type === "task_complete" && fields.error !== undefined && fields.error !== null
       const outcome =
-        fields.type === "turn_aborted"
-          ? "interrupted"
-          : fields.error !== undefined && fields.error !== null
-            ? "failed"
-            : "completed"
+        fields.type === "turn_aborted" ? "interrupted" : failed ? "failed" : "completed"
       return [
         {
           type: "turn-ended",
@@ -113,6 +137,7 @@ export const rolloutEvents = (
           recorded: true,
           ...(turn && { turn }),
           ...replied(fields.last_agent_message),
+          ...(failed && errored(fields.error)),
         },
       ]
     }

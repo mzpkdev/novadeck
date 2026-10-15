@@ -1,0 +1,56 @@
+import { describe, expect, it } from "vitest"
+
+import { rolloutEvents } from "./rollout.js"
+
+const run = { sessionId: "s", instance: "7" }
+const complete = (fields: object) =>
+  rolloutEvents(
+    JSON.stringify({
+      timestamp: "2026-10-15T06:18:46.764Z",
+      type: "event_msg",
+      payload: { type: "task_complete", turn_id: "t1", last_agent_message: null, ...fields },
+    }),
+    run,
+  )
+
+// Records as Codex wrote them (a usage-limit turn of 2026-10-15, codex 0.16x).
+describe("Codex's task_complete with an error", () => {
+  it("fails the turn with its message, and says a usage limit by codex_error_info", () => {
+    expect(
+      complete({
+        error: {
+          message: "You’ve hit your usage limit. Try again at 2:41 AM.",
+          codex_error_info: "usage_limit_exceeded",
+        },
+      }),
+    ).toMatchObject([
+      {
+        type: "turn-ended",
+        outcome: "failed",
+        recorded: true,
+        error: "You’ve hit your usage limit. Try again at 2:41 AM.",
+        limited: true,
+      },
+    ])
+  })
+
+  it("is no limit for another error", () => {
+    const [event] = complete({
+      error: { message: "stream disconnected", codex_error_info: "other" },
+    })
+    expect(event).toMatchObject({ outcome: "failed", error: "stream disconnected" })
+    expect(event).not.toHaveProperty("limited")
+  })
+
+  it("fails the turn even where the error gives no message", () => {
+    const [event] = complete({ error: { codex_error_info: { http_connection_failed: {} } } })
+    expect(event).toMatchObject({ outcome: "failed" })
+    expect(event).not.toHaveProperty("error")
+  })
+
+  it("names no error for a completed turn", () => {
+    const [event] = complete({ last_agent_message: "Done." })
+    expect(event).toMatchObject({ outcome: "completed" })
+    expect(event).not.toHaveProperty("error")
+  })
+})
