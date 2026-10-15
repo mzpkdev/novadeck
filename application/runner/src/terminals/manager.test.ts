@@ -2074,7 +2074,7 @@ describe("a usage limit a turn ran into", () => {
     record.activity = fresh(0)
     usage(0.5, 25)
     tell({ type: "turn-started", cause: "prompt", startedAt: 30 })
-    tell({ type: "turn-ended", outcome: "completed", startedAt: 40 })
+    tell({ type: "turn-ended", outcome: "failed", startedAt: 40 })
     expect(lastTurn()?.limit).toBeUndefined()
     usage(1, 50)
     expect(lastTurn()?.limit).toEqual({ minutes: 300, resetsAt: 900_000 })

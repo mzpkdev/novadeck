@@ -1761,6 +1761,51 @@ describe("what a turn wrote and how it failed", () => {
     ])
   })
 
+  it("ignores a file older than the turn's start, and one told while no turn ran", () => {
+    const ended = stop(turn(started(0), 10), 12)
+    expect(
+      apply(
+        turn(started(0), 10),
+        binding,
+        fact({ type: "file-touched", actor: null, path: "/w/old.ts", startedAt: 5 } as Fields),
+      ),
+    ).toBeUndefined()
+    expect(
+      apply(
+        ended,
+        binding,
+        fact({ type: "file-touched", actor: null, path: "/w/old.ts", startedAt: 5 } as Fields),
+      ),
+    ).toBeUndefined()
+  })
+
+  it("adds a file told after the turn's Stop to that turn's files, until a new turn starts", () => {
+    let activity = wrote(turn(started(0), 10), "/w/a.ts", 11)
+    activity = stop(activity, 20)
+    // Written in the turn, read late (Codex's rollout), or by a subagent running on.
+    activity = wrote(activity, "/w/b.ts", 15)
+    expect(
+      apply(
+        activity,
+        binding,
+        fact({ type: "file-touched", actor: null, path: "/w/b.ts", startedAt: 16 } as Fields),
+      ),
+    ).toBeUndefined()
+    expect(summary(activity).lastTurn?.files).toEqual(["/w/a.ts", "/w/b.ts"])
+    expect(summary(turn(activity, 30)).lastTurn).toBeNull()
+    expect(summary(stop(turn(activity, 30), 31)).lastTurn?.files).toEqual([])
+  })
+
+  it("keeps the files of a call that resumes a turn an Escape ended", () => {
+    let activity = wrote(turn(started(0), 10), "/w/a.ts", 11)
+    activity = on(activity, { type: "turn-escaped", startedAt: 12 })
+    activity = turn(activity, 13, "call")
+    expect(summary(stop(wrote(activity, "/w/b.ts", 14), 15)).lastTurn?.files).toEqual([
+      "/w/a.ts",
+      "/w/b.ts",
+    ])
+  })
+
   it("tells a failed turn's error, trimmed to what the wire holds, and no error of any other", () => {
     const failed = stop(turn(started(0), 1), 2, { outcome: "failed", error: "x".repeat(3000) })
     expect(summary(failed).lastTurn?.error).toHaveLength(2048)

@@ -286,8 +286,9 @@ allows it 12 more hops, and a stopped thread no longer stopped; an unknown threa
 `NOT_FOUND`. `messages.stop(threadId)` stops a thread: its messages not yet delivered or
 leased are `gone`, their senders told (once, through the MCP tools' answers) that the
 person stopped it, and a send that would continue it, in either direction, is refused
-until the thread lapses (10 quiet minutes; a refused send does not extend them) or the
-person releases it; a leased message is left to finish, the recipient is told nothing,
+until 10 minutes after the later of the stop and the thread's last message (a refused send
+does not extend them) or the person releases it, the listing's `stopped` holding only
+meanwhile; a leased message is left to finish, the recipient is told nothing,
 stopping a stopped thread does nothing, and an unknown thread is `NOT_FOUND`. Each refuses with
 `RUNTIME_CLOSING` once the runner is stopping. `messages.watch(terminalId)` streams what
 `list` says, then again on each change to the terminal's threads, messages or delivery
@@ -868,9 +869,10 @@ forgets it, including one from an earlier runner.
   `unknown` until the next prompt, see `agent-messaging.md`, and the agent's `lastTurn`
   reads `interrupted`; `lastTurn` also tells a failed turn's `error` as its harness said it,
   the usage-limit window the turn ran into as `limit` (`minutes`, `resetsAt`; kept for that
-  end once its harness said the turn failed on a limit, or its records showed a window
-  used up with a reset to come), and the absolute paths its write and edit tools wrote as
-  `files`, at most 16, first written first, each once, root and subagents). The harness has the last word: one that had the model's reply
+  end once its harness said the turn failed on a limit, or, for a failed or unknown turn,
+  its records within a minute of its end showed a window used up with a reset to come), and the absolute paths its write and edit tools wrote as
+  `files`, at most 16, first written first, each once, root and subagents, those told after
+  the turn's Stop included). The harness has the last word: one that had the model's reply
   before it took the key finishes the turn all the same, and the turn's `lastTurn` then
   reads `completed` with that reply, as for any finished turn, once the harness has said
   so (at once for Antigravity's Stop or a record of the finish, else about 1.5 s after the

@@ -372,8 +372,8 @@ export const contract = {
     // delivered, and it may have 12 more. One the runner does not keep is NOT_FOUND.
     release: procedure.input(z.strictObject({ thread: threadId })).output(z.void()),
     // Stops a thread: its messages not yet delivered or leased are gone, their senders told
-    // the person stopped it, and a send that would continue it is refused. One the runner
-    // does not keep is NOT_FOUND; stopping a stopped thread does nothing.
+    // the person stopped it, and a send between the pair is refused for 10 minutes after the
+    // later of the stop and the thread's last message. One the runner does not keep is NOT_FOUND; stopping a stopped thread does nothing.
     stop: procedure.input(z.strictObject({ thread: threadId })).output(z.void()),
   },
   // Voice input, transcribed on this machine (see `voiceState`).

@@ -1103,13 +1103,14 @@ output, not that the model acted on it.
   it.
 - **Stop.** The person can stop a thread (`messages.stop`). Its messages still queued or
   held are `gone`, each marked stopped so its sender's next answer says "won't arrive: the
-  user stopped that thread in Novadeck."; a message a lease holds finishes, and the recipient
-  is told nothing. The thread keeps a `stoppedAt`, stored, and a `send` that would continue
-  it (the pair's latest thread, within the 10 minutes a thread lasts) is refused for
-  either terminal: "The user stopped your thread with @x in Novadeck. Don't message @x
-  about it again unless the user asks." A refused send does not extend the thread, so
-  the pair is free again 10 quiet minutes after the thread's last message. Releasing the
-  thread clears the stop.
+  user stopped that thread in Novadeck."; a message a lease holds finishes, and if its
+  lease lapses or the runner restarts first it is `gone` too, never queued again. The
+  recipient is told nothing. The thread keeps a `stoppedAt`, stored, and a `send` between
+  the pair is refused, whichever end sends, until 10 minutes (a thread's length) after the
+  later of the stop and the thread's last message: "The user stopped your thread with @x in
+  Novadeck. Don't message @x about it again unless the user asks." A refused send does not
+  extend the block. The listing's `stopped` is true only while the block is in force.
+  Releasing the thread clears the stop.
 - **Rates.** A sender may send 10 messages a minute, 3 of them to any one recipient; the
   runner allows 60 a minute in all.
 - **Pause.** One switch, stored so it survives restarts, pauses messaging across the

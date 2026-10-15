@@ -98,11 +98,12 @@ describe("the limit a turn ran into", () => {
   ) => limitIn(lastTurn, limits, seenAt)
 
   const turn = (fields: Partial<LastTurn> = {}): LastTurn => ({
-    outcome: "completed",
+    outcome: "failed",
     reply: null,
     at: 1_000,
     recorded: false,
     files: [],
+    from: 0,
     ...fields,
   })
   const window = (minutes: number | null, used: number, resetsAt: number | null) => ({
@@ -151,12 +152,30 @@ describe("the limit a turn ran into", () => {
     expect(limitOf(turn({ outcome: "failed" }), full, 1_000 + limitGraceMs + 1)).toBeNull()
   })
 
-  it("takes the harness's word on a limit whenever the records come", () => {
+  it("takes a used-up window of a completed turn only when its harness said it hit a limit", () => {
+    // A bucket filling beside the turn, as Antigravity's does, is no limit it ran into.
     const full = [window(300, 1, 900_000)]
-    expect(limitOf(turn({ outcome: "failed", limited: true }), full, 99_000_000)).toEqual({
+    expect(limitOf(turn({ outcome: "completed" }), full)).toBeNull()
+    expect(limitOf(turn({ outcome: "unknown" }), full)).toEqual({ minutes: 300, resetsAt: 900_000 })
+    expect(limitOf(turn({ outcome: "completed", limited: true }), full)).toEqual({
       minutes: 300,
       resetsAt: 900_000,
     })
+  })
+
+  it("takes nothing from records made after the grace, the harness's word included", () => {
+    const full = [window(300, 1, 900_000)]
+    const after = 1_000 + limitGraceMs + 1
+    expect(limitOf(turn({ limited: true }), full, after)).toBeNull()
+    expect(limitOf(turn({ limited: true }), [window(300, 0.4, 900_000)], after)).toBeNull()
+  })
+
+  it("takes the next window after a reset for none: its records show nothing used up", () => {
+    // The window the turn hit reset; the redraw shows the next one, fresh.
+    expect(
+      limitOf(turn({ limited: true }), [window(300, 0, 950_000)], 1_000 + limitGraceMs + 1),
+    ).toBeNull()
+    expect(limitOf(turn(), [window(300, 0, 950_000)])).toBeNull()
   })
 
   it("keeps the window it latched whatever the records say after", () => {

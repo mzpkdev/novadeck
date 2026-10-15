@@ -70,13 +70,14 @@ type Window = AgentTelemetry["limits"][number]
 export const limitGraceMs = 60_000
 
 /**
- * The usage-limit window the last turn ran into, or null: the turn was not interrupted and
- * has none yet, and either its harness said it failed on a limit, or some window with a
- * reset to come (after the turn ended) is used up in a record made (`seenAt`) by the turn's
- * end or within `limitGraceMs` after it. Of the used-up windows the one that
- * resets last, as nothing runs before it does; a harness's word with no window used up
- * takes the most-used one. Latch it on the turn (`withLimit`): it stays after the window's
- * records move on.
+ * The usage-limit window the last turn ran into, or null. Only records made (`seenAt`) by
+ * the turn's end or within `limitGraceMs` after it count, and the turn was not interrupted
+ * and has no window yet. Of the windows with a reset to come after the turn ended: a
+ * `failed` or `unknown` turn takes the used-up one that resets last, as nothing runs before
+ * it does; a `completed` turn takes none on its own, as a bucket filling beside it (as
+ * Antigravity's does) is no limit it ran into. Where its harness said it failed on a limit
+ * (`limited`), and no window shows used up, the most-used one. Latch it on the turn
+ * (`withLimit`): it stays after the window's records move on.
  */
 export const limitOf = (
   lastTurn: LastTurn | null,
@@ -84,11 +85,15 @@ export const limitOf = (
   seenAt: number,
 ): { minutes: number | null; resetsAt: number } | null => {
   if (!lastTurn || lastTurn.outcome === "interrupted" || lastTurn.limit) return null
+  if (seenAt > lastTurn.at + limitGraceMs) return null
   const ahead = limits.filter(
     (window): window is Window & { resetsAt: number } =>
       window.resetsAt !== null && window.resetsAt > lastTurn.at,
   )
-  const spent = seenAt <= lastTurn.at + limitGraceMs ? ahead.filter(({ used }) => used >= 1) : []
+  const spent =
+    lastTurn.outcome === "completed" && !lastTurn.limited
+      ? []
+      : ahead.filter(({ used }) => used >= 1)
   const pick =
     spent.length > 0
       ? spent.reduce((a, b) => (b.resetsAt > a.resetsAt ? b : a))

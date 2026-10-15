@@ -39,6 +39,8 @@ import {
   maxUndelivered,
   rates,
   retentionMs,
+  stopBlocks,
+  stoppedBetween,
   threadBetween,
   undelivered,
   waiting,
@@ -897,7 +899,7 @@ export class Messaging {
     const now = this.now()
     const known = threadBetween(this.threads.values(), terminalId, recipient.terminalId, now)
     // The person stopped it: nothing continues it, and the refusal leaves its clock alone.
-    if (known?.stoppedAt != null)
+    if (stoppedBetween(this.threads.values(), terminalId, recipient.terminalId, now))
       return refused(
         `The user stopped your thread with ${mention(recipient.handle)} in Novadeck. ` +
           `Don't message ${mention(recipient.handle)} about it again unless the user asks.`,
@@ -1102,7 +1104,7 @@ export class Messaging {
         held: messages.some(
           (message) => message.state === "held" && this.holdOf(message) === "release",
         ),
-        stopped: thread?.stoppedAt != null,
+        stopped: thread !== undefined && stopBlocks(thread, this.now()),
         messages: messages.slice(-1000).map((message) => ({
           id: message.id,
           thread: message.thread,
@@ -1183,7 +1185,7 @@ export class Messaging {
   stop(threadId: string): void {
     const thread = this.threads.get(threadId)
     if (!thread) throw new DomainError("NOT_FOUND")
-    if (thread.stoppedAt !== null) return
+    if (stopBlocks(thread, this.now())) return
     this.putThread({ ...thread, stoppedAt: this.now() })
     const terminals = new Set<string>()
     for (const message of this.messages.values()) {
@@ -1316,7 +1318,14 @@ export class Messaging {
 
   /** Puts an undelivered message back to waiting: held for a reason, else queued. */
   private wait(message: Message): void {
-    const state = waiting(message, this.threads.get(message.thread), this.paused)
+    // A stopped thread's message never waits again: one a lease held is gone with it.
+    if (message.stopped) return
+    const thread = this.threads.get(message.thread)
+    if (thread?.stoppedAt != null && undelivered(message)) {
+      this.put({ ...message, state: "gone", notified: false, stopped: true })
+      return
+    }
+    const state = waiting(message, thread, this.paused)
     if (state !== message.state) this.put({ ...message, state })
   }
 

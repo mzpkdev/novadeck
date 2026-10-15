@@ -136,8 +136,13 @@ export type LastTurn = {
   readonly limited?: true
   /** The usage-limit window this end ran into; see `limitOf`. Kept once set. */
   readonly limit?: { readonly minutes: number | null; readonly resetsAt: number }
-  /** The files its turn wrote, as `Activity.files` held them at its end. */
+  /**
+   * The files its turn wrote: as `Activity.files` held them at its end, and any a later
+   * report timestamped in the turn adds, until a new turn starts.
+   */
   readonly files: readonly string[]
+  /** When its turn started, which tells a file written in it from an older one. */
+  readonly from: number
 }
 
 type TurnEnded = Extract<ActivityEvent, { type: "turn-ended" }>
@@ -327,6 +332,12 @@ const outliving = (
 export const maxFiles = 16
 const maxError = 2048
 
+/** The files with `path` added, once each and at most `maxFiles`; undefined where unchanged. */
+const withFile = (files: readonly string[], path: string): readonly string[] | undefined =>
+  path.length === 0 || path.length > 1024 || files.length >= maxFiles || files.includes(path)
+    ? undefined
+    : [...files, path]
+
 const turnEnded = (activity: Activity, event: TurnEnded): Activity | undefined => {
   // Its records end only the turn still running, its own where they name one, and
   // leave its fence where it was, so the hook's own Stop, should it come after all,
@@ -367,6 +378,7 @@ const turnEnded = (activity: Activity, event: TurnEnded): Activity | undefined =
       ...(limited && { limited: true as const }),
       ...(before?.limit && { limit: before.limit }),
       files: activity.files,
+      from: before?.from ?? activity.turnAt,
     },
   } as const
   if (event.outcome !== "interrupted")
@@ -528,16 +540,17 @@ export const apply = (
       return { ...activity, plans: [...kept, next] }
     }
     case "file-touched": {
-      const { path } = event
-      if (
-        activity.state !== "working" ||
-        path.length === 0 ||
-        path.length > 1024 ||
-        activity.files.length >= maxFiles ||
-        activity.files.includes(path)
-      )
-        return undefined
-      return { ...activity, files: [...activity.files, path] }
+      // A file written in the turn that just ended, told after its Stop (a rollout read
+      // late, a subagent running on), joins that turn's files.
+      const { lastTurn } = activity
+      if (activity.state === "idle" && lastTurn && event.startedAt >= lastTurn.from) {
+        const files = withFile(lastTurn.files, event.path)
+        return files && { ...activity, lastTurn: { ...lastTurn, files } }
+      }
+      // Older than the running turn's start, it is some other turn's.
+      if (activity.state !== "working" || event.startedAt < activity.turnAt) return undefined
+      const files = withFile(activity.files, event.path)
+      return files && { ...activity, files }
     }
     case "mode-observed":
       if (event.startedAt < activity.planningAt) return undefined
@@ -632,8 +645,14 @@ export const apply = (
         turn: event.turn ?? null,
         continued: false,
         skips: 0,
-        // A call that resumes a turn running, or a continuation, adds to its files.
-        files: activity.state === "working" ? activity.files : [],
+        // A call that resumes a turn (Antigravity's), even after an Escape ended it, or a
+        // continuation, adds to its files.
+        files:
+          activity.state === "working"
+            ? activity.files
+            : event.cause === "call"
+              ? (activity.lastTurn?.files ?? activity.files)
+              : [],
         lastTurn: null,
       }
     case "turn-continued":
@@ -683,6 +702,7 @@ export const apply = (
           at: event.startedAt,
           recorded: false,
           files: activity.files,
+          from: activity.turnAt,
         },
       }
     }
@@ -704,6 +724,7 @@ export const apply = (
           at: event.startedAt,
           recorded: false,
           files: activity.files,
+          from: activity.turnAt,
           escaped: {
             from: activity.turnAt,
             key: event.startedAt,

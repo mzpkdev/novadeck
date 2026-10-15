@@ -891,7 +891,8 @@ export const messageThread = z.strictObject({
   hops: z.number().int().nonnegative(),
   allowed: z.number().int().nonnegative(),
   held: z.boolean(),
-  // Whether the person stopped it: a send that would continue it is refused.
+  // Whether the person's stop of it is in force: a send between the pair is refused, for 10
+  // minutes after the later of the stop and its last message.
   stopped: z.boolean(),
   messages: z.array(agentMessage).max(1000),
 })

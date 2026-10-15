@@ -1131,6 +1131,51 @@ describe("a stopped thread", () => {
     expect(messaging.list("A", "moth").threads).toHaveLength(2)
   })
 
+  it("lets a leased message finish, but never lets it wait again once its lease lapses", () => {
+    vi.useFakeTimers()
+    const { messaging, send, prompt, codex, clock: time } = create()
+    sent(send("A", "fox", "first"))
+    const lease = prompt("B", codex)
+    expect(lease.leaseId).not.toBeNull()
+    const [thread] = messaging.list("A", "moth").threads
+    messaging.stop(thread!.id)
+    expect(messages(messaging, "A")[0]?.state).toBe("leased")
+    // Its hook never acknowledged: the lease lapses.
+    time.now += 10_000
+    vi.advanceTimersByTime(10_000)
+    expect(messages(messaging, "A")[0]?.state).toBe("gone")
+    expect(messaging.goneFrom("A")).toEqual([{ id: expect.any(String), to: "fox", stopped: true }])
+    expect(prompt("B", codex).stdout).not.toContain("first")
+    vi.useRealTimers()
+  })
+
+  it("keeps a leased message gone across a restart of the runner", () => {
+    const records = memoryMailbox()
+    const first = create(records)
+    sent(first.send("A", "fox", "first"))
+    first.prompt("B", first.codex)
+    const [thread] = first.messaging.list("A", "moth").threads
+    first.messaging.stop(thread!.id)
+    first.messaging.close()
+    create(records)
+    expect(records.messages()[0]).toMatchObject({ state: "gone", stopped: true })
+  })
+
+  it("blocks a quiet thread from the stop, not from its last message", () => {
+    const { messaging, send, clock: time } = create()
+    sent(send("A", "fox", "first"))
+    const [thread] = messaging.list("A", "moth").threads
+    time.now += threadMs + 1_000
+    messaging.stop(thread!.id)
+    expect(messaging.list("A", "moth").threads[0]).toMatchObject({ stopped: true })
+    time.now += threadMs - 1_000
+    expect(send("A", "fox", "again")).toMatchObject({ ok: false })
+    // Once a thread's time has passed since the stop, it neither blocks nor shows stopped.
+    time.now += 2_000
+    expect(messaging.list("A", "moth").threads[0]).toMatchObject({ stopped: false })
+    sent(send("A", "fox", "later"))
+  })
+
   it("is the same whether stopping it twice or after it lapsed, and NOT_FOUND where unknown", () => {
     const { messaging, send, clock: time } = create()
     sent(send("A", "fox", "first"))
