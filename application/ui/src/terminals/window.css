@@ -118,7 +118,7 @@
   line-height: var(--text-caption--line-height);
   white-space: nowrap;
 }
-/* In a sidebar tab's detail line, before its program, the handle is plain muted text. */
+/* In a sidebar tab, after its program or in its actions slot, the handle is plain muted text. */
 .handle-chip.handle-plain {
   padding: 0;
   background: none;
