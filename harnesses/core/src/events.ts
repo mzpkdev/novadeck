@@ -132,6 +132,10 @@ export type ActivityEvent = {
        * its hook, its records or its transcript tell it.
        */
       readonly reply?: string
+      /** A failed turn's error as its harness said it, where it did. */
+      readonly error?: string
+      /** The turn failed on a usage limit, as its harness said. */
+      readonly limited?: true
     }
   | {
       readonly type: "turn-idle"

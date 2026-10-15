@@ -124,6 +124,20 @@ export const agentActivity = z.strictObject({
       // (`murmur.gist`), and whether the reply asks the person something. It never changes
       // `outcome`.
       gist: murmurGist.nullable(),
+      // A failed turn's error as its harness said it; null otherwise or where it gave none.
+      error: z.string().min(1).max(2048).nullable(),
+      // The usage-limit window this end ran into: its harness said the turn failed on a
+      // limit, or its records showed a window used up (used >= 1) as it ended or since.
+      // Kept for this end once set. Null where none, or no reset time is known.
+      limit: z
+        .strictObject({
+          minutes: z.number().int().positive().nullable(),
+          resetsAt: z.number(),
+        })
+        .nullable(),
+      // Absolute paths its write/edit tools wrote in the turn (root and subagents), first
+      // written first, each once.
+      files: z.array(z.string().min(1).max(1024)).max(16),
     })
     .nullable(),
 })
@@ -334,6 +348,8 @@ export const agentDetail = z.strictObject({
         // Whether Novadeck answered it, through `agents.answer`, and the agent has yet to
         // report it settled: nothing more is to be answered there meanwhile.
         answered: z.boolean(),
+        // When the request's hook started, on the runner's clock, in epoch milliseconds.
+        askedAt: z.number(),
       }),
     )
     .max(32),
@@ -875,6 +891,8 @@ export const messageThread = z.strictObject({
   hops: z.number().int().nonnegative(),
   allowed: z.number().int().nonnegative(),
   held: z.boolean(),
+  // Whether the person stopped it: a send that would continue it is refused.
+  stopped: z.boolean(),
   messages: z.array(agentMessage).max(1000),
 })
 

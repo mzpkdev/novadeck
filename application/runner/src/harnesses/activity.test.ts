@@ -77,7 +77,14 @@ const idle = (lastTurn: Omit<NonNullable<ReturnType<typeof summary>["lastTurn"]>
 const ongoing = { lastTurn: null }
 
 // A completed turn, its reply as the captured hook named it.
-const replied = { outcome: "completed", reply: "<text>", gist: null } as const
+const replied = {
+  outcome: "completed",
+  reply: "<text>",
+  gist: null,
+  error: null,
+  limit: null,
+  files: [] as string[],
+} as const
 
 describe("activity from captured hooks", () => {
   it("waits on the person while Claude Code asks, and works again once allowed", () => {
@@ -127,7 +134,16 @@ describe("activity from captured hooks", () => {
       background: null,
       ...ongoing,
     })
-    expect(last).toEqual(idle({ outcome: "interrupted", reply: null, gist: null }))
+    expect(last).toEqual(
+      idle({
+        outcome: "interrupted",
+        reply: null,
+        gist: null,
+        error: null,
+        limit: null,
+        files: [],
+      }),
+    )
   })
 
   it("settles an approved Codex request, whose result no longer describes the call", () => {
@@ -170,7 +186,9 @@ describe("activity from captured hooks", () => {
       ...ongoing,
     })
     // Its Stop names no reply; its transcript does, which the runner reads apart.
-    expect(states).toContainEqual(idle({ outcome: "completed", reply: null, gist: null }))
+    expect(states).toContainEqual(
+      idle({ outcome: "completed", reply: null, gist: null, error: null, limit: null, files: [] }),
+    )
   })
 })
 
@@ -1056,15 +1074,29 @@ describe("how an agent's latest turn ended", () => {
       reply: "Fixed the flaky spec.",
       at: 2,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
     expect(summary(stop(running, 2)).lastTurn).toEqual({
       outcome: "completed",
       reply: null,
       at: 2,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
     const failed = stop(running, 2, { outcome: "failed" })
-    expect(summary(failed).lastTurn).toEqual({ outcome: "failed", reply: null, at: 2, gist: null })
+    expect(summary(failed).lastTurn).toEqual({
+      outcome: "failed",
+      reply: null,
+      at: 2,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
   })
 
   it("tells the person's interrupt, an Escape and an idle without a Stop apart from completion", () => {
@@ -1074,7 +1106,15 @@ describe("how an agent's latest turn ended", () => {
     expect(summary(escaped).lastTurn?.outcome).toBe("interrupted")
     const none = { agents: 0, tasks: 0 }
     const quiet = on(running, { type: "turn-idle", startedAt: 2, background: none })
-    expect(summary(quiet).lastTurn).toEqual({ outcome: "unknown", reply: null, at: 2, gist: null })
+    expect(summary(quiet).lastTurn).toEqual({
+      outcome: "unknown",
+      reply: null,
+      at: 2,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
   })
 
   it("tells the end while subagents it left run, the agent working on", () => {
@@ -1082,7 +1122,15 @@ describe("how an agent's latest turn ended", () => {
     const waiting = stop(running, 2, { reply: "Waiting on two agents.", background })
     expect(summary(waiting)).toMatchObject({
       state: "working",
-      lastTurn: { outcome: "completed", reply: "Waiting on two agents.", at: 2, gist: null },
+      lastTurn: {
+        outcome: "completed",
+        reply: "Waiting on two agents.",
+        at: 2,
+        gist: null,
+        error: null,
+        limit: null,
+        files: [],
+      },
     })
   })
 
@@ -1098,6 +1146,9 @@ describe("how an agent's latest turn ended", () => {
       reply: "First answer.",
       at: 2,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
   })
 
@@ -1108,12 +1159,18 @@ describe("how an agent's latest turn ended", () => {
       reply: null,
       at: 3,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
     expect(summary(stop(recorded, 4, { reply: "All green." })).lastTurn).toEqual({
       outcome: "completed",
       reply: "All green.",
       at: 3,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
   })
 
@@ -1125,6 +1182,9 @@ describe("how an agent's latest turn ended", () => {
       reply: "Second.",
       at: 5,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
   })
 })
@@ -1150,18 +1210,37 @@ describe("a turn the person's Escape ended", () => {
 
   it("reads interrupted from the Escape at once, before its harness says anything", () => {
     expect(summary(stopped)).toMatchObject({ state: "idle" })
-    expect(outcome(stopped)).toEqual({ outcome: "interrupted", reply: null, at: 20, gist: null })
+    expect(outcome(stopped)).toEqual({
+      outcome: "interrupted",
+      reply: null,
+      at: 20,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
   })
 
   it("reads completed once the window passes with a Stop told since, its reply as the last turn's", () => {
     const told = stop(stopped, 25, { reply: "Too late." })
     // Claude Code's Stop fires too when it took the Escape just after the reply: not yet.
-    expect(outcome(told)).toEqual({ outcome: "interrupted", reply: null, at: 20, gist: null })
+    expect(outcome(told)).toEqual({
+      outcome: "interrupted",
+      reply: null,
+      at: 20,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
     expect(outcome(lapsed(told, 20))).toEqual({
       outcome: "completed",
       reply: "Too late.",
       at: 25,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
   })
 
@@ -1172,6 +1251,9 @@ describe("a turn the person's Escape ended", () => {
       reply: "Too late.",
       at: 25,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
     // Nor is there a window left to wait out.
     expect(lapsed(stop(antigravity, 25), 20)).toBeUndefined()
@@ -1184,6 +1266,9 @@ describe("a turn the person's Escape ended", () => {
       reply: "Too late.",
       at: 25,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
     // Its record with no Stop told yet is the end too.
     expect(outcome(stop(stopped, 30, { recorded: true }))).toEqual({
@@ -1191,6 +1276,9 @@ describe("a turn the person's Escape ended", () => {
       reply: null,
       at: 30,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
   })
 
@@ -1201,6 +1289,9 @@ describe("a turn the person's Escape ended", () => {
       reply: "Too late.",
       at: 21,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
   })
 
@@ -1212,12 +1303,23 @@ describe("a turn the person's Escape ended", () => {
       reply: null,
       at: 30,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
     // Nothing is left to lapse, so the Stop held before is never the end.
     expect(lapsed(interrupted, 20)).toBeUndefined()
     // Nor does a record of the interruption: it names the Escape's own end.
     const recorded = stop(told, 30, { outcome: "interrupted", recorded: true })
-    expect(outcome(recorded)).toEqual({ outcome: "interrupted", reply: null, at: 20, gist: null })
+    expect(outcome(recorded)).toEqual({
+      outcome: "interrupted",
+      reply: null,
+      at: 20,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
     expect(lapsed(recorded, 20)).toBeUndefined()
   })
 
@@ -1228,12 +1330,23 @@ describe("a turn the person's Escape ended", () => {
       reply: null,
       at: 22,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
   })
 
   it("reads interrupted when the window passes with nothing said", () => {
     const quiet = lapsed(stopped, 20)
-    expect(outcome(quiet)).toEqual({ outcome: "interrupted", reply: null, at: 20, gist: null })
+    expect(outcome(quiet)).toEqual({
+      outcome: "interrupted",
+      reply: null,
+      at: 20,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
     // The window is closed: a lapse again changes nothing.
     expect(
       apply(quiet, binding, fact({ type: "turn-escape-lapsed", startedAt: 20 })),
@@ -1245,14 +1358,30 @@ describe("a turn the person's Escape ended", () => {
     const antigravity = escaped(turn(started(0, true, false), 10), 20)
     const kept = on(antigravity, { type: "turn-escape-lapsed", startedAt: 20, reply: "Too late." })
     expect(summary(kept)).toMatchObject({ state: "idle" })
-    expect(outcome(kept)).toEqual({ outcome: "completed", reply: "Too late.", at: 21, gist: null })
+    expect(outcome(kept)).toEqual({
+      outcome: "completed",
+      reply: "Too late.",
+      at: 21,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
     // The window is closed: a lapse again changes nothing.
     expect(lapsed(kept, 20)).toBeUndefined()
     // A Stop told since stays the end, its own reply with it.
     const told = stop(stopped, 25, { reply: "Told." })
     expect(
       outcome(on(told, { type: "turn-escape-lapsed", startedAt: 20, reply: "Too late." })),
-    ).toEqual({ outcome: "completed", reply: "Told.", at: 25, gist: null })
+    ).toEqual({
+      outcome: "completed",
+      reply: "Told.",
+      at: 25,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
   })
 
   it("does not count a Stop from an earlier turn", () => {
@@ -1267,6 +1396,9 @@ describe("a turn the person's Escape ended", () => {
       reply: null,
       at: 20,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
     // Codex names the turn each record is of.
     const codex: Binding = { agent: "codex", sessionId: "s", instance: "7" }
@@ -1302,6 +1434,9 @@ describe("a turn the person's Escape ended", () => {
       reply: "Late.",
       at: 40,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
     // A new turn's own Escape is not closed by the earlier one's lapse.
     const next = escaped(turn(quiet, 50), 60)
@@ -1366,13 +1501,24 @@ describe("a turn the person's Escape ended", () => {
 
   it("keeps a record's turn and word that it was recorded, so the hook's Stop says more of the end", () => {
     const recorded = stop(stopped, 30, { recorded: true, reply: "Done." })
-    expect(outcome(recorded)).toEqual({ outcome: "completed", reply: "Done.", at: 30, gist: null })
+    expect(outcome(recorded)).toEqual({
+      outcome: "completed",
+      reply: "Done.",
+      at: 30,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
     expect(recorded.lastTurn?.recorded).toBe(true)
     expect(outcome(stop(recorded, 35, { reply: "Done, fully." }))).toEqual({
       outcome: "completed",
       reply: "Done, fully.",
       at: 30,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
   })
 
@@ -1393,6 +1539,9 @@ describe("a turn the person's Escape ended", () => {
       reply: "Done.",
       at: 40,
       gist: null,
+      error: null,
+      limit: null,
+      files: [],
     })
   })
 })
@@ -1510,7 +1659,14 @@ describe("murmur's headlines and gists", () => {
     const recorded = stop(running, 3, { recorded: true })
     const gisted = withGist(recorded, 3, { text: "Fixed it", asks: false })!
     const other = stop(gisted, 4, { outcome: "failed" })
-    expect(summary(other).lastTurn).toMatchObject({ outcome: "failed", at: 3, gist: null })
+    expect(summary(other).lastTurn).toMatchObject({
+      outcome: "failed",
+      at: 3,
+      gist: null,
+      error: null,
+      limit: null,
+      files: [],
+    })
   })
 
   it("takes both away when murmur is turned off, and says when it had none", () => {

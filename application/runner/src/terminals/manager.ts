@@ -2851,6 +2851,9 @@ export class Terminals {
     this.peers.release(thread)
   }
 
+  /** Stops a thread (A3 fills this in). */
+  stopThread(_thread: string): void {}
+
   /** The project a session belongs to, or the session itself when that cannot be told. */
   private projectOf(sessionId: string): string {
     try {

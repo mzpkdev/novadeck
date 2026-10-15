@@ -877,5 +877,8 @@ export const summary = ({
           reply: lastTurn.reply,
           at: lastTurn.at,
           gist: lastTurn.gist ?? null,
+          error: null,
+          limit: null,
+          files: [],
         },
 })

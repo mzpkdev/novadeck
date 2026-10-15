@@ -1083,6 +1083,7 @@ export class Messaging {
         held: messages.some(
           (message) => message.state === "held" && this.holdOf(message) === "release",
         ),
+        stopped: false,
         messages: messages.slice(-1000).map((message) => ({
           id: message.id,
           thread: message.thread,
