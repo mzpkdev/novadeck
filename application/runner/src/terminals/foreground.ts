@@ -263,14 +263,14 @@ const ps = (args: string[]): string =>
     stdio: ["ignore", "pipe", "ignore"],
   }).trim()
 
-// The name the person ran a macOS foreground program by, from its argv[0]; null when it
-// can't be read, or the program has already handed the terminal back to the shell. The
-// first word of the command line stands in for argv[0], which `ps` does not set apart.
+// The name the person ran a macOS foreground program by, from its argv[0], with its group;
+// null when it can't be read. The first word of the command line stands in for argv[0],
+// which `ps` does not set apart; -ww keeps a long one from being cut at 80 columns.
 const invokedName = (shellPid: number): { name: string; group: number } | null => {
   try {
     const group = Number(ps(["-o", "tpgid=", "-p", String(shellPid)]))
-    if (!Number.isSafeInteger(group) || group <= 0 || group === shellPid) return null
-    const name = basename(ps(["-o", "command=", "-p", String(group)]).split(" ")[0] ?? "")
+    if (!Number.isSafeInteger(group) || group <= 0) return null
+    const name = basename(ps(["-ww", "-o", "command=", "-p", String(group)]).split(" ")[0] ?? "")
       .replace(/^-/, "")
       .slice(0, nameChars)
     return name ? { name, group } : null
@@ -300,11 +300,14 @@ export const sampleForeground = (
   if (!name) return { process: null, group: null }
   if (process.platform === "darwin" && versionName.test(name)) {
     // Two ps runs block the loop, so only once per program, not each sample. A lookup that
-    // failed isn't kept, so the next sample tries again.
+    // failed isn't kept, so the next sample tries again; nor is one that found the shell's
+    // own group, which is either a program run in the shell's place or, as the program
+    // just exited, the shell back at its prompt.
     if (last?.reported === name) return last
     const invoked = invokedName(child.pid)
     if (!invoked) return { process: { name, argv: null }, group: null }
-    return { process: { name: invoked.name, argv: null }, group: invoked.group, reported: name }
+    const found = { process: { name: invoked.name, argv: null }, group: invoked.group }
+    return invoked.group === child.pid ? found : { ...found, reported: name }
   }
   if (process.platform !== "linux") return { process: { name, argv: null }, group: null }
   try {

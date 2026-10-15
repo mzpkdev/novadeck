@@ -72,27 +72,43 @@ describe("a process's name, as /proc names it", () => {
   })
 })
 
-describe("macOS foreground naming", () => {
-  it.skipIf(process.platform !== "darwin")(
-    "names a program by the link it ran through, not the versioned file the link points at",
-    async () => {
-      const dir = mkdtempSync(join(tmpdir(), "novadeck-version-"))
-      // A system binary copied here is killed for its broken signature, so build one.
-      writeFileSync(join(dir, "wait.c"), "#include <unistd.h>\nint main(){sleep(30);return 0;}")
-      execFileSync("cc", [join(dir, "wait.c"), "-o", join(dir, "2.1.300")])
-      symlinkSync(join(dir, "2.1.300"), join(dir, "claude"))
-      const child = spawn(join(dir, "claude"), [], { name: "xterm-256color" })
-      try {
-        // The name is the program's only once the spawned process has run exec.
-        await vi.waitFor(() => expect(child.process).toBe("2.1.300"))
-        const first = sampleForeground(child, undefined)
-        expect(first.process?.name).toBe("claude")
-        // ps runs once per program, not again each sample while it holds the foreground.
-        expect(sampleForeground(child, first)).toBe(first)
-      } finally {
-        child.kill()
-        rmSync(dir, { recursive: true, force: true })
-      }
-    },
-  )
+describe.skipIf(process.platform !== "darwin")("macOS foreground naming", () => {
+  // A program installed as a link into a versioned file, as Claude Code is. A system binary
+  // copied here is killed for its broken signature, so build one.
+  const versioned = (): { dir: string; link: string } => {
+    const dir = mkdtempSync(join(tmpdir(), "novadeck-version-"))
+    writeFileSync(join(dir, "wait.c"), "#include <unistd.h>\nint main(){sleep(30);return 0;}")
+    execFileSync("cc", [join(dir, "wait.c"), "-o", join(dir, "2.1.300")])
+    symlinkSync(join(dir, "2.1.300"), join(dir, "claude"))
+    return { dir, link: join(dir, "claude") }
+  }
+
+  it("names a program run from the shell by its link, asking ps once while it runs", async () => {
+    const { dir, link } = versioned()
+    // An interactive shell runs it as a job of its own, holding the terminal, as at a prompt.
+    const child = spawn("/bin/zsh", ["-fic", `"${link}"; :`], { name: "xterm-256color" })
+    try {
+      await vi.waitFor(() => expect(child.process).toBe("2.1.300"))
+      const first = sampleForeground(child, undefined)
+      expect(first.process?.name).toBe("claude")
+      expect(first.group).not.toBe(child.pid)
+      expect(sampleForeground(child, first)).toBe(first)
+    } finally {
+      child.kill()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("names a program run in the shell's place by its link too", async () => {
+    const { dir, link } = versioned()
+    const child = spawn(link, [], { name: "xterm-256color" })
+    try {
+      // The name is the program's only once the spawned process has run exec.
+      await vi.waitFor(() => expect(child.process).toBe("2.1.300"))
+      expect(sampleForeground(child, undefined).process?.name).toBe("claude")
+    } finally {
+      child.kill()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
