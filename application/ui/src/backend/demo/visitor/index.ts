@@ -7,7 +7,7 @@ import { visitorSeed } from "./seed"
 import { visitorStory } from "./story"
 
 // How long a visitor's agent works on a turn, in milliseconds: long enough to read as work.
-export const visitorTurnMs = 4000
+const visitorTurnMs = 4000
 
 // The demo for a website's visitors: a tidy desk (see `visitorSeed`) whose agents move on
 // only as the visitor answers them (see `visitorStory`), and without what a browser page

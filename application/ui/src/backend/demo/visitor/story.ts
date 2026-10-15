@@ -1,7 +1,7 @@
 import type { TerminalMetadata, Workspace } from "../../../model/types"
 import type { Backend, BackendSink, TerminalKey } from "../../port"
 import { demoHandle } from "../handles"
-import { demoTerminalId } from "../samples"
+import { demoAgent, demoTerminalId } from "../samples"
 import { createShowcase } from "../showcase/simulation"
 import { orderSummary } from "../showcase/storefront"
 import { terminalOf } from "../terminals"
@@ -20,7 +20,7 @@ const claude: TerminalKey = { ...session, terminalId: demoTerminalId(session, 1)
 const codex: TerminalKey = { ...session, terminalId: demoTerminalId(session, 4) }
 
 // How long Codex takes to ask after Claude Code's turn ends, in milliseconds.
-export const visitorNudgeMs = 5000
+const visitorNudgeMs = 5000
 
 const same = (a: TerminalKey, b: TerminalKey): boolean =>
   a.projectId === b.projectId &&
@@ -40,7 +40,7 @@ const asking = (workspace: Workspace): boolean =>
 // Still at work and asking nothing: Codex as the desk opened, not stopped or prompted.
 const reviewing = (terminal: TerminalMetadata | undefined): terminal is TerminalMetadata =>
   terminal?.state === "running" &&
-  terminal.process === "codex" &&
+  demoAgent(terminal) === "codex" &&
   terminal.agent?.working === true &&
   terminal.agent.attention === undefined
 
@@ -70,11 +70,12 @@ export const visitorStory = (
         },
       },
     },
-    // Codex's review, without the terminal it opened, which this desk doesn't have. Allowed
-    // to, it runs the checkout tests as its screen tells a command, and reports.
+    // Codex's review, without the terminal it opened, which this desk doesn't have, and
+    // without the test run it asks for: allowed to, it runs the checkout tests then, as its
+    // screen tells a command, and reports.
     "04": {
       ...review,
-      items: review.items.filter((item) => item.call !== "call_04n"),
+      items: review.items.filter((item) => item.call !== "call_04n" && item.call !== "call_04d"),
       outcomes: {
         "04:permission": (answer, dialog) => {
           const outcome = review.outcomes!["04:permission"]!(answer, dialog)
@@ -85,13 +86,13 @@ export const visitorStory = (
                 role: "assistant",
                 kind: "tool-call",
                 tool: "Ran",
-                call: "call_04e",
+                call: "call_04d",
                 text: JSON.stringify({ command: "pnpm test --filter checkout" }),
               },
               {
                 role: "tool",
                 kind: "tool-result",
-                call: "call_04e",
+                call: "call_04d",
                 text: "Test Files 3 passed · Tests 41 passed",
               },
             ],

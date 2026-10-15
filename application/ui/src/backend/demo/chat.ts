@@ -135,8 +135,8 @@ export const createDemoChat = (
     }
   >()
   let requested = 0
-  // The transcript requests each agent has asked, other than its plan, by terminal and the
-  // request's id in its transcript: each is asked once, then the agent makes one up.
+  // The transcript requests each agent has asked, by terminal and the request's id in its
+  // transcript: each but a plan is asked once, then the agent makes one up.
   const asked = new Set<string>()
   // What each terminal's agent was sent while it worked, oldest first, and which agent it
   // was for: a later agent in the terminal never gets it.
