@@ -50,16 +50,9 @@
    handle, which slides out to the left as they come in, so nothing else on the line
    moves. They wait a moment under the pointer, so sweeping it down the list leaves the
    tabs it crosses alone. Without a pointer that hovers, they all stay, and the handle
-   follows the program on its line instead. */
+   follows the program on its line instead, whole: the program gives way before it. */
 .icon-button.terminal-tab-revealed {
   transition: opacity var(--motion-feedback) var(--ease-interface);
-}
-/* On the line, the handle gives way before the program does. */
-.handle-chip.terminal-tab-handle {
-  flex-shrink: 1000;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .terminal-tab-handle::before {
   content: "· ";
@@ -318,8 +311,9 @@
 .terminal-tab.selected .terminal-tab-subagents .terminal-tab-subagent::before {
   animation-play-state: paused;
 }
-/* Its actions stay beside its line, however tall the rows make the tab. */
-.terminal-tab:has(.terminal-tab-branches) .sidebar-item-actions {
+/* Its actions, and the handle in their slot, stay beside its line, however tall the rows
+   make the tab. */
+.terminal-tab:has(.terminal-tab-branches) :is(.sidebar-item-actions, .terminal-tab-handle) {
   top: 33px;
   bottom: auto;
 }

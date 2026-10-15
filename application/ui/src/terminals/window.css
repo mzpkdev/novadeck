@@ -126,7 +126,8 @@
 /* The switcher at the start of the header (WindowShell.tsx) holds the program's icon and
    the terminal's handle. The sidebar shows every handle, so here the handle unfolds beside
    the icon only under the pointer or with keyboard focus, waiting a moment under the
-   pointer so one passing over leaves it folded. */
+   pointer so one passing over leaves it folded. Without a pointer that hovers, which a
+   tap can't reveal it to, it stays out. */
 .icon-button.terminal-switch {
   width: auto;
   min-width: 2rem;
@@ -144,6 +145,13 @@
   max-width: 12ch;
   padding-left: 0.375rem;
   opacity: 1;
+}
+@media (hover: none) {
+  .terminal-switch .terminal-switch-handle {
+    max-width: 12ch;
+    padding-left: 0.375rem;
+    opacity: 1;
+  }
 }
 .terminal-switch:hover .terminal-switch-handle {
   transition-delay: 60ms;
