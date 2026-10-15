@@ -168,13 +168,13 @@ const priority: Record<Task, number> = { headline: 0, gist: 1, title: 2 }
 const parsers = { title: parseDescription, headline: parseHeadline, gist: parseGist } as const
 
 // What the install check takes for a working GPU: a reply that is a JSON object with a
-// title. The check asks whether the engine runs the model and writes its reply in the
+// title of at least two letters in a row (a broken backend writes junk the grammar still closes). The check asks whether the engine runs the model and writes its reply in the
 // format, not whether the title is one murmur would show (those rules change with the
 // prompt, and a check that shared them failed on every machine when they did).
 const parseCheck = (raw: string): Description | undefined => {
   try {
     const title = (JSON.parse(raw) as { title?: unknown } | null)?.title
-    return typeof title === "string" && title.trim() !== ""
+    return typeof title === "string" && /\p{L}{2}/u.test(title)
       ? { title: title.trim(), changed: true }
       : undefined
   } catch {

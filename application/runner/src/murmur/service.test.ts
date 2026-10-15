@@ -216,6 +216,15 @@ describe("installing murmur", () => {
     expect(murmur.state().check).not.toBeNull()
   })
 
+  it("rejects a GPU whose title is symbols only, though the format holds", async ({
+    resources,
+  }) => {
+    const { murmur } = await installed(resources, { behaviour: "junk" })
+
+    expect(murmur.state().check).toBeNull()
+    expect(murmur.state().failure).toMatch(/needs a working GPU/)
+  })
+
   it("rejects a GPU that answers with something else than a description", async ({ resources }) => {
     const { murmur } = await installed(resources, { behaviour: "garbage" })
 
