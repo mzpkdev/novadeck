@@ -62,6 +62,21 @@ export const docOf = ({ stamp, plan }: PlanVersion): PlanDoc => ({
 // Why the person's edits can't reach the plan's file, if they can't: its content says it
 // is gone, the backend can't write it, or a save said so. Saving can't work then until
 // something changes.
+// Whether the content says the file can't be read for now, which saves can't get past
+// either, though trying again may help.
+export const unreadableNow = (content: ItemContent | undefined): boolean =>
+  content?.state === "unavailable" && content.reason === "unreadable"
+
+// Edits the file doesn't hold and can't take for now: they live only in the pane, so
+// closing the plan loses them.
+export const stuckEdits = (plan: PlanDoc, content: ItemContent | undefined): boolean =>
+  plan.writable &&
+  plan.text !== plan.base &&
+  (plan.blocked !== null ||
+    plan.stalled ||
+    blockOf(plan, content) === "gone" ||
+    unreadableNow(content))
+
 export const blockOf = (
   plan: PlanDoc,
   content: ItemContent | undefined,

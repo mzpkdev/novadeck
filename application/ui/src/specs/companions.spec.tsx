@@ -206,7 +206,7 @@ describe("A plan whose edits can't be saved", () => {
     await expect
       .element(
         pane.getByText(
-          "Novadeck can't write to this plan's folder, so your edits can't be saved. They're still here.",
+          "Novadeck can't write to this plan's folder, so your edits can't be saved. Your edits are kept here until you close this plan.",
         ),
       )
       .toBeVisible()
@@ -218,6 +218,25 @@ describe("A plan whose edits can't be saved", () => {
     await expect.poll(() => notice() !== null && notice() !== before).toBe(true)
     await expect.element(pane.getByText(/Novadeck can't write to this plan's folder/)).toBeVisible()
     expect(pane.element().querySelector(".cm-content")!.textContent).toContain("Draft ")
+  })
+
+  it("asks before closing the plan once it was placed elsewhere, copying the edits first", async () => {
+    await typeInto("folder")
+    await dragIconToBar("Build Studio", "Plan: A home for Studio", "Refactor auth")
+    // Beside Refactor auth's own plan, which only hides; the placed one would be lost.
+    await chooseFromIconMenu("Refactor auth", "2 plans", "Close 2 plans")
+    const dialog = page.getByRole("alertdialog")
+    await expect
+      .element(dialog.getByText(/couldn't be saved, and closing it loses them/))
+      .toBeVisible()
+    await dialog.getByRole("button", { name: "Cancel" }).click()
+    await expect.element(dialog).not.toBeInTheDocument()
+    const placed = taskbarIcon("Refactor auth", "Plan: A home for Studio")
+    await expect.element(placed).toBeVisible()
+
+    await chooseFromIconMenu("Refactor auth", "Plan: A home for Studio", "Close")
+    await page.getByRole("button", { name: "Copy my edits and close" }).click()
+    await expect.element(placed).not.toBeInTheDocument()
   })
 
   it("keeps saying a plan in its agent's messages is read-only", async () => {

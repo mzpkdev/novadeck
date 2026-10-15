@@ -14,7 +14,7 @@ import { ArtifactViewer, CopyText, Unavailable } from "./ArtifactViewer"
 import type { BarMember } from "./bar"
 import type { MailHandle } from "./mail"
 import { MessagesView } from "./MessagesView"
-import { blockOf, currentMarks, type PlanDoc } from "./plan-doc"
+import { blockOf, currentMarks, unreadableNow, type PlanDoc } from "./plan-doc"
 import type { PlanEditorHandle } from "./plan-editor/PlanEditor"
 import { headingsOf } from "./plan-text"
 import type { PlanActions, Panes, PlanPresentation } from "./state"
@@ -127,13 +127,13 @@ export const ArtifactTab = ({
 const blockedText = (reason: PlanUnwritableReason, agent: string): string => {
   switch (reason) {
     case "gone":
-      return "This plan's file was deleted, so your edits can't be saved. They're still here."
+      return "This plan's file was deleted, so your edits can't be saved. Your edits are kept here until you close this plan."
     case "folder":
-      return "Novadeck can't write to this plan's folder, so your edits can't be saved. They're still here."
+      return "Novadeck can't write to this plan's folder, so your edits can't be saved. Your edits are kept here until you close this plan."
     case "too-large":
-      return "This plan is too large for Novadeck to save your edits. They're still here."
+      return "This plan is too large for Novadeck to save your edits. Your edits are kept here until you close this plan."
     case "not-a-plan":
-      return "Novadeck can't write to this, since it isn't a plan file, so your edits can't be saved. They're still here."
+      return "Novadeck can't write to this, since it isn't a plan file, so your edits can't be saved. Your edits are kept here until you close this plan."
     case "transcript":
       return readOnlyText(agent)
   }
@@ -169,6 +169,7 @@ const PlanBody = ({
   item,
   plan,
   block,
+  unreadable,
   actions,
   pane,
 }: {
@@ -176,6 +177,8 @@ const PlanBody = ({
   plan: PlanDoc
   // Why saving can't work, if it can't.
   block: PlanUnwritableReason | null
+  // The file can't be read for now, which may pass.
+  unreadable: boolean
   actions: ReactNode
   pane: PlanActions
 }): React.JSX.Element => {
@@ -208,7 +211,7 @@ const PlanBody = ({
             <span>{plan.showChanges ? "Hide" : "Show"}</span>
           </button>
         )}
-        {plan.unsaved && !plan.stalled && !block && (
+        {plan.unsaved && !plan.stalled && !block && !unreadable && (
           <span className="plan-meta-hint">Not saved yet. Trying again.</span>
         )}
         {plan.resolved > 0 && plan.marked === plan.text && (
@@ -243,7 +246,15 @@ const PlanBody = ({
           retryLabel="Try saving again"
         />
       )}
-      {!readOnly && !block && plan.stalled && (
+      {!readOnly && !block && unreadable && (
+        <PlanNotice
+          text="Novadeck can't read this plan right now, so your edits can't be saved. Your edits are kept here until you close this plan."
+          edits={copyable}
+          retry={pane.retry}
+          retryLabel="Retry"
+        />
+      )}
+      {!readOnly && !block && !unreadable && plan.stalled && (
         <PlanNotice
           text="Novadeck couldn't save your edits after 5 tries."
           edits={copyable}
@@ -289,8 +300,12 @@ export const PlanTab = ({
 }): React.JSX.Element => {
   const plan = usePlan(panes, item.id)
   const content = useContent(panes, target, item)
-  // A plan whose file is gone still shows the person's edits, which have nowhere to go.
-  const kept = plan !== undefined && plan.text !== plan.base && blockOf(plan, content) === "gone"
+  // A plan whose file is gone or can't be read still shows the person's edits, which have
+  // nowhere to go.
+  const kept =
+    plan !== undefined &&
+    plan.text !== plan.base &&
+    (blockOf(plan, content) === "gone" || unreadableNow(content))
   if (content?.state === "unavailable" && !kept)
     return <Unavailable item={item} reason={content.reason} size={content.size} actions={actions} />
   return plan ? (
@@ -300,6 +315,7 @@ export const PlanTab = ({
       item={item}
       plan={plan}
       block={blockOf(plan, content)}
+      unreadable={unreadableNow(content)}
       actions={actions}
       pane={panes.plan(target, item.id)}
     />
