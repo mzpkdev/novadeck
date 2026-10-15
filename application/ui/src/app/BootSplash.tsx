@@ -76,7 +76,7 @@ export const BootSplash = ({
           <span className="flex flex-col gap-2.5">
             <Wordmark
               animated={!finished}
-              className="boot-splash-word -mt-[0.08em] -mb-[0.12em] overflow-hidden pt-[0.08em] pb-[0.12em] text-[52px] leading-none"
+              className="-mt-[0.08em] -mb-[0.12em] overflow-hidden pt-[0.08em] pb-[0.12em] text-[52px] leading-none"
             />
             <span className="boot-splash-tag pl-[3px] text-lead leading-[18px]">
               Terminals, on deck.
