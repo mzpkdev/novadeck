@@ -324,7 +324,7 @@ export type Runner = {
     /**
      * Writes the person's edit to a plan kept in a file, unless it changed since `basedOn`,
      * the stamp the edit was made on: then nothing is written and the plan as it now
-     * stands is `current`. Rejects with `NOT_FOUND`, or `INVALID_FILE` saying why for a
+     * stands is `current`. Rejects with `NOT_FOUND`, or `PLAN_UNWRITABLE` saying why for a
      * plan the agent keeps in its transcript, a file gone or past 256 KiB.
      */
     save(input: {
