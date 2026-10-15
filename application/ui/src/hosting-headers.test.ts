@@ -4,9 +4,9 @@ import { describe, expect, it } from "./test"
 describe("the visitor build's hosting headers", () => {
   const lines = tryHeaders().split("\n")
 
-  it("lets only the website and its previews frame the demo", () => {
+  it("lets only the website frame the demo", () => {
     expect(lines).toContain(
-      "  Content-Security-Policy: frame-ancestors 'self' https://novadeck.dev https://novadeck-website.pages.dev https://*.novadeck-website.pages.dev",
+      "  Content-Security-Policy: frame-ancestors 'self' https://novadeck.dev",
     )
   })
 

@@ -845,8 +845,8 @@ https://try.novadeck.dev, beside the website, so the demo always shows a publish
 version. Until launch, Release runs it for each version it publishes, prereleases
 included; at launch it moves to Promote to Stable, so the demo shows what Download gives
 people. Run workflow deploys a tag by hand. Quality builds it on every pull request. The
-build carries a `_headers` file (`src/hosting-headers.ts`): only novadeck.dev and the
-website's preview deploys may frame it, nothing of it is indexed, and hashed assets are
+build carries a `_headers` file (`src/hosting-headers.ts`): only novadeck.dev may frame
+it, nothing of it is indexed, and hashed assets are
 kept for good.
 
 Setting it up takes a Cloudflare Pages project named `novadeck-try`, made in the dashboard
