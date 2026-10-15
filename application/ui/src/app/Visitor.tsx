@@ -12,7 +12,7 @@ import { currentState, shallowEqual } from "./selectors"
 import { done, hints, noticed, openedMarked, type Seen } from "./visitor-hints"
 
 // Where a visitor gets the app.
-const downloadUrl = "https://novadeck.dev"
+const downloadUrl = "https://novadeck.dev/download"
 
 const Download = ({ className }: { readonly className: string }): React.JSX.Element => (
   <a className={className} href={downloadUrl} target="_blank" rel="noopener noreferrer">
