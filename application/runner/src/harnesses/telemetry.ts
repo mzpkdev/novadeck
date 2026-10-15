@@ -1,7 +1,7 @@
 import type { TelemetryObserved } from "@novadeck/harness-core/events"
 import type { AgentTelemetry } from "@novadeck/protocol"
 
-import { bound } from "./activity.js"
+import { bound, type LastTurn } from "./activity.js"
 import type { Binding } from "./bindings.js"
 
 /**
@@ -59,3 +59,35 @@ export const telemetrySummary = ({
   model,
   effort,
 })
+
+type Window = AgentTelemetry["limits"][number]
+
+/**
+ * The usage-limit window the last turn ran into, or null: the turn was not interrupted and
+ * has none yet, and either its harness said it failed on a limit or some window with a
+ * reset to come (after the turn ended) is used up. Of the used-up windows the one that
+ * resets last, as nothing runs before it does; a harness's word with no window used up
+ * takes the most-used one. Latch it on the turn (`withLimit`): it stays after the window's
+ * records move on.
+ */
+export const limitOf = (
+  lastTurn: LastTurn | null,
+  limits: readonly Window[],
+): { minutes: number | null; resetsAt: number } | null => {
+  if (!lastTurn || lastTurn.outcome === "interrupted" || lastTurn.limit) return null
+  const ahead = limits.filter(
+    (window): window is Window & { resetsAt: number } =>
+      window.resetsAt !== null && window.resetsAt > lastTurn.at,
+  )
+  const spent = ahead.filter(({ used }) => used >= 1)
+  const pick =
+    spent.length > 0
+      ? spent.reduce((a, b) => (b.resetsAt > a.resetsAt ? b : a))
+      : lastTurn.limited
+        ? ahead.reduce<(Window & { resetsAt: number }) | null>(
+            (a, b) => (!a || b.used > a.used ? b : a),
+            null,
+          )
+        : null
+  return pick && { minutes: pick.minutes, resetsAt: pick.resetsAt }
+}

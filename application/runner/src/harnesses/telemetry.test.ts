@@ -1,8 +1,9 @@
 import type { TelemetryObserved } from "@novadeck/harness-core/events"
 
 import { describe, expect, it } from "../test.js"
+import type { LastTurn } from "./activity.js"
 import type { Binding } from "./bindings.js"
-import { observeTelemetry, telemetrySummary } from "./telemetry.js"
+import { limitOf, observeTelemetry, telemetrySummary } from "./telemetry.js"
 
 const binding: Binding = { agent: "codex", sessionId: "s", instance: null }
 const seen = (fields: Partial<TelemetryObserved>): TelemetryObserved => ({
@@ -80,5 +81,60 @@ describe("observing telemetry", () => {
     expect(
       observeTelemetry(first, binding, seen({ sessionId: "t", limits: [limit] })),
     ).toBeUndefined()
+  })
+})
+
+describe("the limit a turn ran into", () => {
+  const turn = (fields: Partial<LastTurn> = {}): LastTurn => ({
+    outcome: "completed",
+    reply: null,
+    at: 1_000,
+    recorded: false,
+    files: [],
+    ...fields,
+  })
+  const window = (minutes: number | null, used: number, resetsAt: number | null) => ({
+    minutes,
+    used,
+    resetsAt,
+  })
+
+  it("takes a window used up, as the turn ended or since", () => {
+    expect(limitOf(turn(), [window(300, 0.4, 5_000), window(10_080, 1, 9_000)])).toEqual({
+      minutes: 10_080,
+      resetsAt: 9_000,
+    })
+  })
+
+  it("takes the one that resets last of several used up", () => {
+    expect(limitOf(turn(), [window(300, 1, 5_000), window(10_080, 1, 9_000)])).toEqual({
+      minutes: 10_080,
+      resetsAt: 9_000,
+    })
+  })
+
+  it("takes the most-used window when its harness said the turn hit a limit and none shows used up", () => {
+    const limited = turn({ outcome: "failed", limited: true })
+    expect(limitOf(limited, [window(300, 0.4, 5_000), window(10_080, 0.9, 9_000)])).toEqual({
+      minutes: 10_080,
+      resetsAt: 9_000,
+    })
+    expect(limitOf(turn({ outcome: "failed" }), [window(300, 0.4, 5_000)])).toBeNull()
+  })
+
+  it("takes none for a window with no reset to come, or an interrupted turn", () => {
+    expect(limitOf(turn(), [window(300, 1, null)])).toBeNull()
+    expect(limitOf(turn(), [window(300, 1, 900)])).toBeNull()
+    expect(
+      limitOf(turn({ outcome: "interrupted", limited: true }), [window(300, 1, 5_000)]),
+    ).toBeNull()
+    expect(limitOf(turn({ limited: true }), [])).toBeNull()
+    expect(limitOf(null, [window(300, 1, 5_000)])).toBeNull()
+  })
+
+  it("keeps the window it latched whatever the records say after", () => {
+    expect(
+      limitOf(turn({ limit: { minutes: 300, resetsAt: 5_000 } }), [window(300, 1, 9_000)]),
+    ).toBeNull()
   })
 })

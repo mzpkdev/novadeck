@@ -107,6 +107,12 @@ export type Activity = {
    * end left running since: until then, work its Stop said only exists may be one.
    */
   readonly listed: boolean
+  /**
+   * The absolute paths the running turn's write and edit tools wrote, root and subagents,
+   * first written first, each once; a turn's start empties it, unless the turn already ran
+   * (a continuation, or a call that resumes it).
+   */
+  readonly files: readonly string[]
   readonly lastTurn: LastTurn | null
 }
 
@@ -124,6 +130,14 @@ export type LastTurn = {
   readonly gist?: { readonly text: string; readonly asks: boolean }
   /** Set while the person's Escape is the only word on how the turn ended. */
   readonly escaped?: Escape
+  /** A failed turn's error as its harness said it. */
+  readonly error?: string
+  /** Its harness said the turn failed on a usage limit. */
+  readonly limited?: true
+  /** The usage-limit window this end ran into; see `limitOf`. Kept once set. */
+  readonly limit?: { readonly minutes: number | null; readonly resetsAt: number }
+  /** The files its turn wrote, as `Activity.files` held them at its end. */
+  readonly files: readonly string[]
 }
 
 type TurnEnded = Extract<ActivityEvent, { type: "turn-ended" }>
@@ -204,6 +218,7 @@ export const started = (at: number, wakes = true, records = true): Activity => (
   continued: false,
   skips: 0,
   listed: false,
+  files: [],
   lastTurn: null,
 })
 
@@ -308,6 +323,10 @@ const outliving = (
  * The turn's end as the activity takes it, for a root turn still running or one an Escape
  * ended before its harness said more.
  */
+/** How many files a turn names, and how long an error is kept. */
+export const maxFiles = 16
+const maxError = 2048
+
 const turnEnded = (activity: Activity, event: TurnEnded): Activity | undefined => {
   // Its records end only the turn still running, its own where they name one, and
   // leave its fence where it was, so the hook's own Stop, should it come after all,
@@ -319,6 +338,12 @@ const turnEnded = (activity: Activity, event: TurnEnded): Activity | undefined =
     (activity.state !== "working" || (named && activity.turn && named !== activity.turn))
   )
     return undefined
+  // The hook's own Stop after its records ended the turn says more of that end.
+  const again = activity.state === "idle" && activity.lastTurn?.recorded === true && !recorded
+  const before = again && activity.lastTurn!.outcome === event.outcome ? activity.lastTurn : null
+  const error =
+    event.outcome === "failed" ? event.error?.slice(0, maxError) || before?.error : undefined
+  const limited = event.outcome === "failed" && (event.limited || before?.limited)
   const turn = {
     state: "idle",
     turnAt: recorded ? activity.turnAt : event.startedAt,
@@ -336,11 +361,12 @@ const turnEnded = (activity: Activity, event: TurnEnded): Activity | undefined =
           : event.startedAt,
       recorded: recorded === true,
       // The same end again, told the same way, keeps the gist murmur wrote of it.
-      ...(activity.state === "idle" &&
-        activity.lastTurn?.recorded &&
-        !recorded &&
-        activity.lastTurn.outcome === event.outcome &&
-        activity.lastTurn.gist && { gist: activity.lastTurn.gist }),
+      ...(before?.gist && { gist: before.gist }),
+      // Likewise the error and limit either way of telling told, and the window latched.
+      ...(error && { error }),
+      ...(limited && { limited: true as const }),
+      ...(before?.limit && { limit: before.limit }),
+      files: activity.files,
     },
   } as const
   if (event.outcome !== "interrupted")
@@ -501,8 +527,18 @@ export const apply = (
       const kept = evicted < 0 ? activity.plans : activity.plans.toSpliced(evicted, 1)
       return { ...activity, plans: [...kept, next] }
     }
-    case "file-touched":
-      return undefined
+    case "file-touched": {
+      const { path } = event
+      if (
+        activity.state !== "working" ||
+        path.length === 0 ||
+        path.length > 1024 ||
+        activity.files.length >= maxFiles ||
+        activity.files.includes(path)
+      )
+        return undefined
+      return { ...activity, files: [...activity.files, path] }
+    }
     case "mode-observed":
       if (event.startedAt < activity.planningAt) return undefined
       return { ...activity, planning: event.planning, planningAt: event.startedAt }
@@ -596,6 +632,8 @@ export const apply = (
         turn: event.turn ?? null,
         continued: false,
         skips: 0,
+        // A call that resumes a turn running, or a continuation, adds to its files.
+        files: activity.state === "working" ? activity.files : [],
         lastTurn: null,
       }
     case "turn-continued":
@@ -639,7 +677,13 @@ export const apply = (
         running: 0,
         listed: true,
         // An Escape or a refusal, which only an idle status line tells.
-        lastTurn: { outcome: "unknown", reply: null, at: event.startedAt, recorded: false },
+        lastTurn: {
+          outcome: "unknown",
+          reply: null,
+          at: event.startedAt,
+          recorded: false,
+          files: activity.files,
+        },
       }
     }
     case "turn-escaped":
@@ -659,6 +703,7 @@ export const apply = (
           reply: null,
           at: event.startedAt,
           recorded: false,
+          files: activity.files,
           escaped: {
             from: activity.turnAt,
             key: event.startedAt,
@@ -808,6 +853,19 @@ export const withGist = (
   return { ...activity, lastTurn: { ...lastTurn, gist: { text: gist.text, asks: gist.asks } } }
 }
 
+/**
+ * The activity with the usage-limit window its last turn ran into, once none runs and the
+ * turn has none yet; undefined otherwise.
+ */
+export const withLimit = (
+  activity: Activity,
+  limit: { readonly minutes: number | null; readonly resetsAt: number },
+): Activity | undefined => {
+  const { lastTurn } = activity
+  if (activity.state === "working" || !lastTurn || lastTurn.limit) return undefined
+  return { ...activity, lastTurn: { ...lastTurn, limit: { ...limit } } }
+}
+
 const unheadlined = (request: Request): Request => {
   const { headline: _, ...rest } = request
   return rest
@@ -877,8 +935,8 @@ export const summary = ({
           reply: lastTurn.reply,
           at: lastTurn.at,
           gist: lastTurn.gist ?? null,
-          error: null,
-          limit: null,
-          files: [],
+          error: lastTurn.error ?? null,
+          limit: lastTurn.limit ?? null,
+          files: [...lastTurn.files],
         },
 })

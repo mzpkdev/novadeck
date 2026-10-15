@@ -13,6 +13,7 @@ import {
   subagentRef,
   summary,
   withGist,
+  withLimit,
   withHeadline,
   withoutNotes,
   type Activity,
@@ -1622,6 +1623,9 @@ describe("murmur's headlines and gists", () => {
       reply: "Done.",
       at: 2,
       gist: { text: "Fixed the rounding bug", asks: true },
+      error: null,
+      limit: null,
+      files: [],
     })
     // Once only; and the outcome is never changed by it.
     expect(withGist(gisted, 2, { text: "Other", asks: false })).toBeUndefined()
@@ -1649,6 +1653,9 @@ describe("murmur's headlines and gists", () => {
       reply: "All green.",
       at: 3,
       gist: { text: "Fixed it", asks: false },
+      error: null,
+      limit: null,
+      files: [],
     })
     // Another end of its own is a new one.
     const other = stop(turn(gisted, 5), 6, { reply: "More." })
@@ -1677,5 +1684,121 @@ describe("murmur's headlines and gists", () => {
     const gisted = withGist(stop(running, 2), 2, { text: "Fixed it", asks: false })!
     expect(summary(withoutNotes(gisted)!).lastTurn?.gist).toBeNull()
     expect(withoutNotes(withoutNotes(gisted)!)).toBeUndefined()
+  })
+})
+
+describe("what a turn wrote and how it failed", () => {
+  const binding: Binding = { agent: "claude", sessionId: "s", instance: "7" }
+  type Fields = Parameters<typeof fact>[0]
+  const on = (activity: Activity, fields: object) =>
+    apply(activity, binding, fact(fields as Fields))!
+  const turn = (activity: Activity, startedAt: number, cause = "prompt") =>
+    on(activity, { type: "turn-started", cause, startedAt })
+  const wrote = (activity: Activity, path: string, startedAt: number) =>
+    on(activity, { type: "file-touched", actor: null, path, startedAt })
+  const stop = (activity: Activity, startedAt: number, extra: object = {}) =>
+    on(activity, { type: "turn-ended", outcome: "completed", startedAt, ...extra })
+
+  it("names the files a turn wrote once each, first written first, until the turn ends", () => {
+    let activity = turn(started(0), 1)
+    activity = wrote(activity, "/w/a.ts", 2)
+    activity = wrote(activity, "/w/b.ts", 3)
+    expect(
+      apply(
+        activity,
+        binding,
+        fact({ type: "file-touched", actor: null, path: "/w/a.ts", startedAt: 4 } as Fields),
+      ),
+    ).toBeUndefined()
+    expect(summary(activity).lastTurn).toBeNull()
+    expect(summary(stop(activity, 5)).lastTurn?.files).toEqual(["/w/a.ts", "/w/b.ts"])
+  })
+
+  it("keeps at most 16 files and ignores a path too long to show", () => {
+    let activity = turn(started(0), 1)
+    for (let n = 0; n < 20; n++)
+      activity =
+        apply(
+          activity,
+          binding,
+          fact({
+            type: "file-touched",
+            actor: null,
+            path: `/w/${n}.ts`,
+            startedAt: 2 + n,
+          } as Fields),
+        ) ?? activity
+    activity =
+      apply(
+        activity,
+        binding,
+        fact({
+          type: "file-touched",
+          actor: null,
+          path: `/${"x".repeat(1024)}`,
+          startedAt: 30,
+        } as Fields),
+      ) ?? activity
+    const { files } = summary(stop(activity, 40)).lastTurn!
+    expect(files).toHaveLength(16)
+    expect(files[0]).toBe("/w/0.ts")
+    expect(files.at(-1)).toBe("/w/15.ts")
+  })
+
+  it("empties the files when a new turn starts, but not when the turn already ran", () => {
+    let activity = wrote(turn(started(0), 1), "/w/a.ts", 2)
+    // A call that resumes the running turn (Antigravity's) adds to it.
+    activity = wrote(turn(activity, 3, "call"), "/w/b.ts", 4)
+    expect(summary(stop(activity, 5)).lastTurn?.files).toEqual(["/w/a.ts", "/w/b.ts"])
+    const ended = stop(activity, 5)
+    expect(summary(stop(turn(ended, 6), 7)).lastTurn?.files).toEqual([])
+    // A continued Stop resumes the same turn: its files stay.
+    const continued = on(ended, { type: "turn-continued", startedAt: 5 })
+    expect(summary(stop(wrote(continued, "/w/c.ts", 6), 7)).lastTurn?.files).toEqual([
+      "/w/a.ts",
+      "/w/b.ts",
+      "/w/c.ts",
+    ])
+  })
+
+  it("tells a failed turn's error, trimmed to what the wire holds, and no error of any other", () => {
+    const failed = stop(turn(started(0), 1), 2, { outcome: "failed", error: "x".repeat(3000) })
+    expect(summary(failed).lastTurn?.error).toHaveLength(2048)
+    expect(summary(stop(turn(started(0), 1), 2, { error: "ignored" })).lastTurn?.error).toBeNull()
+    expect(summary(stop(turn(started(0), 1), 2, { outcome: "failed" })).lastTurn?.error).toBeNull()
+  })
+
+  it("keeps the error and the limit of an end when the hook's Stop fills it in, the records told it first", () => {
+    const records = stop(turn(started(0), 1), 2, {
+      outcome: "failed",
+      recorded: true,
+      error: "out of quota",
+      limited: true,
+    })
+    const limited = withLimit(records, { minutes: 300, resetsAt: 9_000 })!
+    const hook = stop(limited, 3, { outcome: "failed" })
+    expect(summary(hook).lastTurn).toMatchObject({
+      at: 2,
+      error: "out of quota",
+      limit: { minutes: 300, resetsAt: 9_000 },
+    })
+    // Told by the hook alone, it shows the same.
+    const first = stop(turn(started(0), 1), 2, { outcome: "failed", error: "rate limited" })
+    expect(summary(first).lastTurn).toMatchObject({ error: "rate limited", limit: null })
+    // An end told another way drops them.
+    expect(summary(stop(limited, 3, { outcome: "interrupted" })).lastTurn).toMatchObject({
+      error: null,
+      limit: null,
+    })
+  })
+
+  it("latches a limit on the last turn only once, while none runs, and drops it with the next turn", () => {
+    const running = turn(started(0), 1)
+    expect(withLimit(running, { minutes: null, resetsAt: 9 })).toBeUndefined()
+    const ended = stop(running, 2)
+    const latched = withLimit(ended, { minutes: null, resetsAt: 9 })!
+    expect(summary(latched).lastTurn?.limit).toEqual({ minutes: null, resetsAt: 9 })
+    expect(withLimit(latched, { minutes: 5, resetsAt: 10 })).toBeUndefined()
+    expect(summary(turn(latched, 3)).lastTurn).toBeNull()
   })
 })

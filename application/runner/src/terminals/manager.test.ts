@@ -2021,3 +2021,65 @@ describe("saving a terminal that was closed", () => {
     }
   })
 })
+
+describe("a usage limit a turn ran into", () => {
+  type Inside = {
+    records: Map<
+      string,
+      { binding: unknown; activity: Activity | null; summary: { activity: unknown } }
+    >
+    applyFact: (record: unknown, fact: ActivityEvent) => boolean
+  }
+
+  it("latches the window its records show used up, as the turn ends or once it is idle, and keeps it", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as Inside
+    const record = inside.records.get(terminal.id)!
+    const binding = { agent: "claude", sessionId: "s", instance: null } as const
+    record.binding = binding
+    const tell = (fact: object) =>
+      inside.applyFact(record, { ...binding, ...fact } as ActivityEvent)
+    const lastTurn = () => record.activity?.lastTurn
+    const usage = (used: number, startedAt: number) =>
+      tell({
+        type: "telemetry-observed",
+        limits: [{ minutes: 300, used, resetsAt: 900_000 }],
+        startedAt,
+      })
+
+    // The window is used up before the turn ends.
+    record.activity = fresh(0)
+    usage(1, 5)
+    tell({ type: "turn-started", cause: "prompt", startedAt: 10 })
+    tell({
+      type: "turn-ended",
+      outcome: "failed",
+      startedAt: 20,
+      error: "Limit reached",
+      limited: true,
+    })
+    expect(lastTurn()).toMatchObject({
+      error: "Limit reached",
+      limit: { minutes: 300, resetsAt: 900_000 },
+    })
+
+    // It is used up only after the turn ended, and stays latched when the records move on.
+    record.activity = fresh(0)
+    usage(0.5, 25)
+    tell({ type: "turn-started", cause: "prompt", startedAt: 30 })
+    tell({ type: "turn-ended", outcome: "completed", startedAt: 40 })
+    expect(lastTurn()?.limit).toBeUndefined()
+    usage(1, 50)
+    expect(lastTurn()?.limit).toEqual({ minutes: 300, resetsAt: 900_000 })
+    usage(0.1, 60)
+    expect(lastTurn()?.limit).toEqual({ minutes: 300, resetsAt: 900_000 })
+    tell({ type: "turn-started", cause: "prompt", startedAt: 70 })
+    expect(lastTurn()).toBeNull()
+  })
+})
