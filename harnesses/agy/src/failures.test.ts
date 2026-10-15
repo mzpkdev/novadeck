@@ -52,6 +52,18 @@ describe("Antigravity's Stop with an error", () => {
     ).not.toHaveProperty("limited")
   })
 
+  it("reads the reason from the whole error, however long", () => {
+    const long = `generating and executing: Error 429, Message: ${"x".repeat(3000)}, Status: RESOURCE_EXHAUSTED, Details: [map[reason:RATE_LIMIT_EXCEEDED]]`
+    const event = ended({ terminationReason: "ERROR", error: long })
+    expect(event).toMatchObject({ outcome: "failed" })
+    expect(event).not.toHaveProperty("limited")
+    const spent = ended({
+      terminationReason: "ERROR",
+      error: `Error 429, Message: ${"x".repeat(3000)}, Status: RESOURCE_EXHAUSTED`,
+    })
+    expect(spent).toMatchObject({ limited: true })
+  })
+
   it("names no error for a completed turn", () => {
     const event = ended({ error: "", terminationReason: "NO_TOOL_CALL" })
     expect(event).toMatchObject({ outcome: "completed" })

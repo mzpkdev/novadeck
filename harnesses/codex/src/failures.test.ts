@@ -1,5 +1,7 @@
+import type { Report } from "@novadeck/harness-core/report"
 import { describe, expect, it } from "vitest"
 
+import { decode } from "./decode.js"
 import { rolloutEvents } from "./rollout.js"
 
 const run = { sessionId: "s", instance: "7" }
@@ -81,5 +83,36 @@ describe("Codex's FileChange item", () => {
   it("names none for a patch that failed, or a relative path", () => {
     expect(changed({ status: "failed", changes: { "/w/a.ts": {} } })).toEqual([])
     expect(changed({ status: "completed", changes: { "a.ts": {} } })).toEqual([])
+  })
+})
+
+describe("Codex's apply_patch PostToolUse", () => {
+  const patch = "*** Begin Patch\n*** Add File: /w/a.ts\n+x\n*** End Patch"
+  const touched = (response: unknown) =>
+    decode({
+      terminalId: "t",
+      token: "0".repeat(48),
+      agent: "codex",
+      event: "PostToolUse",
+      seq: 1,
+      instance: "7",
+      env: { cursor: false },
+      payload: {
+        session_id: "s",
+        tool_name: "apply_patch",
+        tool_input: { command: patch },
+        tool_response: response,
+      } as Report["payload"],
+    }).filter(({ type }) => type === "file-touched")
+
+  it("names the files of a patch that applied", () => {
+    expect(touched("Success. Updated the following files:\nA /w/a.ts\n")).toMatchObject([
+      { path: "/w/a.ts" },
+    ])
+    expect(touched(undefined)).toMatchObject([{ path: "/w/a.ts" }])
+  })
+
+  it("names none for a patch whose response says it did not", () => {
+    expect(touched("apply_patch verification failed: Failed to find expected lines")).toEqual([])
   })
 })

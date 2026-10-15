@@ -76,9 +76,11 @@ const throttled = /reason:RATE_LIMIT_EXCEEDED/
 const failed = (value: unknown): { error?: string; limited?: true } => {
   const error = errorText(value)
   if (error === undefined) return {}
+  // Read from the whole text: the cut of it to what is kept may lose the reason.
+  const whole = typeof value === "string" ? value : ""
   return {
     error,
-    ...(exhausted.test(error) && !throttled.test(error) && { limited: true as const }),
+    ...(exhausted.test(whole) && !throttled.test(whole) && { limited: true as const }),
   }
 }
 
