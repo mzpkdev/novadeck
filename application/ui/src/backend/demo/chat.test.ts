@@ -555,6 +555,23 @@ describe("demo conversations", () => {
       expect(subject()).not.toBe("pnpm test --filter checkout")
     })
 
+    it("never asks the transcript's request again once its agent has held it", async () => {
+      const { chat, turns, agent } = open()
+      const subjects = () =>
+        chat
+          .conversation(key("04"))
+          .getSnapshot()
+          .requests.map((request) => request.subject)
+      // Asked for more while it holds its own: the others are made up, each different.
+      turns.ask(key("04"), agent("04"), "permission", 3)
+      expect(subjects()[0]).toBe("pnpm test --filter checkout")
+      expect(new Set(subjects()).size).toBe(3)
+      // Asked again after it was answered: a made-up one.
+      turns.rest(key("04"), agent("04"))
+      turns.ask(key("04"), agent("04"), "permission", 1)
+      expect(subjects()).not.toContain("pnpm test --filter checkout")
+    })
+
     it("goes once the agent is cleared of what it asked", () => {
       const { chat, turns, agent } = open()
       turns.rest(key("04"), agent("04"))

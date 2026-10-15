@@ -85,13 +85,13 @@ export const visitorStory = (
                 role: "assistant",
                 kind: "tool-call",
                 tool: "Ran",
-                call: "call_04d",
+                call: "call_04e",
                 text: JSON.stringify({ command: "pnpm test --filter checkout" }),
               },
               {
                 role: "tool",
                 kind: "tool-result",
-                call: "call_04d",
+                call: "call_04e",
                 text: "Test Files 3 passed · Tests 41 passed",
               },
             ],
@@ -122,8 +122,10 @@ export const visitorStory = (
     }
     const heard = (event: TurnEvent): void => {
       if (step !== "plan" || event.type !== "end" || !same(event.key, claude)) return
+      // However the visitor dealt with the plan, answering it or stopping Claude Code, the
+      // story goes on; only a build that ran to its end has a page to show.
       step = "nudge"
-      if (approved) {
+      if (approved && event.outcome === "completed") {
         const [item] = showcase.items
         sink?.dispatch([
           { type: "item/upsert", target: session, item: { ...item!, shownAt: Date.now() } },
@@ -145,7 +147,8 @@ export const visitorStory = (
       commit: (workspace, actions) => {
         backend.commit(workspace, actions)
         latest = workspace
-        nudge()
+        // Once the commit is done: asking is a commit of its own.
+        if (step === "review") queueMicrotask(nudge)
       },
       start: (next) => {
         sink = next
