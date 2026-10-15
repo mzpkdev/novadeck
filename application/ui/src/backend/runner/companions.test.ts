@@ -248,6 +248,17 @@ describe("the runner's companion content", () => {
     expect(app.seen).toEqual([])
   })
 
+  it("keeps a plan the runner found cut short read-only after a conflict", async () => {
+    const app = following()
+    app.saveReturns({
+      saved: false,
+      current: { stamp: "c3", text: "# Long", truncated: true, skill: false },
+    })
+    await expect(app.companions.save(target, hero, "x", "a1")).resolves.toMatchObject({
+      current: { plan: { truncated: true, writable: false } },
+    })
+  })
+
   it("attaches a file to a terminal", async () => {
     const app = following()
     await app.companions.attach!({ ...target, terminalId: "t" }, "/p/notes.md")

@@ -95,8 +95,11 @@ export const createRunnerCompanions = (
     const result = await runner.save({ itemId, text, basedOn })
     if (result.saved) return result
     const { stamp, ...plan } = result.current
-    // Only a plan in a file is saved, which is writable.
-    return { saved: false, current: { stamp, plan: { kind: "plan", ...plan, writable: true } } }
+    // Only a plan in a file is saved; one cut short is read-only.
+    return {
+      saved: false,
+      current: { stamp, plan: { kind: "plan", ...plan, writable: !plan.truncated } },
+    }
   },
   attach: async ({ terminalId }, path) => {
     await runner.attach({ terminalId, path })

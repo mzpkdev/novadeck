@@ -160,7 +160,9 @@ const PlanBody = ({
         )}
         {!plan.writable && (
           <span className="plan-meta-hint">
-            Read-only: this plan lives in {agent}'s messages, not a file, so notes can't go in it.
+            {plan.truncated && item.plan?.source === "file"
+              ? "Read-only: it's too long to edit here."
+              : `Read-only: this plan lives in ${agent}'s messages, not a file, so notes can't go in it.`}
           </span>
         )}
         {plan.truncated && (
