@@ -4,6 +4,7 @@ import { cleanup, render } from "vitest-browser-react"
 import { page, userEvent, type Locator } from "vitest/browser"
 
 import { App } from "../../app/App"
+import { createSpecBackend } from "../../backend/demo/spec-variants"
 
 // User-level vocabulary for behaviour specs. Specs describe what a person sees and
 // does; only this module knows how that maps to accessible roles and names, so a
@@ -23,7 +24,7 @@ export const openWorkspace = async (route?: string): Promise<void> => {
   window.history.pushState(null, "", route === undefined ? "/" : `/#${route}`)
   await render(
     <StrictMode>
-      <App />
+      <App createBackend={createSpecBackend} />
     </StrictMode>,
   )
   // A link may open with a modal dialog, which hides the rest of the app.

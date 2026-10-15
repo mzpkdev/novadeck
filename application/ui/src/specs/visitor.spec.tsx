@@ -3,14 +3,7 @@ import { page } from "vitest/browser"
 
 import { pressShortcut, terminalCount } from "./support/keyboard"
 import { workspaceSwitcher } from "./support/sessions"
-import {
-  chooseView,
-  expectStaysAbsent,
-  openWorkspace,
-  press,
-  sidebar,
-  sidebarPanel,
-} from "./support/workspace"
+import { expectStaysAbsent, openWorkspace, press, sidebar, sidebarPanel } from "./support/workspace"
 
 // The website's demo, as far as the app's own parts of it go.
 const openVisitor = async (): Promise<void> => {
@@ -19,45 +12,30 @@ const openVisitor = async (): Promise<void> => {
 
 const panel = () => page.getByRole("main", { name: "Best on a desktop browser" })
 const download = () => panel().getByRole("link", { name: "Download Novadeck" })
-const edge = (selector: string): DOMRect =>
-  document.querySelector(selector)!.getBoundingClientRect()
-const card = () => page.getByRole("region", { name: "Things to try" })
-const hint = (text: string) => card().getByRole("listitem").filter({ hasText: text })
 const framesPass = (count: number): Promise<void> =>
   count === 0
     ? Promise.resolve()
     : new Promise((resolve) => requestAnimationFrame(resolve)).then(() => framesPass(count - 1))
-const narrowAndWiden = async (): Promise<void> => {
-  await page.viewport(390, 800)
-  await expect.element(panel()).toBeVisible()
-  await page.viewport(1440, 900)
-  await expect.element(workspaceSwitcher()).toBeVisible()
-}
-
 describe("the visitor build", () => {
   afterEach(() => page.viewport(1440, 900))
 
-  it("keeps focus on the page when the things to try are dismissed", async () => {
+  it("says the agents are simulated, with a link to the download", async () => {
     await openVisitor()
-    await card().getByRole("button", { name: "Dismiss the things to try" }).click()
-    await expect.element(card()).not.toBeInTheDocument()
-    expect(document.activeElement).not.toBe(document.body)
+    await expect.element(page.getByText(/agents are simulated/)).toBeVisible()
+    await expect
+      .element(page.getByRole("link", { name: "Download Novadeck" }))
+      .toHaveAttribute("href", "https://novadeck.dev/download")
   })
 
-  it("closes the card from inside it with Escape", async () => {
+  it("has no debug panel or Addons tab", async () => {
     await openVisitor()
-    card().getByRole("button", { name: "Dismiss the things to try" }).element().focus()
-    await press("{Escape}")
-    await expect.element(card()).not.toBeInTheDocument()
-    expect(document.activeElement).not.toBe(document.body)
-  })
-
-  it("keeps the things to try clear of Zen's open dock", async () => {
-    await openVisitor()
-    await page.getByRole("button", { name: "Enter Zen mode" }).first().click()
-    await expect.poll(() => document.querySelector(".zen-dock")).not.toBeNull()
-    await expect.element(card()).toBeVisible()
-    expect(edge(".visitor-hints").bottom).toBeLessThanOrEqual(edge(".zen-dock").top)
+    await expect.element(workspaceSwitcher()).toBeVisible()
+    expect(page.getByRole("button", { name: "Open the debug panel" }).query()).toBeNull()
+    await page.getByRole("button", { name: "Workspace preferences" }).click()
+    const dialog = page.getByRole("dialog", { name: "Preferences" })
+    await expect.element(dialog).toBeVisible()
+    await expect.element(dialog.getByRole("tab", { name: "General" })).toBeVisible()
+    expect(dialog.getByRole("tab", { name: "Addons" }).query()).toBeNull()
   })
 
   describe("in a window too narrow for the app", () => {
@@ -147,32 +125,6 @@ describe("the visitor build", () => {
       const element = await taken
       await framesPass(10)
       expect(document.activeElement).toBe(element)
-    })
-
-    it("keeps the views hint halfway, then ticked, as the person left it", async () => {
-      await openVisitor()
-      const views = "Switch to Grid, then Canvas"
-      await chooseView("Grid")
-      await narrowAndWiden()
-      // Grid is on screen again, and was seen before the app unmounted: Canvas is still to do.
-      await expect.element(hint(views)).toHaveAttribute("data-done", "false")
-      await chooseView("Canvas")
-      await expect.element(hint(views)).toHaveAttribute("data-done", "true")
-      await narrowAndWiden()
-      await chooseView("Focus")
-      await expect.element(hint(views)).toHaveAttribute("data-done", "true")
-    })
-
-    it("keeps the things to try as the person left them", async () => {
-      await openVisitor()
-      await card().getByRole("button", { name: "Dismiss the things to try" }).click()
-      await page.viewport(390, 800)
-      await expect.element(panel()).toBeVisible()
-      await page.viewport(1440, 900)
-      await expect
-        .element(page.getByRole("button", { name: "Workspace preferences" }))
-        .toBeVisible()
-      await expectStaysAbsent(card())
     })
   })
 })

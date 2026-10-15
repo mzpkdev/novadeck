@@ -1,19 +1,31 @@
 name: Try
 
-# The visitor build (`pnpm build:try`) on GitHub Pages, at try.novadeck.dev: every push to
-# main deploys it, so the demo follows main, at times ahead of the latest release. Quality's
-# "Build (try)" builds it on every pull request first.
+# The visitor build (`pnpm build:try`) on GitHub Pages, at try.novadeck.dev: it deploys a
+# release's source, so the demo shows the stable release and not what main is ahead of it
+# with (main is the Early channel). Promote to Stable calls this with the tag it promoted,
+# as promoting with GITHUB_TOKEN starts no workflow of its own; Run workflow deploys a tag
+# by hand. Until the first promotion nothing is deployed. Quality's "Build (try)" builds
+# it on every pull request first.
 
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      tag:
+        description: The release tag to deploy, such as v1.2.3.
+        required: true
+        type: string
   workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to deploy, such as v1.2.3 (1.2.3 works too). Any release works, so this can also roll the demo back.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
-# One deploy at a time, and a newer push waits for the one in flight rather than cutting
-# it off midway.
+# One deploy at a time: a later one waits for the one in flight rather than cutting it off
+# midway.
 concurrency:
   group: try-pages
   cancel-in-progress: false
@@ -24,8 +36,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check Out Repository
+      - name: Choose Tag
+        id: choose
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$INPUT_TAG" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "tag=v${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::'$INPUT_TAG' is not a release tag like v1.2.3."
+            exit 1
+          fi
+
+      - name: Check Out Release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ steps.choose.outputs.tag }}
 
       # pnpm is downloaded from the npm registry with a 30 s bound, which a slow runner
       # misses now and then (seen on Windows CI); a second try follows a failed first.
@@ -48,6 +76,17 @@ jobs:
 
       - name: Build
         run: pnpm build:try
+
+      # A release from before the visitor build was made public-ready builds a page that
+      # search engines may index and that still plays the old tour; it is never deployed.
+      - name: Check Page Is Public-Ready
+        env:
+          TAG: ${{ steps.choose.outputs.tag }}
+        run: |
+          if ! grep -q '<meta name="robots" content="noindex"' application/ui/dist-try/index.html; then
+            echo "::error::$TAG predates the public visitor build; promote a newer release."
+            exit 1
+          fi
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

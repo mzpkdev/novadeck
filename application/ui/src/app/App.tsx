@@ -23,7 +23,7 @@ import { InboxHost } from "./InboxHost"
 import { currentState, currentTarget, shallowEqual } from "./selectors"
 import { SidebarSection } from "./SidebarSection"
 import { useNotificationBadge } from "./useNotifications"
-import { VisitorBar, VisitorCover, VisitorHints } from "./Visitor"
+import { VisitorBar, VisitorCover } from "./Visitor"
 import { WorkspaceFooter } from "./WorkspaceFooter"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
 import { WorkspaceProvider } from "./WorkspaceProvider"
@@ -171,7 +171,6 @@ export const WorkspaceApp = (): React.JSX.Element => {
           <WorkspaceOverlays />
           {voice && <DictationOverlay view={voice.view} level={voice.level} docks={voice.docks} />}
           <DebugSection />
-          <VisitorHints />
         </main>
       </InboxHost>
     </DictationContext.Provider>

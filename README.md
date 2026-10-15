@@ -840,21 +840,20 @@ mode `try` (http://127.0.0.1:5190); `pnpm build:try` writes static files to
 `application/ui/dist-try` (beside `dist/`, which the desktop app packages), with relative
 paths and a hash router, so any static host serves them from any path, and
 `pnpm preview:try` serves them on http://127.0.0.1:5191. The [Try
-workflow](.github/workflows/try.yml) deploys it to GitHub Pages at https://try.novadeck.dev
-on every push to main, so it follows main rather than the latest release; Quality builds
-it on every pull request.
+workflow](.github/workflows/try.yml) deploys the stable release's build to GitHub Pages at
+https://try.novadeck.dev: Promote to Stable runs it for the version it promotes, and Run
+workflow deploys a tag by hand, so the demo never shows what main is ahead of the release
+with, nor does anything deploy before the first promotion. Quality builds it on every pull
+request.
 
-It runs the agents demo's storefront and its other projects with no debug panel, chat
-view, voice, murmur, agent connections, notices or updates, and no Welcome dialog
-(`backend/demo/visitor/`). A scenario plays the agents on the verbs alone (`beats.ts`):
-agents in the other projects finish, ask and fail, and the switcher, the bell and the tabs
-mark each, a little over two minutes in all and quieter at the end. A beat never acts on
-the selected terminal, nor on one the person's own prompt works, and waits while they click,
-type or scroll (`scenario.ts`). A strip above the header says the agents are simulated and
-links to the download; a card lists four things to try and ticks them off
-(`app/Visitor.tsx`); under 760 px wide a panel pointing to a desktop browser replaces the
-app, whose UI unmounts behind it and comes back on widening. Typing into a shell answers as a
-simulated one (`mockReply`).
+It runs the agents demo's storefront and its other projects as fixtures, with no debug
+panel, chat view, voice, murmur, agent connections, notices or updates, and no Welcome
+dialog; `backend/demo/visitor/` lists the backend's fields one by one, so nothing added to
+the agents demo reaches the page unasked. A strip above the header says the agents are
+simulated and links to the download (`app/Visitor.tsx`); under 760 px wide a panel pointing
+to a desktop browser replaces the app, whose UI unmounts behind it and comes back on
+widening. Typing into a shell answers as a simulated one (`mockReply`). A page loaded
+before a deploy reloads once when a view it loads later is gone from the host.
 
 ## Repository map
 
@@ -952,7 +951,7 @@ features add `ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use
 `terminals/unread-state.ts`; `inbox/` builds on the base layers, `sidebar/` and the
 chat's markdown reader and answers; `shell/` may use `layouts/`, `projects/`,
 `notifications/` and `inbox/`. `app/` composes every feature layer, `notifications/`, `inbox/` and `backend/`, and within it only `app/backend.ts` imports a
-backend adapter. `app/commands/` has no direct React or package imports, though
+backend adapter (tests and specs may import the demo's spec entry). `app/commands/` has no direct React or package imports, though
 routing still loads React Router at runtime: it builds on `model/`,
 `interaction/keymap.ts`, `backend/port.ts`, the UI store, routing, selectors,
 the Canvas handle type in `layouts/canvas/types.ts`, and the pure state modules
@@ -1065,8 +1064,9 @@ lifecycle for any adapter. An adapter opts into the port contract suite by
 calling `describeBackendContract` from `test/backend-contract.tsx` in a
 colocated `contract.test.ts`, with a probe of what it holds and the I/O it
 started, and a driver when it has `start`. `App` reads a `createBackend` factory
-once at mount, and `app/backend.ts` chooses the default: the demo under tests, and
-a runner connection in every build. A backend that must connect first supplies a
+once at mount, and `app/backend.ts` chooses a build's default: a runner connection,
+or the demo in the content preview and visitor builds. Tests and specs pass the demo's
+spec backend (`backend/demo/spec-variants.ts`) themselves. A backend that must connect first supplies a
 `ConnectBackend`; `app/BackendGate.tsx` shows a splash until it resolves with the
 seed loaded, or a card saying what failed with a Retry button, and closes it on unmount.
 

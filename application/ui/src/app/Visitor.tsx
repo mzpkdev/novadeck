@@ -1,15 +1,11 @@
-import { Check, Circle, X } from "lucide-react"
 import type { ReactNode } from "react"
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useRef, useSyncExternalStore } from "react"
 
 import { focusTerminalInput } from "../interaction/dom"
 import type { Store } from "../model/store"
 import type { Workspace } from "../model/types"
-import { projectStatuses } from "../projects/project-status"
-import { unreadEnd } from "../terminals/unread-state"
-import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
-import { currentState, shallowEqual } from "./selectors"
-import { done, hints, noticed, openedMarked, type Seen } from "./visitor-hints"
+import { useWorkspaceServices } from "./controller/context"
+import { currentState } from "./selectors"
 
 // Where a visitor gets the app.
 const downloadUrl = "https://novadeck.dev/download"
@@ -34,128 +30,6 @@ export const VisitorBar = (): React.JSX.Element | null => {
       </p>
       <Download className="visitor-download shrink-0 font-medium" />
     </div>
-  )
-}
-
-// The things to try, as a small card that ticks each off and can be dismissed.
-export const VisitorHints = (): React.JSX.Element | null => {
-  const { backend } = useWorkspaceServices()
-  const answered = backend.visitor?.answered
-  if (!answered) return null
-  return <Hints answered={answered} />
-}
-
-// What the card showed, kept per backend: the app unmounts in a narrow window and the person
-// should find the tour as they left it.
-const remembered = new WeakMap<object, { seen: ReadonlySet<Seen>; open: boolean }>()
-
-const Hints = ({ answered }: { readonly answered: Store<boolean> }): React.JSX.Element | null => {
-  const { workspace: store } = useWorkspaceServices()
-  const unread = useUiState((state) => state.unread)
-  const view = useWorkspaceState((workspace) => currentState(workspace).view)
-  const companion = useWorkspaceState((workspace) =>
-    Object.values(currentState(workspace).bars).some((bar) => bar.open),
-  )
-  const project = useWorkspaceState((workspace) => workspace.activeProjectId)
-  // The switcher's marks, as `HeaderSection` computes them.
-  const statuses = useWorkspaceState(
-    useCallback(
-      (workspace: Workspace) =>
-        projectStatuses(workspace.projects, (context, id) => unreadEnd(unread, context, id)),
-      [unread],
-    ),
-    shallowEqual,
-  )
-  const replied = useSyncExternalStore(answered.subscribe, answered.getSnapshot, () => false)
-  const titleId = useId()
-  // The project on screen and the marks the switcher showed just before this render: the
-  // person's mark is the one that was there when they opened a project, not what it shows
-  // once they are in it.
-  const [before, setBefore] = useState({ project, statuses })
-  const [seen, setSeen] = useState<ReadonlySet<Seen>>(
-    () => remembered.get(answered)?.seen ?? new Set(),
-  )
-  const [announcement, setAnnouncement] = useState("")
-  const [open, setOpen] = useState(() => remembered.get(answered)?.open ?? true)
-  useEffect(() => {
-    remembered.set(answered, { seen, open })
-  }, [answered, seen, open])
-  if (before.project !== project || before.statuses !== statuses) setBefore({ project, statuses })
-  // What the person did so far, kept as it shows now.
-  const now = noticed(seen, {
-    answered: replied,
-    view,
-    companion,
-    marked: openedMarked(before.statuses, before.project, project),
-  })
-  if (now !== seen) {
-    setSeen(now)
-    const ticked = hints.filter((hint) => done(hint, now) && !done(hint, seen))
-    if (ticked.length)
-      setAnnouncement(
-        `Done: ${ticked.map((hint) => hint.text).join(" ")}${
-          hints.every((hint) => done(hint, now)) ? " That's the tour." : ""
-        }`,
-      )
-  }
-  if (!open) return null
-  const finished = hints.every((hint) => done(hint, seen))
-  // Leaves focus on the terminal the person was in, or the strip's link, rather than
-  // dropping it to the page as the card unmounts.
-  const dismiss = (): void => {
-    setOpen(false)
-    const snapshot = store.getSnapshot()
-    const terminal = currentState(snapshot).selected
-    if (terminal && focusTerminalInput(terminal)) return
-    document.querySelector<HTMLElement>(".visitor-bar .visitor-download")?.focus()
-  }
-  return (
-    <section
-      className="visitor-hints card fixed right-3 z-30 w-72 p-3"
-      aria-labelledby={titleId}
-      // Plain Escape dismisses it; with Shift it goes on to the workspace.
-      onKeyDown={(event) => {
-        if (event.key !== "Escape" || event.shiftKey) return
-        event.preventDefault()
-        event.stopPropagation()
-        dismiss()
-      }}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <h2 id={titleId} className="visitor-hints-title m-0 text-control font-medium">
-          {finished ? "That's the tour" : "Things to try"}
-        </h2>
-        <button
-          className="icon-button small"
-          aria-label="Dismiss the things to try"
-          onClick={dismiss}
-        >
-          <X size={14} />
-        </button>
-      </div>
-      <p className="sr-only" role="status" aria-live="polite">
-        {announcement}
-      </p>
-      <ul className="visitor-hints-list m-0 mt-2 flex flex-col gap-1.5 p-0 text-control">
-        {hints.map((hint) => {
-          const ticked = done(hint, seen)
-          return (
-            <li key={hint.id} className="visitor-hint flex items-start gap-2" data-done={ticked}>
-              {ticked ? (
-                <Check aria-hidden="true" className="mt-0.5 shrink-0" size={14} />
-              ) : (
-                <Circle aria-hidden="true" className="mt-0.5 shrink-0" size={14} />
-              )}
-              <span>
-                {hint.text}
-                {ticked && <span className="sr-only"> (done)</span>}
-              </span>
-            </li>
-          )
-        })}
-      </ul>
-      {finished && <Download className="button primary visitor-hints-download mt-3" />}
-    </section>
   )
 }
 

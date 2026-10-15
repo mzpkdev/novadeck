@@ -4,7 +4,9 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig, loadEnv, type ConfigEnv, type Plugin } from "vite"
 
-import { contentSecurityPolicyConnectSources } from "./src/content-security-policy"
+import { boundaryViolations } from "./src/bundle-boundary"
+import { buildConnectSources } from "./src/content-security-policy"
+import { withSearchVisibility } from "./src/search-visibility"
 
 const connectSourcesPlaceholder = "__NOVADECK_CONNECT_SOURCES__"
 
@@ -26,12 +28,29 @@ const contentSecurityPolicy = (): Plugin => {
         throw new Error("Content Security Policy connect-src placeholder is missing")
       }
 
-      // The visitor build reaches nothing but the page's own origin.
-      const sources =
-        environment.mode === "try" && environment.command === "build"
-          ? ["'self'"]
-          : contentSecurityPolicyConnectSources(apiUrl, environment.command === "serve", runnerUrl)
-      return html.replace(connectSourcesPlaceholder, sources.join(" "))
+      const sources = buildConnectSources(environment, apiUrl, runnerUrl)
+      return withSearchVisibility(
+        html.replace(connectSourcesPlaceholder, sources.join(" ")),
+        environment.mode,
+      )
+    },
+  }
+}
+
+// Fails a build that carries an adapter its mode must not (see src/bundle-boundary.ts).
+const bundleBoundary = (): Plugin => {
+  let mode = ""
+  return {
+    name: "novadeck-bundle-boundary",
+    apply: "build",
+    configResolved: (config) => void (mode = config.mode),
+    generateBundle(_options, bundle) {
+      const violations = Object.values(bundle).flatMap((chunk) =>
+        chunk.type === "chunk" ? boundaryViolations(mode, Object.keys(chunk.modules)) : [],
+      )
+      if (violations.length > 0) {
+        this.error(`The ${mode} build carries modules it must not: ${violations.join(", ")}`)
+      }
     },
   }
 }
@@ -50,7 +69,7 @@ export default defineConfig({
     // app itself, so a small subset Vite would inline as a data: URL would be blocked.
     assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined),
   },
-  plugins: [tailwindcss(), react(), contentSecurityPolicy()],
+  plugins: [tailwindcss(), react(), contentSecurityPolicy(), bundleBoundary()],
   resolve: {
     alias: [{ find: /^react$/, replacement: resolve("node_modules/react/index.js") }],
     dedupe: ["react", "react-dom"],
