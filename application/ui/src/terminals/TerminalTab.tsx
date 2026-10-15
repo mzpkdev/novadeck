@@ -4,7 +4,7 @@ import type { ReactNode } from "react"
 
 import { workspaceShortcutBindings } from "../interaction/shortcuts"
 import { subagentMarks, subagentsBadge, subagentsDetail } from "../model/agent-subagents"
-import { terminalLabel } from "../model/handle"
+import { showsHandle, terminalLabel } from "../model/handle"
 import { mailBadgeLabel, type MailBadge } from "../model/messages"
 import { isWindow } from "../model/roster"
 import {
@@ -160,8 +160,12 @@ export const TerminalTab = ({
               </>
             )}
             {/* After the program, so the program comes first; where a pointer hovers it
-                waits in the slot Hide and Rename slide into (tabs.css). */}
-            <HandleChip handle={shell?.handle} className="handle-plain terminal-tab-handle" />
+                waits in the slot Hide and Rename slide into (tabs.css). Only on a terminal
+                agents name by its handle (model/handle.ts). */}
+            <HandleChip
+              handle={shell && showsHandle(shell) ? shell.handle : undefined}
+              className="handle-plain terminal-tab-handle"
+            />
           </>
         }
         {...(marks && !editing ? { below: <SubagentBranches marks={marks} /> } : {})}

@@ -249,6 +249,8 @@ describe("A terminal an agent opened", () => {
     await terminalTab("Checkout review").click()
     const lead = page.getByText("led by @moth", { exact: true })
     await expect.element(lead).toBeVisible()
+    // Its tab keeps its own handle, which its lead names it by.
+    await expect.element(terminalTab("Checkout review").getByText(/^@[a-z]+$/)).toBeVisible()
     expect(await tooltipOf(lead)).toBe("Directed by the agent in @moth · Checkout implementation")
     expect(page.getByText(/^led by @owl/).elements()).toHaveLength(0)
   })

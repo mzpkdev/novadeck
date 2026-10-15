@@ -199,23 +199,23 @@ describe("creating terminals", () => {
 describe("terminal handles", () => {
   for (const name of views) {
     context(`in ${name}`, () => {
-      it("shows @handle on the tab, and on the window's switcher under the pointer, through a rename", async () => {
+      it("keeps a plain shell's @handle off its tab and on its window's switcher under the pointer, through a rename", async () => {
         await openWorkspace()
         await chooseView(name)
         await terminalTab("Dev server").click()
 
-        // The demo's second terminal is the second word a fresh session gives. The tab
-        // shows it; the window's header keeps it folded until the pointer reaches its
-        // switcher.
-        await expect
-          .element(terminalTab("Dev server").getByText("@fox", { exact: true }))
-          .toBeVisible()
+        // The demo's second terminal is the second word a fresh session gives. Its tab,
+        // a shell the person opened that no agent touched, shows none; the window's
+        // header keeps it folded until the pointer reaches its switcher.
+        expect(
+          terminalTab("Dev server").getByText("@fox", { exact: true }).elements(),
+        ).toHaveLength(0)
         const handle = terminal("Dev server").getByText("@fox", { exact: true })
         await expect.element(handle).not.toBeVisible()
         await headerAction("Dev server", "Switch terminal").hover()
         await expect.element(handle).toBeVisible()
 
-        // A screen reader names the tab by its handle too, right after its name.
+        // A screen reader names the tab by its handle all the same, right after its name.
         await expect
           .element(page.getByRole("button", { name: "Select Dev server, @fox", exact: true }))
           .toBeVisible()
@@ -239,7 +239,7 @@ describe("terminal handles", () => {
           .element(terminal("Renamed server").getByText("@fox", { exact: true }))
           .toBeVisible()
         await expect
-          .element(terminalTab("Renamed server").getByText("@fox", { exact: true }))
+          .element(page.getByRole("button", { name: "Select Renamed server, @fox", exact: true }))
           .toBeVisible()
       })
     })
