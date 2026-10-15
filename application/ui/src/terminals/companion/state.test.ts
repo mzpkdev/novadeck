@@ -3,10 +3,12 @@ import { afterEach, beforeEach, vi } from "vitest"
 import {
   companionKeyId,
   emptyCompanions,
+  PlanUnwritableError,
   type Companions,
   type ItemContent,
   type ItemId,
   type PlanSaved,
+  type PlanUnwritableReason,
   type PlanVersion,
 } from "../../model/companion"
 import { messagesKey } from "../../model/companion-bar"
@@ -56,6 +58,7 @@ const backend = () => {
     readonly basedOn: string
     readonly answer: (result: PlanSaved) => void
     readonly fail: () => void
+    readonly refuse: (reason: PlanUnwritableReason) => void
   }[] = []
   const companions: Companions = {
     follow: (_target, id, { reveal }, on) => {
@@ -73,7 +76,13 @@ const backend = () => {
     },
     save: (_target, _id, text, basedOn) =>
       new Promise((resolve, reject) =>
-        saves.push({ text, basedOn, answer: resolve, fail: () => reject(new Error("down")) }),
+        saves.push({
+          text,
+          basedOn,
+          answer: resolve,
+          fail: () => reject(new Error("down")),
+          refuse: (reason) => reject(new PlanUnwritableError(reason)),
+        }),
       ),
   }
   return {
@@ -83,6 +92,7 @@ const backend = () => {
     stopped,
     listeners,
     emit: (version: PlanVersion) => listeners.get(planItem.id)?.(contentOf(version)),
+    emitContent: (content: ItemContent) => listeners.get(planItem.id)?.(content),
   }
 }
 
@@ -101,6 +111,13 @@ const settle = async () => {
   await vi.advanceTimersByTimeAsync(0)
   await vi.dynamicImportSettled()
   await vi.advanceTimersByTimeAsync(0)
+}
+
+// Fails the save that is under way, and waits out the pause before the next try.
+const failAndWait = async (save: { readonly fail: () => void }, failures: number) => {
+  save.fail()
+  await settle()
+  await vi.advanceTimersByTimeAsync(Math.min(30_000, 1000 * 2 ** failures))
 }
 
 beforeEach(() => {
@@ -178,6 +195,149 @@ describe("companion store", () => {
     saves[1]!.answer({ saved: true, stamp: "2" })
     await settle()
     expect(plan()).toMatchObject({ unsaved: false, revision: "2" })
+  })
+
+  context("when the backend says a plan can never be written", () => {
+    it("stops saving, keeps the edits, and says why", async () => {
+      const { companions, saves } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      saves[0]!.refuse("folder")
+      await settle()
+      expect(plan()).toMatchObject({ blocked: "folder", unsaved: true, stalled: false })
+      expect(plan().text).toBe(`${first}No blog.\n`)
+      actions.edit(`${first}No blog.\nMore.\n`, [])
+      actions.flush()
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(saves).toHaveLength(1)
+    })
+
+    it("saves again when the person asks, clearing what stopped it once it works", async () => {
+      const { companions, saves } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      saves[0]!.refuse("folder")
+      await settle()
+      actions.retry()
+      expect(plan().blocked).toBeNull()
+      expect(saves).toHaveLength(2)
+      saves[1]!.answer({ saved: true, stamp: "2" })
+      await settle()
+      expect(plan()).toMatchObject({ blocked: null, unsaved: false, revision: "2" })
+    })
+
+    it("stops again when the second try is refused too", async () => {
+      const { companions, saves } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      saves[0]!.refuse("too-large")
+      await settle()
+      actions.retry()
+      saves[1]!.refuse("gone")
+      await settle()
+      expect(plan().blocked).toBe("gone")
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(saves).toHaveLength(2)
+    })
+
+    it("lets the edits go once nothing is left to save", async () => {
+      const { companions, saves } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      saves[0]!.refuse("folder")
+      await settle()
+      actions.edit(first, [])
+      actions.flush()
+      expect(plan()).toMatchObject({ blocked: null, unsaved: false })
+    })
+  })
+
+  context("when saves keep failing without a reason", () => {
+    it("stops after five in a row, until the person retries", async () => {
+      const { companions, saves } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      for (let each = 0; each < 5; each += 1) {
+        expect(plan().stalled).toBe(false)
+        // eslint-disable-next-line no-await-in-loop -- Each step waits for the one before.
+        await failAndWait(saves[each]!, each + 1)
+      }
+      expect(saves).toHaveLength(5)
+      expect(plan()).toMatchObject({ stalled: true, unsaved: true, blocked: null })
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(saves).toHaveLength(5)
+
+      actions.retry()
+      expect(plan().stalled).toBe(false)
+      expect(saves).toHaveLength(6)
+      // The count started over: four more failures still try again.
+      for (let each = 5; each < 9; each += 1) {
+        // eslint-disable-next-line no-await-in-loop -- Each step waits for the one before.
+        await failAndWait(saves[each]!, each - 4)
+      }
+      expect(saves).toHaveLength(10)
+      expect(plan().stalled).toBe(false)
+    })
+
+    it("counts from the start after a save works", async () => {
+      const { companions, saves } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      actions.flush()
+      // eslint-disable-next-line no-await-in-loop -- Each step waits for the one before.
+      for (let each = 0; each < 4; each += 1) await failAndWait(saves[each]!, each + 1)
+      saves[4]!.answer({ saved: true, stamp: "2" })
+      await settle()
+      actions.edit(`${first}No blog.\nMore.\n`, [])
+      actions.flush()
+      // eslint-disable-next-line no-await-in-loop -- Each step waits for the one before.
+      for (let each = 5; each < 9; each += 1) await failAndWait(saves[each]!, each - 4)
+      expect(plan().stalled).toBe(false)
+      expect(saves).toHaveLength(10)
+    })
+  })
+
+  context("when the plan's file goes missing", () => {
+    const gone: ItemContent = { state: "unavailable", reason: "gone", size: null }
+
+    it("stops saving at once, and picks up again if the file comes back", async () => {
+      const { companions, saves, emitContent } = backend()
+      const { actions, plan, panes } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      emitContent(gone)
+      await settle()
+      expect(panes.store.getSnapshot().content[planItem.id]).toEqual(gone)
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(saves).toHaveLength(0)
+      expect(plan().text).toBe(`${first}No blog.\n`)
+
+      emitContent(contentOf(snapshot(first, "1")))
+      await settle()
+      expect(saves).toHaveLength(1)
+      expect(saves[0]!.text).toBe(`${first}No blog.\n`)
+    })
+
+    it("tries once more when the person asks, and goes on saying why if it's still gone", async () => {
+      const { companions, saves, emitContent } = backend()
+      const { actions, plan } = connected(companions)
+      actions.edit(`${first}No blog.\n`, [])
+      emitContent(gone)
+      await settle()
+      actions.retry()
+      expect(saves).toHaveLength(1)
+      saves[0]!.refuse("gone")
+      await settle()
+      expect(plan().blocked).toBe("gone")
+      // The file is back: the stored reason is dropped with the first version that follows.
+      emitContent(contentOf(snapshot(first, "1")))
+      await settle()
+      expect(plan().blocked).toBeNull()
+    })
   })
 
   it("stops saying a plan isn't saved once there's nothing left to save", async () => {

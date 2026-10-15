@@ -323,7 +323,8 @@ const reasonText = (reason: UnavailableReason, name: string, size: number | null
   }
 }
 
-const CopyPath = ({ path }: { path: string }): React.JSX.Element => {
+// A button that puts `text` on the clipboard, and says so for a moment.
+export const CopyText = ({ text, label }: { text: string; label: string }): React.JSX.Element => {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
@@ -335,13 +336,13 @@ const CopyPath = ({ path }: { path: string }): React.JSX.Element => {
       type="button"
       className="artifact-open"
       onClick={() => {
-        void navigator.clipboard?.writeText(path).then(
+        void navigator.clipboard?.writeText(text).then(
           () => setCopied(true),
           () => undefined,
         )
       }}
     >
-      {copied ? "Copied" : "Copy path"}
+      {copied ? "Copied" : label}
     </button>
   )
 }
@@ -368,7 +369,7 @@ export const Unavailable = ({
           Show it
         </button>
       )}
-      {pathOf(item) !== null && <CopyPath path={pathOf(item)!} />}
+      {pathOf(item) !== null && <CopyText text={pathOf(item)!} label="Copy path" />}
       {actions}
     </div>
   </div>

@@ -1,14 +1,20 @@
 import { AppWindow, PanelRightClose } from "lucide-react"
 import { lazy, Suspense, useRef, type ReactNode } from "react"
 
-import { pathOf, notePattern, notesIn, type CompanionItem } from "../../model/companion"
+import {
+  pathOf,
+  notePattern,
+  notesIn,
+  type CompanionItem,
+  type PlanUnwritableReason,
+} from "../../model/companion"
 import type { WorkspaceTarget } from "../../model/types"
 import { Tooltip } from "../../ui-toolkit/Tooltip"
-import { ArtifactViewer, Unavailable } from "./ArtifactViewer"
+import { ArtifactViewer, CopyText, Unavailable } from "./ArtifactViewer"
 import type { BarMember } from "./bar"
 import type { MailHandle } from "./mail"
 import { MessagesView } from "./MessagesView"
-import { currentMarks, type PlanDoc } from "./plan-doc"
+import { blockOf, currentMarks, type PlanDoc } from "./plan-doc"
 import type { PlanEditorHandle } from "./plan-editor/PlanEditor"
 import { headingsOf } from "./plan-text"
 import type { PlanActions, Panes, PlanPresentation } from "./state"
@@ -116,14 +122,59 @@ export const ArtifactTab = ({
   />
 )
 
+// Why the person's edits can't be saved, and what's left to them. A plan in an agent's
+// messages reads as it does when it's read-only from the start.
+const blockedText = (reason: PlanUnwritableReason, agent: string): string => {
+  switch (reason) {
+    case "gone":
+      return "This plan's file was deleted, so your edits can't be saved. They're still here."
+    case "folder":
+      return "Novadeck can't write to this plan's folder, so your edits can't be saved. They're still here."
+    case "too-large":
+      return "This plan is too large for Novadeck to save your edits. They're still here."
+    case "transcript":
+    case "not-a-plan":
+      return readOnlyText(agent)
+  }
+}
+
+const readOnlyText = (agent: string): string =>
+  `Read-only: this plan lives in ${agent}'s messages, not a file, so notes can't go in it.`
+
+// The edits that can't reach the file, with the ways out: copy them, or try again.
+const PlanNotice = ({
+  text,
+  edits,
+  retry,
+  retryLabel,
+}: {
+  text: string
+  edits: string
+  retry: () => void
+  retryLabel: string
+}): React.JSX.Element => (
+  <div className="plan-notice" role="status">
+    <p>{text}</p>
+    <div className="plan-notice-actions">
+      <CopyText text={edits} label="Copy my edits" />
+      <button type="button" className="artifact-open" onClick={retry}>
+        {retryLabel}
+      </button>
+    </div>
+  </div>
+)
+
 const PlanBody = ({
   item,
   plan,
+  block,
   actions,
   pane,
 }: {
   item: CompanionItem
   plan: PlanDoc
+  // Why saving can't work, if it can't.
+  block: PlanUnwritableReason | null
   actions: ReactNode
   pane: PlanActions
 }): React.JSX.Element => {
@@ -152,7 +203,9 @@ const PlanBody = ({
             <span>{plan.showChanges ? "Hide" : "Show"}</span>
           </button>
         )}
-        {plan.unsaved && <span className="plan-meta-hint">Not saved yet. Trying again.</span>}
+        {plan.unsaved && !plan.stalled && !block && (
+          <span className="plan-meta-hint">Not saved yet. Trying again.</span>
+        )}
         {plan.resolved > 0 && plan.marked === plan.text && (
           <span>
             {agent} resolved {plural(plan.resolved, "note")}
@@ -162,7 +215,7 @@ const PlanBody = ({
           <span className="plan-meta-hint">
             {plan.truncated && item.plan?.source === "file"
               ? "Read-only: it's too long to edit here."
-              : `Read-only: this plan lives in ${agent}'s messages, not a file, so notes can't go in it.`}
+              : readOnlyText(agent)}
           </span>
         )}
         {plan.truncated && (
@@ -177,6 +230,22 @@ const PlanBody = ({
         {actions && <span className="artifact-meta-push" />}
         {actions}
       </div>
+      {plan.writable && block && (
+        <PlanNotice
+          text={blockedText(block, agent)}
+          edits={plan.text}
+          retry={pane.retry}
+          retryLabel="Try saving again"
+        />
+      )}
+      {plan.writable && !block && plan.stalled && (
+        <PlanNotice
+          text="Novadeck couldn't save your edits after 5 tries."
+          edits={plan.text}
+          retry={pane.retry}
+          retryLabel="Retry"
+        />
+      )}
       <div className="plan-reader-body" data-outline={headingsOf(plan.text).length > 0}>
         <PlanOutline plan={plan} jump={(at) => editor.current?.jumpTo(at)} />
         <div className="plan-document-scroll" data-changes={plan.showChanges}>
@@ -215,7 +284,9 @@ export const PlanTab = ({
 }): React.JSX.Element => {
   const plan = usePlan(panes, item.id)
   const content = useContent(panes, target, item)
-  if (content?.state === "unavailable")
+  // A plan whose file is gone still shows the person's edits, which have nowhere to go.
+  const kept = plan !== undefined && plan.text !== plan.base && blockOf(plan, content) === "gone"
+  if (content?.state === "unavailable" && !kept)
     return <Unavailable item={item} reason={content.reason} size={content.size} actions={actions} />
   return plan ? (
     // A plan that becomes writable, or stops being so, starts its editor over.
@@ -223,6 +294,7 @@ export const PlanTab = ({
       key={String(plan.writable)}
       item={item}
       plan={plan}
+      block={blockOf(plan, content)}
       actions={actions}
       pane={panes.plan(target, item.id)}
     />
