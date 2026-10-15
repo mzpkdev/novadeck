@@ -3,6 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import type { HarnessEvent } from "@novadeck/harness-core/events"
 import { followLines } from "@novadeck/harness-core/follow"
 import {
+  absolute,
   bounded,
   callId,
   shortName,
@@ -142,8 +143,28 @@ export const rolloutEvents = (
       ]
     }
     case "item_completed": {
-      const { type: kind, text } = (fields.item ?? {}) as { type?: unknown; text?: unknown }
+      const {
+        type: kind,
+        text,
+        status,
+        changes,
+      } = (fields.item ?? {}) as {
+        type?: unknown
+        text?: unknown
+        status?: unknown
+        changes?: unknown
+      }
       if (kind === "McpToolCall") return mcpSettled(base, fields.item as Record<string, unknown>)
+      // Files a patch changed, by absolute path, however it ran: its PostToolUse comes for
+      // the apply_patch tool alone, and none for a patch the model ran through its shell
+      // (`apply_patch <<EOF`; probed 2026-10-15, 0.159.3, which the fake model does).
+      if (kind === "FileChange")
+        return status === "completed" && typeof changes === "object" && changes !== null
+          ? Object.keys(changes).flatMap((file) => {
+              const path = absolute(file)
+              return path ? [{ type: "file-touched" as const, ...base, actor: null, path }] : []
+            })
+          : []
       if (kind !== "Plan" || typeof text !== "string" || !text) return []
       const { text: plan, truncated } = bounded(text)
       return [

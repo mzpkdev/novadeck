@@ -54,3 +54,32 @@ describe("Codex's task_complete with an error", () => {
     expect(event).not.toHaveProperty("error")
   })
 })
+
+describe("Codex's FileChange item", () => {
+  const changed = (item: object) =>
+    rolloutEvents(
+      JSON.stringify({
+        timestamp: "2026-10-15T06:18:46.764Z",
+        type: "event_msg",
+        payload: { type: "item_completed", turn_id: "t1", item: { type: "FileChange", ...item } },
+      }),
+      run,
+    )
+
+  it("names each file a patch changed, whether it ran as a tool or through the shell", () => {
+    expect(
+      changed({
+        status: "completed",
+        changes: { "/w/a.ts": { type: "add", content: "x\n" }, "/w/b.ts": { type: "update" } },
+      }),
+    ).toMatchObject([
+      { type: "file-touched", path: "/w/a.ts", actor: null },
+      { type: "file-touched", path: "/w/b.ts" },
+    ])
+  })
+
+  it("names none for a patch that failed, or a relative path", () => {
+    expect(changed({ status: "failed", changes: { "/w/a.ts": {} } })).toEqual([])
+    expect(changed({ status: "completed", changes: { "a.ts": {} } })).toEqual([])
+  })
+})

@@ -48,7 +48,7 @@ const bodies: Record<string, () => Refusal> = {
             domain: "cloudcode-pa.googleapis.com",
             metadata: { uiMessage: "true", model: "gemini-3.1-pro", quotaResetDelay: "59m30s" },
           },
-          { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "3570s" },
+          { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "1s" },
         ],
       },
     }),
