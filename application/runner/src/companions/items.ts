@@ -152,6 +152,9 @@ export const wireWindow = (window: WindowRecord): CompanionWindow => ({
 const keyOf = (content: ItemContent): string =>
   content.state === "ready" ? `ready:${content.stamp}` : `${content.reason}:${content.size}`
 
+/** How recent a plan's own timestamp must be for it to count as written live. */
+const LIVE_PLAN_MS = 60_000
+
 /**
  * What agents show and the person attaches beside terminals, kept as pointers: each item
  * is held by one terminal's bar or one undocked window, survives restarts, and goes when
@@ -160,9 +163,6 @@ const keyOf = (content: ItemContent): string =>
  * plans mirror each agent session's latest plans on the bar of the terminal they run in,
  * or where the person moved them. Content is read from disk as it loads.
  */
-/** How recent a plan's own timestamp must be for it to count as written live. */
-const LIVE_PLAN_MS = 60_000
-
 export class CompanionItems {
   private readonly records: ItemRecords
   private readonly pollMs: number
@@ -580,7 +580,7 @@ export class CompanionItems {
       ),
       held: false,
     }
-    // Only a plan written just now opens on its own; one read back from an older record
+    // Only a plan first seen just now opens on its own (a rewrite only refreshes it); one read back from an older record
     // (a restart, a resumed session) is kept quietly.
     const live = Date.now() - at <= LIVE_PLAN_MS
     const own = this.shown(place, key)
@@ -594,7 +594,7 @@ export class CompanionItems {
         ...own,
         ...pointer,
         version: own.version + 1,
-        asked: live,
+        asked: false,
         shownAt: Date.now(),
         observedAt: at,
       })
