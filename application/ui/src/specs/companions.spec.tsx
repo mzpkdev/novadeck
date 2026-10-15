@@ -265,6 +265,8 @@ describe("Switching terminals in Focus", () => {
     await expect.poll(() => scroll.querySelector(".cm-editor")).not.toBeNull()
     const editor = scroll.querySelector(".cm-editor")
     await expect.poll(() => scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight + 100)
+    // Reader input takes over from any saved-anchor restoration still measuring layout.
+    scroll.dispatchEvent(new WheelEvent("wheel"))
     scroll.scrollTop = 100
     await expect.poll(() => scroll.scrollTop).toBe(100)
 
@@ -306,6 +308,41 @@ const calm = (): void => {
 
 describe("Switching views", () => {
   afterEach(calm)
+
+  it("keeps a restored plan at its saved line when its layout changes later", async () => {
+    await openShowcase("grid")
+    await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+    const plan = (): HTMLElement =>
+      companionPane("Build Studio").element().querySelector<HTMLElement>(".plan-document-scroll")!
+    await expect.poll(() => plan()?.querySelector(".cm-content")).not.toBeNull()
+    plan().scrollTop = 200
+    await expect.poll(() => plan().scrollTop).toBe(200)
+    const place = (): { line: string; top: number } => {
+      const { top } = plan().getBoundingClientRect()
+      const line = [...plan().querySelectorAll(".cm-line")].find(
+        (each) => each.getBoundingClientRect().bottom > top + 1 && each.textContent?.trim(),
+      )!
+      return { line: line.textContent ?? "", top: line.getBoundingClientRect().top - top }
+    }
+    const saved = place()
+    await chooseView("Focus")
+    await terminalTab("Build Studio").click()
+    await expect.poll(() => place().line).toBe(saved.line)
+    // A layout change beyond the old finite restoration window, in the real editor.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    plan().querySelector<HTMLElement>(".cm-content")!.style.paddingTop = "150px"
+    await expect.poll(() => place().line).toBe(saved.line)
+    await expect.poll(() => Math.abs(place().top - saved.top)).toBeLessThan(1)
+
+    // Once the reader takes over, a later layout change must not restore the old place.
+    plan().style.overflowAnchor = "none"
+    plan().dispatchEvent(new WheelEvent("wheel"))
+    plan().scrollTop += 100
+    const chosen = plan().scrollTop
+    plan().querySelector<HTMLElement>(".cm-content")!.style.paddingTop = "250px"
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(plan().scrollTop).toBe(chosen)
+  })
 
   it("opens a plan that wasn't scrolled at its very top again", async () => {
     await openShowcase("grid")

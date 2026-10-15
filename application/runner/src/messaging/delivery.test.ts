@@ -524,6 +524,76 @@ describe("the person's submission", () => {
     expect(transition(missed, stop).state).toBe("drafting")
   })
 
+  it("settles a late prompt's uncertain box after its completed turn without attributing it", () => {
+    // Windows CI's emoji/CJK prompt: its hook's shell fired 2344 ms after Enter.
+    // Offsets and fractional hook times replay the recorded round-09 transition.
+    const origin = 1_792_029_901_205
+    const events: readonly DeliveryEvent[] = [
+      { type: "bound", ready: true, at: origin + 3464.6567, firedAt: origin + 2843 },
+      key("content", origin + 3475),
+      key("enter", origin + 3635),
+      {
+        type: "prompt",
+        by: "prompt",
+        at: origin + 6447,
+        startedAt: origin + 6443.453,
+        firedAt: origin + 5979,
+      },
+      { ...stop, at: origin + 7136, startedAt: origin + 7129.926 },
+    ]
+    const completed = events.reduce(
+      (delivery, event) => transition(delivery, event, 10_000),
+      unbound,
+    )
+    expect(completed).toMatchObject({
+      state: "drafting",
+      completedAt: origin + 7136,
+      byPerson: false,
+      box: { empty: false, doubted: true },
+    })
+    expect(ringableSince(completed)).toBeUndefined()
+    const empty = { type: "emptied", at: origin + 8000, epoch: completed.epoch } as const
+    const recovered = transition(completed, empty)
+    expect(recovered).toMatchObject({ state: "settled", byPerson: false, box: { empty: true } })
+    expect(ringableSince(recovered)).toBe(origin + 7136)
+    expect(transition(completed, { ...empty, epoch: completed.epoch - 1 })).toBe(completed)
+    // The screen cannot clear a new draft, a queued prompt, or the next turn's box.
+    for (const kind of ["content", "neutral", "accept", "enter", "escape"] as const) {
+      const changed = transition(completed, key(kind, origin + 7500))
+      expect(changed.box.doubted).toBe(false)
+      expect(transition(changed, empty)).toBe(changed)
+    }
+    const next = run(completed, prompted(origin + 7800), stop)
+    expect(next.box.doubted).toBe(false)
+    expect(transition(next, empty)).toBe(next)
+  })
+
+  it("keeps real drafts and queued prompts out of a late prompt's screen recovery", () => {
+    const late = prompted(at + 4000, at + 3000)
+    const uncertain = run(drafting, enter, late)
+    expect(uncertain).toMatchObject({ state: "working", byPerson: false, box: { doubted: true } })
+    // A screen read while the turn runs cannot settle it.
+    expect(transition(uncertain, { type: "emptied", at, epoch: uncertain.epoch })).toBe(uncertain)
+    for (const before of [
+      run(drafting, enter, key("content", at + 100)),
+      run(drafting, enter, key("neutral", at + 100)),
+      run(drafting, enter, key("escape", at + 100)),
+      run(drafting, enter, key("content", at + 100, true)),
+      run(working, typing, enter),
+      run(working, typing, enter, stop, key("content", at + 100)),
+    ]) {
+      const completed = run(before, late, stop)
+      expect(completed).toMatchObject({ state: "drafting", box: { doubted: false } })
+      expect(transition(completed, { type: "emptied", at, epoch: completed.epoch })).toBe(completed)
+    }
+    // The next hook of an actual queued prompt confirms its submission even when late.
+    expect(run(working, typing, enter, stop, late, stop)).toMatchObject({
+      state: "settled",
+      byPerson: true,
+      box: { doubted: false },
+    })
+  })
+
   it("is theirs when they typed only after its hook started, which leaves a draft", () => {
     // Heard after their next keys, though its hook started before them.
     const after = run(

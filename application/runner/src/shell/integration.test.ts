@@ -136,6 +136,8 @@ const it = base.extend<{ shell: Fixture }>({
       for (let attempt = 0; attempt < 200; attempt += 1) {
         // eslint-disable-next-line no-await-in-loop -- Polls the screen until it shows the text.
         const shown = await screen(terminals, terminalId)
+        if (shown.includes("stand-in TUI startup failed:"))
+          throw new Error(`Terminal fixture exited before readiness:\n${shown}`)
         if (typeof text === "string" ? shown.includes(text) : text.test(shown)) return shown
         // eslint-disable-next-line no-await-in-loop -- As above.
         await new Promise((resolve) => setTimeout(resolve, 50))
@@ -4332,9 +4334,20 @@ const standInTui = (home: string): string => {
   writeFileSync(
     script,
     String.raw`
-const { spawn } = require("node:child_process")
+const { spawn, spawnSync } = require("node:child_process")
 const fs = require("node:fs")
 const [agent, session, received, raw, mode] = process.argv.slice(2)
+// Capture job-control state only on failure: probing before raw mode changes the race.
+const startupFailed = (error) => {
+  const groups = spawnSync("ps", ["-o", "pid=,ppid=,pgid=,sess=,tpgid=,tty=,stat=", "-p", process.pid + "," + process.ppid], { encoding: "utf8", timeout: 1000 })
+  const tty = spawnSync("stty", ["-a"], { stdio: [0, "pipe", "pipe"], encoding: "utf8", timeout: 1000 })
+  fs.writeSync(2, "stand-in TUI startup failed: " + JSON.stringify({
+    message: error.message, code: error.code, pid: process.pid, ppid: process.ppid,
+    stdinTTY: process.stdin.isTTY, groups: groups.stdout, groupsError: groups.stderr,
+    tty: tty.stdout, ttyError: tty.stderr,
+  }) + "\n")
+  process.exit(1)
+}
 // The session it runs, which /clear replaces with a new one.
 let current = session
 // The thread locks it holds open, as Codex does.
@@ -4490,7 +4503,8 @@ process.on("SIGURG", () => {
   process.stdout.write("\x1b]0;Ready | " + agent.slice(0, 29) + "...\x07")
 })
 if (mode !== "bg") {
-  process.stdin.setRawMode(true)
+  process.stdin.once("error", startupFailed)
+  try { process.stdin.setRawMode(true) } catch (error) { startupFailed(error) }
   process.stdin.setEncoding("utf8")
   // One key at a time, as a terminal may hand over several in one read.
   const key = (data) => {

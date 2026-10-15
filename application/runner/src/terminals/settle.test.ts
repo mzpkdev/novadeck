@@ -43,6 +43,7 @@ describe("settling a draft kept only by doubt", () => {
     settleBox: (record: unknown) => void
     messaging: {
       rooted: (id: string, changes: readonly unknown[]) => void
+      observe: (id: string, events: readonly unknown[]) => void
       keys: (id: string, kinds: readonly string[], asked: boolean) => void
       delivery: (id: string) => { state: string; epoch: number; box: { doubted: boolean } }
     }
@@ -59,7 +60,11 @@ describe("settling a draft kept only by doubt", () => {
    * ran their command, a /clear that took long: Drafting only by doubt. `reads` gives each
    * look at the screen, the last for the rest.
    */
-  const doubting = async (terminals: ReturnType<typeof fixture>, reads: unknown[]) => {
+  const doubting = async (
+    terminals: ReturnType<typeof fixture>,
+    reads: unknown[],
+    completed = false,
+  ) => {
     const manager = terminals.manager(ptyOptions)
     const terminal = await manager.create(
       { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
@@ -71,11 +76,6 @@ describe("settling a draft kept only by doubt", () => {
     const { messaging } = inside
     messaging.rooted(terminal.id, [root("a")])
     messaging.keys(terminal.id, ["content", "enter"], false)
-    messaging.rooted(terminal.id, [root("b")])
-    expect(messaging.delivery(terminal.id)).toMatchObject({
-      state: "drafting",
-      box: { doubted: true },
-    })
     let looked = 0
     inside.screenOf = () => Promise.resolve(reads[Math.min(looked++, reads.length - 1)])
     return {
@@ -85,6 +85,21 @@ describe("settling a draft kept only by doubt", () => {
       id: terminal.id,
       looks: () => looked,
       state: () => messaging.delivery(terminal.id)?.state,
+      start: () => {
+        // Start after the fake clock and screen reader are installed: delivery changes
+        // now start the manager's settling automatically, including a completed Stop.
+        if (completed) {
+          const identity = { agent: "agy", sessionId: "a", instance: null }
+          messaging.observe(terminal.id, [
+            { ...identity, type: "turn-started", cause: "prompt", startedAt: root("a").startedAt },
+            { ...identity, type: "turn-ended", outcome: "completed" },
+          ])
+        } else messaging.rooted(terminal.id, [root("b")])
+        expect(messaging.delivery(terminal.id)).toMatchObject({
+          state: "drafting",
+          box: { doubted: true },
+        })
+      },
     }
   }
 
@@ -95,8 +110,8 @@ describe("settling a draft kept only by doubt", () => {
     const between = await doubting(fixture(resources), [empty, typed, empty, typed])
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
     try {
-      settled.inside.settleBox(settled.record)
-      between.inside.settleBox(between.record)
+      settled.start()
+      between.start()
       await vi.advanceTimersByTimeAsync(0)
       expect(settled.state()).toBe("drafting")
       await vi.advanceTimersByTimeAsync(100)
@@ -109,17 +124,48 @@ describe("settling a draft kept only by doubt", () => {
     }
   })
 
+  it("automatically becomes Settled after a late prompt's completed turn and two empty reads", async ({
+    resources,
+  }) => {
+    const reading = await doubting(fixture(resources), [empty], true)
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+    try {
+      reading.start()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(reading.state()).toBe("drafting")
+      expect(reading.looks()).toBe(1)
+      await vi.advanceTimersByTimeAsync(100)
+      expect(reading.state()).toBe("settled")
+      expect(reading.looks()).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("gives up after its window, leaving the draft", async ({ resources }) => {
     const drafted = await doubting(fixture(resources), [typed])
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
     try {
-      drafted.inside.settleBox(drafted.record)
+      drafted.start()
       await vi.advanceTimersByTimeAsync(5_200)
       const looked = drafted.looks()
       expect(looked).toBeGreaterThan(40)
       await vi.advanceTimersByTimeAsync(2_000)
       expect(drafted.looks()).toBe(looked)
       expect(drafted.state()).toBe("drafting")
+      // Another terminal change must not restart the same doubt's five-second budget.
+      drafted.inside.settleBox(drafted.record)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(drafted.looks()).toBe(looked)
+      // A later doubt has a new epoch and gets its own budget automatically.
+      drafted.inside.messaging.keys(drafted.id, ["content", "enter"], false)
+      drafted.inside.messaging.rooted(drafted.id, [root("c")])
+      expect(drafted.inside.messaging.delivery(drafted.id)).toMatchObject({
+        state: "drafting",
+        box: { doubted: true },
+      })
+      await vi.advanceTimersByTimeAsync(100)
+      expect(drafted.looks()).toBeGreaterThan(looked)
     } finally {
       vi.useRealTimers()
     }
@@ -129,7 +175,7 @@ describe("settling a draft kept only by doubt", () => {
     const reading = await doubting(fixture(resources), [typed])
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
     try {
-      reading.inside.settleBox(reading.record)
+      reading.start()
       await vi.advanceTimersByTimeAsync(500)
       expect(reading.looks()).toBeGreaterThan(1)
       const closing = reading.manager.close({ terminalId: reading.id })
@@ -147,7 +193,7 @@ describe("settling a draft kept only by doubt", () => {
     const reading = await doubting(fixture(resources), [typed, empty])
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
     try {
-      reading.inside.settleBox(reading.record)
+      reading.start()
       await vi.advanceTimersByTimeAsync(0)
       reading.inside.messaging.keys(reading.id, ["content"], false)
       await vi.advanceTimersByTimeAsync(1_000)
@@ -174,7 +220,7 @@ describe("settling a draft kept only by doubt", () => {
           await new Promise<void>((resolve) => (release = resolve))
         return screen
       }
-      reading.inside.settleBox(reading.record)
+      reading.start()
       await vi.advanceTimersByTimeAsync(100)
       expect(release).toBeDefined()
       // The person typed, pressed Enter, and a /clear's session bound late again.

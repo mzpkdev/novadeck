@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
+import { isEmpty } from "@novadeck/harness-core/box"
 import type { TranscriptItem } from "@novadeck/protocol"
 
 import { harnesses } from "../harnesses/registry.js"
@@ -198,8 +199,10 @@ for (const setup of setups) {
       for (const text of ["/clear", "see @src", "use $", "Hello\x15there", "\x1b[201~x"])
         await expect(t1.prompt(text)).rejects.toMatchObject({ code: "PROMPT_REFUSED" })
       await sleep(500)
-      const shown = await t1.screen()
-      for (const typed of ["@src", "/clear", "!ls"]) expect(shown).not.toContain(typed)
+      const shown = await t1.screenText()
+      const box = shown && harnesses[setup.agent].box.read(shown)
+      expect(box, JSON.stringify(shown?.rows)).toBeDefined()
+      expect(box && isEmpty(box), JSON.stringify(box)).toBe(true)
       expect(await texts(t1, "user")).toEqual([])
     })
 

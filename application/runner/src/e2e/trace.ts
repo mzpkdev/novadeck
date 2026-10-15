@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { isEmpty, type BoxProfile, type InputBox } from "@novadeck/harness-core/box"
+import { isEmpty, sameText, type BoxProfile, type InputBox } from "@novadeck/harness-core/box"
 import type { Harness } from "@novadeck/harness-core/harness"
 import type { Report } from "@novadeck/harness-core/report"
 import type { ScreenText } from "@novadeck/harness-core/screen"
@@ -357,8 +357,18 @@ export const startTrace = (name: string, model: FakeModel) => {
   methods(prompting, "Prompts", ["emptied", "landed"])
   const { emptied, landed } = prompting
   const lastRead = new Map<string, { time: number; screen: ScreenText | undefined }>()
+  const pastes = new Map<string, { typed: string; profile: BoxProfile; reads: string[] }>()
+  const recordRead = (id: string, screen: ScreenText | undefined) => {
+    lastRead.set(id, { time: Date.now(), screen })
+    const paste = pastes.get(id)
+    if (!paste) return
+    const box = screen && paste.profile.read(screen)
+    paste.reads.push(
+      `${at(Date.now())}: ${box ? `${box.mode}, ${box.first}..${box.last}, ${sameText(box.text, paste.typed) ? "matching text" : paste.profile.collapsed(box) ? "placeholder" : "different text"}` : "no box"}`,
+    )
+  }
   prompting.emptied = async function (terminalId, profile, first, ...rest) {
-    watch(this.host, (id, screen) => lastRead.set(id, { time: Date.now(), screen }))
+    watch(this.host, recordRead)
     // The box as the prompt first found it, where it held text: read before any wrap here.
     const box = profile.read(first)
     if (!box || box.mode !== "prompt" || !isEmpty(box))
@@ -378,16 +388,23 @@ export const startTrace = (name: string, model: FakeModel) => {
   // it was last read, and when, to tell a screen that never showed it from one that was
   // read late (a runner busy for seconds at a time).
   prompting.landed = async function (terminalId, typed, profile, ...rest) {
-    watch(this.host, (id, screen) => lastRead.set(id, { time: Date.now(), screen }))
+    watch(this.host, recordRead)
     const began = Date.now()
-    const result = await landed.call(this, terminalId, typed, profile, ...rest)
-    if (result !== true) {
-      const read = lastRead.get(terminalId)
-      add(
-        `prompt ${named(terminalId)} paste of ${typed.length} chars ended as ${brief(result, 40)} (not found, or placeholder, or the hold lapsed) after ${Date.now() - began} ms; last read at ${read ? at(read.time) : "never"}: ${boxOf(read?.screen, profile)}`,
-      )
+    const paste = { typed, profile, reads: [] as string[] }
+    pastes.set(terminalId, paste)
+    try {
+      const result = await landed.call(this, terminalId, typed, profile, ...rest)
+      if (result !== true) {
+        const read = lastRead.get(terminalId)
+        const holding = rest[1]
+        add(
+          `prompt ${named(terminalId)} paste of ${typed.length} chars ended as ${brief(result, 40)} after ${Date.now() - began} ms; hold ${typeof holding === "function" ? String(holding()) : "unknown"}; reads: ${paste.reads.join("; ")}; last read at ${read ? at(read.time) : "never"}: ${boxOf(read?.screen, profile)}`,
+        )
+      }
+      return result
+    } finally {
+      pastes.delete(terminalId)
     }
-    return result
   }
 
   // A terminal's tree as the runner reads and ends it as the terminal closes (Windows'

@@ -505,6 +505,8 @@ type Record = {
    * bound: its first prompt's hooks bind it, so until then nothing says it is idle.
    */
   readyEntered: boolean
+  /** The last delivery epoch whose uncertain box got a screen-settling window. */
+  boxDoubtEpoch?: number
   /** `performance.now()` at the last save of its screen, so saves take turns. */
   savedAt: number
 } & Omit<Started, "process" | "screen" | "serializer" | "startedAt">
@@ -874,11 +876,14 @@ export class Terminals {
             platform: this.options.platform,
             ...options.doorbell,
           })
-    // A Stop Novadeck continued whose lease lapsed ended its turn after all.
+    // A lapsed continuation ends its turn; a late prompt may leave only box doubt to settle.
     this.messaging.subscribe((change) => {
       if (change.kind !== "terminal") return
       const record = this.records.get(change.terminalId)
-      if (record) this.lapsed(record)
+      if (record) {
+        this.lapsed(record)
+        this.settleBox(record)
+      }
     })
     this.prompts = new Prompts(this.promptHost(), this.inputs, options.prompts)
     this.interrupts = new Interrupts(this.interruptHost(), {
@@ -4052,15 +4057,21 @@ export class Terminals {
   }
 
   /**
-   * Looks at the screen while the terminal's delivery is Drafting only by doubt (a new
-   * session announced too long after the person's Enter to tell it ran their command, as a
-   * slow /clear on Windows): once the agent's box reads empty on two reads running, nothing
-   * was left in it, and the terminal is Ready. Gives up when the doubt ends or after
-   * `boxSettleMs`, leaving the draft; a later doubt in the same terminal has its own window.
+   * Looks at the screen while delivery is Drafting only by doubt after a late hook: once
+   * the agent's box reads empty on two reads running, nothing was left in it, and delivery
+   * is Ready before its first turn or Settled after one completed. Gives up when doubt
+   * ends or after `boxSettleMs`, leaving the draft; a later doubt has its own window.
    */
   private settleBox(record: Record): void {
     const id = record.summary.id
-    if (this.settling.has(id) || !this.messaging.delivery(id)?.box.doubted) return
+    const current = this.messaging.delivery(id)
+    if (
+      this.settling.has(id) ||
+      current?.state !== "drafting" ||
+      !current.box.doubted ||
+      record.boxDoubtEpoch === current.epoch
+    )
+      return
     this.settling.add(id)
     void (async () => {
       let until = 0
@@ -4075,6 +4086,7 @@ export class Terminals {
           // A new doubt starts anew: its own window, its own two reads.
           if (delivery.epoch !== epoch) {
             epoch = delivery.epoch
+            record.boxDoubtEpoch = epoch
             until = Date.now() + boxSettleMs
             seen = false
           }
