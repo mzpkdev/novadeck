@@ -562,7 +562,7 @@ describe("saving a plan", () => {
     expect(readdirSync(directory).toSorted()).toEqual(["dir.md", "p.md"])
   })
 
-  it.skipIf(process.getuid?.() === 0)(
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "refuses a plan in a folder it may not write to as PLAN_UNWRITABLE folder",
     async ({ directory }) => {
       const folder = join(directory, "ro")
