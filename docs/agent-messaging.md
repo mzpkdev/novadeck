@@ -1345,7 +1345,10 @@ after a minute), never locks out evidence: the next evidence asks again.
 A **plain shell** is titled (never summarized) on:
 
 1. every return to its prompt at which a line was entered since the last one
-   (`record.lineEntered`: something typed before the Enter), 3 seconds after (`shellSettleMs`) so rapid commands make one
+   (`record.lineEntered`: the keys sent left something on the line, counted roughly in
+   `terminals/line.ts`: characters add one, Backspace removes one, Ctrl+U, Ctrl+C and Ctrl+W
+   empty it, Ctrl+L changes nothing, and history, search, completion or a paste make it
+   unknown, which counts as typed), 3 seconds after (`shellSettleMs`) so rapid commands make one
    description, so `tree`, `cat` or `git status` rename it too. It is skipped when the
    directory, command and screen's rows are the same as at the last description (a command
    that printed nothing, a cleared screen) and when the screen shows only prompts (the line

@@ -3543,6 +3543,24 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(describer.digests).toHaveLength(before)
     })
 
+    it("describes nothing for an Enter on a line with nothing on it", async ({ shell }) => {
+      const describer = new FakeDescriber({ reply: () => ({ title: "Shell" }) })
+      const manager = shell.manager({ describer, murmurTimes, processPollMs: 50 })
+      const terminal = await create(manager, shell)
+      await shell.until(manager, terminal.id, "$ ")
+      manager.write({ terminalId: terminal.id, data: "echo hello\r" }, "owner")
+      await expect.poll(() => describer.digests.length, { timeout: 30_000 }).toBeGreaterThan(0)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      const before = describer.digests.length
+      // A line typed and erased, Ctrl+L, and a line cleared with Ctrl+U: each then Enter.
+      for (const keys of ["ls\x7f\x7f\r", "\x0c\r", "abc\x15\r"]) {
+        manager.write({ terminalId: terminal.id, data: keys }, "owner")
+        // eslint-disable-next-line no-await-in-loop -- One after the other.
+        await new Promise((resolve) => setTimeout(resolve, 400))
+      }
+      expect(describer.digests).toHaveLength(before)
+    })
+
     it("keeps no line across a full reset, which clears the screen", async ({ shell }) => {
       const describer = new FakeDescriber({ reply: () => ({ title: "Shell" }) })
       const manager = shell.manager({ describer, murmurTimes, processPollMs: 50 })
@@ -3610,9 +3628,13 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
         previous: null,
       })
       await expect.poll(() => manager.get(terminal.id).title, { timeout: 30_000 }).toBe("Login fix")
-      // Whatever its exit leaves on the screen does not name the terminal again.
+      // It runs a while, then the person ends it: what its exit leaves on the screen does not
+      // name the terminal again.
+      await new Promise((resolve) => setTimeout(resolve, 700))
       const shells = describer.digests.filter((digest) => digest.kind === "shell").length
-      await new Promise((resolve) => setTimeout(resolve, 800))
+      manager.write({ terminalId: terminal.id, data: "\x03" }, "owner")
+      await expect.poll(() => manager.get(terminal.id).agent, { timeout: 30_000 }).toBeNull()
+      await new Promise((resolve) => setTimeout(resolve, 1_000))
       expect(describer.digests.filter((digest) => digest.kind === "shell")).toHaveLength(shells)
       expect(manager.get(terminal.id).title).toBe("Login fix")
     })

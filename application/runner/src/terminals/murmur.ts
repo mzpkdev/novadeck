@@ -1038,6 +1038,10 @@ export class Murmur {
       watch.prompt = seen
       watch.titledFrom = "agent"
     }
+    // The run in the shell's foreground is the agent's from here on, and its end owes the
+    // shell nothing: the sampler sees the foreground change only when it does (the program
+    // the agent runs as stays the same all along), so it is noted when the agent binds.
+    watch.agentRan = true
     if (!this.usable || subject.naming.person !== null) return
     if (watch.recheck) {
       watch.recheck = false
@@ -1130,12 +1134,9 @@ export class Murmur {
     const subject = this.host.subject(terminalId)
     if (!subject) return
     const watch = this.watch(terminalId)
-    // An agent holds the foreground: its run is the agent's, whatever program the sampler
-    // took it for before it bound, and what its end leaves on screen is the agent's.
-    if (subject.agent) {
-      watch.agentRan = true
-      return
-    }
+    // An agent holds the foreground (noted as `agentRan` when it bound): its run is the
+    // agent's, whatever program the sampler took it for before.
+    if (subject.agent) return
     // The shell's own name is its prompt: no program.
     const key = subject.atPrompt ? null : programKey(subject.program)
     if (key === watch.program.key) return
@@ -1715,7 +1716,7 @@ export class Murmur {
       // row, or after four checks whatever they said.
       // A better name replaces the previous one only when the model judges the work changed
       // (or there is none yet); a verdict that it did not is a keep.
-      if (!same && (outcome.changed || ran.previous === null))
+      if (!same && this.renames(outcome, title, ran))
         this.store(terminalId, title, ran.facts, watch)
       watch.checks += 1
       watch.keeps = kept ? watch.keeps + 1 : 0
@@ -1729,11 +1730,7 @@ export class Murmur {
     // forming digest): a title that differs is a new phase, and forms again.
     if (ran.hard) {
       watch.candidate = false
-      // Renamed on the model's word that the work changed, or when the new name shares no
-      // content word with the old one; a rewording of the same work keeps the name.
-      if (same) return
-      if (!outcome.changed && ran.previous !== null && sharesContentWord(title, ran.previous))
-        return
+      if (same || !this.renames(outcome, title, ran)) return
       this.store(terminalId, title, ran.facts, watch)
       watch.stage = "forming"
       watch.checks = 0
@@ -1755,6 +1752,19 @@ export class Murmur {
     watch.checks = 0
     watch.keeps = 0
     watch.candidate = false
+  }
+
+  // Whether a differing title replaces the name: when the model judges the work changed,
+  // when there is no name yet, or, after a hard signal (a summary, a new branch or plan),
+  // when the new name shares no content word with the old one; a rewording of the same
+  // work keeps the name.
+  private renames(
+    outcome: Description,
+    title: string,
+    ran: { readonly hard: boolean; readonly previous: string | null },
+  ): boolean {
+    if (outcome.changed || ran.previous === null) return true
+    return ran.hard && !sharesContentWord(title, ran.previous)
   }
 
   // The check did not run: what it saw is unseen again, and it is owed once `retryMs` pass.

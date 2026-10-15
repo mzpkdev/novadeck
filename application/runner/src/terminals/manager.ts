@@ -131,6 +131,7 @@ import { InputQueue, type HoldBudget, type InputHold } from "./input-queue.js"
 import { Interrupts, type InterruptHost, type InterruptOptions } from "./interrupts.js"
 import { keysOf, splitReports } from "./keys.js"
 import { Latest } from "./latest.js"
+import { afterKeys, emptyLine, type Line } from "./line.js"
 import { withLocale } from "./locale.js"
 import { type MouseEncoding, mouseReporting, watchMouseEncoding } from "./mouse.js"
 import {
@@ -392,11 +393,9 @@ type Record = {
    * with it.
    */
   prompts: IMarker[]
-  /**
-   * Whether anything but Enter was typed on the line being entered, and whether a
-   * non-empty line was entered since the last prompt (an empty Enter runs no command).
-   */
-  lineTyped: boolean
+  /** The line being typed at the prompt, as far as the keys tell (see `afterKeys`). */
+  line: Line
+  /** Whether a non-empty line was entered since the last prompt (an empty Enter runs no command). */
   lineEntered: boolean
   /** How many titles that may tell a harness's prompt the terminal set, so a stale check is dropped. */
   titles?: number
@@ -1066,7 +1065,7 @@ export class Terminals {
         sourceReaders: new Set(),
         promptedAt: saved?.promptedAt ?? null,
         prompts: [],
-        lineTyped: false,
+        line: emptyLine,
         lineEntered: started.resumes,
         changed: false,
         savedAt: 0,
@@ -1407,13 +1406,11 @@ export class Terminals {
       this.endLead(record)
       if (claim && this.claims.get(claim) === record.summary.id) this.claims.delete(claim)
     }
-    if (/[\r\n]/.test(data)) {
-      record.submitted = true
-      // A line with anything on it (typed before, or in this input) is a command; Enter on
-      // an empty prompt is not.
-      if (record.lineTyped || /[^\r\n]/.test(data)) record.lineEntered = true
-      record.lineTyped = false
-    } else record.lineTyped = true
+    if (/[\r\n]/.test(data)) record.submitted = true
+    // A line with something on it is a command; Enter on an empty prompt is not.
+    const line = afterKeys(record.line, data)
+    record.line = line.line
+    if (line.entered) record.lineEntered = true
     if (keys.some(({ kind }) => kind === "enter") && this.readyOf(record)) this.readyEnter(record)
     this.messaging.keys(
       record.summary.id,
@@ -2064,7 +2061,7 @@ export class Terminals {
           startupRuns: started.resumes,
           readyEntered: false,
           prompts: [],
-          lineTyped: false,
+          line: emptyLine,
           lineEntered: started.resumes,
         })
         // The earlier shell's screen shows above the new one's.
@@ -3402,7 +3399,7 @@ export class Terminals {
     // Whether a non-empty line was entered since the last prompt: a command may have run.
     const entered = record.lineEntered
     record.lineEntered = false
-    record.lineTyped = false
+    record.line = emptyLine
     record.submitted = false
     this.markPrompt(record, entered)
     record.readyEntered = false

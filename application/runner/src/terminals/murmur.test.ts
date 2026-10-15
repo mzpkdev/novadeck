@@ -1518,6 +1518,38 @@ describe("when an agent's terminal is checked at the end of its turns", () => {
     expect(written).toEqual([{ title: "Login defect" }])
   })
 
+  it("renames on a summary while forming, with no verdict, when the new name shares no word", async () => {
+    const answers = [
+      { title: "Repo overview", changed: true },
+      { title: "Invoice export", changed: false },
+      { title: "Invoice export flow", changed: false },
+    ]
+    const { murmur, change, written } = start((call) => answers[call - 1])
+    murmur.reported("a", report({ session: true }))
+    await settle()
+    change({
+      naming: {
+        ...unnamed,
+        murmur: { title: "Repo overview" },
+        summary: "Builds the invoice PDF export.",
+      },
+    })
+    murmur.summarized("a")
+    await settle()
+    expect(written).toEqual([{ title: "Repo overview" }, { title: "Invoice export" }])
+    // A reworded name after another summary keeps it: the work is the same.
+    change({
+      naming: {
+        ...unnamed,
+        murmur: { title: "Invoice export" },
+        summary: "Adds a layout to the PDF.",
+      },
+    })
+    murmur.summarized("a")
+    await settle()
+    expect(written).toHaveLength(2)
+  })
+
   it("keeps the name for a new root session until the session has evidence of its own", async () => {
     const { murmur, describer, change, written, turn } = await settledAfterThree(() => ({
       title: "Docs",
@@ -2164,19 +2196,26 @@ describe("when a plain shell's terminal is described", () => {
   })
 
   it("owes a shell nothing for a run during which an agent was bound", async () => {
-    const { murmur, describer, change, times } = create({ agent: null })
+    const { murmur, describer, change, times } = create({
+      agent: null,
+      work: work(),
+      activity: working(),
+    })
+    // The real order: the sampler takes the program for what it is before the agent binds,
+    // and, the foreground being the same all along, is not told again while it runs.
     change({ program: { name: "claude", argv: ["claude"] } })
     murmur.sampled("a")
     await settle(times.shellRunMs - 100)
-    // The agent binds while the sampler still has the program it took it for.
     change({ agent: "claude" })
+    murmur.reported("a", report({ session: true }))
+    await settle(times.shellRunMs + 300)
+    // It exits: a sample may land before the prompt is reported, with the agent still bound.
+    change({ program: { name: "bash", argv: null } })
     murmur.sampled("a")
-    await settle(300)
-    // It exits and the shell is back at its prompt: its leftover screen names nothing.
-    change({ agent: null, program: { name: "bash", argv: null } })
+    change({ agent: null })
     murmur.sampled("a")
     await settle(times.shellSettleMs + times.shellRunMs + 200)
-    expect(describer.jobs).toHaveLength(0)
+    expect(describer.digests.filter((digest) => digest.kind === "shell")).toHaveLength(0)
   })
 
   it("is not asked for a shell the person titled", async () => {
