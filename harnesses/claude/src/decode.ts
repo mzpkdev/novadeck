@@ -5,6 +5,7 @@ import {
   absolute,
   withRequestCwd,
   bounded,
+  errorText,
   callId,
   promptStart,
   replied,
@@ -18,19 +19,6 @@ import {
 } from "@novadeck/harness-core/harness"
 import { at as writtenAt, record } from "@novadeck/harness-core/items"
 import type { Report } from "@novadeck/harness-core/report"
-
-// What a harness said of a failed turn, as plain text a person reads: escapes and control
-// characters out (a newline kept), cut to what the protocol takes. Undefined when none is left.
-const failure = (value: unknown): string | undefined => {
-  if (typeof value !== "string") return undefined
-  const plain = value
-    // eslint-disable-next-line no-control-regex -- These are the characters it removes.
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[@-_]?/g, "")
-    // eslint-disable-next-line no-control-regex -- As above.
-    .replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g, " ")
-    .trim()
-  return plain === "" ? undefined : plain.slice(0, 2048)
-}
 
 /**
  * Claude Code's hooks, as normalized facts.
@@ -114,9 +102,9 @@ const decodeHook = ({ event, seq, instance, env, payload }: Report): readonly Ha
       // text for a person; the message it showed (`last_assistant_message`, "API Error: ...")
       // is, and `error_details` where it names more (probed 2026-10-15, 2.1.287).
       const error =
-        failure(payload.last_assistant_message) ??
-        failure(payload.error_details) ??
-        (text(payload.error) === "unknown" ? undefined : failure(payload.error))
+        errorText(payload.last_assistant_message) ??
+        errorText(payload.error_details) ??
+        (text(payload.error) === "unknown" ? undefined : errorText(payload.error))
       return [
         {
           type: "turn-ended",

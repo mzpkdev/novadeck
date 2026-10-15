@@ -669,10 +669,14 @@ for (const setup of setups) {
       await t1.submit("Write them")
       await t1.reached("working", { after: mark })
       // Its tools ask the person before writing, which Claude Code and Antigravity do by
-      // default: the first option allows.
+      // default: the chat allows each, through the dialog the adapter read.
       await t1.poll(
         async () => {
-          if (/(?:❯|>|›)\s*1\.\s*(?:Yes|Allow)/.test(await t1.screen())) t1.press("1")
+          const [request] = (await t1.detail()).requests
+          const { dialog } = request ?? {}
+          const yes = dialog?.type === "choices" ? dialog.options[0] : undefined
+          if (request && dialog?.type === "choices" && yes && yes.label.startsWith("Yes"))
+            await t1.answer(request.ref, { dialog: dialog.id, type: "choice", option: yes.id })
           return t1.summary().activity?.lastTurn?.outcome === "completed" ? true : undefined
         },
         "the turn to end",

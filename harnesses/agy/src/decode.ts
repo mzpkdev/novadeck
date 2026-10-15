@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { extname, isAbsolute, relative } from "node:path"
 
 import type { HarnessEvent, PromptShown } from "@novadeck/harness-core/events"
-import { absolute, shortName, sessionId, text } from "@novadeck/harness-core/harness"
+import { absolute, errorText, shortName, sessionId, text } from "@novadeck/harness-core/harness"
 import type { Report } from "@novadeck/harness-core/report"
 
 /**
@@ -66,19 +66,6 @@ const reading = (name: unknown): { model: string; effort: string | null } | unde
     : { model: whole, effort: null }
 }
 
-// What a harness said of a failed turn, as plain text a person reads: escapes and control
-// characters out (a newline kept), cut to what the protocol takes. Undefined when none is left.
-const failure = (value: unknown): string | undefined => {
-  if (typeof value !== "string") return undefined
-  const plain = value
-    // eslint-disable-next-line no-control-regex -- These are the characters it removes.
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[@-_]?/g, "")
-    // eslint-disable-next-line no-control-regex -- As above.
-    .replace(/[\x00-\x09\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g, " ")
-    .trim()
-  return plain === "" ? undefined : plain.slice(0, 2048)
-}
-
 // A quota it ran out of: its error names the API's status RESOURCE_EXHAUSTED, bar a mere
 // rate limit's reason (probed 2026-10-15, 1.2.14: the status line of its error is
 // "generating and executing: Error 429, Message: ..., Status: RESOURCE_EXHAUSTED, Details: [...]";
@@ -87,7 +74,7 @@ const exhausted = /Status: RESOURCE_EXHAUSTED/
 const throttled = /reason:RATE_LIMIT_EXCEEDED/
 
 const failed = (value: unknown): { error?: string; limited?: true } => {
-  const error = failure(value)
+  const error = errorText(value)
   if (error === undefined) return {}
   return {
     error,
