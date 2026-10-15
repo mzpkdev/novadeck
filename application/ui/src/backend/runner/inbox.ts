@@ -43,7 +43,8 @@ export const detailGraceMs = 5000
 export const retryMs = 1000
 const retryCapMs = 10_000
 // How long an answer to trouble may leave its item standing before it can be answered again.
-export const settleMs = 5000
+// Antigravity marks a turn's start at its first model call, which can take a while.
+export const settleMs = 15_000
 
 // A request, with when its hook started on the runner's clock.
 export type Asked = { readonly request: ChatRequest; readonly askedAt: number }
@@ -288,6 +289,12 @@ export const createRunnerInbox = (
   const submitted = new Set<string>()
   const failed = new Map<string, string>()
   let due: ReturnType<typeof setTimeout> | undefined
+  // Per item, when its answer is given up on if the item still stands.
+  const settling = new Map<string, ReturnType<typeof setTimeout>>()
+  const clearSettling = (): void => {
+    for (const timer of settling.values()) clearTimeout(timer)
+    settling.clear()
+  }
   // Set once the backend stops: nothing opens or recomputes after it.
   let ended = false
 
@@ -443,16 +450,22 @@ export const createRunnerInbox = (
   // Runs an answer. With `settles`, an answer that took but left its item standing (a
   // prompt that started no turn) gives the buttons back after a few seconds.
   const call = (id: string, work: () => Promise<unknown>, settles = false): void => {
+    clearTimeout(settling.get(id))
+    settling.delete(id)
     failed.delete(id)
     submitted.add(id)
     recompute()
     track(work()).then(
       () => {
         if (!settles) return
-        setTimeout(() => {
-          if (!submitted.delete(id)) return
-          recompute()
-        }, settleMs)
+        settling.set(
+          id,
+          setTimeout(() => {
+            settling.delete(id)
+            if (!submitted.delete(id)) return
+            recompute()
+          }, settleMs),
+        )
       },
       (error: unknown) => fail(id, reason(error)),
     )
@@ -536,6 +549,7 @@ export const createRunnerInbox = (
         for (const stop of unsubscribe) stop()
         unsubscribe = []
         clearTimeout(due)
+        clearSettling()
         for (const id of readings.keys()) close(id)
         seen.clear()
         submitted.clear()
@@ -546,6 +560,7 @@ export const createRunnerInbox = (
     end: () => {
       ended = true
       clearTimeout(due)
+      clearSettling()
       for (const id of readings.keys()) close(id)
     },
   }

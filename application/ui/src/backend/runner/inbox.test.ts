@@ -980,6 +980,41 @@ describe("The runner's Inbox", () => {
       expect(inbox.state.getSnapshot().items.map((item) => item.id)).toEqual(["limit:01:100"])
     })
 
+    it("waits long enough for a slow harness to start its turn", async () => {
+      const { inbox } = setup(limitHit())
+      inbox.answer("limit:01:100", { kind: "trouble", action: { type: "continue" } })
+      await vi.advanceTimersByTimeAsync(settleMs - 1)
+
+      expect(inbox.state.getSnapshot().answering).toEqual({ "limit:01:100": true })
+    })
+
+    it("lets a newer answer's wait run its own course, not an older one's", async () => {
+      const { inbox, workspaceStore } = setup(limitHit())
+      inbox.answer("limit:01:100", { kind: "trouble", action: { type: "continue" } })
+      await settle()
+      // The item goes and comes back with the same id, and is answered again.
+      workspaceStore.update(() => workspaceOf(agentTerminal(1)))
+      await vi.advanceTimersByTimeAsync(settleMs - 1000)
+      workspaceStore.update(() => limitHit())
+      inbox.answer("limit:01:100", { kind: "trouble", action: { type: "continue" } })
+      await vi.advanceTimersByTimeAsync(1000)
+
+      // The first answer's wait is over; the second's is not.
+      expect(inbox.state.getSnapshot().answering).toEqual({ "limit:01:100": true })
+      await vi.advanceTimersByTimeAsync(settleMs - 1000)
+      expect(inbox.state.getSnapshot().answering).toEqual({})
+    })
+
+    it("drops its waits once unbound or ended", async () => {
+      const { inbox, stop } = setup(limitHit())
+      inbox.answer("limit:01:100", { kind: "trouble", action: { type: "continue" } })
+      await settle()
+      stop()
+
+      expect(vi.getTimerCount()).toBe(0)
+      inbox.end()
+    })
+
     it("stops an agent by interrupting it", () => {
       const { inbox, streams } = setup(limitHit())
       inbox.answer("limit:01:100", { kind: "trouble", action: { type: "stop" } })
