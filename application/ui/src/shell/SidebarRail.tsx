@@ -62,7 +62,6 @@ export const SidebarRail = ({
             className="segment relative inline-flex size-8 shrink-0 items-center justify-center p-2 [&>svg]:shrink-0"
             aria-label={status?.label ?? label}
             data-project-status={status?.status}
-            aria-controls={`${id}-panel`}
           >
             <Icon size={16} />
             {status && <NotificationBadge text={status.text} />}

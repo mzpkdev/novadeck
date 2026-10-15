@@ -137,7 +137,7 @@ describe("the visitor build", () => {
     })
   })
 
-  it("says nothing to a page around it when not framed", async () => {
+  it("says nothing to a page around it without ?embed", async () => {
     const post = vi.spyOn(window.parent, "postMessage")
     try {
       await openVisitor()
