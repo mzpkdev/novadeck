@@ -29,6 +29,7 @@ import { defaultQuickExitMs, exitStatus, restartable, terminalActivity } from ".
 import { createBootProgress } from "./boot-progress"
 import { createRunnerCompanions } from "./companions"
 import { createRunnerConversations } from "./conversations"
+import { createRunnerInbox } from "./inbox"
 import { createRunnerItems } from "./items"
 import { createRunnerMessages } from "./messages"
 import { createRunnerMurmur } from "./murmur"
@@ -47,6 +48,13 @@ import {
   type RunnerListing,
 } from "./seed"
 import { createRunnerVoice } from "./voice"
+
+// Why a thread couldn't be released or stopped, for the person.
+const threadFailure = (error: unknown, what: string): never => {
+  throw new Error(
+    hasCode(error, "DISCONNECTED", "CLOSED") ? "The runner is offline." : `Couldn't ${what} it.`,
+  )
+}
 
 // The part of the runner client the adapter uses.
 export type RunnerApi = Pick<
@@ -993,6 +1001,22 @@ export const runnerBackend = (
     },
     track,
   )
+  // The Inbox: built from the terminals' statuses, the messages and the requests of the
+  // agents that ask, once the app binds it to its workspace. Every runner backend has it.
+  const inbox = createRunnerInbox(
+    {
+      detail: (terminalId) => runner.agents.detail(terminalId),
+      answer: (key, request, answer) => conversations.answer(key, request, answer),
+      send: (key, text) => conversations.send(key, text),
+      interrupt: (key) => conversations.interrupt(key),
+      release: (thread) =>
+        runner.messages.release(thread).catch((error: unknown) => threadFailure(error, "release")),
+      stop: (thread) =>
+        runner.messages.stop(thread).catch((error: unknown) => threadFailure(error, "stop")),
+    },
+    messages.state,
+    { track },
+  )
   // The voice input addon, followed from `start` like the messages.
   const voice = createRunnerVoice(runner.voice, track)
   // Murmur, followed the same way.
@@ -1272,6 +1296,7 @@ export const runnerBackend = (
       stopItems()
       messages.stop()
       conversations.stop()
+      inbox.end()
       voice.stop()
       murmur.stop()
       // The last changes are saved; nothing retries after this.
@@ -1305,6 +1330,7 @@ export const runnerBackend = (
     }),
     messages,
     conversations,
+    inbox,
     resetTitle: (key) => {
       const { terminalId } = key
       if (items.holdsWindow(target(key), terminalId))

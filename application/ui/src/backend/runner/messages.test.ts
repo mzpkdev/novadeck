@@ -21,6 +21,7 @@ const listing = (change: Partial<TerminalMessages> = {}): TerminalMessages => ({
       hops: 1,
       allowed: 12,
       held: false,
+      stopped: false,
       messages: [
         {
           id: "m-1",
