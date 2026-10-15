@@ -30,7 +30,7 @@
   --canvas-dots-opacity: 0.16;
   --terminal-idle-opacity: 0.5;
   --terminal-hover-opacity: 0.75;
-  /* Brand: the logo tile and the welcome start button. */
+  /* Brand: the welcome start button and the choice-card tiles. */
   --brand-tile-border-color: transparent;
 }
 
@@ -89,6 +89,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-size: var(--text-lead);
+  line-height: var(--text-lead--line-height);
   user-select: none;
 }
 /* Tailwind's own defaults would set code in a face the theme never chose. */

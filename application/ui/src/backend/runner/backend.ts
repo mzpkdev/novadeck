@@ -31,6 +31,7 @@ import { createRunnerCompanions } from "./companions"
 import { createRunnerConversations } from "./conversations"
 import { createRunnerItems } from "./items"
 import { createRunnerMessages } from "./messages"
+import { createRunnerMurmur } from "./murmur"
 import { pause } from "./pause"
 import { resumableProgram } from "./resumable"
 import { createRunnerTerminal } from "./RunnerTerminal"
@@ -57,6 +58,7 @@ export type RunnerApi = Pick<
   | "agents"
   | "messages"
   | "voice"
+  | "murmur"
   | "settings"
   | "companions"
 >
@@ -73,6 +75,12 @@ export type RunnerBackendOptions = {
   readonly showAppearance?: Backend["showAppearance"]
   // Where the host shows desktop notifications.
   readonly notices?: Backend["notices"]
+  // Where the host offers the update it has downloaded.
+  readonly updates?: Backend["updates"]
+  readonly version?: Backend["version"]
+  readonly sandbox?: Backend["sandbox"]
+  readonly portable?: Backend["portable"]
+  readonly uninstall?: Backend["uninstall"]
   // Where the host lets the page finish its saves before its window closes or the app
   // quits; returns the undo.
   readonly beforeQuit?: (save: () => Promise<void>) => () => void
@@ -347,6 +355,8 @@ export const runnerBackend = (
   // Terminals the runner reported that this window didn't ask for, as another window's or
   // an agent's, on their way into the workspace: they exist, so nothing creates them.
   const adopted = new Map<string, TerminalSummary>()
+  // Terminals closed here, which nothing the runner still says of them brings back.
+  const closedHere = new Set<string>()
   // Names the person gave terminals, until the runner reports them as theirs.
   const renamed = new Map<string, string>()
   // Titles the person gave terminals, which a terminal is created with; the runner names
@@ -376,6 +386,15 @@ export const runnerBackend = (
     entry.status = status
     const { terminalId } = entry.key
     return [{ type: "terminal/status", target: target(entry.key), terminalId, status }]
+  }
+  // The runner refuses to start a terminal closed for good, as by another window while
+  // this one was away: it goes here too, rather than linger as failed.
+  const closedElsewhere = (entry: RunnerEntry): false => {
+    if (!entry.closed)
+      dispatch([
+        { type: "terminal/close", target: target(entry.key), terminalId: entry.key.terminalId },
+      ])
+    return false
   }
   const settle = (entry: RunnerEntry, status: TerminalStatus): void => {
     if (entry.closed) return
@@ -596,14 +615,18 @@ export const runnerBackend = (
     }
   }
 
-  // Ends the shell, retrying while the runner is unreachable. A terminal already gone,
-  // or one another window controls, is left as it is.
-  // A lost terminal is closed too, so the runner forgets what would restore it.
+  // Ends the shell, retrying while the runner is unreachable or restarting, whatever
+  // window controls it: a closed terminal is gone for good. One already gone is left as it is.
+  // A lost terminal is closed too, so the runner forgets what would restore it, at once:
+  // a restore still queued is cancelled, one under way the runner refuses, and waiting
+  // behind the queue could let a quit come first.
   const endShell = (entry: RunnerEntry): Promise<void> => {
     const closing = (async () => {
-      if (!(await entry.ready) && !entry.requested && !entry.lost) return
+      const waits = !entry.lost
+      if (waits && !(await entry.ready) && !entry.requested && !entry.lost) return
       await untilAnswered(() => runner.terminals.close(entry.key.terminalId), {
         done: ["TERMINAL_NOT_FOUND", "TERMINAL_EXITED", "NOT_FOUND"],
+        again: ["RUNTIME_CLOSING"],
       }).catch(() => {})
     })()
     closes.add(closing)
@@ -640,12 +663,19 @@ export const runnerBackend = (
     const directory = current.directory !== summary.cwd ? summary.cwd : undefined
     const handle = current.handle !== summary.handle ? summary.handle : undefined
     const ledBy = (current.ledBy ?? null) !== summary.ledBy ? summary.ledBy : undefined
+    const openedBy = (current.openedBy ?? null) !== summary.openedBy ? summary.openedBy : undefined
+    const agentRan = (current.agentRan ?? false) !== summary.agentRan ? summary.agentRan : undefined
     // While the person's name is on its way, it is theirs, whatever the runner said before.
     const titleSource =
       unconfirmed === undefined && !sameTitleSource(current.titleSource, summary.titleSource)
         ? summary.titleSource
         : undefined
-    if ([name, directory, handle, ledBy, titleSource].every((fact) => fact === undefined)) return []
+    if (
+      [name, directory, handle, ledBy, openedBy, agentRan, titleSource].every(
+        (fact) => fact === undefined,
+      )
+    )
+      return []
     return [
       {
         type: "terminal/update",
@@ -655,6 +685,8 @@ export const runnerBackend = (
         ...(directory !== undefined && { directory }),
         ...(handle !== undefined && { handle }),
         ...(ledBy !== undefined && { ledBy }),
+        ...(openedBy !== undefined && { openedBy }),
+        ...(agentRan !== undefined && { agentRan }),
         ...(titleSource !== undefined && { titleSource }),
       },
     ]
@@ -704,7 +736,7 @@ export const runnerBackend = (
       each.history.some((session) => session.id === summary.sessionId),
     )
     const terminal = runnerTerminal(summary, quickExitMs)
-    if (!project || !terminal || adopted.has(summary.id)) return
+    if (!project || !terminal || adopted.has(summary.id) || closedHere.has(summary.id)) return
     adopted.set(summary.id, summary)
     dispatch([
       {
@@ -761,10 +793,14 @@ export const runnerBackend = (
     ).catch((error: unknown) => {
       if (launch) launch.failure = error
       if (error instanceof Cancelled) return false
+      if (hasCode(error, "TERMINAL_NOT_FOUND")) return closedElsewhere(entry)
       settle(entry, error instanceof CrashLoop ? crashLoop : (lostStatus(error) ?? failedToCreate))
       return false
     })
   }
+
+  const reply = (answer: TerminalRequestAnswer) =>
+    runner.terminals.answerRequest(answer).catch(() => {})
 
   // Tells the runner how an agent's request went: the terminal the app added, once the
   // runner started it, or why not. One that couldn't start closes again, as the agent
@@ -774,8 +810,6 @@ export const runnerBackend = (
     result: { readonly terminalId: string } | { readonly reason: string },
   ): Promise<void> => {
     const { requestId } = request
-    const reply = (answer: TerminalRequestAnswer) =>
-      runner.terminals.answerRequest(answer).catch(() => {})
     if ("reason" in result) return reply({ requestId, reason: result.reason })
     const { terminalId } = result
     const entry = entries.get(terminalId)
@@ -786,6 +820,11 @@ export const runnerBackend = (
     if (entry && !entry.closed)
       dispatch([{ type: "terminal/close", target: target(entry.key), terminalId }])
     return reply({ requestId, reason: launchFailure(launch) })
+  }
+
+  // A runner that keeps dying while a shell starts is a crash loop; stop waiting.
+  const stillWanted = (): void => {
+    if (restartingOften()) throw new CrashLoop()
   }
 
   // Starts a fresh shell for the terminal, keeping its id: a restart when the runner
@@ -807,10 +846,6 @@ export const runnerBackend = (
     const { terminalId, workspaceSessionId } = entry.key
     const { cols, rows } = entry.size
     const agent = resumableProgram(restoredOf(entry))
-    // A runner that keeps dying while this shell starts is a crash loop; stop waiting.
-    const stillWanted = (): void => {
-      if (restartingOften()) throw new CrashLoop()
-    }
     const retry: Retry = { done: ["CONFLICT"], stillWanted, cancelled: () => entry.closed }
     const resume = agent ? { resume: agent } : {}
     const create = () => {
@@ -863,6 +898,7 @@ export const runnerBackend = (
       .catch((error: unknown) => {
         entry.starting = false
         if (error instanceof Cancelled) return false
+        if (hasCode(error, "TERMINAL_NOT_FOUND")) return closedElsewhere(entry)
         settle(
           entry,
           error instanceof CrashLoop ? crashLoop : (lostStatus(error) ?? failedToCreate),
@@ -959,6 +995,8 @@ export const runnerBackend = (
   )
   // The voice input addon, followed from `start` like the messages.
   const voice = createRunnerVoice(runner.voice, track)
+  // Murmur, followed the same way.
+  const murmur = createRunnerMurmur(runner.murmur, track)
   let following = false
   // Follows a terminal's messages once the runner has it: it answers "not found" before
   // then. Called whenever a shell is created or started afresh.
@@ -1002,6 +1040,7 @@ export const runnerBackend = (
     },
     close: (entry, key) => {
       entry.closed = true
+      closedHere.add(key.terminalId)
       entries.delete(key.terminalId)
       messages.unfollow(key)
       // A removed project's terminals are closed by the runner, as it removes the project.
@@ -1216,6 +1255,7 @@ export const runnerBackend = (
     following = true
     for (const entry of entries.values()) if (!entry.closed) followWhenReady(entry)
     voice.follow()
+    murmur.follow()
     window.addEventListener("pagehide", flush)
     // The host waits for these saves, removals and closes before a close or quit can end
     // the shells, so they name what still runs.
@@ -1233,6 +1273,7 @@ export const runnerBackend = (
       messages.stop()
       conversations.stop()
       voice.stop()
+      murmur.stop()
       // The last changes are saved; nothing retries after this.
       flush()
       halted = true
@@ -1256,6 +1297,7 @@ export const runnerBackend = (
     commit,
     TerminalSurface: createRunnerTerminal(runtime, screens),
     voice: voice.voice,
+    murmur: murmur.murmur,
     typeInto: screens.typeInto,
     start,
     companions: createRunnerCompanions(runner.companions, {
@@ -1312,13 +1354,18 @@ export const runnerBackend = (
     ...(options.pickDirectory ? { pickDirectory: options.pickDirectory } : {}),
     ...(options.showAppearance ? { showAppearance: options.showAppearance } : {}),
     ...(options.notices ? { notices: options.notices } : {}),
+    ...(options.updates ? { updates: options.updates } : {}),
+    ...(options.version ? { version: options.version } : {}),
+    ...(options.sandbox ? { sandbox: options.sandbox } : {}),
+    ...(options.portable ? { portable: options.portable } : {}),
+    ...(options.uninstall ? { uninstall: options.uninstall } : {}),
   }
+  const busy = (): boolean => saves.busy() || pending.size > 0
   return {
     backend,
     holds: (key) => registry.get(key) !== undefined,
     restart: runtime.restart,
     idle: async () => {
-      const busy = (): boolean => saves.busy() || pending.size > 0
       while (busy()) {
         flush()
         // eslint-disable-next-line no-await-in-loop -- Settled work may start more.

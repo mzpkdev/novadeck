@@ -51,8 +51,8 @@ const calling: Dialect = {
 
 // The turns of a conversation in which the model called send and the harness answered.
 const sent = (answer: string, ...more: Turn[]): Turn[] => [
-  { role: "user", text: "Tell t2" },
-  { role: "assistant", text: "", calls: [{ id: "c1", name: "send", input: { to: "t2" } }] },
+  { role: "user", text: "Tell fox" },
+  { role: "assistant", text: "", calls: [{ id: "c1", name: "send", input: { to: "fox" } }] },
   { role: "tool", id: "c1", text: answer },
   ...more,
 ]
@@ -70,6 +70,16 @@ const broken: Dialect = {
     if (request.path.startsWith("/broken/json")) JSON.parse(request.body)
     throw new Error("no messages in this request\nwith a second line")
   },
+}
+
+// Half a body, then gone, as a harness the deck ended mid-request.
+const abandon = async (model: FakeModel) => {
+  const socket = connect(Number(new URL(model.url).port), "127.0.0.1")
+  socket.on("error", () => {})
+  socket.write("POST /broken HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\n\r\n{")
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  socket.destroy()
+  await new Promise((resolve) => setTimeout(resolve, 200))
 }
 
 const it = base.extend<{ model: FakeModel }>({
@@ -296,6 +306,16 @@ describe("startFakeModel", () => {
     expect(await response.text()).not.toContain("grant_type")
   })
 
+  it("records nothing of a request its client gave up on as the deck closed", async ({ model }) => {
+    await model.ending(() => abandon(model))
+    expect(model.errors).toEqual([])
+  })
+
+  it("records a request its client gave up on at any other time", async ({ model }) => {
+    await abandon(model)
+    expect(model.errors).toEqual(["POST /broken: aborted"])
+  })
+
   it("records a request its dialect doesn't serve as a stray", async ({ model }) => {
     const response = await fetch(`${model.url}/chat/unserved?page=1`)
 
@@ -320,12 +340,12 @@ describe("startFakeModel's rejections", () => {
     expect(model.rejections).toEqual([
       {
         number: 1,
-        call: { id: "c1", name: "send", input: { to: "t2" } },
+        call: { id: "c1", name: "send", input: { to: "fox" } },
         text: "REFUSED: invalid arguments - missing property 'toolSummary'",
       },
     ])
     expect(model.rejection()).toBe(
-      `The harness refused a tool call the fake model made: send {"to":"t2"}. Model call 1 carries its answer: "REFUSED: invalid arguments - missing property 'toolSummary'"`,
+      `The harness refused a tool call the fake model made: send {"to":"fox"}. Model call 1 carries its answer: "REFUSED: invalid arguments - missing property 'toolSummary'"`,
     )
   })
 
@@ -343,11 +363,11 @@ describe("startFakeModel's rejections", () => {
   it("leaves a tool's own error, and a result that came before the model last spoke, alone", async ({
     model,
   }) => {
-    await turns(model, sent("t2 has no agent Novadeck can deliver to."))
+    await turns(model, sent("@fox has no agent Novadeck can deliver to."))
     await turns(
       model,
       sent(
-        "t2 is queued",
+        "fox is queued",
         { role: "assistant", text: "Done.", calls: [] },
         { role: "user", text: "Again" },
       ),
@@ -393,14 +413,14 @@ describe("startFakeModel's trail", () => {
   it("lists the latest calls by what each carried last, a refused result marked", async ({
     model,
   }) => {
-    await chat(model, "Tell t2")
+    await chat(model, "Tell fox")
     await turns(model, sent("REFUSED: unknown tool"))
-    await turns(model, sent("t2 is queued", { role: "user", text: "Next" }))
+    await turns(model, sent("fox is queued", { role: "user", text: "Next" }))
 
     expect(model.trail(2)).toBe(
       [
         "Last 2 of 3 model calls:",
-        `  2. result of send {"to":"t2"} (refused): "REFUSED: unknown tool"`,
+        `  2. result of send {"to":"fox"} (refused): "REFUSED: unknown tool"`,
         `  3. user "Next"`,
       ].join("\n"),
     )
@@ -423,8 +443,8 @@ describe("startFakeModel's explained timeouts", () => {
   it("ends a failed wait for a call with the trail and what the describer says", async ({
     model,
   }) => {
-    await turns(model, sent("t2 is queued"))
-    model.explain(async () => "t1, its agent: idle. Its screen:\nAllow this tool?")
+    await turns(model, sent("fox is queued"))
+    model.explain(async () => "moth, its agent: idle. Its screen:\nAllow this tool?")
 
     const failed = await model
       .waitFor(() => false, { timeoutMs: 20 })
@@ -433,9 +453,9 @@ describe("startFakeModel's explained timeouts", () => {
     expect((failed as Error).message).toMatch(
       /^No matching model call in 20 ms\.\nLast 1 of 1 model calls:\n/,
     )
-    expect((failed as Error).message).toContain(`1. result of send {"to":"t2"}: "t2 is queued"`)
+    expect((failed as Error).message).toContain(`1. result of send {"to":"fox"}: "fox is queued"`)
     expect((failed as Error).message).toMatch(
-      /\nt1, its agent: idle\. Its screen:\nAllow this tool\?$/,
+      /\nmoth, its agent: idle\. Its screen:\nAllow this tool\?$/,
     )
   })
 

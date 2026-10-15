@@ -11,10 +11,12 @@ import {
 import { useRef, type ReactNode } from "react"
 
 import { shortcutBindings } from "../interaction/shortcuts"
+import { handleText, terminalLabel } from "../model/handle"
 import { isWindow } from "../model/roster"
 import { attentionText, doneText, terminalPhase, unheardText } from "../model/terminal-ending"
 import type { Tile, WindowedView } from "../model/types"
 import { ContextMenu, type ContextMenuItem } from "../ui-toolkit/ContextMenu"
+import { HandleChip } from "../ui-toolkit/HandleChip"
 import { Tooltip } from "../ui-toolkit/Tooltip"
 import { TerminalRenameInput, type TerminalRename } from "./TerminalRenameInput"
 
@@ -125,6 +127,7 @@ export const WindowShell = ({
   const ignoreDoubleClickUntil = useRef(0)
   const renaming = Boolean(rename)
   const shell = isWindow(terminal) ? undefined : terminal
+  const label = terminalLabel(terminal.name, shell?.handle)
   const phase = shell ? terminalPhase(shell, unread !== undefined) : "idle"
   const failed = unread === "failed"
   // What the agent waits on the person for, that Novadeck can't hear from it, or that it
@@ -215,13 +218,11 @@ export const WindowShell = ({
         else headerDoubleAction?.()
       }}
     >
-      <div
-        className={`terminal-title flex min-w-0 items-center [&>h1]:truncate [&>h2]:truncate ${phase === "done" ? "[&>h1]:font-bold [&>h2]:font-bold" : "[&>h1]:font-medium [&>h2]:font-medium"}`}
-      >
+      <div className="terminal-title flex min-w-0 flex-1 items-center">
         {switcher ? (
           <Tooltip content="Switch terminal">
             <button
-              className={`${headerActionClasses} nodrag nopan`}
+              className={`${headerActionClasses} terminal-switch nodrag nopan`}
               aria-label="Switch terminal"
               onClick={(event) => {
                 event.stopPropagation()
@@ -229,19 +230,40 @@ export const WindowShell = ({
               }}
             >
               {icon}
+              {/* The sidebar shows every handle, so the header keeps it under the pointer. */}
+              {!renaming && shell && (
+                <HandleChip handle={shell.handle} className="handle-plain terminal-switch-handle" />
+              )}
             </button>
           </Tooltip>
         ) : (
           icon
         )}
         <>
-          <Heading hidden={renaming} data-terminal-name="">
-            {terminal.name}
-          </Heading>
+          {/* The name and who leads it share a line; "led by" shows whole beside the name
+              or wraps out of sight (window.css), so the name gives way last. */}
+          <span
+            className={`terminal-title-text [&>h1]:truncate [&>h2]:truncate ${phase === "done" ? "[&>h1]:font-bold [&>h2]:font-bold" : "[&>h1]:font-medium [&>h2]:font-medium"}`}
+            hidden={renaming}
+          >
+            <Heading hidden={renaming} data-terminal-name="">
+              {terminal.name}
+            </Heading>
+            {lead && !renaming && (
+              <Tooltip
+                content={`Directed by the agent in ${handleText(lead.handle)} · ${lead.name}`}
+              >
+                <span className="terminal-lead nodrag nopan" data-terminal-lead={lead.handle}>
+                  led by {handleText(lead.handle)}
+                </span>
+              </Tooltip>
+            )}
+          </span>
           {rename && (
             <TerminalRenameInput
               id={terminal.id}
               name={terminal.name}
+              label={label}
               value={rename.value}
               request={rename.request}
               autoFocus={rename.origin === "header"}
@@ -250,13 +272,6 @@ export const WindowShell = ({
               onCancel={onRenameCancel}
               className="terminal-rename-input w-full min-w-0 text-body leading-4 font-medium nodrag nopan"
             />
-          )}
-          {lead && !renaming && (
-            <Tooltip content={`Directed by the agent in ${lead.handle}`}>
-              <span className="terminal-lead nodrag nopan" data-terminal-lead={lead.handle}>
-                led by {lead.handle} · {lead.name}
-              </span>
-            </Tooltip>
           )}
         </>
       </div>
@@ -275,8 +290,8 @@ export const WindowShell = ({
               className={`${headerActionClasses} dictation-action nodrag nopan ${dictation.recording ? "dictation-active" : ""}`}
               aria-label={
                 dictation.ready === false
-                  ? `Set up voice input for ${terminal.name}`
-                  : `Dictate into ${terminal.name}`
+                  ? `Set up voice input for ${label}`
+                  : `Dictate into ${label}`
               }
               aria-pressed={dictation.ready === false ? undefined : dictation.recording}
               onClick={(event) => {
@@ -302,7 +317,7 @@ export const WindowShell = ({
           >
             <button
               className={`${headerActionClasses} terminal-view-action nodrag nopan`}
-              aria-label={`${resizeLabel}: ${terminal.name}`}
+              aria-label={`${resizeLabel}: ${label}`}
               aria-pressed={large}
               onClick={(event) => {
                 event.stopPropagation()
@@ -317,7 +332,7 @@ export const WindowShell = ({
           <Tooltip content={`Focus${focusHint}`}>
             <button
               className={`${headerActionClasses} terminal-view-action nodrag nopan`}
-              aria-label={`Focus ${terminal.name}`}
+              aria-label={`Focus ${label}`}
               onClick={(event) => {
                 event.stopPropagation()
                 onFocus()
@@ -342,7 +357,7 @@ export const WindowShell = ({
           <Tooltip content="Close">
             <button
               className={`${headerActionClasses} terminal-close nodrag nopan`}
-              aria-label={`Close ${terminal.name}`}
+              aria-label={`Close ${label}`}
               onClick={(event) => {
                 event.stopPropagation()
                 onClose()
@@ -358,7 +373,7 @@ export const WindowShell = ({
   return (
     <section
       className={`terminal-window flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${compact ? "terminal-compact" : "terminal-focused"}`}
-      aria-label={`${terminal.name} terminal`}
+      aria-label={`${label} terminal`}
       data-terminal={terminal.id}
       data-terminal-phase={phase}
       {...(phase === "done" && failed ? { "data-terminal-failed": true } : {})}
@@ -367,11 +382,7 @@ export const WindowShell = ({
       data-new={fresh}
     >
       <div className="terminal-heading relative shrink-0">
-        {menu ? (
-          <ContextMenu label={`${terminal.name} actions`} items={menu} trigger={header} />
-        ) : (
-          header
-        )}
+        {menu ? <ContextMenu label={`${label} actions`} items={menu} trigger={header} /> : header}
       </div>
       {children}
     </section>

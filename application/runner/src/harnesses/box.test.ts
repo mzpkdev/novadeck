@@ -1,15 +1,25 @@
-import { join } from "node:path"
-
+import {
+  box as agy,
+  shellCommandOf as agyShellCommand,
+  shellFooter as agyFooter,
+} from "@novadeck/harness-agy/box"
+import { box as claude, shellFooter as claudeFooter } from "@novadeck/harness-claude/box"
+import { box as codex, shellFooter as codexFooter } from "@novadeck/harness-codex/box"
+import {
+  compact,
+  isEmpty,
+  sameText,
+  wrappedRows,
+  type BoxProfile,
+} from "@novadeck/harness-core/box"
+import { type ScreenText } from "@novadeck/harness-core/screen"
+import { loadProbe } from "@novadeck/harness-core/testing/probes"
+import { screen as screenWith } from "@novadeck/harness-core/testing/screens"
 import headless from "@xterm/headless"
 
-import { screenText, type ScreenText } from "../terminals/screen.js"
+import { screenText } from "../terminals/screen.js"
 import { describe, expect, it } from "../test.js"
-import { loadProbe } from "../testing/probes.js"
-import { screen as screenWith } from "../testing/screens.js"
-import { box as agy, shellFooter as agyFooter } from "./agy/box.js"
-import { compact, isEmpty, sameText, wrappedRows, type BoxProfile } from "./box.js"
-import { box as claude, shellFooter as claudeFooter } from "./claude/box.js"
-import { box as codex, shellFooter as codexFooter } from "./codex/box.js"
+import { adapterFolder } from "../testing/adapters.js"
 
 // Each harness's input box, read off the screens real runs drew (fixtures/input-box.probe.json,
 // from e2e/probes/input-box.e2e.ts): the pinned version and the latest of 2026-10-07.
@@ -18,7 +28,7 @@ type Fixture = {
 }
 
 const fixture = (harness: string): Fixture =>
-  loadProbe<Fixture>(join(import.meta.dirname, harness), "input-box.probe.json")
+  loadProbe<Fixture>(adapterFolder(harness), "input-box.probe.json")
 
 const hold = (...lines: string[]) => lines.join("\n")
 const three = hold("one", "two", "three")
@@ -265,6 +275,9 @@ describe("boxes read from synthetic screens", () => {
   it("clears text put back in the box only where a harness puts some back", () => {
     const box = { text: "a\nb", mode: "prompt" as const, first: 3, last: 4 }
     expect(claude.clear?.(box)).toBe("\x1b\x1b")
+    // Its footer says one more Escape clears: a second would open the rewind picker.
+    expect(claude.clear?.(box, screenWith({ rows: ["❯ a", "Esc again to clear"] }))).toBe("\x1b")
+    expect(claude.clear?.(box, screenWith({ rows: ["❯ a", "? for shortcuts"] }))).toBe("\x1b\x1b")
     expect(agy.clear?.(box)).toBe("\x15\x7f\x15")
     expect(agy.clear?.({ text: "a", mode: "prompt" as const, first: 3, last: 3 })).toBe("\x15")
     expect(codex.clear).toBe(undefined)
@@ -295,7 +308,7 @@ describe("boxes read from synthetic screens", () => {
 type ShellCase = { step: string; version: string; shell: boolean; rows: string[] }
 const shellCases = (harness: string): ShellCase[] =>
   loadProbe<{ cases: (Omit<ShellCase, "rows"> & { screen: ScreenText })[] }>(
-    join(import.meta.dirname, harness),
+    adapterFolder(harness),
     "shell-mode.probe.json",
   ).cases.map(({ screen: shown, ...rest }) => ({ ...rest, rows: [...shown.rows] }))
 
@@ -351,6 +364,96 @@ describe.each([
 
   it("says whether a command shown as a placeholder runs as the text it stands for", () => {
     expect(profile.shell.expands).toBe(key !== "agy")
+  })
+})
+
+describe("the command Antigravity's shell mode is given", () => {
+  it("is as written outside Windows", () => {
+    expect(agyShellCommand("echo a\necho b", "linux")).toBe("echo a\necho b")
+  })
+
+  it("has its lines joined with & on Windows, where cmd runs only the first", () => {
+    expect(agyShellCommand("echo a > a.txt\n  echo b\n\necho c", "win32")).toBe(
+      "echo a > a.txt & echo b & echo c",
+    )
+    expect(agyShellCommand("dir", "win32")).toBe("dir")
+  })
+
+  it("is none on Windows for lines that joined would mean something else", () => {
+    for (const command of [
+      "echo a\nrem then b\necho b",
+      "echo a\n:: then b\necho b",
+      "echo a ^\n  continued",
+      "if exist a (\necho yes\n)",
+      "echo a\n) else (",
+      "echo a\n@rem then b\necho b",
+      "echo a\nrem.then b\necho b",
+      "echo a\nREM/then b\necho b",
+      "echo a\n:label\necho b",
+      "echo a &\necho b",
+      "echo a &&\necho b",
+      "echo a |\nfind a",
+      "echo a\n|| echo b",
+      "echo a & rem then b\necho b",
+      "echo a\n;rem then b\necho b",
+      "echo a\n, rem then b\necho b",
+      "echo a\n@ rem then b\necho b",
+      "echo a\n;:label\necho b",
+      "set N=foo\necho %N%",
+      "cd sub\necho %CD%",
+      "echo a & :: then b\necho b",
+      "echo a & :label\necho b",
+      "if exist x rem n\necho b",
+      "for %%f in (*) do rem x\necho b",
+      "if exist x (echo y) else rem n\necho b",
+      'echo "a\necho b',
+      "if exist x ;rem n\necho b",
+      "if exist x ,rem n\necho b",
+      "if exist x @rem n\necho b",
+      // `^"` opens nothing, so the `"` after it does.
+      'echo ^"a" b\necho c',
+    ])
+      expect(agyShellCommand(command, "win32"), command).toBeUndefined()
+    // Quotes in pairs join as written, and a quote cmd only prints is none.
+    expect(agyShellCommand('echo "a b"\necho c', "win32")).toBe('echo "a b" & echo c')
+    expect(agyShellCommand('echo ^"a\necho c', "win32")).toBe('echo ^"a & echo c')
+    // A remark alone, or one word that only starts like one, runs as written.
+    expect(agyShellCommand("rem nothing", "win32")).toBe("rem nothing")
+    expect(agyShellCommand("echo a\nremove-it.cmd", "win32")).toBe("echo a & remove-it.cmd")
+  })
+})
+
+describe("Antigravity's word that an Escape stopped the turn", () => {
+  const rule = "─".repeat(60)
+  // The history above the box, the cursor in it, as the screen the CI run failed on had it.
+  const shown = (history: string[]) => {
+    const rows = ["> Hold on", "", ...history, rule, "> ", rule, "? for shortcuts"]
+    return agy.interrupted!(screen(rows, rows.indexOf("> "), 2))
+  }
+
+  it("is read under a reply it kept as well, and alone", () => {
+    const word = "  ⎿  Interrupted · What should Antigravity CLI do instead?"
+    expect(shown(["  Too late.", "", word])).toBe(true)
+    expect(shown([word, ""])).toBe(true)
+  })
+
+  it("is not read where the reply is last, nor where it stands above a later turn", () => {
+    expect(shown(["  Too late.", ""])).toBe(false)
+    expect(
+      shown(["  ⎿  Interrupted · What should Antigravity CLI do instead?", "> Next", "  Done."]),
+    ).toBe(false)
+  })
+
+  it("is read wrapped over rows, as on a tile narrower than its line", () => {
+    expect(
+      shown(["  Too late.", "", "  ⎿  Interrupted · What should Ant", "igravity CLI do instead?"]),
+    ).toBe(true)
+    expect(shown(["  ⎿  Interrupted · What", " should Antigravity CLI ", "do instead?"])).toBe(true)
+  })
+
+  it("can't tell where no box is found to read above, as mid-redraw or under a dialog", () => {
+    const word = "  ⎿  Interrupted · What should Antigravity CLI do instead?"
+    expect(agy.interrupted!(screen(["  Too late.", word, "Run this command?"], 2))).toBeUndefined()
   })
 })
 

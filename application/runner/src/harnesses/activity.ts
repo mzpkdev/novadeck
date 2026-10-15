@@ -1,8 +1,8 @@
+import type { ActivityEvent, Background, PlanSource } from "@novadeck/harness-core/events"
+import { ref } from "@novadeck/harness-core/harness"
 import type { AgentActivity } from "@novadeck/protocol"
 
 import type { Binding } from "./bindings.js"
-import type { ActivityEvent, Background, PlanSource } from "./events.js"
-import { ref } from "./harness.js"
 
 /** The reference clients know a subagent by. */
 export const subagentRef = (id: string): string => ref("subagent", id)
@@ -23,6 +23,8 @@ export type Request = {
   readonly screen?: true
   /** When its hook started: asked again later, the same call is another request. */
   readonly askedAt: number
+  /** Murmur's line on a question or plan, for the person only; see `withHeadline`. */
+  readonly headline?: string
 }
 
 /** An actor's latest plan, as the hook that named it started. */
@@ -118,6 +120,8 @@ export type LastTurn = {
   readonly reply: string | null
   readonly at: number
   readonly recorded: boolean
+  /** Murmur's gist of the reply, for the person only; see `withGist`. */
+  readonly gist?: { readonly text: string; readonly asks: boolean }
   /** Set while the person's Escape is the only word on how the turn ended. */
   readonly escaped?: Escape
 }
@@ -149,6 +153,36 @@ type Escape = {
  * one the Escape stands.
  */
 export const escapeVerdictMs = 1500
+
+/**
+ * How long past `escapeVerdictMs` a harness that fires no Stop for a reply it kept has to
+ * draw its word that the Escape stopped the turn (Antigravity on Windows), which a loaded
+ * machine may draw after the reply, not with it: a screen that shows the reply alone is
+ * read again for this long before the reply is taken as having won.
+ */
+export const escapeScreenMs = 1000
+
+/**
+ * How long before the hook that bound a session another hook the harness fired with it
+ * may have started, in milliseconds: Antigravity fires its status line and a model call's
+ * PreInvocation at once, and either may start, and be heard, first. A newly bound
+ * session's activity takes facts from that long before the binding's hook fired (its
+ * `firedAt`, on Windows its shell's start): each fact is compared by its relay's start,
+ * never earlier than its own firing, so one fired with the binding is kept, however long
+ * its own shell took to start. The relays' starts alone can't tell: two hooks fired
+ * together start their own cmd or PowerShell, and under load their relays start well over
+ * 250 ms apart. On CI (2026-10-11, Windows) the
+ * PreInvocation that started a session's first turn had started 5 µs, and once 1.4 ms,
+ * before the status line that bound the session, was heard after it, and was dropped as
+ * older than the binding, with every fact after it: the turn never showed.
+ */
+const boundTogetherMs = 250
+
+/** When a session bound by `bound`, a hook's fact, takes facts from (see `boundTogetherMs`). */
+export const boundSince = (bound: {
+  readonly startedAt: number
+  readonly firedAt?: number
+}): number => (bound.firedAt ?? bound.startedAt) - boundTogetherMs
 
 /** A freshly bound agent waits for its first prompt. */
 export const started = (at: number, wakes = true, records = true): Activity => ({
@@ -301,6 +335,12 @@ const turnEnded = (activity: Activity, event: TurnEnded): Activity | undefined =
           ? activity.lastTurn.at
           : event.startedAt,
       recorded: recorded === true,
+      // The same end again, told the same way, keeps the gist murmur wrote of it.
+      ...(activity.state === "idle" &&
+        activity.lastTurn?.recorded &&
+        !recorded &&
+        activity.lastTurn.outcome === event.outcome &&
+        activity.lastTurn.gist && { gist: activity.lastTurn.gist }),
     },
   } as const
   if (event.outcome !== "interrupted")
@@ -644,7 +684,8 @@ export const apply = (
     case "turn-ended":
       return turnEnded(activity, event)
     case "turn-escape-lapsed": {
-      // The window passed: the Stop held since is the end, else the Escape stands.
+      // The window passed: the Stop held since is the end, else a reply its transcript
+      // holds, else the Escape stands.
       const { lastTurn } = activity
       if (
         activity.state !== "idle" ||
@@ -654,7 +695,18 @@ export const apply = (
       )
         return undefined
       const { held } = lastTurn.escaped
-      return held ? finished(activity, held) : confirmed(activity)
+      if (held) return finished(activity, held)
+      if (event.reply === undefined) return confirmed(activity)
+      // The reply came before the key took, though no Stop said so.
+      return finished(activity, {
+        type: "turn-ended",
+        agent: event.agent,
+        sessionId: event.sessionId,
+        instance: event.instance,
+        startedAt: event.startedAt,
+        outcome: "completed",
+        reply: event.reply,
+      })
     }
     case "attention-requested":
       return asked(activity, event)
@@ -714,6 +766,70 @@ const asked = (
 }
 
 /**
+ * The activity with murmur's headline on the request asked as `requestId` at `askedAt`;
+ * undefined when that request no longer waits (answered, revised, gone) or already has it.
+ */
+export const withHeadline = (
+  activity: Activity,
+  requestId: string,
+  askedAt: number,
+  text: string,
+): Activity | undefined => {
+  const index = activity.pending.findIndex(
+    (request) => request.requestId === requestId && request.askedAt === askedAt,
+  )
+  if (index < 0 || activity.pending[index]!.headline !== undefined) return undefined
+  return {
+    ...activity,
+    pending: activity.pending.map((request, at) =>
+      at === index ? { ...request, headline: text } : request,
+    ),
+  }
+}
+
+/**
+ * The activity with murmur's gist on its last turn, while that turn is still the one that
+ * ended at `at`, completed or failed, and none runs; undefined otherwise.
+ */
+export const withGist = (
+  activity: Activity,
+  at: number,
+  gist: { readonly text: string; readonly asks: boolean },
+): Activity | undefined => {
+  const { lastTurn } = activity
+  if (
+    activity.state === "working" ||
+    !lastTurn ||
+    lastTurn.at !== at ||
+    (lastTurn.outcome !== "completed" && lastTurn.outcome !== "failed") ||
+    lastTurn.gist
+  )
+    return undefined
+  return { ...activity, lastTurn: { ...lastTurn, gist: { text: gist.text, asks: gist.asks } } }
+}
+
+const unheadlined = (request: Request): Request => {
+  const { headline: _, ...rest } = request
+  return rest
+}
+const ungisted = (lastTurn: LastTurn): LastTurn => {
+  const { gist: _, ...rest } = lastTurn
+  return rest
+}
+
+/** The activity without any headline or gist murmur wrote (murmur turned off); undefined when it had none. */
+export const withoutNotes = (activity: Activity): Activity | undefined => {
+  const { lastTurn } = activity
+  if (lastTurn?.gist === undefined && !activity.pending.some(({ headline }) => headline))
+    return undefined
+  return {
+    ...activity,
+    pending: activity.pending.map(unheadlined),
+    lastTurn: lastTurn && ungisted(lastTurn),
+  }
+}
+
+/**
  * The activity as clients see it: working while its turn runs, and after it while
  * subagents it left running, which wake it once done, run on: work its Stop says only
  * exists counts as one until a status line has counted them. Other work it left running,
@@ -747,10 +863,19 @@ export const summary = ({
         ? null
         : { agents: background.agents, tasks: background.tasks },
   planning,
-  attention: { pending: pending.length, kind: pending[0]?.kind ?? null },
+  attention: {
+    pending: pending.length,
+    kind: pending[0]?.kind ?? null,
+    headline: (pending[0]?.kind !== "permission" && pending[0]?.headline) || null,
+  },
   subagents: subagents.map(({ id, type }) => ({ id: subagentRef(id), type })),
   lastTurn:
     state === "working" || !lastTurn
       ? null
-      : { outcome: lastTurn.outcome, reply: lastTurn.reply, at: lastTurn.at },
+      : {
+          outcome: lastTurn.outcome,
+          reply: lastTurn.reply,
+          at: lastTurn.at,
+          gist: lastTurn.gist ?? null,
+        },
 })

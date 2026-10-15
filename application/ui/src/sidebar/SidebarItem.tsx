@@ -19,6 +19,7 @@ export const SidebarItem = ({
   selectLabel,
   tooltip,
   description,
+  tag,
   badge,
   emphasized = false,
   describedBy,
@@ -41,6 +42,8 @@ export const SidebarItem = ({
   // On hover, where a row has more to say than it shows.
   tooltip?: string
   description?: string
+  // Before the name, such as a terminal's handle.
+  tag?: ReactNode
   // Beside the name, as a count of what waits there.
   badge?: ReactNode
   // Its name in bold, as for something the person hasn't seen yet.
@@ -67,7 +70,7 @@ export const SidebarItem = ({
       className="sidebar-item-select flex min-w-0 flex-1 items-start gap-2 px-2.5 py-[9px] text-left"
       type="button"
       aria-label={selectLabel}
-      aria-description={describedBy ? undefined : description}
+      aria-description={describers ? undefined : description}
       aria-describedby={describers || undefined}
       aria-current={selected ? "true" : undefined}
       onClick={onSelect}
@@ -76,8 +79,9 @@ export const SidebarItem = ({
         {icon}
       </span>
       <span className="sidebar-item-copy flex min-w-0 flex-1 flex-col gap-1">
-        {badge ? (
+        {badge || tag ? (
           <span className="flex min-w-0 items-center gap-1.5">
+            {tag}
             <strong className={nameClasses}>{name}</strong>
             {badge}
           </span>
@@ -105,7 +109,7 @@ export const SidebarItem = ({
       ) : (
         select
       )}
-      {describedBy && description && (
+      {describers && description && (
         <span id={descriptionId} hidden>
           {description}
         </span>

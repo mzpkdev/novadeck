@@ -1,0 +1,136 @@
+import type { Describer, Description, Digest, Note, NoteDigest } from "../murmur/describer.js"
+
+/**
+ * What a test has the fake describer answer: a title, and whether the work changed from
+ * the previous title's, true unless the test says otherwise.
+ */
+export type Reply = { readonly title: string; readonly changed?: boolean }
+
+const described = (reply: Reply | null | undefined): Description | null | undefined =>
+  reply ? { title: reply.title, changed: reply.changed ?? true } : reply
+
+/** One call to a fake describer: the digest and signal it was given, and a way to answer it. */
+export type FakeJob = {
+  readonly digest: Digest
+  readonly signal: AbortSignal | undefined
+  /** The terminal it was asked for. */
+  readonly terminal: string | undefined
+  /** Answers a held call; a call aborted meanwhile answers undefined on its own. */
+  readonly answer: (description: Reply | null | undefined) => void
+}
+
+/** One call to a fake describer's `note`. */
+export type FakeNote = {
+  readonly digest: NoteDigest
+  readonly signal: AbortSignal | undefined
+  readonly terminal: string | undefined
+  /** Answers a held call; a call aborted meanwhile answers undefined on its own. */
+  readonly answer: (note: Note | null | undefined) => void
+}
+
+/**
+ * A describer as terminal tests drive one: every call is recorded in `jobs`, answered at
+ * once with what `reply` makes of the digest (a numbered title, by default), or, with `hold`, left until a test answers it. A call aborted
+ * answers undefined, as the real one does.
+ */
+export class FakeDescriber implements Describer {
+  readonly jobs: FakeJob[] = []
+  /** The calls to `note`, oldest first; held with `hold` too. */
+  readonly notes: FakeNote[] = []
+  /** Whether calls are held for the test to answer. */
+  hold = false
+  private usable: boolean
+  private readonly listeners = new Set<(usable: boolean) => void>()
+  private readonly clearedListeners = new Set<() => void>()
+
+  constructor(
+    options: {
+      readonly usable?: boolean
+      readonly reply?: (digest: Digest, call: number) => Reply | null | undefined
+      readonly note?: (digest: NoteDigest, call: number) => Note | null | undefined
+    } = {},
+  ) {
+    this.usable = options.usable ?? true
+    this.reply = options.reply ?? ((_digest, call) => ({ title: `Title ${call}` }))
+    this.replyNote =
+      options.note ??
+      ((digest, call) =>
+        digest.kind === "reply"
+          ? { kind: "gist", text: `Gist ${call}`, asks: false }
+          : { kind: "headline", text: `Headline ${call}` })
+  }
+
+  private readonly replyNote: (digest: NoteDigest, call: number) => Note | null | undefined
+
+  note(
+    digest: NoteDigest,
+    options: { readonly signal?: AbortSignal; readonly terminal?: string } = {},
+  ): Promise<Note | null | undefined> {
+    const { signal, terminal } = options
+    const call = this.notes.length + 1
+    if (!this.usable) {
+      this.notes.push({ digest, signal, terminal, answer: () => {} })
+      return Promise.resolve(undefined)
+    }
+    return new Promise((resolve) => {
+      const answer = (note: Note | null | undefined) => resolve(note)
+      this.notes.push({ digest, signal, terminal, answer })
+      signal?.addEventListener("abort", () => resolve(undefined), { once: true })
+      if (!this.hold) resolve(this.replyNote(digest, call))
+    })
+  }
+
+  private readonly reply: (digest: Digest, call: number) => Reply | null | undefined
+
+  describe(
+    digest: Digest,
+    options: { readonly signal?: AbortSignal; readonly terminal?: string } = {},
+  ): Promise<Description | null | undefined> {
+    const { signal, terminal } = options
+    const call = this.jobs.length + 1
+    if (!this.usable) {
+      this.jobs.push({ digest, signal, terminal, answer: () => {} })
+      return Promise.resolve(undefined)
+    }
+    return new Promise((resolve) => {
+      const answer = (description: Reply | null | undefined) => resolve(described(description))
+      this.jobs.push({ digest, signal, terminal, answer })
+      signal?.addEventListener("abort", () => resolve(undefined), { once: true })
+      if (!this.hold) resolve(described(this.reply(digest, call)))
+    })
+  }
+
+  watchUsable(listener: (usable: boolean) => void): () => void {
+    this.listeners.add(listener)
+    // As the real service does: the state now, then each change.
+    listener(this.usable)
+    return () => this.listeners.delete(listener)
+  }
+
+  watchCleared(listener: () => void): () => void {
+    this.clearedListeners.add(listener)
+    return () => this.clearedListeners.delete(listener)
+  }
+
+  /** The person turns murmur off or removes it: it stops being usable, and titles are cleared. */
+  clear(): void {
+    this.setUsable(false)
+    this.fireCleared()
+  }
+
+  /** Only the clearing, with usability as it is: what a listener does for it by itself. */
+  fireCleared(): void {
+    for (const listener of this.clearedListeners) listener()
+  }
+
+  /** Murmur becomes usable, or stops being. */
+  setUsable(usable: boolean): void {
+    this.usable = usable
+    for (const listener of this.listeners) listener(usable)
+  }
+
+  /** The digests it was given, oldest first. */
+  get digests(): readonly Digest[] {
+    return this.jobs.map(({ digest }) => digest)
+  }
+}

@@ -15,7 +15,7 @@ jobs:
   quality:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ matrix.browser && 15 || 10 }}
+    timeout-minutes: ${{ matrix.browser && 20 || 10 }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +29,10 @@ jobs:
           - name: Typecheck
             os: ubuntu-latest
             command: npm run typecheck
+          # The Linux installer; its behavior is tested with the rest of the repository.
+          - name: Shell
+            os: ubuntu-latest
+            command: shellcheck -s sh scripts/install/install.sh
           - name: Test (Linux)
             os: ubuntu-latest
             browser: true
@@ -44,11 +48,27 @@ jobs:
           - name: Build
             os: ubuntu-latest
             command: npm run build
+          # The visitor build, which the Try workflow deploys from each release.
+          - name: Build (try)
+            os: ubuntu-latest
+            command: npm run build:try
     steps:
       - name: Check Out Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # pnpm is downloaded from the npm registry with a 30 s bound, which a slow runner
+      # misses now and then (seen on Windows CI); a second try follows a failed first.
       - name: Set Up Toolchain
+        id: toolchain
+        continue-on-error: true
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      - name: Set Up Toolchain Again
+        if: steps.toolchain.outcome == 'failure'
         uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
           runtime: node@26
@@ -104,7 +124,7 @@ jobs:
       # A failed UI spec leaves its screenshot, and its trace when one was recorded.
       - name: Upload UI Test Failures
         if: failure() && matrix.browser
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ui-test-failures-${{ runner.os }}
           path: application/ui/.vitest/attachments/

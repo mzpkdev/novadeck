@@ -1,12 +1,11 @@
 import { createBootRehearsals } from "../backend/boot-rehearsal"
-import { createDemoBackend } from "../backend/demo"
-import { createContentDemo } from "../backend/demo/content"
 import type { BackendSelection, ConnectBackend } from "../backend/port"
 
-// The only place that chooses a backend adapter. Tests and specs run on the demo;
-// every build, development or production, connects to a runner, whose client and
-// terminal emulator load with the connection instead of the entry point. The content
-// preview connects to the demo, with its debug panel.
+// The only place that chooses a build's backend adapter. Every build, development or
+// production, connects to a runner, whose client and terminal emulator load with the
+// connection instead of the entry point. The content preview connects to the demo, with its
+// debug panel; the `try` mode, a build for a website's visitors, to the demo without it.
+// Tests and specs pass App the demo's spec backend themselves (backend/demo/spec-variants.ts).
 const runnerSelection = (): BackendSelection => ({
   connect: async (signal, progress) =>
     (await import("../backend/runner")).connectRunnerBackend(signal, progress),
@@ -33,15 +32,26 @@ const demoSelection = (): BackendSelection => {
   }
 }
 
-// Specs open the content demo, with its agents' plans and artifacts, by adding
-// `?demo=showcase` to the address's hash. The address is read when the workspace
-// mounts, since each spec sets its own.
-const showcaseRequested = (): boolean =>
-  new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("demo") === "showcase"
+// The visitor build, for a website, loads its demo with the connection, so no other build
+// carries it.
+const visitorSelection = (): BackendSelection => ({
+  connect: async (signal, progress) =>
+    (await import("../backend/demo/visitor/connect")).connectVisitor(signal, progress),
+})
+
+// Tests and specs hand App the demo's spec backend; one that forgets fails at once, saying
+// so, rather than waiting on a runner that never comes.
+const testSelection: BackendSelection = {
+  createBackend: () => {
+    throw new Error("Pass App createBackend from backend/demo/spec-variants.ts in tests")
+  },
+}
 
 export const selectBackend: BackendSelection =
   import.meta.env.MODE === "content-preview"
     ? demoSelection()
-    : import.meta.env.MODE === "test"
-      ? { createBackend: () => (showcaseRequested() ? createContentDemo() : createDemoBackend()) }
-      : runnerSelection()
+    : import.meta.env.MODE === "try"
+      ? visitorSelection()
+      : import.meta.env.MODE === "test"
+        ? testSelection
+        : runnerSelection()

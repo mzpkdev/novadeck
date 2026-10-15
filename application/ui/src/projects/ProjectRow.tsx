@@ -1,5 +1,5 @@
 import { useSortable } from "@dnd-kit/react/sortable"
-import { Check, Pin, PinOff, Trash2 } from "lucide-react"
+import { Pin, PinOff, Trash2 } from "lucide-react"
 import { useEffect, useRef } from "react"
 
 import type { Project } from "../model/types"
@@ -15,6 +15,7 @@ export const ProjectRow = ({
   status,
   pinned,
   pinBlocked,
+  away,
   removable,
   focusRequest,
   onFocused,
@@ -31,6 +32,8 @@ export const ProjectRow = ({
   pinned: boolean
   // No more projects can be pinned.
   pinBlocked: boolean
+  // Its drag went to the pins bar, which shows it now: it is unseen here.
+  away: boolean
   removable: boolean
   // Asks the row with this id to take the focus, as after a keyboard move or a drag.
   focusRequest: { id: string } | null
@@ -61,6 +64,7 @@ export const ProjectRow = ({
       className="workspace-switcher-row group relative"
       data-pinned={pinned ? "true" : undefined}
       data-dragging={isDragSource ? "true" : undefined}
+      style={away ? { visibility: "hidden" } : undefined}
     >
       <Tooltip content={project.directory} placement="right-start">
         <button
@@ -69,9 +73,11 @@ export const ProjectRow = ({
             handleRef(node)
           }}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-          className={`item standalone workspace-switcher-project flex w-full min-w-0 items-center gap-3 px-2.5 py-[9px] text-left ${removable ? "pr-[70px]" : "pr-10"} ${selected ? "selected" : ""}`}
+          className={`item standalone workspace-switcher-project flex w-full min-w-0 items-center gap-3 px-2.5 py-[9px] text-left ${removable ? "pr-[70px]" : "pr-10"}`}
           type="button"
           aria-current={selected ? "true" : undefined}
+          // Raised and marked with the item's bar, as a selected item is.
+          data-selected={selected ? "true" : undefined}
           aria-description={status && statusText[status]}
           data-project-status={status}
           onClick={onSelect}
@@ -82,28 +88,20 @@ export const ProjectRow = ({
             onStep(event.key === "ArrowUp" ? -1 : 1)
           }}
         >
-          <span className="workspace-switcher-project-copy flex min-w-0 flex-1 flex-col gap-0.75">
+          <span className="workspace-switcher-project-copy flex min-w-0 flex-1 flex-col gap-1">
             <strong className="flex min-w-0 items-center gap-1.5 text-body font-medium">
               <span className="truncate">{project.name}</span>
               {pinned && (
                 <Pin
                   aria-label="Pinned"
                   className="workspace-switcher-pinned shrink-0"
-                  size={11}
+                  size={12}
                   strokeWidth={1.8}
                 />
               )}
             </strong>
             <small className="item-detail truncate text-caption">{project.directory}</small>
           </span>
-          {selected && (
-            <Check
-              aria-label="Current workspace"
-              className="shrink-0"
-              size={15}
-              strokeWidth={1.8}
-            />
-          )}
           {status && <span aria-hidden="true" className="project-status-mark" />}
         </button>
       </Tooltip>

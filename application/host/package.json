@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "A workspace for parallel terminals.",
+  "homepage": "https://github.com/novadeck-org/novadeck",
   "author": "mzpkdev",
   "type": "module",
   "main": "./out/main/index.js",
@@ -19,6 +20,7 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "node-pty": "1.2.0-beta.14"
   },
   "devDependencies": {
@@ -26,17 +28,17 @@
     "@novadeck/relay": "workspace:*",
     "@novadeck/runner": "workspace:*",
     "@novadeck/ui": "workspace:*",
-    "@types/node": "^26.6.4",
-    "concurrently": "^10.0.5",
-    "electron": "^44.5.1",
+    "@types/node": "^26.6.5",
+    "concurrently": "^10.0.6",
+    "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "esbuild": "0.28.2",
-    "playwright": "^1.63.0",
+    "playwright": "^1.64.0",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "vitest": "^5.0.3"
   },
   "desktopName": "dev.mzpk.novadeck",
-  "productName": "novadeck."
+  "productName": "Novadeck"
 }

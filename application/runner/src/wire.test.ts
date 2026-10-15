@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto"
 import { once } from "node:events"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 
 import { protocolVersion, type TerminalEvent, type WireClient } from "@novadeck/protocol"
 import { createWireClient, socketChannel } from "@novadeck/protocol/wire"
@@ -254,6 +255,53 @@ describe("WebSocket authentication and protocol", () => {
     await expect(client.projects.list()).rejects.toMatchObject({ code: "UNAUTHORIZED" })
   })
 
+  it("a workspace a newer Novadeck wrote, told to clients that prove themselves", async ({
+    resources,
+  }) => {
+    const directory = await mkdtemp(join(tmpdir(), "novadeck-newer-"))
+    resources.defer(() => rm(directory, { recursive: true, force: true }))
+    const path = join(directory, "workspace.sqlite")
+    const future = new DatabaseSync(path)
+    future.exec("PRAGMA user_version = 99")
+    future.close()
+    const app = await fixture(resources, { database: path })
+    const { client } = await app.connect(false)
+    await expect(
+      client.runner.handshake({ protocolVersion, token: "wrong" }),
+    ).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    })
+    await expect(client.runner.handshake({ protocolVersion: 99, token })).rejects.toMatchObject({
+      code: "INCOMPATIBLE_PROTOCOL",
+    })
+    await expect(client.runner.handshake({ protocolVersion, token })).rejects.toMatchObject({
+      code: "WORKSPACE_TOO_NEW",
+    })
+    await expect(client.projects.list()).rejects.toBeDefined()
+  })
+
+  it("a workspace an earlier build wrote, set aside for a new one", async ({ resources }) => {
+    const directory = await mkdtemp(join(tmpdir(), "novadeck-earlier-"))
+    resources.defer(() => rm(directory, { recursive: true, force: true }))
+    const path = join(directory, "workspace.sqlite")
+    const old = new DatabaseSync(path)
+    old.exec(
+      "CREATE TABLE projects (id TEXT); INSERT INTO projects VALUES ('kept'); PRAGMA user_version = 1",
+    )
+    old.close()
+    const app = await fixture(resources, { database: path })
+    const { client } = await app.connect()
+    await expect(client.projects.list()).resolves.toEqual([])
+    const [aside, ...more] = (await readdir(directory)).filter((name) => name.includes(".earlier-"))
+    expect(more).toEqual([])
+    const kept = new DatabaseSync(join(directory, aside!))
+    try {
+      expect(kept.prepare("SELECT id FROM projects").all()).toEqual([{ id: "kept" }])
+    } finally {
+      kept.close()
+    }
+  })
+
   it("WebSocket browser origin validation", async ({ resources }) => {
     const app = await fixture(resources, { origins: ["https://trusted.novadeck.test"] })
     const denied = new NodeWebSocket(app.url, { origin: "https://untrusted.novadeck.test" })
@@ -387,7 +435,7 @@ describe("terminal title API", () => {
     const { client } = await app.connect()
     const { session } = await app.setup(client)
     const terminal = await client.terminals.create(shell(session.id))
-    expect(terminal).toMatchObject({ title: "Terminal 01", titleSource: { kind: "default" } })
+    expect(terminal).toMatchObject({ title: "Terminal", titleSource: { kind: "default" } })
     await client.terminals.rename({ terminalId: terminal.id, title: "API" })
     const titled = async () =>
       (await client.terminals.list({ sessionId: session.id })).find(({ id }) => id === terminal.id)
@@ -397,7 +445,7 @@ describe("terminal title API", () => {
     })
     await client.terminals.resetTitle({ terminalId: terminal.id })
     await expect(titled()).resolves.toMatchObject({
-      title: "Terminal 01",
+      title: "Terminal",
       titleSource: { kind: "default" },
     })
     await expect(client.terminals.resetTitle({ terminalId: randomUUID() })).rejects.toMatchObject({
@@ -422,6 +470,13 @@ describe("PTY lifecycle API", () => {
     })
     await output.untilText("BUSY_STARTED")
     await client.terminals.write({ terminalId: terminal.id, data: "\u0003" })
+    // The REPL reports the interruption, then redraws its prompt. Input typed before that
+    // can be lost on Windows, so wait for the redrawn prompt.
+    const redrawn = () => {
+      const at = output.text().indexOf("ERR_SCRIPT_EXECUTION_INTERRUPTED")
+      return at >= 0 && output.text().slice(at).includes("0J> ")
+    }
+    if (!redrawn()) await output.until(redrawn, "prompt redrawn after the interruption")
     await client.terminals.write({
       terminalId: terminal.id,
       data: 'console.log("INTERRUPT_" + "RECOVERED")\r',
@@ -916,9 +971,6 @@ describe("terminal attachment and recovery API", () => {
     await expect(
       observer.client.terminals.resize({ terminalId: terminal.id, cols: 100, rows: 30 }),
     ).rejects.toMatchObject({ code: "CONTROL_REQUIRED" })
-    await expect(
-      observer.client.terminals.close({ terminalId: terminal.id }),
-    ).rejects.toMatchObject({ code: "CONTROL_IN_USE" })
     const blocked = await reader(resources, observer.client, terminal.id)
     await expect(blocked.next()).rejects.toMatchObject({ code: "CONTROL_IN_USE" })
     await owner.disconnect()

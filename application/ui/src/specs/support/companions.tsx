@@ -1,7 +1,7 @@
 import { expect } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
-import { openWorkspace, terminal, terminalTab } from "./workspace"
+import { labelled, openWorkspace, terminal, terminalTab } from "./workspace"
 
 // Vocabulary for the companion taskbar along each terminal's bottom: its icons, their
 // menus, and dragging them onto another terminal's bar or into a view's free space.
@@ -10,7 +10,7 @@ import { openWorkspace, terminal, terminalTab } from "./workspace"
  * Opens the showcase: project studio, where Codex in Build Studio has a plan, images and
  * files, Claude Code in Refactor auth has a plan, and Dev server has nothing to show.
  */
-export const openShowcase = async (view: "grid" | "canvas" = "grid"): Promise<void> => {
+export const openShowcase = async (view: "focus" | "grid" | "canvas" = "grid"): Promise<void> => {
   await openWorkspace(`/projects/studio/sessions/initial/${view}?demo=showcase`)
 }
 
@@ -22,7 +22,7 @@ const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\
 
 /**
  * An icon on a terminal's taskbar by how it reads, without what follows its first comma
- * unless given: `Plan: refactor-auth.md`, `2 images`, `hero.png, from Build Studio`.
+ * unless given: `Plan: refactor-auth.md`, `2 images`, `hero.png, from @moth · Build Studio`.
  */
 export const taskbarIcon = (name: string, label: string): Locator =>
   taskbar(name).getByRole("button", { name: new RegExp(`^${escaped(label)}(,|$)`) })
@@ -71,7 +71,7 @@ export const chooseFromIconSubmenu = async (
 /** Opens the menu of a window's sidebar tab, which a window undocked from a taskbar has too. */
 export const windowMenu = async (name: string): Promise<Locator> => {
   await terminalTab(name).click({ button: "right" })
-  const menu = page.getByRole("menu", { name: `${name} actions` })
+  const menu = page.getByRole("menu", { name: labelled("", name, " actions") })
   await expect.element(menu).toBeVisible()
   return menu
 }

@@ -7,7 +7,7 @@ import { workspaceFromSeed } from "../model/seed"
 import { createWorkspaceStore } from "../model/store"
 import { readPreferences } from "../preferences/preferences-storage"
 import { readProjectArrangement } from "../projects/project-arrangement-storage"
-import { readSidebarCollapsed, readWindowedView } from "../shell/shell-storage"
+import { readSidebarCollapsed, readUpdateSeen, readWindowedView } from "../shell/shell-storage"
 import { createPanes } from "../terminals/companion/state"
 import { createDragSession, DragSessionContext } from "../terminals/drag-session"
 import { followSavedPreferences, watchAppearance } from "./appearance"
@@ -30,6 +30,9 @@ import {
   watchCrashLoop,
   watchFinishes,
   watchSwitcher,
+  watchPortable,
+  watchSandbox,
+  watchUpdates,
   type UiLocation,
 } from "./ui-store"
 
@@ -60,6 +63,7 @@ const createServices = (
       preferences,
       sidebarCollapsed: readSidebarCollapsed(),
       projectArrangement: readProjectArrangement(),
+      updateSeen: readUpdateSeen(),
     }),
   )
   const { bind, settle, ...navigation } = createNavigator({ workspace, ui, now })
@@ -72,6 +76,7 @@ const createServices = (
     ui,
     navigation,
     newTerminal: backend.newTerminal,
+    inbox: backend.inbox,
     pickDirectory: backend.pickDirectory,
     crashLoop: backend.crashLoop,
     resetTitle: backend.resetTitle,
@@ -126,11 +131,18 @@ export const WorkspaceProvider = ({
   useEffect(() => trackRecent(services.workspace, services.ui), [services])
   useEffect(() => watchSwitcher(services.workspace, services.ui), [services])
   useEffect(() => watchCrashLoop(services.backend.crashLoop?.crashes, services.ui), [services])
+  useEffect(() => watchUpdates(services.backend.updates, services.ui), [services])
+  useEffect(() => watchSandbox(services.backend.sandbox, services.ui), [services])
+  useEffect(() => watchPortable(services.backend.portable, services.ui), [services])
   useEffect(() => watchClosing(services.workspace, services.ui), [services])
   useEffect(() => watchChatModes(services.workspace, services.ui), [services])
   useEffect(() => watchPageFocus(services.ui, window), [services])
   useEffect(
-    () => watchFinishes(services.workspace, services.ui, services.backend.notices?.show),
+    () =>
+      watchFinishes(services.workspace, services.ui, {
+        notify: services.backend.notices?.show,
+        unread: services.backend.murmur?.gist,
+      }),
     [services],
   )
   useEffect(() => services.backend.notices?.onClick(services.commands.reveal), [services])

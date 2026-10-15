@@ -12,7 +12,13 @@ const token = "novadeck-cli-tests-only-not-a-production-credential"
 
 const directoryFixture = async (resources: Resources) => {
   const directory = await realpath(await mkdtemp(join(tmpdir(), "novadeck-cli-")))
-  resources.defer(() => rm(directory, { recursive: true, force: true }))
+  // The CLI's cwd is this directory, and the processes it starts inherit it. launchCli's stop()
+  // waits for the runner's own exit, but on Windows the rest of its tree, killed by taskkill,
+  // can still hold the directory a moment, so rmdir can see EBUSY. rm retries that, backing off
+  // over about 20 seconds; a process that stays would still fail the test.
+  resources.defer(() =>
+    rm(directory, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }),
+  )
   await writeFile(
     join(directory, ".env"),
     [
@@ -123,7 +129,7 @@ describe("built runner CLI", () => {
     await expect(again.sessions.list({ projectId: project.id })).resolves.toEqual([session])
     // The terminal is kept until it is closed, with no shell in the new runner.
     await expect(again.terminals.list({ sessionId: session.id })).resolves.toEqual([
-      expect.objectContaining({ id: created.id, title: "Terminal 01", started: false, run: 0 }),
+      expect.objectContaining({ id: created.id, title: "Terminal", started: false, run: 0 }),
     ])
   }, 30_000)
 

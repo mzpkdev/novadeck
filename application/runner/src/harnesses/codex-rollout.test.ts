@@ -1,0 +1,365 @@
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+import { decode } from "@novadeck/harness-codex/decode"
+import {
+  followRollout,
+  followSubagent,
+  rolloutEvents,
+  subagentEvents,
+} from "@novadeck/harness-codex/rollout"
+import type { HarnessEvent } from "@novadeck/harness-core/events"
+import type { Report } from "@novadeck/harness-core/report"
+import { loadProbe } from "@novadeck/harness-core/testing/probes"
+
+import { describe, expect, it } from "../test.js"
+import { adapterFolder } from "../testing/adapters.js"
+import { apply, started } from "./activity.js"
+
+type Record_ = {
+  type: string
+  timestamp: string
+  payload: { type?: string } & Record<string, unknown>
+}
+const records = (
+  loadProbe(adapterFolder("codex"), "rollout.probe.json") as {
+    records: Record_[]
+  }
+).records
+const session = { sessionId: "s", instance: "7" }
+const count = records.find(
+  ({ type, payload }) => type === "event_msg" && payload.type === "token_count",
+)!
+
+describe("Codex's rollout, as captured", () => {
+  it("reports the latest response's tokens against the model's context window", () => {
+    const info = count.payload.info as {
+      last_token_usage: { total_tokens: number }
+      model_context_window: number
+    }
+    expect(rolloutEvents(JSON.stringify(count), session)).toMatchObject([
+      {
+        type: "telemetry-observed",
+        agent: "codex",
+        startedAt: Date.parse(count.timestamp),
+        context: {
+          occupied: info.last_token_usage.total_tokens,
+          capacity: info.model_context_window,
+        },
+      },
+    ])
+  })
+
+  it("reports each rate-limit window as a used fraction with its reset instant", () => {
+    const primary = (count.payload.rate_limits as { primary: Record<string, number> }).primary
+    const [event] = rolloutEvents(JSON.stringify(count), session)
+    expect(event?.type === "telemetry-observed" && event.limits).toEqual([
+      {
+        minutes: primary.window_minutes,
+        used: primary.used_percent! / 100,
+        resetsAt: primary.resets_at! * 1000,
+      },
+    ])
+  })
+
+  it("reports a turn's model and reasoning effort", () => {
+    const context = records.find(({ type }) => type === "turn_context")!
+    const { model, effort } = context.payload as { model: string; effort: string }
+    expect(rolloutEvents(JSON.stringify(context), session)).toEqual([
+      {
+        type: "telemetry-observed",
+        agent: "codex",
+        sessionId: "s",
+        instance: "7",
+        startedAt: Date.parse(context.timestamp),
+        model,
+        effort,
+      },
+    ])
+    expect(model).toBeTruthy()
+    // A turn context that names neither says nothing.
+    const bare = { ...context, payload: { turn_id: "t" } }
+    expect(rolloutEvents(JSON.stringify(bare), session)).toEqual([])
+  })
+
+  it("says whether a turn plans, from the mode it starts in", () => {
+    const starting = records.find(
+      (record) => (record.payload as { type?: string }).type === "task_started",
+    )!
+    expect(rolloutEvents(JSON.stringify(starting), session)).toMatchObject([
+      { type: "mode-observed", planning: false },
+    ])
+  })
+
+  it("ends the turn it names, as recorded, should its hook's report not have come", () => {
+    const complete = records.find(({ payload }) => payload.type === "task_complete")!
+    expect(rolloutEvents(JSON.stringify(complete), session)).toEqual([
+      {
+        type: "turn-ended",
+        agent: "codex",
+        sessionId: "s",
+        instance: "7",
+        startedAt: Date.parse(complete.timestamp),
+        outcome: "completed",
+        recorded: true,
+        turn: complete.payload.turn_id,
+        // The start of its last reply, as the rollout records it.
+        reply: "<text>",
+      },
+    ])
+  })
+
+  it("says nothing of other records", () => {
+    const told = new Set(["task_started", "task_complete"])
+    for (const record of records.filter(
+      (each) =>
+        each !== count &&
+        each.type !== "turn_context" &&
+        !told.has((each.payload as { type?: string }).type ?? ""),
+    ))
+      expect(rolloutEvents(JSON.stringify(record), session)).toEqual([])
+  })
+})
+
+describe("a Codex turn's end, as its rollout records it", () => {
+  // As recorded by 0.159.3: a failed turn, which fires no hook, and an aborted one.
+  const ended = (payload: object) =>
+    rolloutEvents(
+      JSON.stringify({ timestamp: "2026-10-02T08:51:54.403Z", type: "event_msg", payload }),
+      session,
+    )
+
+  it("tells a failed turn by its error, and an aborted one as interrupted", () => {
+    expect(
+      ended({
+        type: "task_complete",
+        turn_id: "moth",
+        last_agent_message: null,
+        error: { message: "Selected model is at capacity.", codex_error_info: "server_overloaded" },
+      }),
+    ).toMatchObject([{ type: "turn-ended", outcome: "failed", recorded: true, turn: "moth" }])
+    expect(ended({ type: "turn_aborted", turn_id: "fox", reason: "interrupted" })).toMatchObject([
+      { type: "turn-ended", outcome: "interrupted", recorded: true, turn: "fox" },
+    ])
+    expect(ended({ type: "task_complete", error: null })).toEqual([
+      expect.not.objectContaining({ turn: expect.anything() }),
+    ])
+  })
+})
+
+describe("Codex in Plan Mode, as captured", () => {
+  const plan = loadProbe(adapterFolder("codex"), "plan.probe.json") as {
+    records: object[]
+    hooks: { event: string; permission_mode: string | null }[]
+  }
+  const events = plan.records.flatMap((record) => rolloutEvents(JSON.stringify(record), session))
+
+  it("plans, as its rollout says and its hooks do not", () => {
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "mode-observed", planning: true }),
+    )
+    expect(plan.hooks.map(({ permission_mode: mode }) => mode)).not.toContain("plan")
+  })
+
+  it("proposes its plan as a Plan item", () => {
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "plan-observed",
+        actor: null,
+        plan: expect.objectContaining({ kind: "text", text: expect.stringMatching(/^# /) }),
+      }),
+    )
+  })
+})
+
+describe("following a Codex rollout", () => {
+  it("counts the mode a turn began in before the session was bound", async ({ resources }) => {
+    const directory = mkdtempSync(join(tmpdir(), "novadeck-rollout-"))
+    resources.defer(() => rmSync(directory, { recursive: true, force: true }))
+    const path = join(directory, "rollout.jsonl")
+    // As captured: Codex writes the turn's start in Plan Mode, then its SessionStart hook
+    // binds the session.
+    const plan = loadProbe(adapterFolder("codex"), "plan.probe.json") as {
+      records: { timestamp: string }[]
+    }
+    writeFileSync(path, plan.records.map((record) => `${JSON.stringify(record)}\n`).join(""))
+    const bound = Date.parse(plan.records[0]!.timestamp) + 380
+    const controller = new AbortController()
+    resources.defer(() => controller.abort())
+    const events: HarnessEvent[] = []
+    void followRollout({ ...session, transcript: path }, controller.signal, (event) =>
+      events.push(event),
+    )
+    await expect.poll(() => events.map(({ type }) => type)).toContain("mode-observed")
+    const binding = { agent: "codex", sessionId: session.sessionId, instance: null } as const
+    const activity = events.reduce(
+      (state, event) =>
+        event.type === "session-observed" || event.type === "telemetry-observed"
+          ? state
+          : (apply(state, binding, event) ?? state),
+      started(bound),
+    )
+    expect(activity.planning).toBe(true)
+    expect(activity.plans).toHaveLength(1)
+    // What the rollout said before keeps its own time.
+    const planned = events.find(({ type }) => type === "plan-observed")
+    const written = plan.records.find(
+      (record) => (record as { payload?: { type?: string } }).payload?.type === "item_completed",
+    )!
+    expect(planned?.startedAt).toBe(Date.parse(written.timestamp))
+  })
+})
+
+// A rollout's event record, as Codex writes them.
+const event = (timestamp: string, payload: Record<string, unknown>) =>
+  JSON.stringify({ timestamp, type: "event_msg", payload })
+
+describe("a Codex subagent's rollout", () => {
+  const run = { ...session, transcript: "/sessions/2026/10/03/rollout-root.jsonl" }
+  const since = Date.parse("2026-10-03T01:03:10.000Z")
+
+  it("says its turn aborted, as Esc on its request does with no hook, at the abort's time, its thread still open", () => {
+    const aborted = event("2026-10-03T01:03:12.500Z", {
+      type: "turn_aborted",
+      reason: "interrupted",
+    })
+    expect(subagentEvents(aborted, run, "a1", since)).toEqual([
+      {
+        type: "subagent-turn-aborted",
+        agent: "codex",
+        sessionId: "s",
+        instance: "7",
+        actor: "a1",
+        startedAt: Date.parse("2026-10-03T01:03:12.500Z"),
+      },
+    ])
+  })
+
+  it("says nothing of an abort before its request, a completed turn, other records or a broken line", () => {
+    for (const line of [
+      event("2026-10-03T01:03:09.000Z", { type: "turn_aborted" }),
+      event("2026-10-03T01:03:12.000Z", { type: "task_complete" }),
+      event("2026-10-03T01:03:12.000Z", { type: "token_count" }),
+      JSON.stringify({
+        timestamp: "2026-10-03T01:03:12.000Z",
+        type: "response_item",
+        payload: { type: "turn_aborted" },
+      }),
+      event("not a time", { type: "turn_aborted" }),
+      '{"type":"event_msg","payload":{"type":"turn_aborted"',
+    ])
+      expect(subagentEvents(line, run, "a1", since), line).toEqual([])
+  })
+
+  it("is found beside its root's, by its own id, and followed for its aborts", async ({
+    resources,
+  }) => {
+    const sessions = mkdtempSync(join(tmpdir(), "novadeck-sessions-"))
+    resources.defer(() => rmSync(sessions, { recursive: true, force: true }))
+    const day = join(sessions, "2026", "10", "03")
+    mkdirSync(day, { recursive: true })
+    const root = join(day, "rollout-2026-10-03T01-03-00-root.jsonl")
+    writeFileSync(root, `${event("2026-10-03T01:03:13.000Z", { type: "turn_aborted" })}\n`)
+    const controller = new AbortController()
+    resources.defer(() => controller.abort())
+    const events: HarnessEvent[] = []
+    // Its rollout comes after the follower began looking.
+    void followSubagent({ ...session, transcript: root }, "a1", since, controller.signal, (one) =>
+      events.push(one),
+    )
+    const own = join(day, "rollout-2026-10-03T01-03-05-a1.jsonl")
+    writeFileSync(
+      own,
+      [
+        event("2026-10-03T01:03:05.000Z", { type: "turn_aborted" }),
+        event("2026-10-03T01:03:11.000Z", { type: "task_complete" }),
+        "",
+      ].join("\n"),
+    )
+    appendFileSync(own, `${event("2026-10-03T01:03:12.000Z", { type: "turn_aborted" })}\n`)
+    await expect.poll(() => events, { timeout: 5000 }).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      type: "subagent-turn-aborted",
+      actor: "a1",
+      startedAt: Date.parse("2026-10-03T01:03:12.000Z"),
+    })
+  })
+})
+
+type Hook = { kind: string; event?: string; payload?: Record<string, unknown> }
+const named = (hook: Hook, name: string) => hook.kind === "start" && hook.event === name
+
+describe("an MCP tool approval the person cancelled, as captured", () => {
+  const scenario = (
+    loadProbe(adapterFolder("codex"), "ask.probe.json") as {
+      scenarios: { [name: string]: { hooksAll: Hook[]; rolloutAfter: Record_[] } }
+    }
+  ).scenarios["mcp-tool-approval-esc"]!
+  const hook = scenario.hooksAll.find((each) => named(each, "PermissionRequest"))!
+
+  // The request a PermissionRequest of `tool` and `input` asks, and what a completed item
+  // of `server`, `tool` and `input` settles, as Codex 0.159.3 named each (probed).
+  const ids = (hookTool: string, server: string, tool: string, input: object) => {
+    const [asked] = decode({
+      event: "PermissionRequest",
+      seq: 0,
+      instance: "7",
+      env: {},
+      payload: { session_id: "s", tool_name: hookTool, tool_input: input },
+    } as unknown as Report)
+    const item = {
+      type: "event_msg",
+      timestamp: "2026-10-06T14:06:27.609Z",
+      payload: {
+        type: "item_completed",
+        item: { type: "McpToolCall", id: "call_1", server, tool, arguments: input },
+      },
+    }
+    const [settled] = rolloutEvents(JSON.stringify(item), session)
+    return [
+      (asked as { requestId: string }).requestId,
+      (settled as { requestId: string }).requestId,
+    ]
+  }
+
+  it("names a server as its hooks do, with its punctuation as underscores", () => {
+    const [asked, settled] = ids("mcp__probe_srv__touch", "probe-srv", "touch", { name: "a" })
+    expect(settled).toBe(asked)
+    expect(ids("mcp__probe_srv__touch", "probe.srv", "touch", { name: "a" })[1]).toBe(asked)
+    // A character past the BMP is one, as Codex reads it.
+    const [request, result] = ids("mcp__s__t_ch", "s", "t😀ch", { name: "a" })
+    expect(result).toBe(request)
+  })
+
+  it("knows a call that names a command by its command, as its request does", () => {
+    const [asked, settled] = ids("mcp__probe__touch", "probe", "touch", {
+      command: "ls",
+      name: "a.txt",
+    })
+    expect(settled).toBe(asked)
+  })
+
+  it("settles the request its hook asked, as no hook says it was cancelled", () => {
+    expect(scenario.hooksAll.some((each) => named(each, "PostToolUse"))).toBe(false)
+    const [asked] = decode({
+      event: "PermissionRequest",
+      seq: 0,
+      instance: "7",
+      env: {},
+      payload: { ...hook.payload, session_id: "s" },
+    } as unknown as Report)
+    const settled = scenario.rolloutAfter
+      .flatMap((record) => rolloutEvents(JSON.stringify(record), session))
+      .filter(({ type }) => type === "attention-resolved")
+    expect(settled).toMatchObject([
+      {
+        requestId: (asked as { requestId: string }).requestId,
+        actor: null,
+        toolName: "mcp__probe__touch",
+        loose: false,
+        outcome: "settled",
+      },
+    ])
+  })
+})

@@ -11,7 +11,8 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
-import { screenRecord } from "../../testing/probes.js"
+import { screenRecord } from "@novadeck/harness-core/testing/probes"
+
 import { setups } from "../agents/index.js"
 import { describe, e2e, supported } from "../fixture.js"
 import { asked, gate } from "../model/script.js"
@@ -160,7 +161,7 @@ for (const setup of setups) {
             clearInterval(watching)
             held.open()
             // Each run's terminal goes, so later cases don't run under the load of earlier ones.
-            await run.deck.terminals.close({ terminalId: t.id }, "e2e").catch(() => {})
+            await run.deck.terminals.close({ terminalId: t.id }).catch(() => {})
             out[key].push(record)
             writeFileSync(
               join(

@@ -1,5 +1,6 @@
 import type { Project, TerminalSummary, WorkspaceSession } from "@novadeck/protocol"
 
+import { showsHandle } from "../../model/handle"
 import { initialGridLayouts } from "../../model/layout/grid-placement"
 import { setTerminalProcess, setTerminalStatus } from "../../model/roster"
 import { workspaceFromSeed } from "../../model/seed"
@@ -19,10 +20,12 @@ const summary = (
 ): TerminalSummary => ({
   id: uuid(n),
   sessionId: uuid(session),
-  title: `Terminal ${n}`,
+  title: "Terminal",
   titleSource: { kind: "default" },
   handle: `t${n}`,
   ledBy: null,
+  openedBy: null,
+  agentRan: false,
   started: true,
   command: null,
   lastProgram: null,
@@ -157,8 +160,8 @@ describe("runner seed", () => {
 
     it("lays out terminals the view didn't know after the others, as the runner names them", () => {
       expect(state.roster.terminals.slice(2)).toMatchObject([
-        { id: uuid(22), name: "Terminal 22", command: "vim", state: "running" },
-        { id: uuid(23), name: "Terminal 23", state: "exited", exitCode: 1 },
+        { id: uuid(22), name: "Terminal", command: "vim", state: "running" },
+        { id: uuid(23), name: "Terminal", state: "exited", exitCode: 1 },
       ])
       expect(state.layout.canvas.geometry[uuid(22)]).toBeDefined()
     })
@@ -168,6 +171,42 @@ describe("runner seed", () => {
       expect(state.layout.canvas.geometry[uuid(24)]).toBeUndefined()
       expect(state.layout.grid.desktop?.some((item) => item.i === uuid(24))).toBe(false)
       expect(state.selected).toBe(uuid(20))
+    })
+  })
+
+  context("with terminals agents name by handle", () => {
+    const listing: RunnerListing = [
+      {
+        project: project(1),
+        sessions: [
+          {
+            session: fresh(10),
+            terminals: [
+              summary(30, 10, { openedBy: "moth", ...foreground("vite") }),
+              summary(31, 10, { agentRan: true }),
+              kept(32, 10, { agentRan: true }),
+              summary(33, 10),
+            ],
+          },
+        ],
+      },
+    ]
+    const { terminals } = workspaceFromSeed(runnerSeed(listing), defaults).projects[0]!.history[0]!
+      .state.roster
+
+    it("keeps who opened each terminal and whether an agent ran there", () => {
+      expect(terminals).toMatchObject([
+        { id: uuid(30), openedBy: "moth" },
+        { id: uuid(31), agentRan: true },
+        { id: uuid(32), agentRan: true },
+        { id: uuid(33) },
+      ])
+      expect(terminals[3]).not.toHaveProperty("openedBy")
+      expect(terminals[3]).not.toHaveProperty("agentRan")
+    })
+
+    it("shows the handle on their tabs, not on a shell no agent touched", () => {
+      expect(terminals.map(showsHandle)).toEqual([true, true, true, false])
     })
   })
 
@@ -330,8 +369,8 @@ describe("runner seed", () => {
 
     it("names the terminals of an unsaved session as the runner does, in its order", () => {
       expect(seed.projects[0]!.sessions[2]!.terminals.map((terminal) => terminal.name)).toEqual([
-        "Terminal 30",
-        "Terminal 31",
+        "Terminal",
+        "Terminal",
       ])
     })
   })

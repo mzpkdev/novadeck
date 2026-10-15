@@ -1,11 +1,12 @@
 import type { AgentName, TitleSource } from "@novadeck/protocol"
 
+import { mention } from "../terminals/handles.js"
 import { busiestFolders, firstFrom, shorten, type Work } from "../terminals/work.js"
 import { agentLabel, clock, holdOf, type Message } from "./mailbox.js"
 
 /**
  * What the terminal manager knows of a terminal beyond messaging: its title and who it
- * is from; the summary its own agent described its work with; its folder, relative to
+ * is from; the summary its own agent gave of its work; its folder, relative to
  * the project when inside it; its git branch; its current plan's title; what its root
  * session worked on; and how others read a folder it wrote in.
  */
@@ -43,8 +44,8 @@ export type About = (terminalId: string) => Whereabouts | undefined
 /**
  * A terminal another can message, and what tells an agent which it is, all of it
  * Novadeck's own knowledge, and only what is marked so an agent's say: its handle; the
- * agent bound there; its title, and who it is from; the summary its agent described its
- * work with; its folder and git branch; the person's first and latest prompts there; its
+ * agent bound there; its title, and who it is from; the summary its own agent gave of its work;
+ * its folder and git branch; the person's first and latest prompts there; its
  * plan's title; the folders it writes in most; the latest message between it and the
  * caller; whether its agent is busy or waits on the person, and when it was last active.
  */
@@ -61,7 +62,7 @@ export type Peer = {
   readonly untrusted: AgentName | null
   readonly title: string | null
   readonly titleSource: TitleSource | null
-  /** What its own agent said it works on, through `describe`. */
+  /** What its own agent said it works on, through `summarize`. */
   readonly summary: string | null
   readonly folder: string | null
   readonly branch: string | null
@@ -170,11 +171,8 @@ export const ago = (at: number, now: number): string => {
 /** Who a peer's title is from, as agents read it after the title; nothing for the person's. */
 const titleNote = (peer: Peer): string => {
   const source = peer.titleSource
-  if (source?.kind === "agent")
-    return source.by === peer.handle
-      ? " (set by its own agent, not the user)"
-      : ` (set by ${source.by}, not the user)`
-  return source?.kind === "fallback" ? " (from the user's first prompt there)" : ""
+  if (source?.kind === "agent") return ` (set by ${mention(source.by)}, not the user)`
+  return source?.kind === "murmur" ? " (written by Novadeck's local model, not the user)" : ""
 }
 
 /** Who is reading a listing: its handle, and the handle of the terminal that leads it. */
@@ -188,7 +186,7 @@ const relationLine = (peer: Peer, viewer: Viewer): string | null => {
   if (peer.handle === viewer.lead) return "your lead: it opened this terminal and directs your work"
   if (!peer.lead) return null
   if (peer.lead === viewer.handle) return "led by you"
-  return `led by ${peer.lead}`
+  return `led by ${mention(peer.lead)}`
 }
 
 /** What a request waiting on the person is, shortly: its kind and subject, never more. */
@@ -206,7 +204,7 @@ const waitingNote = ({ kind, tool, subject, more }: Waiting): string => {
 /** One peer as agents read it: a short block, each fact left out when unknown. */
 export const renderPeer = (peer: Peer, now: number, viewer: Viewer): readonly string[] =>
   [
-    `- ${peer.handle}: ${
+    `- ${mention(peer.handle)}: ${
       peer.agent
         ? `${agentLabel(peer.agent)}, ${peer.waiting ? waitingNote(peer.waiting) : peer.state}${peer.activeAt === null ? "" : `, last active ${ago(peer.activeAt, now)}`}`
         : peer.untrusted
@@ -220,13 +218,13 @@ export const renderPeer = (peer: Peer, now: number, viewer: Viewer): readonly st
     peer.folder && `  folder: ${peer.folder}${peer.branch ? `, branch ${peer.branch}` : ""}`,
     relationLine(peer, viewer) && `  ${relationLine(peer, viewer)}`,
     peer.startedWith &&
-      `  started with${peer.startedBy ? ` (${peer.startedBy}'s command)` : ""}: ${peer.startedWith}`,
+      `  started with${peer.startedBy ? ` (${mention(peer.startedBy)}'s command)` : ""}: ${peer.startedWith}`,
     peer.latest && `  latest: ${peer.latest}`,
     peer.plan && `  plan: ${peer.plan}`,
     peer.worksIn.length > 0 &&
       `  works in: ${peer.worksIn.map(({ folder, edits }) => `${folder} (${edits})`).join(", ")}`,
     peer.withYou &&
-      `  with you: ${peer.withYou.from}, ${ago(peer.withYou.at, now)}: ${peer.withYou.text}`,
+      `  with you: ${peer.withYou.from === "you" ? "you" : mention(peer.withYou.from)}, ${ago(peer.withYou.at, now)}: ${peer.withYou.text}`,
   ].filter((line): line is string => Boolean(line))
 
 /** The other terminals in the project and session, as agents read them. */
@@ -272,14 +270,17 @@ export const renderAgents = (input: {
   readonly now: number
 }): string =>
   [
-    `You are ${input.handle} in Novadeck.`,
-    renderPeers(input.peers, input.now, { handle: input.handle, lead: input.lead }),
+    `You are ${mention(input.handle)} in Novadeck.`,
+    renderPeers(input.peers, input.now, {
+      handle: input.handle,
+      lead: input.lead,
+    }),
     ...(input.messages.length > 0
       ? [
           "Your messages not yet delivered:",
           ...input.messages.map(
             ({ message, hold }) =>
-              `- ${message.id} to ${message.to.handle}, sent ${clock(message.sentAt)}: ${standing(message, hold)}`,
+              `- ${message.id} to ${mention(message.to.handle)}, sent ${clock(message.sentAt)}: ${standing(message, hold)}`,
           ),
         ]
       : []),
@@ -299,7 +300,7 @@ export const unknownHandle = (
 ): string =>
   [
     to === self
-      ? `${self} is this terminal.`
+      ? `${mention(self)} is this terminal.`
       : `"${to.slice(0, 64)}" is no terminal's handle here. Send to one of these by its exact ` +
         "handle, picking by its title, folder and work; if more than one could be meant, ask " +
         "the user rather than guess.",

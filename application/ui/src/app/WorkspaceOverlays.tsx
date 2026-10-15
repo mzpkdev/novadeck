@@ -1,9 +1,22 @@
-import { memo, Suspense, useEffect, useLayoutEffect, useSyncExternalStore } from "react"
+import {
+  memo,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react"
 
 import type { Backend } from "../backend/port"
 import { terminalElement } from "../interaction/dom"
+import type { AgentName } from "../model/harnesses"
 import { orderedTiles } from "../model/roster"
 import { activeProject } from "../model/state"
+import type { OfferedUninstall } from "../model/uninstall"
+import type { MurmurAddonValue } from "../preferences/MurmurAddon"
+import { disconnectAgent, runUninstall } from "../preferences/uninstall"
+import type { UninstallValue } from "../preferences/UninstallApp"
 import type { VoiceAddon } from "../preferences/VoiceInput"
 import { WelcomeDialog } from "../preferences/WelcomeDialog"
 import { CrashLoopDialog } from "../shell/CrashLoopDialog"
@@ -68,12 +81,122 @@ const useVoice = (voice: Backend["voice"]): VoiceAddon | undefined => {
   return voice && state && { state, actions: voice }
 }
 
+// The backend's murmur addon for Preferences; undefined where it has none.
+const useMurmur = (murmur: Backend["murmur"]): MurmurAddonValue | undefined => {
+  const state = useSyncExternalStore(murmur?.state.subscribe ?? always, () =>
+    murmur?.state.getSnapshot(),
+  )
+  return murmur && state && { state, actions: murmur }
+}
+
+type UpdatesSetting = {
+  readonly early: boolean | undefined
+  readonly onChange: (early: boolean) => void
+}
+
+// Whether the desktop app follows early builds, for Preferences, asked of it each time
+// Preferences opens; undefined where the app offers no choice. The switch shows what the
+// person chose at once, as the app remembers it.
+const useEarlyBuilds = (
+  channel: NonNullable<Backend["updates"]>["channel"],
+  open: boolean,
+): UpdatesSetting | undefined => {
+  const [early, setEarly] = useState<boolean>()
+  useEffect(() => {
+    if (!open || !channel) return undefined
+    let current = true
+    channel.get().then(
+      (value) => {
+        if (current) setEarly(value === "early")
+      },
+      () => {},
+    )
+    return () => {
+      current = false
+    }
+  }, [open, channel])
+  return (
+    channel && {
+      early,
+      onChange: (next) => {
+        setEarly(next)
+        channel.set(next ? "early" : "stable")
+      },
+    }
+  )
+}
+
+// The desktop app's version, for Preferences, asked of it each time Preferences opens;
+// undefined until it has said, and where it never does.
+const useVersion = (version: Backend["version"], open: boolean): string | undefined => {
+  const [value, setValue] = useState<string>()
+  useEffect(() => {
+    if (!open || !version) return undefined
+    let current = true
+    version().then(
+      (known) => {
+        if (current) setValue(known)
+      },
+      () => {},
+    )
+    return () => {
+      current = false
+    }
+  }, [open, version])
+  return value
+}
+
+// What Preferences offers of uninstalling the app, asked of the host each time Preferences
+// opens; undefined until it has said, and where it offers nothing. Running it disconnects
+// the connected agents first, one by one.
+const useUninstall = (
+  backend: Pick<Backend, "uninstall" | "agents">,
+  connected: readonly AgentName[],
+  open: boolean,
+): UninstallValue | undefined => {
+  const { uninstall, agents } = backend
+  const [plan, setPlan] = useState<OfferedUninstall>()
+  useEffect(() => {
+    if (!open || !uninstall) return undefined
+    let current = true
+    uninstall.plan().then(
+      (known) => {
+        if (current) setPlan(known.kind === "unavailable" ? undefined : known)
+      },
+      () => {
+        if (current) setPlan(undefined)
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [open, uninstall])
+  if (!uninstall || !plan) return undefined
+  return {
+    plan,
+    connected,
+    quit: uninstall.quit,
+    run: ({ keepData, onDisconnected }) =>
+      runUninstall({
+        connected,
+        disconnect: (agent) =>
+          agents
+            ? disconnectAgent(agents, agent)
+            : Promise.resolve("It can't be disconnected here."),
+        uninstall: uninstall.run,
+        keepData,
+        onDisconnected,
+      }),
+  }
+}
+
 // Dialogs and the terminal switcher, above the workspace.
 export const WorkspaceOverlays = memo((): React.JSX.Element => {
   const { backend, commands, navigation } = useWorkspaceServices()
   const transcripts = useTranscripts(backend.transcripts)
   const agents = useAgents(backend.agents)
   const voice = useVoice(backend.voice)
+  const murmur = useMurmur(backend.murmur)
   const { go, closeDialog } = navigation
   const { chooseRecent, updatePreferences, openSearchResult, closeSwitcher } = commands
   const { confirmClose, cancelClose, retryAfterCrashLoop, dismissCrashLoop } = commands
@@ -105,6 +228,13 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
   )
   const searchLabel = view === "canvas" ? "Canvas" : view === "grid" ? "Grid" : "Focus"
   const { searching, settings, onExitComplete, onLoaded } = useRouteDialog(dialog, context)
+  const updates = useEarlyBuilds(backend.updates?.channel, settings)
+  const version = useVersion(backend.version, settings)
+  const connectedAgents = useMemo(
+    () => agents.list.filter((agent) => agent.connected).map((agent) => agent.agent),
+    [agents.list],
+  )
+  const uninstall = useUninstall(backend, connectedAgents, settings)
   // Preferences shows what is installed and connected now.
   const refreshAgents = backend.agents?.refresh
   useEffect(() => {
@@ -175,6 +305,10 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
           notices={backend.notices !== undefined}
           chat={backend.conversations !== undefined}
           {...(voice ? { voice } : {})}
+          {...(murmur ? { murmur } : {})}
+          {...(updates ? { updates } : {})}
+          {...(version ? { version } : {})}
+          {...(uninstall ? { uninstall } : {})}
           {...(backend.agents
             ? { agents: { list: agents.list, onChange: backend.agents.set } }
             : {})}

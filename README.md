@@ -1,9 +1,77 @@
 # Novadeck
 
-A terminal workspace for organizing projects, sessions, and parallel work.
+A desktop terminal workspace for organizing projects, sessions, and parallel work.
 
 Focus on one terminal, arrange several in a grid, or spread them across a zoomable
 canvas. Keep related work together and switch between sessions from the sidebar.
+
+## Install
+
+- **macOS:**
+
+  ```sh
+  curl -fsSL https://github.com/novadeck-org/novadeck/releases/latest/download/install.sh | sh
+  ```
+
+  Run it as yourself, not with `sudo`, and quit Novadeck first. It checks the download
+  against the release's `SHA256SUMS` and puts the app in `/Applications`, or in
+  `~/Applications` when your account cannot write to `/Applications`. Run again, it
+  upgrades the copy already there, preferring `/Applications`. If another account put
+  Novadeck in `/Applications`, the script stops and leaves that copy for the account that
+  installed it. You can also download
+  [`novadeck-mac-universal.dmg`](https://github.com/novadeck-org/novadeck/releases/latest/download/novadeck-mac-universal.dmg)
+  and drag the app to Applications.
+
+- **Windows:** run [`novadeck-win-x64-setup.exe`](https://github.com/novadeck-org/novadeck/releases/latest/download/novadeck-win-x64-setup.exe).
+  It installs for the current user without an administrator prompt.
+- **Linux (x86_64):**
+
+  ```sh
+  curl -fsSL https://github.com/novadeck-org/novadeck/releases/latest/download/install.sh | sh
+  ```
+
+  Run it as yourself, not with `sudo`. It puts the AppImage in `~/.local/share/novadeck`
+  with a menu entry and a `novadeck` command in `~/.local/bin`, checks every download
+  against the release's `SHA256SUMS`, and upgrades when run again. The AppImage needs FUSE
+  (the `fuse3` package), but not libfuse2.
+
+  On systems that block unprivileged user namespaces, as Ubuntu does from 24.04, Electron's
+  sandbox starts only with an AppArmor profile, so the script asks for your password once
+  to write `/etc/apparmor.d/novadeck-appimage-<uid>`. The profile lets a program at your
+  install's path, or at `~/Applications/novadeck.AppImage`, use user namespaces, and so
+  does everything Novadeck starts, including the programs run in its terminals. Both paths
+  are yours to write, so any program running as you could use them too. Without the
+  profile Novadeck still runs, without its sandbox, and says so in the footer. To write the
+  profile later, or for an AppImage in `~/Applications`, run the script with `--sandbox`:
+
+  ```sh
+  curl -fsSL https://github.com/novadeck-org/novadeck/releases/latest/download/install.sh | sh -s -- --sandbox
+  ```
+
+To remove Novadeck, press **Uninstall…** under About in Preferences. It disconnects the
+agents you connected, ends your terminals, and removes the app: on Linux the AppImage, its
+`novadeck` command, menu entry and icon, and, through a password prompt, the sandbox profile
+(if the prompt is not available it shows the command to run instead); on macOS it moves the
+app to the Trash; on Windows it starts the uninstaller. Your projects and sessions stay unless
+you untick **Keep my projects and sessions** (there is no such box when Novadeck runs with
+its own `--user-data-dir`, whose folder it never deletes). A portable copy has nothing installed and shows
+no such button, and a Homebrew install shows the `brew uninstall --cask novadeck` command to
+run instead. On Linux and macOS the script does the same without the app, and leaves your data
+and agent plugins alone, printing how to remove them:
+
+```sh
+curl -fsSL https://github.com/novadeck-org/novadeck/releases/latest/download/install.sh | sh -s -- --uninstall
+```
+
+An installed build keeps itself up to date; an unsigned macOS build only tells you when a
+newer release is out until signing lands. An AppImage run from anywhere other than the
+install path (`~/.local/share/novadeck/novadeck.AppImage`, or Homebrew's
+`~/Applications/novadeck.AppImage`), a macOS app run from outside an Applications
+folder, and the Windows ZIP (`novadeck-win-x64.zip`, unpacked anywhere), is portable: it only looks for new releases and offers to install Novadeck (from itself on Linux and macOS,
+the latest setup on Windows; see [docs/auto-update.md](docs/auto-update.md)). Those links point to the latest stable release; until
+the first one is promoted, Novadeck's builds are prereleases on the
+[Releases page](https://github.com/novadeck-org/novadeck/releases). See
+[docs/auto-update.md](docs/auto-update.md) for how updates work.
 
 In Canvas, scroll to zoom in or out, and drag the background or an inactive terminal
 to pan. Click a terminal to activate it, then select its text, scroll its output,
@@ -74,8 +142,7 @@ and is answered right there: pick an option, give your own words where the agent
 dialog takes them (a refusal with instructions, plan feedback, an answer of your own), or
 fill the form's fields and accept or decline it. Novadeck answers by pressing the
 dialog's keys in the agent's terminal, as you would, then checks that it took; each
-agent's dialogs are read by its own adapter (`harnesses/<agent>/dialogs.ts` in the
-runner), which checks what it reads against what the agent asked and never guesses. When
+agent's dialogs are read by its own adapter (`harnesses/<agent>/src/dialogs.ts`), which checks what it reads against what the agent asked and never guesses. When
 it can't read a dialog, as after an agent update changed it, or an answer didn't take,
 the card shows the dialog's text as the terminal draws it, with **Answer in terminal**. The choice and
 the draft last until the agent ends; a reload starts in the terminal again. The
@@ -90,11 +157,16 @@ Switching between Focus, Grid and Canvas mounts a new surface, which takes the s
 xterm and attachment from `backend/runner/screens.ts` instead of opening and attaching
 again. A terminal no view shows keeps them while its session is on screen, and for 30
 minutes after its session leaves the screen, so going back to a session or project finds
-its output in place; they go when that time passes or the terminal closes.
+its output in place; they go when that time passes or the terminal closes. Focus keeps
+the last four terminals it displayed mounted, parked out of sight with `display:none`,
+so switching back finds a terminal's companion pane as it was: a page still loaded, a
+plan's editor, where each was scrolled. A component that docks status, opens over the
+page or plays sound reads `useShown()` (`ui-toolkit/shown.ts`), which Focus sets false
+for a terminal it parks, and leaves that to what is on screen.
 
 The runner owns every terminal: which terminals a session has, their names (the ones
 you give them; else one an agent gave, or your first prompt to its agent, shortened;
-else its own "Terminal 01", "Terminal 02", … per session), directories, what
+else the program it was opened to run, or "Terminal"), directories, what
 they run and the program each last had in its foreground (only its name, never its
 command line, which can hold secrets). The UI shows them, renames through the runner,
 and saves only how it shows them: layouts, sidebar order, the view and the selection,
@@ -108,6 +180,12 @@ except on macOS, where closing the last window leaves them running, so the save 
 that close rather than the final quit. A system shutdown or log-off saves the same way:
 on Linux and macOS it quits the app, and on Windows the window saves as soon as the
 session may end.
+
+Shells start with the runner's environment. On macOS, where an app started from the Dock
+or Finder gets no locale, a runner with none of `LANG`, `LC_ALL` and `LC_CTYPE` gives its
+shells `LANG` for the system's language and country in UTF-8 (`AppleLocale`, its `@rg=`
+region override left out), as Terminal.app does (`en_US.UTF-8` when the system has no such
+locale), so typing a character such as "ż" works in bash.
 
 Use the terminal header's resize control to alternate between two sizes. In Canvas,
 **Enlarge** matches the current Canvas viewport aspect ratio at a fixed area equivalent
@@ -126,7 +204,7 @@ Double-clicking or double-tapping a Focus or Grid terminal header outside its
 name has no effect; use the header action to move between those views.
 
 A terminal tab's tooltip says who its name is from: you, the agent in another terminal
-(`t2`), your first prompt there, or the default. Right-click a tab for **Rename**,
+(`@fox`), your first prompt there, or the default. Right-click a tab for **Rename**,
 **Close**, and, for a name you gave, **Reset to automatic**, which hands the name back
 to Novadeck.
 
@@ -146,12 +224,12 @@ once that terminal is the selected one of the session on screen while Novadeck's
 has focus, or once its agent starts another turn. A completed turn is marked, and
 announced, about 0.7 s after it ends, in case its harness then says your Escape stopped
 it. The desktop app also shows one system
-notification for each such finish, "t1 is done: <its name>", with the start of the
+notification for each such finish, "@moth is done: <its name>", with the start of the
 agent's last reply (Claude Code's and Codex's Stop hooks name it; Antigravity's
 transcript records it); clicking it brings Novadeck to the front with that terminal
 selected. **Notify when an agent finishes** in Preferences turns the notification off;
 the mark stays. A turn that ended on an error is marked the same way in red, "error ·
-unread" and "Stopped with an error · reply unread", and its notification says "t1 stopped
+unread" and "Stopped with an error · reply unread", and its notification says "@moth stopped
 with an error: <its name>". Marks belong to the window that showed them: another window
 keeps its own, and a reload or a restart forgets them. The browser build (`pnpm dev:web`)
 shows no notifications. The behaviour
@@ -188,14 +266,36 @@ while one works). A dot on the switcher's button marks what another project has
 waiting on you, in that mark's colour; projects only working don't light it. The list
 grows to 560px before it scrolls.
 
-Drag projects into any order, or move the focused one with Alt+Up and Alt+Down. Pin up
-to three with the pin beside a row's trash icon: pinned projects lead the list, and
-dragging one across the rule below them pins or unpins it. Pinned projects also show as
-chips beside the switcher, the current one raised, each with its mark (except the spinner);
-a click switches to it. Chips that don't fit stay hidden, and the dot covers them
-again; below 702px there are none. The order and the pins are kept in this browser or
-app (`novadeck.project-arrangement` in local storage), not shared with other clients
-of the runner.
+Drag projects into any order, or move the focused one with Alt+Up and Alt+Down. Pin up to
+nine with the pin beside a row's trash icon: pinned projects lead the list, and dragging
+one across the rule below them pins or unpins it. While any are pinned, a bar under the
+header shows them in that order, each as its number, its name and its mark (except the
+spinner, so the bar stays still while agents work); the current one is underlined, and a
+click switches to it. Drag a pin along the bar to reorder the pins, or focus one and
+press Alt+Left or Alt+Right; drag one off the bar and let go to unpin it. Drag a project
+out of the switcher and it becomes a pin, which you drag into place on the bar as you
+would any pin; let it go off the bar, or press Esc, and nothing changes. The number is
+its shortcut: `Ctrl+Shift+1` to `Ctrl+Shift+9` (`Cmd+1` to `Cmd+9` on macOS, in the
+desktop app, since a browser keeps those for its tabs) switches to that pin, from
+terminal input too. Shift keeps a bare `Ctrl+3` to `Ctrl+8` for the terminal, where they
+send `Esc`, `Ctrl+\`, `Ctrl+^` and other control codes; `Ctrl+Shift+2`, a terminal's
+`Ctrl+@`, is the pin's while there is a second, so use `Ctrl+Space` for that `NUL`.
+Without a pin of that number the key reaches the terminal as usual, and it's left alone
+while you rename a tab or type in another field. The bar slides in with the first pin and
+out with the last, and Zen hides it. Pins that don't fit drop off its end, and the
+switcher's dot covers them again. The order and the pins are kept in this browser or app
+(`novadeck.project-arrangement` in local storage), not shared with other clients of the
+runner.
+
+The Notifications panel (the bell on the sidebar rail) lists everything across every
+project and session that waits on you: questions, permissions and plans to review, and
+agents that finished while you looked elsewhere. Click a row to reveal its terminal;
+dismiss a finish to mark it read. A count badge on the bell, and on Zen's dock, tells how
+many wait. With Murmur on, a waiting question or plan shows a headline under its row, such
+as "Asks which database to use", and a finish you haven't seen shows a short gist of its
+reply in place of the reply's start, marked when the reply asks you something; the tooltip
+and the screen reader's description keep the reply itself. Without Murmur every row reads
+as it always did.
 
 The project switcher removes a project from its row's trash icon, after
 you confirm; its terminals close, and the folder on disk stays. The last project stays.
@@ -232,8 +332,11 @@ agent.
   terminal it runs in which session it is, and does nothing when the agent runs
   anywhere else. It adds nothing to the model's context but the messages other agents in
   Novadeck send it, wrapped as theirs (see [Agent messaging](docs/agent-messaging.md)).
-  Agents address each other by terminal handle, `t3` for "Terminal 03", which stays
-  the terminal's when you rename it.
+  Agents address each other by terminal handle: a word its session gives each terminal,
+  never twice, such as `moth`, which Novadeck shows as `@moth` and which stays the
+  terminal's when you rename it. A sidebar tab shows it beside Close where an agent runs
+  or has run, or where an agent opened or leads the terminal; a window's header shows it
+  in its switcher, under the pointer.
   Without a connected agent
   there is no resume, even for sessions it reported before: disconnecting forgets them,
   and the terminal comes back as a plain shell with its transcript.
@@ -270,11 +373,15 @@ way do not show in `codex agents`.
 Antigravity runs the hook before each model call, and Codex with your first message,
 so their sessions are known from then on; before that, Codex's title and Antigravity's
 status line tell Novadeck that their prompt is up, so other agents' messages can wake
-them. On Windows, Claude Code runs the hook through PowerShell.
+them. On Windows, Claude Code and Codex run the hook through PowerShell and Antigravity
+through cmd, which can't run your own Antigravity status line after Novadeck's: there
+Novadeck leaves yours as it is, and knows Antigravity's prompt is up only once you have
+sent it something.
 
-Removing Novadeck does not remove plugins you left connected, as packaged builds have
-no uninstaller: switch agents off first, or remove the `novadeck` plugin with the
-agent's own `plugin` command. A plugin left behind does nothing.
+Uninstalling from Preferences disconnects the agents you connected first. Removing
+Novadeck any other way (the script's `--uninstall`, a Homebrew uninstall, deleting the app)
+does not remove plugins you left connected: switch agents off first, or remove the
+`novadeck` plugin with the agent's own `plugin` command. A plugin left behind does nothing.
 
 The runner saves each terminal's directory and agent sessions as they change, and its
 output every few seconds and when the app quits, so a crash or a power cut loses little.
@@ -303,20 +410,21 @@ leave Zen to show the requested panel. Zen is temporary and resets on reload.
 
 ## Keyboard shortcuts
 
-| Action                                            | macOS             | Windows and Linux  |
-| ------------------------------------------------- | ----------------- | ------------------ |
-| Find a terminal                                   | `Cmd+K`           | `Ctrl+Shift+K`     |
-| Recent terminals                                  | `Ctrl+Tab`        | `Ctrl+Tab`         |
-| Cycle backward through recent terminals           | `Ctrl+Shift+Tab`  | `Ctrl+Shift+Tab`   |
-| Toggle Focus and the previous Grid or Canvas view | `Cmd+Enter`       | `Ctrl+Shift+Enter` |
-| Toggle Zen                                        | `Cmd+Shift+Z`     | `Ctrl+Shift+Z`     |
-| Terminal in that direction, typing there          | `Cmd+Option+↑↓←→` | `Ctrl+Shift+↑↓←→`  |
-| New terminal                                      | `Cmd+T`           | `Ctrl+Shift+T`     |
-| New session in the current project                | `Cmd+Shift+N`     | `Ctrl+Shift+N`     |
-| Toggle terminal sidebar                           | `Cmd+Shift+1`     | `Ctrl+Shift+1`     |
-| Toggle session sidebar                            | `Cmd+Shift+2`     | `Ctrl+Shift+2`     |
-| Open preferences                                  | `Cmd+,`           | `Ctrl+,`           |
-| Navigate the workspace                            | `Shift+Esc`       | `Shift+Esc`        |
+| Action                                            | macOS              | Windows and Linux                |
+| ------------------------------------------------- | ------------------ | -------------------------------- |
+| Find a terminal                                   | `Cmd+K`            | `Ctrl+Shift+K`                   |
+| Recent terminals                                  | `Ctrl+Tab`         | `Ctrl+Tab`                       |
+| Cycle backward through recent terminals           | `Ctrl+Shift+Tab`   | `Ctrl+Shift+Tab`                 |
+| Toggle Focus and the previous Grid or Canvas view | `Cmd+Enter`        | `Ctrl+Shift+Enter`               |
+| Toggle Zen                                        | `Cmd+Shift+Z`      | `Ctrl+Shift+Z`                   |
+| Terminal in that direction, typing there          | `Cmd+Option+↑↓←→`  | `Ctrl+Shift+↑↓←→`                |
+| New terminal                                      | `Cmd+T`            | `Ctrl+Shift+T`                   |
+| New session in the current project                | `Cmd+Shift+N`      | `Ctrl+Shift+N`                   |
+| Toggle terminal sidebar                           | `Cmd+Shift+E`      | `Ctrl+Shift+E`                   |
+| Toggle session sidebar                            | `Cmd+Shift+S`      | `Ctrl+Shift+S`                   |
+| Switch to pinned project 1 to 9                   | `Cmd+1` to `Cmd+9` | `Ctrl+Shift+1` to `Ctrl+Shift+9` |
+| Open preferences                                  | `Cmd+,`            | `Ctrl+,`                         |
+| Navigate the workspace                            | `Shift+Esc`        | `Shift+Esc`                      |
 
 The keyboard's home is the selected terminal. A mouse click on the sidebar, a header or
 the view switch leaves typing there, and the shortcuts above work from terminal input.
@@ -412,7 +520,9 @@ pnpm dev
 
 `pnpm dev` launches the Electron desktop application. Development launches keep their own
 data (database, settings, agent launchers) in `novadeck-dev`, beside and apart
-from an installed Novadeck's `novadeck` folder. An agent's Novadeck tools always come from the Novadeck whose terminal it runs in, through the relay of the build that connected it. On Linux and macOS, once you disconnect and connect each agent after upgrading, an agent in any Novadeck's terminal starts that Novadeck's own relay (`NOVADECK_MCP`), so a build that changed or removed its relay doesn't affect the others; on Windows it starts the connecting build's relay. To run the UI and runner in a browser
+from an installed Novadeck's `novadeck` folder. Run one `pnpm dev` at a time:
+the UI dev server holds port 5173, and the single-instance lock keeps a second Electron dev
+host from sharing `novadeck-dev`. An agent's Novadeck tools always come from the Novadeck whose terminal it runs in, through the relay of the build that connected it. On Linux and macOS, once you disconnect and connect each agent after upgrading, an agent in any Novadeck's terminal starts that Novadeck's own relay (`NOVADECK_MCP`), so a build that changed or removed its relay doesn't affect the others; on Windows it starts the connecting build's relay. To run the UI and runner in a browser
 instead:
 
 ```sh
@@ -426,9 +536,10 @@ no notification when an agent finishes; its terminals are still marked done. For
 `VITE_NOVADECK_RUNNER_TOKEN` pointing at a runner you started.
 
 Novadeck has no database migrations before its first release. A runner that opens a
-`workspace.sqlite` an earlier build wrote, whose tables differ from its own, refuses to
-start and names the file: delete it (it holds your projects, sessions and kept
-terminals) and start again. A standalone runner keeps it at
+`workspace.sqlite` an earlier build wrote, whose tables or schema version differ from its
+own, sets it aside as `workspace.sqlite.earlier-<time>` (with its `-wal` and `-shm`) and
+starts a new one, so your projects, sessions and kept terminals start over; the old file
+stays for you to delete. A standalone runner keeps it at
 `~/.local/share/novadeck/workspace.sqlite` unless `NOVADECK_DATABASE` is set; the
 desktop app keeps it in its data folder, `novadeck` on every platform:
 `~/.config/novadeck/workspace.sqlite` on Linux, `~/Library/Application
@@ -487,7 +598,9 @@ says why: the file is gone, can't be read or is no longer a file, it's too large
 preview, it isn't text, or the plan it pointed at is gone. A file that may hold secrets,
 such as `.env` or a key, never opens by itself: it says so until you open it. The agent
 lists what is beside its terminal with Novadeck's `showing` tool, and showing the same
-file or page again updates it. Each gets an icon in the taskbar, as an OS taskbar has, with
+file or page again updates it. A page from a server on your own machine is the same
+page whatever route or anchor it's at, so a dev server stays one item as the agent
+moves through it. Each gets an icon in the taskbar, as an OS taskbar has, with
 several of a kind (images, files, pages, or plans) stacked under one; only Messages
 never stack. A markdown file the agent shows reads as a document, formatted like a plan
 with its outline, but read-only: it's the agent's file, not a plan to edit or note (the
@@ -509,7 +622,7 @@ where both are on screen); a terminal with nothing to show grows an empty bar wh
 icon is dragged over it. It now belongs to that bar: its peek, menu and pane still say
 which terminal it came from, and an image or file stacks with the bar's own like any
 other. If that bar already holds the same file or page, the moved one replaces it. Its
-agent showing it again puts a new one on its own bar and leaves the moved one alone.
+agent showing it again updates it where you put it, as it does an undocked window.
 **Send back to** its terminal, on its right-click, or a drag onto that terminal's bar,
 moves it home. Items go with the terminal whose bar holds them when it closes, and the
 backend keeps where each is across restarts. Messages are the exception: a terminal's
@@ -565,60 +678,237 @@ Normal development and packaged builds keep their runner behavior.
 
 The content-preview demo has a panel for reaching every state of the app on demand,
 including the ones that need a runner to go wrong. Run `pnpm dev:previews`, open
-http://127.0.0.1:5181 and click the bug button floating at the bottom right to open or close
-it; Escape closes it too. The runner has no panel. The top line shows the demo variant, the
-connection state, the crash-loop count, and the terminal count.
+http://127.0.0.1:5181 and click the Debug handle in the middle of the footer to slide
+it up or back down; Escape closes it too. The runner has no panel. Its header shows the
+connection state, the crash-loop count and the terminal count, over the demo switcher.
 
 `?demo=` in the address's hash picks the variant: `showcase` (the default, with the
 sample agents' plans and artifacts), `plain`, `agents` (its seven projects each with
 an agent in a state of its own: waiting, asking, working, and two that finish done and
-failed a moment after it opens, for the project switcher), `messages` or `welcome`. The
-Demo group switches between them without reloading, and the browser tab remembers the
-last one chosen.
+failed a moment after it opens, for the project switcher), `messages`, `inbox` (the agents
+demo with the Inbox, which no other variant has) or `welcome`. The
+switcher in the panel's header changes between them without reloading (pressing the
+current one boots it again), and the browser
+tab remembers the last one chosen. `&turnMs=` sets how long a demo agent's turn works
+(1500 ms unless given), as a spec does that must act on the screen before the turn ends.
 
-- **All at once:** add one terminal per state, named after it, so the tabs and the
-  windows in Grid and Canvas show attention, done, error, ended and the rest side by
-  side. You stay on one that needs permission; the done marks land on the others.
-- **Demo:** boot into another variant.
-- **Startup:** boot again from the splash. "Splash hold" keeps it until you press
-  Escape; "Slow attach" counts terminals attaching over about 3 s; each "Boot
-  failure" fails the first attempt as the runner would, so a transient one retries
-  on its own and the others wait for Retry (an incompatible runner only for Quit).
-  "Welcome dialog" opens the first-run dialog for connecting agents again.
-- **Chat:** arm the next send from a chat to fail as the runner turns it away: a draft
-  in the agent's box, its shell mode, too tall a message, no box on screen, or no agent
-  running (each with Open terminal), a request waiting (answer it first), or a doorbell
-  ringing or a screen not ready (try again in a moment), or no reason given, as from an
-  older runner (check the terminal). Arm the next Stop to fail as the runner's does when the
-  words queued behind the turn stay in the box (with Open terminal), or when a request
-  waits (answer it first).
-- **Connection:** show Reconnecting for 5 s, then Reconnected, or go offline until
-  you toggle it back.
-- **Crash loop:** count four crashes, which shows the footer and the dialog and fails
-  the selected terminal's session's terminals; Try again clears the count and
-  restarts them.
-- **Sessions:** mark the selected terminal running, then start a fresh session, to see
-  the sessions panel count it.
-- **Another project:** make the agent in the first terminal of another project wait
-  for a permission, ask a question, wait on a plan, finish or fail its turn (after
-  3 s), work, or go back to its prompt, for the project switcher's marks and dot.
-- **Selected terminal, Agent, New terminals, Notices, Agents, Folders:** put a
-  terminal, an agent, the notifications and the pickers in each of their states.
-  The "Turn" actions end after 3 s, and "Agent finishes elsewhere" needs the
-  Preferences switch "Notify when an agent finishes" on.
+The search field at the top filters actions by label, hint and group. Groups start folded,
+under three sections (Terminals, Agents, App), and the panel remembers which you opened in
+this tab. A ↺ beside an action marks one that boots the demo again.
+
+Terminals:
+
+- **Selected terminal:** put the selected terminal in each of its states: starting, loading
+  output, back at the prompt, running a long program, Claude Code or Codex, a failed
+  paste, and each way to end (clean exit, exit code, killed, failed to start). Each one
+  that changes the state calls off what the terminal's agent had pending, so a finish
+  due later doesn't bring the agent back.
+- **New terminals:** "Every state at once" adds one terminal per state, named after it, so
+  the tabs and the windows in Grid and Canvas show attention, done, error, ended and the
+  rest side by side; you stay on one that needs permission, and the done marks land on
+  the others. Its shell an agent opened and its shell an agent exited from keep their
+  handles on their tabs; its other plain shells show none. Also a burst of 30, a quick
+  failure, a spawn failure and the terminal limit.
+- **Projects and sessions:** mark the selected terminal running, then start a fresh
+  session, to see the sessions panel count it; or make the next folder pick fail.
+
+Agents:
+
+- **Agent:** verbs on the demo's agents, which have one owner that keeps their status, the
+  requests their chats hold and what their screens show in step, as the runner's do. A
+  switch at the top of the group, remembered in this tab and shown with each search hit,
+  picks the terminal they act on: the selected one; another terminal of its session (added
+  in the background when there is none, so you look elsewhere and get the unread mark and
+  the notice); or the first terminal of another project, for the switcher's marks. A terminal
+  that runs no agent becomes Claude Code first. Work, Plan mode and Subagents start a turn
+  that works on. Needs permission, Asks a question, Plan ready and 3 permissions stop it on
+  requests you can answer in the chat or on the screen, which clears the tab and the
+  notification. Completes, Fails, Interrupted and Ends without reply work for 3 s, then end
+  the turn the way asked: with its reply, a short one for Interrupted (no unread mark), none
+  for Ends without reply. Background work (2 tasks counted) and Background, uncounted end the
+  turn and leave work running; Finishing subagents keeps the agent working until its 2
+  subagents finish. Rest leaves it at its prompt with everything answered and read.
+- **Agent fixtures:** what no turn produces: an unheard agent (Claude Code whose hooks say
+  nothing), and context and limits or tokens alone, in the tooltip and status; those two set
+  only the usage of the selected terminal's agent, so a turn, request or queued prompt stays.
+- **Notifications:** "Fill notifications" has up to 12 terminals across
+  the projects ask for you (questions, permissions, plans), and after 3 s finish done or
+  failed, so the Notifications panel lists every kind and the rail badge reads 9+. It
+  adds terminals to the current session if the workspace has too few, without selecting
+  them or leaving the Notifications panel, and leaves the selected terminal alone, since
+  a finish only counts while you look elsewhere. "Clear notifications" rests every agent,
+  which answers every request, reads every finish and calls off those still to come, and
+  has a terminal back at its prompt work for a moment and leave, for the empty panel. Its
+  second round of kinds carries what Murmur would write (a headline on the question and the
+  plan, a gist on the done and the failed finish, the done one asking), so the rows can be
+  seen without Murmur installed. The notices for finishes need the Preferences switch
+  "Notify when an agent finishes" on.
+- **Chat: next send or Stop fails:** arm the next send from a chat to fail as the runner turns it away: a
+  draft in the agent's box, its shell mode, too tall a message, no box on screen, or no
+  agent running (each with Open terminal), a request waiting (answer it first), or a
+  doorbell ringing or a screen not ready (try again in a moment), or no reason given, as
+  from an older runner (check the terminal). Arm the next Stop to fail as the runner's does
+  when the words queued behind the turn stay in the box (with Open terminal), or when a
+  request waits (answer it first).
+- **Plan:** only in the `showcase` variant, on the selected terminal's agent (Build Studio or
+  the auth agent), for what happens to a plan the person has edited. "Plan in the agent's
+  messages" makes it read-only; "Plan file deleted" shows that its file is gone, with the
+  edits kept; "Plan folder can't be written" and "Plan too large to save" show their
+  message once you type, with Copy my edits and Try saving again; "Plan saves keep
+  failing" shows "Not saved yet. Trying again." and, after five failures in a row
+  (about 30 s), Retry; "Plan back to normal" lets saves work again. Specs open the showcase
+  with `&planFault=` `transcript`, `gone`, `folder`, `too-large` or `failing`.
+- **Agent connections:** make the next connect in Preferences fail, refresh the agents, or
+  connect Antigravity with the note Preferences shows where its own status line keeps
+  Novadeck's out, as on Windows.
+
+App:
+
+- **Inbox:** only in the `inbox` variant. Each action adds one item of its kind to the Inbox,
+  waiting from now and in place of the one of its kind already there: a stuck agent, Codex's
+  command permission, an unreadable dialog, a held message, a decision with options, a
+  detected question, a secret request, a login request, the 5-hour limit, a plan approval
+  (its bypass-permissions yes a quiet link), a failed turn, a free-text ask, a permission
+  whose Deny is a plain no, a heads-up and a finished turn. "Fail the next answer" makes
+  the next answer to any item fail, so its sheet shows why and keeps the item. "Usage limit, reset passed" adds the limit with auto-resume off and its
+  window reset, offering Continue now. "A new item arrives" adds the next kind not there
+  yet, and "Clear the Inbox" empties it.
+- **Startup:** "Hold the splash" keeps it until you press Escape; "Slow attach" counts
+  terminals attaching over about 3 s; "Welcome dialog" opens the first-run dialog for
+  connecting agents again (no reboot).
+- **Boot failures:** each fails the first attempt as the runner would, so a transient one
+  retries on its own and the others wait for Retry (an incompatible runner, or a workspace
+  a newer Novadeck has used, only for Quit). Each hint carries the error code, so the search
+  finds it; `WORKSPACE_TOO_NEW` is what an older Novadeck shows once a newer one has used
+  the workspace.
+- **Runner:** show Reconnecting for 5 s, then Reconnected; go offline until you toggle it
+  back; or count four crashes, which shows the footer and the dialog and fails the selected
+  terminal's session's terminals (Try again clears the count and restarts them).
+- **Sandbox:** boot as a host running without Electron's sandbox, for the footer's No
+  sandbox chip and its fix command; "No sandbox, no fix" as one with no command to offer;
+  and "Sandboxed" back to normal.
+- **Guides:** "Toggle icon guides" draws a dashed box over every icon (`svg.lucide`) and a
+  dashed line through its middle, 20 px past each side, both 1 px and half see-through
+  (`--icon-guide-color` changes them), for checking how icons line up with their text;
+  it stays on through the demo's boots and reloads in this tab.
+- **Portable:** boot again as a portable copy, which never updates itself and is the way to
+  install the app that does. "No release known" shows the quiet Install Novadeck chip (Install when
+  narrow), which never opens by itself; its panel offers Later and Install Novadeck, and
+  pressing it here never ends: the chip reads Installing…. "Update available"
+  adds a release this copy learned of two days ago: the chip reads Update available and its
+  notice, raised once per version, installs rather than downloads. "Stale
+  update" has known of a newer release for 20 days, so the notice comes up at every boot.
+  "Newer install exists" and "Install fails" arm the other ends of pressing
+  Install Novadeck: a panel saying a newer Novadeck is already installed with Open
+  Novadeck, or a panel giving the reason with Install Novadeck kept to retry. "Slow
+  host" makes the host take four seconds to say it is portable, to check the No
+  sandbox chip does not flash meanwhile. "Installed copy" boots as one. With
+  "No sandbox" set under Sandbox, the No sandbox chip stays away on a portable and the
+  install panel adds a line about it. `?portable=on` (with `&install=newer` or
+  `&install=failed`, `&update=available&outdated=recent` or `old`, and `&answer=late` for
+  a delayed portable answer) opens variants for specs.
+- **Uninstall:** boot as a host that offers the About row's Uninstall…, and end the run as
+  armed. "Not offered" has no row (a portable copy, or no host); "Homebrew copy" shows the
+  brew command with Copy and no button; "Ready, no data folder" has no Keep my projects checkbox, as when the app runs with its own data folder; "Removed" goes through Removing… to Novadeck is
+  uninstalled with Quit, and "Removed, leftover" adds the command to copy (the Linux sandbox
+  profile when no password prompt was available); "Removal fails" keeps the dialog open with
+  the reason; "Fails after terminals ended" ends on a reason telling you to quit and open Novadeck
+  again, which every retry repeats, and "Trash refused" fails once on macOS' App Management and
+  then succeeds; "Windows uninstaller" reads Continue and ends on Novadeck closing for its
+  uninstaller, and "Windows uninstaller fails" ends on the reason. Connect agents in
+  Preferences first to see them named in the dialog; Agents' "Fail next" makes a disconnect
+  fail before the run. `?uninstall=` opens `unavailable`, `manual`, `removed`, `leftover`,
+  `failed`, `stopped`, `trash`, `windows`, `windows-failed` or `no-data` for specs.
+- **Updates:** have an update downloaded, available (the app can't install it itself), with
+  no notes, or with notes at the caps, for the notice above the footer's "Update ready" or
+  "Update available" chip. Downloading counts the chip up in steps (its notice, opened from the
+  chip, shows the progress with Later alone), then brings up the Ready notice. Each press offers a newer version, so the notice comes up
+  again; Later leaves the chip, which opens it again. Install failed turns the update
+  waiting from ready to available, and the notice comes up again with Download; pressed
+  while Downloading counts, it turns the chip to Update available without a notice, as a
+  failed download does. Restart
+  now shows Restarting…, which stays until Finish restart reloads the demo, as the app
+  comes back on the new version; Download opens no page in the demo. Early builds on and
+  off set the channel Preferences' Updates switch shows once Preferences is reopened.
+  `?demo=update`, `?demo=update-available` and `?demo=update-downloading` open variants
+  that already have one waiting, for specs.
+
+### Visitor build
+
+A clickable, public version of the demo, for a website. `pnpm dev:try` serves it in vite
+mode `try` (http://127.0.0.1:5190); `pnpm build:try` writes static files to
+`application/ui/dist-try` (beside `dist/`, which the desktop app packages), with relative
+paths and a hash router, so any static host serves them from any path, and
+`pnpm preview:try` serves them on http://127.0.0.1:5191. The [Try
+workflow](.github/workflows/try.yml) deploys a release's build to Cloudflare Pages at
+https://try.novadeck.dev, beside the website, so the demo always shows a published
+version. Until launch, Release runs it for each version it publishes, prereleases
+included; at launch it moves to Promote to Stable, so the demo shows what Download gives
+people. Run workflow deploys a tag by hand. Quality builds it on every pull request. The
+build carries a `_headers` file (`src/hosting-headers.ts`): only novadeck.dev may frame
+it, nothing of it is indexed, and hashed assets are
+kept for good.
+
+Setting it up takes a Cloudflare Pages project named `novadeck-try`, made in the dashboard
+(Workers & Pages, Create, Pages, Upload assets) with production branch `main`: wrangler's
+`pages project create`, run by an agent, makes a Workers project instead. Add
+try.novadeck.dev to it as a custom domain, with the `try` CNAME to `novadeck-try.pages.dev`
+it asks for at the domain's DNS host; put an API token with Cloudflare Pages: Edit in the
+repository secret `CLOUDFLARE_API_TOKEN` and the account ID in the repository variable
+`CLOUDFLARE_ACCOUNT_ID`. Until both are set the workflow deploys nothing and says so; with
+only one it fails. Only releases cut with this setup can be deployed, rolled back to
+included.
+
+It runs the agents demo's storefront and its other projects as fixtures, with no debug
+panel, chat view, voice, murmur, agent connections, notices or updates, and no Welcome
+dialog; `backend/demo/visitor/` lists the backend's fields one by one, so nothing added to
+the agents demo reaches the page unasked. A strip above the header says the agents are
+simulated and links to the download (`app/Visitor.tsx`); under 760 px wide a panel pointing
+to a desktop browser replaces the app, whose UI unmounts behind it and comes back on
+widening. Typing into a shell answers as a simulated one (`mockReply`). A page loaded
+before a deploy reloads once when a view it loads later is gone from the host.
+
+Another page frames it at `https://try.novadeck.dev/?embed` (the query string, before any
+hash), as the website's hero does. Framed, the app shows neither the strip nor the narrow
+window's panel, since the page around it says what it is and decides what a phone gets; it
+lays out at the frame's own size, so a page scales a desktop-sized frame rather than
+shrinking it; it keeps its address in memory, adding nothing to the framing page's Back
+button; and it takes no focus until the person uses it. Its links then carry plain paths
+the static host doesn't serve, so a link opened in a new tab from the frame finds nothing;
+a click works as anywhere. Once the app is in view (the backend connected, the workspace
+mounted and the boot splash lifted) it posts `{ type: "novadeck:ready" }` to its parent
+window, once per page load, with target origin `*`: the frame's `load` event fires for an
+error page too, so this is how the page tells a booted app from a failed load. The message
+carries nothing sensitive; the page checks its origin and source. `?embed` means nothing
+outside the visitor build.
 
 ## Repository map
 
-This is a TypeScript monorepo using pnpm workspaces and Turborepo.
+This is a TypeScript monorepo using pnpm workspaces and Turborepo. `application/` holds
+what makes up the app; `engines/` holds the native inference engines Novadeck downloads
+once installed, and the build they share; `harnesses/` holds what the agent harness
+adapters and the contract they share.
 
-| Package                | Responsibility                                                  |
-| ---------------------- | --------------------------------------------------------------- |
-| `application/ui`       | React frontend built with Vite, Tailwind CSS, and Lucide icons. |
-| `application/runner`   | The runner: shells and metadata, served over WebSocket or port. |
-| `application/protocol` | Shared Zod contracts and the `connectRunner` client for UIs.    |
-| `application/host`     | Electron host that starts the runner and loads the packaged UI. |
-| `application/relay`    | Rust relay for agents' Novadeck MCP server and hooks.           |
-| `scripts`              | Repository checks and automation.                               |
+| Package                | Responsibility                                                        |
+| ---------------------- | --------------------------------------------------------------------- |
+| `application/ui`       | React frontend built with Vite, Tailwind CSS, and Lucide icons.       |
+| `application/runner`   | The runner: shells and metadata, served over WebSocket or port.       |
+| `application/protocol` | Shared Zod contracts and the `connectRunner` client for UIs.          |
+| `application/host`     | Electron host that starts the runner and loads the packaged UI.       |
+| `application/relay`    | Rust relay for agents' Novadeck MCP server and hooks.                 |
+| `engines/whisper`      | Voice engine: whisper.cpp built for download (`build:engine`).        |
+| `engines/murmur`       | Murmur engine: llama.cpp built for download (`build:engine`).         |
+| `engines/ggml-build`   | The engine build both of those share.                                 |
+| `harnesses/core`       | The harness adapters' contract and the helpers they share.            |
+| `harnesses/claude`     | The Claude Code adapter: hooks, transcripts, dialogs, input box.      |
+| `harnesses/codex`      | The Codex adapter, same shape.                                        |
+| `harnesses/agy`        | The Antigravity adapter, same shape.                                  |
+| `scripts`              | Repository checks and automation.                                     |
+| `atlas`                | Dev-only code map: `pnpm atlas`; agent briefs: `pnpm -s atlas:brief`. |
+
+Build an engine locally with `pnpm --filter @novadeck/whisper build:engine` or
+`pnpm --filter @novadeck/murmur build:engine`; the archive and `engine.json` land in
+the package's `dist/`.
 
 The UI runs real shells through the runner. Projects, sessions and their terminals
 live in the runner's SQLite metadata, and each session saves its terminals' order and
@@ -655,6 +945,7 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `model/companion-bar.ts`                           | A bar as the person arranged it: order, hidden plans and Messages, the open tab.        |
 | `model/messages.ts`                                | The contract for agents' messages: threads, states, the pause, and a tab's count.       |
 | `model/conversation.ts`                            | The contract for an agent's conversation: transcript items, requests, the port.         |
+| `model/inbox.ts`                                   | The contract for the Inbox: items by source, their type and urgency, answers, the port. |
 | `model/conversation-turns.ts`                      | A conversation grouped into blocks, tool calls summed up in a line, the turn's status.  |
 | `model/roster.ts`                                  | A session's terminals and undocked windows, laid out as tiles, their order and status.  |
 | `model/layout/workspace-layout.ts`                 | Where each terminal sits and how big it is in each view.                                |
@@ -664,6 +955,8 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `terminals/chat/`                                  | The agent's chat: its blocks, markdown reader, tool rows, requests and the composer.    |
 | `layouts/canvas/`, `grid/`, `focus/`               | View adapters and colocated library styles.                                             |
 | `layouts/` (top level)                             | Helpers shared by views: view transitions, background gestures, visibility.             |
+| `notifications/`                                   | The notification center: what asks for the person across the workspace, and its panel.  |
+| `inbox/`                                           | The Inbox: what agents ask of the person, its sidebar rows and the sheet that answers.  |
 | `shell/`                                           | Header, rail, panels, zen dock, sidebar, and shell state transitions.                   |
 | `sidebar/`, `projects/`, `preferences/`, `search/` | Feature components.                                                                     |
 | `interaction/`                                     | Shortcut records, the keymap, and shared DOM focus/overlay contracts.                   |
@@ -681,13 +974,15 @@ all; every layer that composes the page may use it, adapters included, and
 `backend/` builds on `model/` and uses React only for the port's types; adapters
 may add `ui-toolkit/`. `interaction/` builds on `model/` and imports no packages;
 features add `ui-toolkit/`; `terminals/` may use `sidebar/`; `layouts/` may use
-`terminals/`; `shell/` may use `layouts/` and `projects/`. `app/` composes every
-feature layer and `backend/`, and within it only `app/backend.ts` imports a
-backend adapter. `app/commands/` has no direct React or package imports, though
+`terminals/`; `notifications/` builds on the base layers, `sidebar/` and
+`terminals/unread-state.ts`; `inbox/` builds on the base layers, `sidebar/` and the
+chat's markdown reader and answers; `shell/` may use `layouts/`, `projects/`,
+`notifications/` and `inbox/`. `app/` composes every feature layer, `notifications/`, `inbox/` and `backend/`, and within it only `app/backend.ts` imports a
+backend adapter (tests and specs may import the demo's spec entry). `app/commands/` has no direct React or package imports, though
 routing still loads React Router at runtime: it builds on `model/`,
 `interaction/keymap.ts`, `backend/port.ts`, the UI store, routing, selectors,
 the Canvas handle type in `layouts/canvas/types.ts`, and the pure state modules
-of `shell/` and `terminals/`, the companion panes' store and the chat's modes among them. Vendor
+of `shell/` and `terminals/` (unread finishes among them), the companion panes' store and the chat's modes among them. Vendor
 libraries stay in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout
 in `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
 `ui-toolkit/`, React Router in `app/` and `shell/`, and React DOM in
@@ -735,7 +1030,8 @@ windowed view from the workspace store, and a new App seeds sessions with it. Th
 companion panes' store in `terminals/companion/state.ts` holds what the panes load,
 by item: each plan as the person edits it, what each item last loaded, and the secret
 files the person chose to see; it follows the backend's companions and messages from an
-effect. What a taskbar shows is derived from it and the workspace in
+effect. What an item loaded stays 30 seconds after nothing shows it, then goes, so a
+large image doesn't stay in memory. What a taskbar shows is derived from it and the workspace in
 `terminals/companion/bar.ts`, never stored.
 `WorkspaceProvider` creates the backend, the stores, the drag session
 (`terminals/drag-session.ts`), the navigator, and the commands once per App, in a pure
@@ -795,8 +1091,9 @@ lifecycle for any adapter. An adapter opts into the port contract suite by
 calling `describeBackendContract` from `test/backend-contract.tsx` in a
 colocated `contract.test.ts`, with a probe of what it holds and the I/O it
 started, and a driver when it has `start`. `App` reads a `createBackend` factory
-once at mount, and `app/backend.ts` chooses the default: the demo under tests, and
-a runner connection in every build. A backend that must connect first supplies a
+once at mount, and `app/backend.ts` chooses a build's default: a runner connection,
+or the demo in the content preview and visitor builds. Tests and specs pass the demo's
+spec backend (`backend/demo/spec-variants.ts`) themselves. A backend that must connect first supplies a
 `ConnectBackend`; `app/BackendGate.tsx` shows a splash until it resolves with the
 seed loaded, or a card saying what failed with a Retry button, and closes it on unmount.
 
@@ -924,30 +1221,60 @@ pnpm package:mac
 pnpm package:win
 ```
 
-Artifacts go to `application/host/release/`: a Linux x64 AppImage, a macOS
-universal ZIP, or a Windows x64 portable executable. Builds are unsigned, so
-Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
+Artifacts go to `application/host/release/`:
+
+- Linux x64: `novadeck-linux-x86_64.AppImage`, built on the static type2 runtime so it
+  mounts with FUSE 3. Releases also carry `install.sh`, the installer in
+  [scripts/install](scripts/install) with the repository filled in.
+- macOS universal: `novadeck-mac-universal.dmg`, the disk image to drag the app to
+  Applications from, and `novadeck-mac-universal.zip`, which updates install from.
+- Windows x64: `novadeck-win-x64-setup.exe`, a one-click installer that installs for the
+  current user without an administrator prompt.
+
+None of the names carries a version, so `releases/latest/download/<name>` is always the
+newest stable build. The ZIP and the AppImage are not advertised: `install.sh` installs
+the AppImage, which replaces itself in place once installed, and the app from the ZIP.
+
+Local builds are unsigned, so Gatekeeper or SmartScreen may warn. The application ID is `dev.mzpk.novadeck`.
+Releases are signed and notarized once the signing credentials are set up; see
+[docs/release-signing.md](docs/release-signing.md).
+
+Builds also write `latest*.yml` update metadata and `.blockmap` files beside the packages,
+which releases upload so installed apps can update themselves; see
+[docs/auto-update.md](docs/auto-update.md).
 
 Each package ships the relay agents start for Novadeck's MCP server and hooks, built
 from source with the rest of the app.
 
 The [release workflow](.github/workflows/release.yml) publishes immutable GitHub
 prereleases from qualifying changes on `main`, with notes, checksums, and native
-packages. It smoke-tests each packaged application before upload. Conventional
+packages. It smoke-tests each packaged application before upload, installs the AppImage and
+the macOS app through `install.sh` served from a local copy of the release, and fails when
+the installed AppImage runs without Electron's sandbox. The workflow feeds
+its own repository into the update feed baked into each app and into `install.sh`, so
+moving the repository needs no edit. Conventional
 Commits determine release eligibility; versions are currently limited to patch
 increments. Documentation-only changes do not trigger a release. See
 [.release-it.json](.release-it.json) for the release configuration.
 
-Bump `engineInterface` in `application/whisper/scripts/build.ts` with any change to the
-server flags the runner passes, the requests it makes of the server or the patched HTTP
-surface: during an update the runner dictates with an older engine only if it speaks the
-same interface.
+Bump `engineInterface` in `engines/whisper/scripts/build.ts` (voice) or
+`engines/murmur/scripts/build.ts` (murmur) with any change to the server flags the
+runner passes, the requests it makes of the server, the patched HTTP surface or, for
+murmur, the `--list-devices` output: during an update the runner uses an older engine only
+if it speaks the same interface. Both engines are built by the shared
+`engines/ggml-build`.
 
-Promote tested binaries on GitHub Releases by clearing **Set as a pre-release**
-and selecting **Set as the latest release**; no rebuild is needed. For an
-interrupted release, inspect the latest workflow first. An unpublished draft or
-orphaned version tag must be cleaned up before rerunning the latest release
-workflow; published immutable releases must remain intact.
+There are two channels. Every release from `main` is a prerelease, the early channel. The
+stable channel is GitHub's latest release that is not a prerelease, which installs, the
+`releases/latest/download/` links and, by default, installed apps follow. Promote a tested
+prerelease by running the [Promote to Stable](.github/workflows/promote.yml) workflow from
+the Actions tab, with a version such as `1.2.3` or none for the newest prerelease. It
+checks that the release is published, is a prerelease, carries every package, `latest*.yml`
+and `install.sh`, and is newer than the current stable release, then clears **Set as a
+pre-release** and sets it as the latest. No rebuild happens, and GitHub still lets those
+two flags change on an immutable release. For an interrupted release, inspect the latest
+workflow first. An unpublished draft or orphaned version tag must be cleaned up before
+rerunning the latest release workflow; published immutable releases must remain intact.
 
 ## Contributing
 

@@ -18,6 +18,8 @@ type Press = Partial<Omit<KeyInput, "target">> & { target?: Partial<KeyTarget> }
 
 const nowhere: KeyTarget = {
   editing: false,
+  textEntry: false,
+  modal: false,
   terminalInput: false,
   rename: false,
   viewSwitch: false,
@@ -26,6 +28,7 @@ const nowhere: KeyTarget = {
   terminalTab: false,
   switcherClose: false,
   zenDock: false,
+  notice: false,
   companion: false,
   chat: false,
 }
@@ -469,10 +472,10 @@ describe("key commands", () => {
       const zen = { key: "Z", ctrlKey: true, shiftKey: true }
       app.keydown(zen)
       expect(app.shell().zen).not.toBeNull()
-      app.keydown({ key: "!", code: "Digit1", ctrlKey: true, shiftKey: true })
+      app.keydown({ key: "E", ctrlKey: true, shiftKey: true })
       expect(app.shell().zen).toBeNull()
       app.keydown(zen)
-      app.keydown({ key: "@", code: "Digit2", ctrlKey: true, shiftKey: true })
+      app.keydown({ key: "S", ctrlKey: true, shiftKey: true })
       expect(app.shell().zen).toBeNull()
       expect(app.ui.getSnapshot().location.route.panel).toBe("sessions")
     })

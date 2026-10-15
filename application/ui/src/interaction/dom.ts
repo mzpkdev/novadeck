@@ -1,3 +1,5 @@
+import type { SidebarPanel } from "../model/types"
+
 // DOM contracts for keyboard policy and focus restoration. Library-specific
 // overlay markup stays here so interaction owners do not depend on it. `data-own-keys`
 // marks a region that takes its own keys, as the demo's debug panel does: the
@@ -6,20 +8,52 @@
 const editingOrOverlay =
   'input:not([type="radio"], [type="checkbox"], [type="button"], [type="submit"], [type="reset"]), textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm, [role="textbox"], [role="searchbox"], [role="combobox"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="slider"], [role="spinbutton"], [role="tablist"], [data-scope="popover"][data-state="open"], [data-own-keys]'
 
+// Where text is typed, outside the menus and dialogs that merely hold focus.
+const textEntry =
+  'input:not([type="radio"], [type="checkbox"], [type="button"], [type="submit"], [type="reset"], [type="range"]), textarea, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="searchbox"], [role="combobox"], [role="spinbutton"]'
+
+// A modal dialog, which asks its question before anything behind it changes: the app's
+// dialogs (Ark's) and confirmations. The terminal switcher is neither.
+const modalDialog = '[data-scope="dialog"][data-part="content"], [role="alertdialog"]'
+
+/**
+ * Whether a modal dialog is open, wherever focus is: one just opened may not have taken it
+ * yet, as a confirmation opened from a menu's button that still holds it.
+ */
+export const modalDialogOpen = (): boolean =>
+  [...document.querySelectorAll(modalDialog)].some(
+    (dialog) =>
+      dialog.getAttribute("aria-hidden") !== "true" &&
+      !dialog.hasAttribute("hidden") &&
+      dialog.getAttribute("data-state") !== "closed",
+  )
+
 export const workspaceShortcutTarget = (target: EventTarget | null): boolean =>
   !(target instanceof Element && target.closest(editingOrOverlay))
 
+const overlays = [
+  '[role="dialog"]:not([aria-hidden="true"])',
+  '[role="alertdialog"]:not([aria-hidden="true"])',
+  '[role="menu"]:not([hidden])',
+  '[role="listbox"][data-state="open"]',
+  '[data-scope="popover"][data-state="open"]',
+]
+
 export const workspaceOverlayOpen = (): boolean =>
-  Boolean(
-    document.querySelector(
-      '[role="dialog"]:not([aria-hidden="true"]), [role="alertdialog"]:not([aria-hidden="true"]), [role="menu"]:not([hidden]), [role="listbox"][data-state="open"], [data-scope="popover"][data-state="open"]',
-    ),
-  )
+  Boolean(document.querySelector(overlays.join(", ")))
+
+// Like `workspaceOverlayOpen`, but not a hover card (a taskbar peek), which opens on a
+// pointer passing by and asks for nothing.
+export const blockingOverlayOpen = (): boolean =>
+  Boolean(document.querySelector(overlays.map((each) => `${each}:not(.peek)`).join(", ")))
 
 const within = (target: EventTarget | null, selector: string): boolean =>
   target instanceof Element && Boolean(target.closest(selector))
 export const insideOpenZenDock = (target: EventTarget | null): boolean =>
   within(target, '[data-workspace-zen-dock][data-open="true"]')
+// The footer's update notice, which closes itself on Escape.
+export const insideNotice = (target: EventTarget | null): boolean =>
+  within(target, "[data-workspace-notice]")
 export const insideViewSwitch = (target: EventTarget | null): boolean =>
   within(target, "[data-workspace-view-switch]")
 export const insideNavigationControl = (target: EventTarget | null): boolean =>
@@ -52,6 +86,10 @@ export const insideTerminalInput = (target: EventTarget | null): boolean =>
 export type KeyTarget = {
   // Text fields, editors, and open menus or dialogs keep their own keys.
   readonly editing: boolean
+  // A text field or editor, where a chord would interrupt typing.
+  readonly textEntry: boolean
+  // Inside a modal dialog, which keeps the workspace behind it as it is.
+  readonly modal: boolean
   readonly terminalInput: boolean
   readonly rename: boolean
   readonly viewSwitch: boolean
@@ -61,12 +99,15 @@ export type KeyTarget = {
   readonly terminalTab: boolean
   readonly switcherClose: boolean
   readonly zenDock: boolean
+  readonly notice: boolean
   readonly companion: boolean
   readonly chat: boolean
 }
 
 export const classifyKeyTarget = (target: EventTarget | null): KeyTarget => ({
   editing: !workspaceShortcutTarget(target),
+  textEntry: within(target, textEntry),
+  modal: within(target, modalDialog),
   terminalInput: insideTerminalInput(target),
   rename: insideTerminalRename(target),
   viewSwitch: insideViewSwitch(target),
@@ -75,6 +116,7 @@ export const classifyKeyTarget = (target: EventTarget | null): KeyTarget => ({
   terminalTab: insideTerminalTab(target),
   switcherClose: insideSwitcherClose(target),
   zenDock: insideOpenZenDock(target),
+  notice: insideNotice(target),
   companion: insideCompanion(target),
   chat: insideChat(target),
 })
@@ -82,10 +124,9 @@ export const classifyKeyTarget = (target: EventTarget | null): KeyTarget => ({
 export const terminalTabInteractionActive = (): boolean =>
   Boolean(document.querySelector(".terminal-tab.editing, .terminal-tab.dragging"))
 
-export const sidebarToggle = (panel: "terminals" | "sessions"): HTMLElement | null =>
+export const sidebarToggle = (panel: SidebarPanel): HTMLElement | null =>
   document.getElementById(`${panel}-toggle`)
-export const focusSidebarToggle = (panel: "terminals" | "sessions"): void =>
-  sidebarToggle(panel)?.focus()
+export const focusSidebarToggle = (panel: SidebarPanel): void => sidebarToggle(panel)?.focus()
 export const focusTerminalTab = (id: string): void =>
   document
     .querySelector<HTMLElement>(`[data-terminal-tab-id="${CSS.escape(id)}"] .sidebar-item-select`)
@@ -110,6 +151,9 @@ const focusStranded = (selector: string, leftFrom: string): void => {
 }
 export const focusZenCreate = (): void =>
   focusStranded("[data-workspace-zen-create]", "[data-workspace-zen-enter]")
+// The rail's toggle for a panel the Zen dock's bell just opened, when focus has nowhere else.
+export const focusSidebarToggleStranded = (panel: SidebarPanel): void =>
+  focusStranded(`#${panel}-toggle`, ".zen-notifications")
 export const focusZenEnter = (): void => focusStranded("[data-workspace-zen-enter]", ".zen-exit")
 
 export const focusTerminalInput = (id: string): boolean => {

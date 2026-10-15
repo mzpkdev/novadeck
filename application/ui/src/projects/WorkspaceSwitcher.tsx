@@ -44,6 +44,12 @@ export const WorkspaceSwitcher = ({
   onRemove,
 }: WorkspaceSwitcherProps): React.JSX.Element => {
   const [open, setOpen] = useState(false)
+  // Another project becoming current, by a shortcut or a pin, closes the menu.
+  const [seen, setSeen] = useState(current.id)
+  if (seen !== current.id) {
+    setSeen(current.id)
+    setOpen(false)
+  }
   // The project waiting on the person's answer to removing it.
   const [removing, setRemoving] = useState<Project | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -62,7 +68,7 @@ export const WorkspaceSwitcher = ({
         trigger={
           <button
             ref={trigger}
-            className="button ghost workspace-switcher-trigger relative inline-flex min-h-9 min-w-0 w-full max-w-full items-center justify-start gap-1.5 px-[9px] text-body leading-[1.5] font-medium"
+            className="button ghost workspace-switcher-trigger relative inline-flex min-h-9 min-w-0 w-full max-w-full items-center justify-start gap-1.5 px-[9px] text-body font-medium"
             type="button"
             aria-label="Switch workspace"
             aria-description={elsewhere && `Another project: ${statusText[elsewhere]}`}
@@ -94,6 +100,7 @@ export const WorkspaceSwitcher = ({
             setOpen(false)
             setRemoving(project)
           }}
+          onDraggedOut={() => setOpen(false)}
         />
         {/* A disabled button takes no pointer, so its footer says why it's unavailable. */}
         <Tooltip content="Unavailable" disabled={Boolean(onOpenFolder)}>
@@ -107,7 +114,7 @@ export const WorkspaceSwitcher = ({
                 onOpenFolder?.()
               }}
             >
-              <FolderOpen aria-hidden="true" className="shrink-0" size={15} strokeWidth={1.65} />
+              <FolderOpen aria-hidden="true" className="shrink-0" size={14} strokeWidth={1.65} />
               <span>Open folder…</span>
             </button>
           </div>

@@ -1,3 +1,5 @@
+import type { SidebarPanel } from "../../model/types"
+import { shownPanel } from "../../shell/panels"
 import {
   bumpNavigation,
   enterZen,
@@ -8,7 +10,6 @@ import {
   type FocusPreview,
   type KeyboardFocus,
   type ShellState,
-  type SidebarPanel,
 } from "../../shell/shell-state"
 import { currentContext } from "../selectors"
 import { updateShell } from "../ui-store"
@@ -50,16 +51,21 @@ export const shellEdits = ({ ui }: Pick<CommandContext, "ui">): ShellEdits => {
 export const createShellCommands = (ctx: CommandContext): ShellCommands => {
   const { ui, workspace, navigation, effects } = ctx
   const { change, set } = shellEdits(ctx)
-  const panel = (): SidebarPanel => ui.getSnapshot().location.route.panel
+  const panel = (): SidebarPanel =>
+    shownPanel(ui.getSnapshot().location.route.panel, ctx.inbox !== undefined)
   let canvasFocusRequest = 0
   const hide = (): void => {
     change(hideSidebar)
     if (effects.desktop()) effects.focusSidebarToggle(panel())
   }
   const show = (next: SidebarPanel): void => {
+    const inZen = Boolean(ui.getSnapshot().shell.zen)
     change((shell) => ({ ...shell, zen: null }))
     navigation.go({ panel: next })
     change(showPanel)
+    // The Zen dock the person pressed is gone; focus follows to the rail.
+    if (inZen && effects.desktop())
+      effects.afterFrame(() => effects.focusSidebarToggleStranded(next))
   }
   return {
     showSessions: () => show("sessions"),

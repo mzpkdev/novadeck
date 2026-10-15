@@ -4,13 +4,20 @@ import { dirname, join } from "node:path"
 
 import { CompanionItems } from "./companions/items.js"
 import { createHarnesses, type HarnessesOptions } from "./harnesses/service.js"
+import { Murmur } from "./murmur/service.js"
+import { createRefusal } from "./refusal.js"
 import { createRouter, type Connection } from "./router.js"
 import { installShellFiles } from "./shell/install.js"
 import { Terminals, type TerminalOptions } from "./terminals/index.js"
 import { Uploads } from "./terminals/uploads.js"
 import { Voice } from "./voice/service.js"
 import { Projects } from "./workspaces/projects.js"
-import { WorkspaceStore } from "./workspaces/store.js"
+import {
+  EarlierWorkspaceError,
+  setAsideWorkspace,
+  WorkspaceStore,
+  WorkspaceTooNewError,
+} from "./workspaces/store.js"
 
 export type RunnerOptions = {
   /** SQLite file for project and session metadata; in memory when omitted. */
@@ -43,6 +50,17 @@ export type RunnerOptions = {
     readonly source?: string
     readonly directory?: string
   }
+  /**
+   * Murmur's engine, which writes terminals' titles: `engine` is the path to
+   * its manifest (`engine.json`), `source` where its archive is, an https URL ending in `/`
+   * or a folder, and `directory` where it and the model install, a `murmur` folder beside
+   * the database by default. Without an engine murmur is unavailable and nothing is described.
+   */
+  murmur?: {
+    readonly engine?: string
+    readonly source?: string
+    readonly directory?: string
+  }
   /** Where agents are looked for and how their plugin commands run; for tests. */
   agents?: HarnessesOptions
 }
@@ -50,7 +68,7 @@ export type RunnerOptions = {
 export type Runner = {
   /** Identifies this runner lifetime; terminal cursors are only valid within it. */
   readonly id: string
-  readonly router: ReturnType<typeof createRouter>
+  readonly router: ReturnType<typeof createRouter> | ReturnType<typeof createRefusal>
   /** The largest initial snapshot, which transports allow for in their send buffers. */
   readonly snapshotBytes: number
   /**
@@ -72,13 +90,29 @@ export type Runner = {
 }
 
 /**
+ * The workspace store at `database`. One an earlier build wrote is set aside and a new one
+ * started in its place, so an update never leaves the runner unable to start: before the
+ * first release Novadeck has no migrations, and the old file stays beside it.
+ */
+const openStore = (database: string | undefined): WorkspaceStore => {
+  try {
+    return new WorkspaceStore(database)
+  } catch (error) {
+    if (!(error instanceof EarlierWorkspaceError) || database === undefined) throw error
+    const aside = setAsideWorkspace(database)
+    console.warn(`${error.message} It was set aside as ${aside}, and a new one started.`)
+    return new WorkspaceStore(database)
+  }
+}
+
+/**
  * The runner's parts, wired together: its metadata store, the shell files it writes once,
  * the agents that install Novadeck's plugin, the terminals, which keep their records and
  * mailboxes in the store, and the items shown beside them. `createRunner` serves them; the end-to-end deck drives them
  * in process, so both run the same wiring. Internal: not exported from the package.
  */
 export const wire = (options: RunnerOptions) => {
-  const store = new WorkspaceStore(options.database)
+  const store = openStore(options.database)
   // Written once, for the shells and for the agents that install Novadeck's plugin.
   const shellFiles =
     options.shell === undefined
@@ -90,7 +124,14 @@ export const wire = (options: RunnerOptions) => {
           console.error("Novadeck shell integration is unavailable:", error)
           return undefined
         })
-  const agents = createHarnesses(() => shellFiles, options.agents)
+  // The runner's own calls of the relay use the build's, never the copy for agents.
+  const relay = options.relay === undefined ? {} : { relay: options.relay }
+  const agents = createHarnesses(() => shellFiles, { ...relay, ...options.agents })
+  // A connected agent that keeps its own copy of the plugin gets the files just written,
+  // where they differ from that copy (see `Harness.installed`).
+  void shellFiles
+    .then((written) => (written ? agents.refresh() : []))
+    .catch((error: unknown) => console.error("Novadeck could not refresh its plugins:", error))
   // What agents show and the person attaches beside terminals, kept in the store; it
   // asks the terminals where each one is.
   const items = new CompanionItems({
@@ -98,9 +139,47 @@ export const wire = (options: RunnerOptions) => {
     terminal: (terminalId) => terminals.place(terminalId),
     livePlan: (item) => terminals.livePlan(item),
   })
+  const voice = new Voice(store, {
+    engine: options.voice?.engine,
+    source: options.voice?.source,
+    directory:
+      options.voice?.directory ??
+      (options.database === undefined
+        ? join(tmpdir(), `novadeck-voice-${randomUUID()}`)
+        : join(dirname(options.database), "voice")),
+    // A terminal's facts, with its project's name, for the hint of a clip dictated into it;
+    // a project gone from the store takes only its name from the hint.
+    hint: async (terminalId) => {
+      const place = terminals.place(terminalId)
+      const facts = await terminals.hintFacts(terminalId)
+      if (!place || !facts) return undefined
+      let project: string | null = null
+      try {
+        project = store.project(store.session(place.sessionId).projectId).name
+      } catch {
+        // Gone, as when the project closed while the clip was recorded.
+      }
+      return { ...facts, project }
+    },
+  })
+  // Not awaited: the runner starts at once, and the first voice call waits for the load.
+  voice.start()
+  const murmur = new Murmur(store, {
+    engine: options.murmur?.engine,
+    source: options.murmur?.source,
+    directory:
+      options.murmur?.directory ??
+      (options.database === undefined
+        ? join(tmpdir(), `novadeck-murmur-${randomUUID()}`)
+        : join(dirname(options.database), "murmur")),
+    // Voice input has priority over the GPU.
+    voice: voice.activity,
+  })
+  murmur.start()
   const terminals = new Terminals({
     records: store,
     shellFiles,
+    ...relay,
     // Codex runs through Novadeck's shim while it is connected; see `posixCodexShim`.
     shims: () => agents.shims(),
     connected: (agent) => agents.connected(agent),
@@ -112,28 +191,57 @@ export const wire = (options: RunnerOptions) => {
     mailbox: store,
     projectOf: (sessionId) => store.session(sessionId).projectId,
     items,
+    // Without an engine nothing is described, so terminals have nothing to wait for.
+    ...(options.murmur?.engine !== undefined && { describer: murmur }),
     ...options.terminals,
   })
   const projects = new Projects(store, terminals, items)
   const uploads = new Uploads(options.uploads)
-  const voice = new Voice(store, {
-    engine: options.voice?.engine,
-    source: options.voice?.source,
-    directory:
-      options.voice?.directory ??
-      (options.database === undefined
-        ? join(tmpdir(), `novadeck-voice-${randomUUID()}`)
-        : join(dirname(options.database), "voice")),
-  })
-  // Not awaited: the runner starts at once, and the first voice call waits for the load.
-  voice.start()
-  return { store, shellFiles, agents, terminals, items, projects, uploads, voice }
+  return { store, shellFiles, agents, terminals, items, projects, uploads, voice, murmur }
 }
 
-/** Owns shells and workspace metadata, independent of how clients reach it. */
+/**
+ * What stands in for a runner whose workspace a newer Novadeck wrote: it owns nothing, and
+ * tells every client that proves itself why (`WORKSPACE_TOO_NEW`).
+ */
+const refusingRunner = (): Runner => ({
+  id: randomUUID(),
+  router: createRefusal(),
+  snapshotBytes: 0,
+  connect: (transport) => ({
+    ...transport,
+    id: randomUUID(),
+    clientId: undefined,
+    authenticated: false,
+    closed: false,
+    calls: 0,
+  }),
+  disconnect: (connection) => {
+    connection.closed = true
+  },
+  persist: () => {},
+  close: () => Promise.resolve(),
+})
+
+/**
+ * Owns shells and workspace metadata, independent of how clients reach it. Over a workspace
+ * database a newer runner wrote, it refuses every client instead (see `refusingRunner`).
+ */
 export const createRunner = (options: RunnerOptions = {}): Runner => {
+  try {
+    return startRunner(options)
+  } catch (error) {
+    if (error instanceof WorkspaceTooNewError) {
+      console.error(error)
+      return refusingRunner()
+    }
+    throw error
+  }
+}
+
+const startRunner = (options: RunnerOptions): Runner => {
   const id = randomUUID()
-  const { store, terminals, items, agents, projects, uploads, voice } = wire(options)
+  const { store, terminals, items, agents, projects, uploads, voice, murmur } = wire(options)
   const clients = new Map<string, Connection>()
   let closing: Promise<void> | undefined
   const disconnect = (connection: Connection) => {
@@ -144,6 +252,7 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
     }
     terminals.release(connection.id)
     voice.release(connection.id)
+    murmur.release(connection.id)
   }
   // A client only notices a dead link first; release its stale connection now instead
   // of after missed heartbeats, so its reconnection can reclaim terminal control.
@@ -168,6 +277,7 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
       agents,
       uploads,
       voice,
+      murmur,
       closing: () => closing !== undefined,
     }),
     snapshotBytes: options.terminals?.snapshotBytes ?? 32 * 1024 * 1024,
@@ -193,7 +303,11 @@ export const createRunner = (options: RunnerOptions = {}): Runner => {
           try {
             await voice.close()
           } finally {
-            store.close()
+            try {
+              await murmur.close()
+            } finally {
+              store.close()
+            }
           }
         }
       })()

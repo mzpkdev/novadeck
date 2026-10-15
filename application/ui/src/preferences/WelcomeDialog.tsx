@@ -1,11 +1,12 @@
 import { ArrowRight, ScrollText, Sparkles, type LucideIcon } from "lucide-react"
 import { useRef, useState, type ComponentType, type CSSProperties, type RefObject } from "react"
 
+import { harnesses } from "../model/harnesses"
 import { Checkbox } from "../ui-toolkit/Checkbox"
-import { deckName, DeckMark, DeckPattern, DeckWordmark } from "../ui-toolkit/DeckLogo"
 import { Dialog, DialogDescription, DialogTitle } from "../ui-toolkit/Dialog"
 import { ClaudeIcon } from "../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../ui-toolkit/icons/CodexIcon"
+import { brandName, NovaMark, NovaPattern, Wordmark } from "../ui-toolkit/NovaLogo"
 import { agentLabels, agentNote, type AgentSwitch } from "./AgentSwitches"
 import { WelcomePreview } from "./WelcomePreview"
 
@@ -14,11 +15,8 @@ type Choices = Record<AgentSwitch["agent"], boolean>
 // Every agent found on this computer starts chosen; the person opts out, not in.
 const installed = (agents: readonly AgentSwitch[], id: AgentSwitch["agent"]): boolean =>
   agents.find(({ agent }) => agent === id)?.available ?? false
-const choicesFrom = (agents: readonly AgentSwitch[]): Choices => ({
-  claude: installed(agents, "claude"),
-  codex: installed(agents, "codex"),
-  agy: installed(agents, "agy"),
-})
+const choicesFrom = (agents: readonly AgentSwitch[]): Choices =>
+  Object.fromEntries(harnesses.map(({ id }) => [id, installed(agents, id)])) as Choices
 
 export type TranscriptsSetting = {
   readonly enabled: boolean
@@ -41,7 +39,7 @@ const pluginNote = (names: readonly string[]): string =>
 
 const headline = "Room to build."
 
-// One choice as a card: the icon tile takes the Deck mark's face once chosen.
+// One choice as a card: the icon tile takes the brand tile once chosen.
 const ChoiceCard = ({
   icon: Icon,
   label,
@@ -81,7 +79,7 @@ const ChoiceCard = ({
       {note && (
         <span
           id={noteId}
-          className="settings-note text-caption leading-relaxed"
+          className="settings-note text-caption leading-4.5"
           data-tone={error ? "danger" : undefined}
           role={error ? "alert" : undefined}
         >
@@ -139,14 +137,12 @@ const WelcomeForm = ({
       }}
     >
       <div className="welcome-intro relative isolate min-w-0 overflow-hidden px-8 pt-8 pb-6 min-[820px]:px-10 min-[820px]:pt-10 max-[420px]:px-5">
-        <DeckPattern className="welcome-pattern pointer-events-none absolute top-0 right-0 -z-10 h-[230px] w-[72%]" />
-        <div
-          className="welcome-brand flex items-center gap-2.5 text-[23px] font-semibold"
-          role="img"
-          aria-label={deckName}
-        >
-          <DeckMark size={35} animated />
-          <DeckWordmark animated />
+        <NovaPattern className="welcome-pattern pointer-events-none absolute top-0 right-0 -z-10 h-[230px] w-[72%]" />
+        <div className="flex items-center gap-2.5 text-[23px]" role="img" aria-label={brandName}>
+          <NovaMark size={35} animated />
+          {/* With no descenders the letters ride high in their line; this centres their
+              capitals and baseline on the mark. */}
+          <Wordmark animated className="translate-y-[0.07em]" />
         </div>
         <div className="mt-10 max-[819px]:mt-6">
           <DialogTitle

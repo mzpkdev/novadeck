@@ -2,12 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
-import type { AgentName } from "@novadeck/protocol"
-
-import type { Report } from "../shell/reports.js"
-import { describe, expect, it } from "../test.js"
-import { loadProbe } from "../testing/probes.js"
-import type { HarnessEvent } from "./events.js"
+import type { HarnessEvent } from "@novadeck/harness-core/events"
 import {
   continuationPrompt,
   doorbellLine,
@@ -17,7 +12,13 @@ import {
   withoutDoorbell,
   type Launchers,
   silentFor,
-} from "./harness.js"
+} from "@novadeck/harness-core/harness"
+import type { Report } from "@novadeck/harness-core/report"
+import { loadProbe } from "@novadeck/harness-core/testing/probes"
+import type { AgentName } from "@novadeck/protocol"
+
+import { describe, expect, it } from "../test.js"
+import { adapterFolder } from "../testing/adapters.js"
 import { harnesses } from "./registry.js"
 
 const delivery =
@@ -181,9 +182,9 @@ describe("a doorbell prompt", () => {
 })
 
 const launchers: Launchers = { mcp: { command: "/data/shell/mcp" } }
-const file = (agent: AgentName, path: string) =>
+const file = (agent: AgentName, path: string, platform: NodeJS.Platform = "linux") =>
   JSON.parse(
-    harnesses[agent].files("linux", launchers).find((each) => each.path === path)!.content,
+    harnesses[agent].files(platform, launchers).find((each) => each.path === path)!.content,
   ) as { hooks?: object; novadeck?: object }
 
 // Every handler a hooks.json registers, however its harness nests them.
@@ -195,15 +196,23 @@ const handlers = (value: unknown): { command: string; timeout?: number }[] => {
 }
 
 describe("each harness's hook registrations", () => {
-  it("set a timeout well above the hook's own limit, as a slower hook is dropped silently", () => {
-    expect(hookSeconds).toBeGreaterThan(5)
-    const registered = [
-      ...handlers(file("claude", join("novadeck", "hooks", "hooks.json")).hooks),
-      ...handlers(file("codex", join("novadeck", "hooks", "hooks.json")).hooks),
-      ...handlers(file("agy", "hooks.json").novadeck),
-    ]
-    expect(registered.length).toBeGreaterThan(15)
-    for (const handler of registered) expect(handler.timeout).toBe(hookSeconds)
+  it("set a timeout above the hook's own limit, as a slower hook is dropped silently", () => {
+    // On Windows the shell the hook runs in starts slowly on a busy machine, so more.
+    expect(hookSeconds("linux")).toBeGreaterThan(5)
+    expect(hookSeconds("win32")).toBeGreaterThanOrEqual(30)
+    for (const platform of ["linux", "win32"] as const) {
+      const registered = [
+        ...handlers(file("claude", join("novadeck", "hooks", "hooks.json"), platform).hooks),
+        ...handlers(file("codex", join("novadeck", "hooks", "hooks.json"), platform).hooks),
+        ...handlers(file("agy", "hooks.json", platform).novadeck),
+      ]
+      expect(registered.length).toBeGreaterThan(15)
+      for (const handler of registered)
+        if (handler.command.includes("codex Interrupt"))
+          // Codex's most for an Interrupt hook, which reports within 2 seconds.
+          expect(handler.timeout).toBe(3)
+        else expect(handler.timeout).toBe(hookSeconds(platform))
+    }
   })
 
   it("register every event that asks", () => {
@@ -222,7 +231,7 @@ describe("each harness's hook registrations", () => {
 type Scenario = { events: { event: string; payload: Report["payload"] }[] }
 const scenario = (agent: AgentName, name: string): Scenario =>
   (
-    loadProbe(join(import.meta.dirname, agent), "interactive.probe.json") as {
+    loadProbe(adapterFolder(agent), "interactive.probe.json") as {
       scenarios: { [name: string]: Scenario }
     }
   ).scenarios[name]!

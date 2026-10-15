@@ -3,6 +3,7 @@ import { useRef, useState, type ReactNode } from "react"
 
 import { shortcutGroups } from "../interaction/keymap"
 import { currentPlatform } from "../interaction/shortcuts"
+import { MURMUR_NAME } from "../model/murmur"
 import { viewModes } from "../model/state"
 import type { PreferencesValue } from "../model/types"
 import { themes, type ThemeEntry, type ThemeId } from "../theme/themes"
@@ -13,12 +14,16 @@ import { Select } from "../ui-toolkit/Select"
 import { Switch } from "../ui-toolkit/Switch"
 import { Tabs, TabList, Tab, TabPanel } from "../ui-toolkit/Tabs"
 import { AgentSwitches, agentsExplanation, type AgentSwitch } from "./AgentSwitches"
+import { murmurDescription } from "./murmur-addon"
+import { MurmurAddon, type MurmurAddonValue } from "./MurmurAddon"
 import {
   preferencesTabs,
   settingRowClasses,
   settingsCardClasses,
+  versionText,
   type PreferencesTab,
 } from "./settings"
+import { UninstallApp, type UninstallValue } from "./UninstallApp"
 import { VoiceInput, type VoiceAddon } from "./VoiceInput"
 
 const themeItems = themes.map(({ id, name }) => ({ label: name, value: id }))
@@ -33,7 +38,7 @@ const viewIcons = { focus: PanelLeft, grid: LayoutGrid, canvas: SquareDashedMous
 
 // Section titles match the sidebar's panel titles.
 const sectionTitleClasses = "section-label m-0 text-label font-medium"
-const sectionDescriptionClasses = "settings-description m-0 mt-1.5 text-control leading-relaxed"
+const sectionDescriptionClasses = "settings-description m-0 mt-1.5 text-control leading-5"
 const panelClasses =
   "preferences-panel col-start-1 row-start-1 flex flex-col gap-6 px-6 py-5 data-[state=open]:visible data-[state=open]:opacity-100 data-[state=closed]:invisible data-[state=closed]:pointer-events-none data-[state=closed]:opacity-0 max-[480px]:px-4"
 
@@ -80,7 +85,7 @@ const SettingText = ({
 }): React.JSX.Element => (
   <span className="flex min-w-0 flex-col gap-1">
     <span id={id}>{label}</span>
-    <span id={descriptionId} className="settings-description text-control leading-relaxed">
+    <span id={descriptionId} className="settings-description text-control leading-5">
       {description}
     </span>
   </span>
@@ -97,6 +102,10 @@ export const Preferences = ({
   transcripts,
   agents,
   voice,
+  murmur,
+  updates,
+  version,
+  uninstall,
   notices = false,
   chat = false,
 }: {
@@ -109,7 +118,10 @@ export const Preferences = ({
   onExitComplete?: () => void
   // Whether terminals' screens are kept to show again when they restore; absent where
   // the backend keeps none.
-  transcripts?: { readonly enabled: boolean; readonly onChange: (enabled: boolean) => void }
+  transcripts?: {
+    readonly enabled: boolean
+    readonly onChange: (enabled: boolean) => void
+  }
   // Whether the page can show desktop notifications, as the desktop app can.
   notices?: boolean
   // Whether the backend reads agents' conversations, which the chat view shows.
@@ -121,6 +133,18 @@ export const Preferences = ({
   }
   // Voice input, as the backend has it; absent where it has none.
   voice?: VoiceAddon
+  // Murmur, as the backend has it; absent where it has none.
+  murmur?: MurmurAddonValue
+  // Which releases the desktop app follows; absent where it doesn't offer the choice.
+  // `early` is undefined until the app has said.
+  updates?: {
+    readonly early: boolean | undefined
+    readonly onChange: (early: boolean) => void
+  }
+  // The desktop app's version; absent where the backend has none to give.
+  version?: string
+  // Removing the desktop app; absent where the backend offers none, as for a portable copy.
+  uninstall?: UninstallValue
 }): React.JSX.Element => {
   const dialog = useRef<HTMLDivElement>(null)
   const panels = useRef<HTMLDivElement>(null)
@@ -132,6 +156,10 @@ export const Preferences = ({
     setOpenSelect(null)
     if (panels.current) panels.current.scrollTop = 0
   }
+  // The Addons are the chat view, voice input and murmur; a backend with none of them,
+  // as the website's demo, has no tab for them, though a URL can still name the section.
+  const hasAddons = chat || voice !== undefined || murmur !== undefined
+  const shown = !hasAddons && tab === "addons" ? "general" : tab
   const lastView = value.enabledViews.length === 1
   const { appearance } = value
   const theme: ThemeEntry<ThemeId> =
@@ -157,7 +185,7 @@ export const Preferences = ({
       positionerClassName="fixed inset-0 z-50 flex items-center justify-center"
       className="modal flex h-[min(640px,calc(100dvh-48px))] w-[min(540px,calc(100vw-32px))] flex-col overflow-hidden max-[480px]:w-[calc(100vw-24px)]"
     >
-      <Tabs value={tab} onValueChange={changeTab} className="flex min-h-0 flex-1 flex-col">
+      <Tabs value={shown} onValueChange={changeTab} className="flex min-h-0 flex-1 flex-col">
         <div className="modal-header preferences-heading shrink-0 px-6 pt-5 max-[480px]:px-4">
           <div className="flex items-center justify-between gap-4">
             <h2 id="preferences-title" className="modal-title m-0 text-title font-medium">
@@ -176,11 +204,13 @@ export const Preferences = ({
             label="Preference sections"
             indicatorClassName="bottom-[-1px] h-0.5"
           >
-            {preferencesTabs.map(({ id, label }) => (
-              <Tab key={id} value={id} className="relative min-h-9 px-0.5 text-left text-body">
-                {label}
-              </Tab>
-            ))}
+            {preferencesTabs
+              .filter(({ id }) => hasAddons || id !== "addons")
+              .map(({ id, label }) => (
+                <Tab key={id} value={id} className="relative min-h-9 px-0.5 text-left text-body">
+                  {label}
+                </Tab>
+              ))}
           </TabList>
         </div>
         <div ref={panels} className="preferences-panels grid min-h-0 flex-1 overflow-y-auto">
@@ -200,7 +230,7 @@ export const Preferences = ({
                     if (chosen)
                       onChange({ ...value, appearance: { ...appearance, theme: chosen.id } })
                   }}
-                  open={open && tab === "general" && openSelect === "theme"}
+                  open={open && shown === "general" && openSelect === "theme"}
                   onOpenChange={(expanded) => setOpenSelect(expanded ? "theme" : null)}
                   portalContainer={dialog}
                 />
@@ -293,7 +323,7 @@ export const Preferences = ({
                   items={fontSizes}
                   value={String(value.fontSize)}
                   onValueChange={(size) => onChange({ ...value, fontSize: Number(size) })}
-                  open={open && tab === "general" && openSelect === "font-size"}
+                  open={open && shown === "general" && openSelect === "font-size"}
                   onOpenChange={(expanded) => setOpenSelect(expanded ? "font-size" : null)}
                   portalContainer={dialog}
                 />
@@ -353,41 +383,84 @@ export const Preferences = ({
                 <AgentSwitches agents={agents.list} onChange={agents.onChange} />
               </Section>
             )}
-          </TabPanel>
-          <TabPanel value="addons" className={panelClasses}>
-            <Section
-              title="Chat view"
-              description="Show agents as a conversation instead of their terminal."
-            >
-              <div className={settingsCardClasses}>
-                <div className={`preference-row ${settingRowClasses}`}>
-                  <SettingText
-                    id="chat-view-label"
-                    label="Open agents in chat"
-                    description={
-                      chat
-                        ? "Every terminal running a supported agent shows its chat. Answer there, or in the terminal when the chat can't."
-                        : "Not available here."
-                    }
-                    descriptionId="chat-view-description"
-                  />
-                  <Switch
-                    checked={value.chatView}
-                    onChange={(chatView) => onChange({ ...value, chatView })}
-                    labelledBy="chat-view-label"
-                    describedBy="chat-view-description"
-                    disabled={!chat}
-                  />
+            {updates && (
+              <Section title="Updates">
+                <div className={settingsCardClasses}>
+                  <div className={`preference-row ${settingRowClasses}`}>
+                    <SettingText
+                      id="early-builds-label"
+                      label="Early builds"
+                      description="Get new releases as soon as they're published, before they're promoted to stable. Turning this off doesn't go back to an older version."
+                      descriptionId="early-builds-description"
+                    />
+                    <Switch
+                      checked={updates.early === true}
+                      onChange={updates.onChange}
+                      labelledBy="early-builds-label"
+                      describedBy="early-builds-description"
+                      disabled={updates.early === undefined}
+                    />
+                  </div>
                 </div>
-              </div>
-            </Section>
-            <Section
-              title="Voice input"
-              description="Speak prompts into agent terminals. Speech is transcribed on this computer and never leaves it."
-            >
-              <VoiceInput voice={voice} open={open && tab === "addons"} portalContainer={dialog} />
-            </Section>
+              </Section>
+            )}
+            {(version || uninstall) && (
+              <Section title="About">
+                {version && (
+                  <dl className={`${settingsCardClasses} m-0`}>
+                    <div className={`preference-row ${settingRowClasses}`}>
+                      <dt className="m-0">Version</dt>
+                      <dd className="m-0 select-text">{versionText(version)}</dd>
+                    </div>
+                  </dl>
+                )}
+                {uninstall && <UninstallApp uninstall={uninstall} />}
+              </Section>
+            )}
           </TabPanel>
+          {hasAddons && (
+            <TabPanel value="addons" className={panelClasses}>
+              <Section
+                title="Chat view"
+                description="Show agents as a conversation instead of their terminal."
+              >
+                <div className={settingsCardClasses}>
+                  <div className={`preference-row ${settingRowClasses}`}>
+                    <SettingText
+                      id="chat-view-label"
+                      label="Open agents in chat"
+                      description={
+                        chat
+                          ? "Every terminal running a supported agent shows its chat. Answer there, or in the terminal when the chat can't."
+                          : "Not available here."
+                      }
+                      descriptionId="chat-view-description"
+                    />
+                    <Switch
+                      checked={value.chatView}
+                      onChange={(chatView) => onChange({ ...value, chatView })}
+                      labelledBy="chat-view-label"
+                      describedBy="chat-view-description"
+                      disabled={!chat}
+                    />
+                  </div>
+                </div>
+              </Section>
+              <Section
+                title="Voice input"
+                description="Speak prompts into agent terminals. Speech is transcribed on this computer and never leaves it."
+              >
+                <VoiceInput
+                  voice={voice}
+                  open={open && tab === "addons"}
+                  portalContainer={dialog}
+                />
+              </Section>
+              <Section title={MURMUR_NAME} description={murmurDescription}>
+                <MurmurAddon murmur={murmur} />
+              </Section>
+            </TabPanel>
+          )}
           <TabPanel value="shortcuts" className={panelClasses}>
             {shortcutGroups(currentPlatform()).map(({ title, description, items }) => (
               <Section

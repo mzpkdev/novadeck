@@ -4,6 +4,7 @@ import { cleanup, render } from "vitest-browser-react"
 import { page, userEvent, type Locator } from "vitest/browser"
 
 import { App } from "../../app/App"
+import { createSpecBackend } from "../../backend/demo/spec-variants"
 
 // User-level vocabulary for behaviour specs. Specs describe what a person sees and
 // does; only this module knows how that maps to accessible roles and names, so a
@@ -16,14 +17,20 @@ import { App } from "../../app/App"
 
 const nextFrame = (): Promise<number> => new Promise(requestAnimationFrame)
 
-/** Opens the app, optionally at a deep link such as `/projects/storefront/sessions/initial/grid`. */
-export const openWorkspace = async (route?: string): Promise<void> => {
+/**
+ * Opens the app, optionally at a deep link such as `/projects/storefront/sessions/initial/grid`,
+ * and `embedded` as another page frames it.
+ */
+export const openWorkspace = async (
+  route?: string,
+  { embedded = false }: { readonly embedded?: boolean } = {},
+): Promise<void> => {
   // A same-page history entry below the app keeps an extra Back inside the test page.
   window.history.replaceState(null, "", "/")
   window.history.pushState(null, "", route === undefined ? "/" : `/#${route}`)
   await render(
     <StrictMode>
-      <App />
+      <App createBackend={createSpecBackend} embedded={embedded} />
     </StrictMode>,
   )
   // A link may open with a modal dialog, which hides the rest of the app.
@@ -127,16 +134,41 @@ export const chooseView = async (name: "Focus" | "Grid" | "Canvas"): Promise<voi
 
 export const sidebar = (): Locator => page.getByRole("complementary")
 
-export const sidebarPanel = (name: "Terminals" | "Sessions"): Locator =>
-  page.getByRole("radiogroup", { name: "Sidebar actions" }).getByRole("radio", { name })
+export const sidebarPanel = (name: "Terminals" | "Sessions" | "Notifications" | "Inbox"): Locator =>
+  page
+    .getByRole("radiogroup", { name: "Sidebar actions" })
+    // The bell and the Inbox add how many wait to their names, e.g. "Inbox, 3 waiting".
+    .getByRole("radio", {
+      name: name === "Notifications" || name === "Inbox" ? new RegExp(`^${name}(,|$)`) : name,
+    })
+
+/** The Notifications sidebar's rows, one for each terminal that asks for the person. */
+export const notifications = (): Locator =>
+  page.getByRole("list", { name: "Notifications" }).getByRole("listitem")
+
+/** The notification about the terminal in a project, e.g. `notification("docs-site")`. */
+export const notification = (project: string): Locator =>
+  notifications().filter({ hasText: project })
+
+const literal = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+/** A terminal's name from an accessible name that carries its `, @handle` after it. */
+export const nameOf = (label: string): string => label.replace(/, @[a-z0-9]+(?= |$)/, "")
+
+/**
+ * An accessible name made of `before`, a terminal's name and `after`, as the name of a
+ * control reads with or without the `, @handle` that follows the terminal's name.
+ */
+export const labelled = (before: string, name: string, after = ""): RegExp =>
+  new RegExp(`^${literal(before)}${literal(name)}(, @[a-z0-9]+)?${literal(after)}$`)
 
 /** A terminal as shown in the active Focus, Grid, or Canvas view. */
 export const terminal = (name: string): Locator =>
-  page.getByRole("region", { name: `${name} terminal` })
+  page.getByRole("region", { name: labelled("", name, " terminal") })
 
 /** A terminal's entry in the Terminals sidebar. */
 export const terminalTab = (name: string): Locator =>
-  page.getByRole("button", { name: `Select ${name}`, exact: true })
+  page.getByRole("button", { name: labelled("Select ", name) })
 
 /**
  * Puts keyboard focus on a terminal's sidebar tab, as Tab or a screen reader would. A mouse
@@ -187,14 +219,14 @@ export const expectTypingIn = async (name: string): Promise<void> => {
 }
 
 export const commandInput = (name: string): Locator =>
-  page.getByRole("textbox", { name: `Command for ${name}` })
+  page.getByRole("textbox", { name: labelled("Command for ", name) })
 
 /** Terminal names in sidebar order. */
 export const terminalTabNames = (): string[] =>
   page
     .getByRole("button", { name: /^Select / })
     .elements()
-    .map((element) => element.getAttribute("aria-label")!.replace(/^Select /, ""))
+    .map((element) => nameOf(element.getAttribute("aria-label")!.replace(/^Select /, "")))
 
 export const expectSelected = async (name: string): Promise<void> => {
   await expect.element(terminalTab(name)).toHaveAttribute("aria-current", "true")

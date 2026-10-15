@@ -1,5 +1,6 @@
 import {
   itemIdOf,
+  PlanUnwritableError,
   type CompanionItem,
   type CompanionKey,
   type ItemContent,
@@ -22,12 +23,12 @@ const authPlan = itemIdOf(authAgent.plan.id)
 // that keeps what they report.
 const running = (
   agents = [
-    { key: studio, handle: "t1", sample: studioAgent },
-    { key: auth, handle: "t3", sample: authAgent },
+    { key: studio, handle: "moth", sample: studioAgent },
+    { key: auth, handle: "owl", sample: authAgent },
   ],
 ) => {
   const showcase = createShowcase(
-    { agents, shown: [{ key: devServer, handle: "t2", artifacts: devServerArtifacts }] },
+    { agents, shown: [{ key: devServer, handle: "fox", artifacts: devServerArtifacts }] },
     (_delay, run) => run(),
     () => 100,
   )
@@ -78,7 +79,7 @@ describe("showcase agents", () => {
     expect(studioItems[0]).toMatchObject({
       kind: "plan",
       name: "A home for Studio",
-      from: { terminalId: "01", handle: "t1" },
+      from: { terminalId: "01", handle: "moth" },
       plan: { agent: "Codex", role: "root", source: "file" },
     })
   })
@@ -158,9 +159,23 @@ describe("showcase agents", () => {
         ...studioAgent,
         artifacts: { shown: [], opened: [projects!], next: [projects!] },
       }
-      const { showcase, reported } = running([{ key: studio, handle: "t1", sample }])
+      const { showcase, reported } = running([{ key: studio, handle: "moth", sample }])
       showcase.told(studio, "show")
       expect(reported).toMatchObject([{ item: { id: "studio-projects", version: 2 } }])
+    })
+
+    it("updates what it showed where the person moved it", () => {
+      const [projects] = studioArtifacts.opened!
+      const sample = {
+        ...studioAgent,
+        artifacts: { shown: [], opened: [projects!], next: [projects!] },
+      }
+      const { showcase, reported, hold } = running([{ key: studio, handle: "moth", sample }])
+      hold("studio-projects", { windowId: "w1" })
+      showcase.told(studio, "show")
+      expect(reported).toMatchObject([
+        { item: { id: "studio-projects", version: 2, holder: { windowId: "w1" } } },
+      ])
     })
   })
 
@@ -177,6 +192,44 @@ describe("showcase agents", () => {
         saved: false,
         current: { plan: { text: edited } },
       })
+    })
+  })
+
+  context("when its plan is put in a fault", () => {
+    it("tells whoever follows it, and puts it back", () => {
+      const { showcase, contentOf } = running()
+      const heard: ItemContent[] = []
+      showcase.follow(session, studioPlan, { reveal: false }, (content) => heard.push(content))
+      expect(showcase.fault(studio, "gone")).toBe(true)
+      expect(heard.at(-1)).toEqual({ state: "unavailable", reason: "gone", size: null })
+      showcase.fault(studio, "transcript")
+      expect(contentOf(studioPlan)).toMatchObject({ content: { writable: false } })
+      showcase.fault(studio, undefined)
+      expect(contentOf(studioPlan)).toMatchObject({ content: { writable: true } })
+    })
+
+    it("refuses saves for the reason, or fails them without one", async () => {
+      const { showcase, stampOf } = running()
+      for (const fault of ["gone", "folder", "transcript", "too-large"] as const) {
+        showcase.fault(studio, fault)
+        // eslint-disable-next-line no-await-in-loop -- Each step waits for the one before.
+        const refused = await showcase
+          .save(session, studioPlan, "x", stampOf(studioPlan))
+          .catch((error: unknown) => error)
+        expect(refused).toBeInstanceOf(PlanUnwritableError)
+        expect((refused as PlanUnwritableError).reason).toBe(fault)
+      }
+      showcase.fault(studio, "failing")
+      const failed = await showcase.save(session, studioPlan, "x", "1").catch((e: unknown) => e)
+      expect(failed).toBeInstanceOf(Error)
+      expect(failed).not.toBeInstanceOf(PlanUnwritableError)
+    })
+
+    it("leaves the other agent's plan alone, and a terminal with no agent", () => {
+      const { showcase, contentOf } = running()
+      showcase.fault(studio, "gone")
+      expect(contentOf(authPlan)).toMatchObject({ state: "ready" })
+      expect(showcase.fault(devServer, "gone")).toBe(false)
     })
   })
 
@@ -202,17 +255,13 @@ describe("showcase agents", () => {
       expect(planText(studioPlan)).toBe(studioAgent.text)
     })
 
-    it("leaves a plan the person undocked where it is, and writes its plan anew on its bar", () => {
+    it("updates a plan the person undocked where it is", () => {
       const { showcase, reported, hold, planText } = running()
       hold(studioPlan, { windowId: "w1" })
       showcase.told(studio, "use a grotesk")
       expect(reported).toMatchObject([
-        {
-          type: "item/upsert",
-          item: { id: `${studioPlan}-2`, version: 1, holder: { terminalId: "01" } },
-        },
+        { type: "item/upsert", item: { id: studioPlan, holder: { windowId: "w1" } } },
       ])
-      // The undocked one still shows the plan as it now stands.
       expect(planText(studioPlan)).toContain("confident grotesk")
     })
 

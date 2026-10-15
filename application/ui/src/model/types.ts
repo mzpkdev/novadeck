@@ -3,6 +3,10 @@ import type { CompanionItem, ItemId } from "./companion"
 import type { Bar } from "./companion-bar"
 
 export type ViewMode = "focus" | "grid" | "canvas"
+// The sidebar's panels, each with a toggle on the rail. A backend that has an Inbox shows
+// it in the Notifications panel's place.
+export const sidebarPanels = ["terminals", "sessions", "notifications", "inbox"] as const
+export type SidebarPanel = (typeof sidebarPanels)[number]
 export type WindowedView = Exclude<ViewMode, "focus">
 export type PreferencesValue = {
   fontSize: number
@@ -37,6 +41,8 @@ export type AgentStatus = {
   readonly attention?: {
     readonly kind: "permission" | "question" | "plan"
     readonly count: number
+    // Murmur's headline for the oldest request, a question's or a plan's, where it wrote one.
+    readonly headline?: string
   }
   readonly subagents?: readonly { readonly id: string; readonly type: string | null }[]
   readonly usage?: AgentUsage
@@ -48,10 +54,13 @@ export type AgentStatus = {
 // How an agent's turn ended: `completed` or `failed` on its own, `interrupted` by the
 // person (Escape, or a request they refused), or `unknown` when it only went idle, as an
 // Escape shows in Antigravity. `reply` is the start of its last reply, one line of plain
-// text; `at` tells this end from any other.
+// text; `at` tells this end from any other. `gist` is murmur's words for the reply, where
+// it wrote them, and `asks` that the reply asks the person something.
 export type AgentTurnEnd = {
   readonly outcome: "completed" | "failed" | "interrupted" | "unknown"
   readonly reply?: string
+  readonly gist?: string
+  readonly asks?: true
   readonly at: number
 }
 
@@ -80,11 +89,11 @@ export type TerminalStatus =
   | { readonly state: "failed"; readonly message: string }
 
 // Who a terminal's name is from: the person, an agent (by its terminal's handle), the
-// person's first prompt there, or the backend's default.
+// murmur, or the backend's default.
 export type TitleSource =
   | { readonly kind: "person" }
   | { readonly kind: "agent"; readonly by: string }
-  | { readonly kind: "fallback" }
+  | { readonly kind: "murmur" }
   | { readonly kind: "default" }
 
 // A terminal as its backend reports it. The backend owns all of it: which terminals a
@@ -102,11 +111,16 @@ export type TerminalMetadata = {
   // shell was lost or ended, or when the app last closed. Present only while the
   // terminal has no live shell.
   restoredProcess?: string
-  // The handle agents message it by, such as `t3`, where its backend has one.
+  // The handle agents message it by, such as `moth`, where its backend has one.
   handle?: string
   // The handle of the terminal whose agent opened it with a brief, its lead, as its
   // backend last said; null once that ended. Whether the lead runs is the roster's to say.
   ledBy?: string | null
+  // The handle of the terminal whose agent opened it, for an agent, a command or a plain
+  // shell; null where the person opened it.
+  openedBy?: string | null
+  // Whether an agent has run in it since it opened, running now or since exited.
+  agentRan?: boolean
   // Who its name is from, where its backend tells.
   titleSource?: TitleSource
   // Never present: a window has one, which tells tiles apart (see `isWindow`).

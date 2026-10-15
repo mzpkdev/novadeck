@@ -3,7 +3,8 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
-import { trustedIn } from "../../harnesses/codex/trust.js"
+import { trustedIn } from "@novadeck/harness-codex/trust"
+
 import type { DeckTerminal } from "../deck.js"
 import { responses } from "../model/responses.js"
 import { asked } from "../model/script.js"
@@ -40,7 +41,16 @@ enabled = false
 
 [otel]
 metrics_exporter = "none"
-
+${
+  process.platform === "win32"
+    ? `
+# On Windows its sandbox for commands, which it otherwise asks about once a folder is
+# trusted: the one that needs no administrator, as a CI runner's user isn't one.
+[windows]
+sandbox = "unelevated"
+`
+    : ""
+}
 [model_providers.novadeck-e2e]
 name = "Novadeck e2e"
 base_url = ${JSON.stringify(`${url}/v1`)}
@@ -63,6 +73,7 @@ export const codex: AgentSetup = {
   dialect: responses,
   banner: "OpenAI Codex",
   bindsAtReady: false,
+  steers: true,
   idleCommand: "/status",
   // Its curated-plugin sync and its startup tips (see `prepare`).
   refused: ["github.com", "api.github.com", "raw.githubusercontent.com"],
@@ -130,6 +141,10 @@ export const codex: AgentSetup = {
     ],
     approved: /Implement the plan\./,
   },
+  // While a turn runs it counts the seconds, saying Escape interrupts it; an Escape pressed
+  // before that is drawn is an idle one, offering to edit the previous message (seen in CI,
+  // 0.159.3).
+  running: /Working \(\d+s • esc to interrupt\)/,
   // Escape mid-turn says so (probed 2026-10-02, 0.159.3).
   interrupted: () => /■ Conversation interrupted/,
   // Esc-Esc browses its transcript, its footer saying so ("↵ rewind · esc back"); a paste
@@ -235,11 +250,17 @@ type Message = { readonly id?: unknown; readonly result?: unknown; readonly erro
  * as the app-server can't answer, as it failed to start or exited.
  */
 const appServer = (env: Readonly<Record<string, string>>, timeoutMs = 20_000) => {
-  const child = spawn("codex", ["app-server"], {
-    env,
-    cwd: env.HOME,
-    stdio: ["pipe", "pipe", "ignore"],
-  })
+  // On Windows through cmd, as npm installs it as codex.cmd, which only cmd runs.
+  const child =
+    process.platform === "win32"
+      ? spawn(env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", '"codex app-server"'], {
+          env,
+          cwd: env.HOME,
+          stdio: ["pipe", "pipe", "ignore"],
+          windowsHide: true,
+          windowsVerbatimArguments: true,
+        })
+      : spawn("codex", ["app-server"], { env, cwd: env.HOME, stdio: ["pipe", "pipe", "ignore"] })
   const pending = new Map<number, (message: Message | Error) => void>()
   // Why the app-server can't answer any more, once it can't.
   let gone: Error | undefined
@@ -297,7 +318,12 @@ const appServer = (env: Readonly<Record<string, string>>, timeoutMs = 20_000) =>
       send({ jsonrpc: "2.0", method: "initialized" })
     },
     request,
-    close: () => child.kill(),
+    // On Windows with the codex cmd started, which ending cmd alone leaves running.
+    close: () => {
+      if (process.platform === "win32" && child.pid !== undefined)
+        execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true })
+      else child.kill()
+    },
   }
 }
 

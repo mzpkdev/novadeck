@@ -1,7 +1,7 @@
 import { Menu as ArkMenu } from "@ark-ui/react/menu"
 import { Portal } from "@ark-ui/react/portal"
 import { ChevronRight } from "lucide-react"
-import { useId, useRef, useState, type ReactElement, type ReactNode } from "react"
+import { useId, useRef, useState, type ReactElement, type ReactNode, type RefObject } from "react"
 
 export type ContextMenuAction = {
   value: string
@@ -51,7 +51,7 @@ const MenuEntries = ({
           <ArkMenu.TriggerItem className={itemClasses}>
             {item.icon}
             <span className="flex-1">{item.label}</span>
-            <ChevronRight size={13} strokeWidth={1.5} aria-hidden />
+            <ChevronRight size={12} strokeWidth={1.5} aria-hidden />
           </ArkMenu.TriggerItem>
           <Portal>
             <ArkMenu.Positioner className="context-menu-positioner z-50!">
@@ -77,6 +77,25 @@ const MenuEntries = ({
   </>
 )
 
+const restore = (
+  opener: RefObject<HTMLElement | null>,
+  chosen: RefObject<(() => void) | undefined>,
+  frames: number,
+): void => {
+  requestAnimationFrame(() => {
+    const active = document.activeElement
+    if (!active || active === document.body) {
+      if (opener.current?.isConnected) opener.current.focus({ preventScroll: true })
+    } else if (frames > 0 && active.closest('[data-scope="menu"]')) {
+      restore(opener, chosen, frames - 1)
+      return
+    }
+    const run = chosen.current
+    chosen.current = undefined
+    run?.()
+  })
+}
+
 export type ContextMenuProps = {
   label: string
   trigger: ReactElement
@@ -95,23 +114,7 @@ export const ContextMenu = ({ label, trigger, items }: ContextMenuProps): React.
   const [open, setOpen] = useState(false)
   // Once the menu has closed, focus goes back where it was and what was chosen runs. The
   // closing menu keeps focus for a frame or two before letting it go.
-  const closed = (): void => {
-    const restore = (frames: number): void => {
-      requestAnimationFrame(() => {
-        const active = document.activeElement
-        if (!active || active === document.body) {
-          if (opener.current?.isConnected) opener.current.focus({ preventScroll: true })
-        } else if (frames > 0 && active.closest('[data-scope="menu"]')) {
-          restore(frames - 1)
-          return
-        }
-        const run = chosen.current
-        chosen.current = undefined
-        run?.()
-      })
-    }
-    restore(3)
-  }
+  const closed = (): void => restore(opener, chosen, 3)
   return (
     <ArkMenu.Root
       open={open}

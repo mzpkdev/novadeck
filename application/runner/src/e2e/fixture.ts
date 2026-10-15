@@ -7,22 +7,32 @@ import { beforeAll, type TestFunction } from "vitest"
 import { it as base } from "../test.js"
 import type { AgentSetup, Seed } from "./agents/agent.js"
 import { setups as every } from "./agents/index.js"
+import { harnessLogins, loginStore } from "./credentials.js"
 import { createDeck, type Deck } from "./deck.js"
 import { installHarness } from "./install.js"
 import { startFakeModel, type FakeModel } from "./model/server.js"
-import { reap } from "./reap.js"
-import { createSandbox, type Sandbox } from "./sandbox.js"
+import { census, reap } from "./reap.js"
+import { createSandbox, keychainAsks, type Sandbox, unsuffixedClaudeItem } from "./sandbox.js"
+import { unsupported } from "./support.js"
+import { startTrace, tracesAll, tracing } from "./trace.js"
 import { tripwire } from "./tripwire.js"
 
 export { describe, expect } from "../test.js"
 
+// Why the suite can't run here (see `unsupported`), or undefined where it can.
+const refusal = unsupported(process.platform)
+
 /**
- * Whether the suite can run here: Linux only. Elsewhere the sandbox's dead D-Bus address
- * doesn't keep a harness from the developer's keyring, as the macOS Keychain needs no
- * bus, and the leftover-process check reads /proc. A scenario file can skip on it
- * (`describe.skipIf(!supported)`); a test that runs anyway fails, saying why.
+ * Whether the suite can run here: Linux, Windows and macOS (see `unsupported`). On
+ * Windows the sandbox moves the user's folders too (see `createSandbox`), where Claude
+ * Code and Codex keep their credentials in files; on macOS Claude Code names its Keychain
+ * items after the sandbox's folder and Codex keeps its login in a file. Antigravity keeps
+ * its login in the Credential Manager or the Keychain under a fixed name, which no sandbox
+ * hides, so a test refuses to start while that login is there (see `harnessLogins`). The
+ * leftover-process check asks the system rather than /proc. A scenario file can skip on
+ * it (`describe.skipIf(!supported)`); a test that runs anyway fails, saying why.
  */
-export const supported = process.platform === "linux"
+export const supported = refusal === undefined
 
 /**
  * The harnesses this run tests, from `NOVADECK_E2E_AGENTS`: their names, comma-separated
@@ -60,13 +70,25 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
     if (supported && runs) await Promise.all(setups.map((setup) => installHarness(setup.agent)))
   })
   const test = base.extend<{ e2e: E2E }>({
-    e2e: async ({ resources }, use) => {
-      if (!supported)
+    e2e: async ({ resources, task, onTestFailed }, use) => {
+      if (refusal !== undefined) throw new Error(refusal)
+      // A login in Windows' Credential Manager or the macOS Keychain under a fixed name
+      // would be the developer's own, which no sandbox hides: nothing starts while one is.
+      const logins = harnessLogins(setups)
+      if (logins.length > 0)
         throw new Error(
-          `The end-to-end suite runs on Linux only, not ${process.platform}: elsewhere nothing keeps a harness from the developer's keyring`,
+          `${loginStore} holds a login of a harness under test (${logins.join(", ")}), which the sandbox can't hide from it: sign that harness out, or leave it out with NOVADECK_E2E_AGENTS`,
         )
       const model = await startFakeModel({ dialects: setups.map((setup) => setup.dialect) })
       resources.defer(() => model.close())
+      // What the runner heard and did, written where CI keeps it should the test fail;
+      // nothing is wrapped where no trace is asked for.
+      if (tracing) {
+        const trace = startTrace(task.fullName, model)
+        resources.defer(() => trace.stop())
+        onTestFailed(() => trace.write())
+        if (tracesAll) resources.defer(() => trace.write())
+      }
       // Installed before the file's tests: these are the same installs, already done.
       const installs = await Promise.all(setups.map((setup) => installHarness(setup.agent)))
       const sandbox = createSandbox({ proxy: model.proxy, bins: installs.map((one) => one.bin) })
@@ -117,10 +139,34 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
 
       await use({ model, sandbox: { ...sandbox, env }, deck })
 
+      // Antigravity's agy.exe has twice outlived its deck on Windows with no word of why
+      // (a recorded parent that has gone says only that it has): who its parent was, while
+      // it ran, tells a program started apart from the shell from one its tree should have
+      // held. Dropped once that is settled.
+      const running = setups.some((setup) => setup.agent === "agy")
+        ? await census(sandbox).catch((error: unknown) => [
+            `census failed: ${error instanceof Error ? error.message : String(error)}`,
+          ])
+        : []
       // Checked once the deck has closed, so what a harness sends as it exits counts too,
       // while the fake model still listens.
       await close()
-      const leftovers = await reap(sandbox)
+      // A check that throws, as the Keychain or ps may, is a problem of its own, and the
+      // rest are still told.
+      const unchecked: string[] = []
+      const checked = async <T>(what: string, check: () => T | Promise<T>, none: T) => {
+        try {
+          return await check()
+        } catch (error) {
+          const why = error instanceof Error ? error.message : String(error)
+          unchecked.push(`${what} couldn't be checked: ${why}`)
+          return none
+        }
+      }
+      const leftovers = await checked("leftover processes", () => reap(sandbox), [])
+      const changes = await checked("the developer's harness home", changed, [])
+      const appeared = await checked(loginStore, () => harnessLogins(setups), [])
+      const asks = await checked("the sandbox's Keychain log", () => keychainAsks(sandbox), [])
       const hosts = new Set(setups.flatMap((setup) => setup.hosts ?? []))
       const problems = [
         ...(model.foreign > 0
@@ -132,8 +178,19 @@ const fixture = (seed: Seed, setups: readonly AgentSetup[]) => {
         ...model.errors.map((error) => `the fake model failed on a request: ${error}`),
         // Reported here too when a wait failed with it: a test may have swallowed that.
         ...(model.rejection() ? [model.rejection()!] : []),
-        ...changed().map((path) => `the developer's harness home changed: ${path}`),
+        ...changes.map((path) => `the developer's harness home changed: ${path}`),
+        ...appeared.map((target) => `a login appeared in ${loginStore}: ${target}`),
+        ...asks
+          .filter((service) => unsuffixedClaudeItem.test(service))
+          .map(
+            (service) =>
+              `a harness asked the macOS Keychain for the person's own ${service}, which the sandbox refused`,
+          ),
         ...leftovers.map((one) => `a process outlived the deck in the sandbox: ${one}`),
+        ...(leftovers.length > 0 && running.length > 0
+          ? [`the sandbox ran, before the deck closed: ${running.join("; ")}`]
+          : []),
+        ...unchecked,
       ]
       await model.close()
       if (problems.length > 0) throw new Error(problems.join("\n"))

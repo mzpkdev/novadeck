@@ -1,6 +1,28 @@
 import type { WorkspaceSeed } from "../../model/seed"
 import { sessionName } from "../../model/session-name"
-import type { AgentStatus, CanvasLayout, Project, TerminalMetadata } from "../../model/types"
+import type {
+  AgentStatus,
+  CanvasLayout,
+  Project,
+  TerminalMetadata,
+  WorkspaceTarget,
+} from "../../model/types"
+import { demoHandle } from "./handles"
+
+// A demo terminal's ID, unique across the whole workspace as the runner's are: the
+// session it belongs to, then its number there. The name and handle come from the number.
+export const demoTerminalId = (
+  { projectId, workspaceSessionId }: WorkspaceTarget,
+  number: number,
+): string => `${projectId}-${workspaceSessionId}-${String(number).padStart(2, "0")}`
+
+// The terminal's number in its session, as `"01"`: what the sample content, names and
+// handles of the demo go by.
+export const terminalSlot = (terminalId: string): string =>
+  terminalId.slice(terminalId.lastIndexOf("-") + 1)
+
+// Each sample project opens one session with this stable ID.
+const initialSession = "initial"
 
 // The sample transcript a demo terminal opens with, unless an agent runs in it.
 export type SampleOutput = "shell" | "server" | "tests" | "git" | "logs" | "build"
@@ -107,12 +129,12 @@ const outputs = new Map(samples.map(({ id, output }) => [id, output]))
 
 // Terminals the demo adds open as a plain shell.
 export const sampleOutput = (terminal: TerminalMetadata): SampleOutput =>
-  outputs.get(terminal.id) ?? "shell"
+  outputs.get(terminalSlot(terminal.id)) ?? "shell"
 
-export const demoCanvasLayout = (): CanvasLayout => ({
+export const demoCanvasLayout = (projectId: string): CanvasLayout => ({
   geometry: Object.fromEntries(
     samples.map(({ id, x, y, height }) => [
-      id,
+      demoTerminalId({ projectId, workspaceSessionId: initialSession }, Number(id)),
       {
         position: { x, y },
         width: 550,
@@ -156,8 +178,19 @@ export const demoFinishes: readonly {
   readonly terminalId: string
   readonly outcome: "completed" | "failed"
 }[] = [
-  { projectId: "design-system", terminalId: "01", outcome: "completed" },
-  { projectId: "infra", terminalId: "01", outcome: "failed" },
+  {
+    projectId: "design-system",
+    terminalId: demoTerminalId(
+      { projectId: "design-system", workspaceSessionId: initialSession },
+      1,
+    ),
+    outcome: "completed",
+  },
+  {
+    projectId: "infra",
+    terminalId: demoTerminalId({ projectId: "infra", workspaceSessionId: initialSession }, 1),
+    outcome: "failed",
+  },
 ]
 
 export const projectTerminals = (project: Project, withAgents = false): TerminalMetadata[] => {
@@ -165,6 +198,11 @@ export const projectTerminals = (project: Project, withAgents = false): Terminal
   const single = withAgents ? projectAgents[project.id] : undefined
   return terminals.map((terminal) => ({
     ...terminal,
+    id: demoTerminalId(
+      { projectId: project.id, workspaceSessionId: initialSession },
+      Number(terminal.id),
+    ),
+    handle: demoHandle(Number(terminal.id)),
     directory: terminal.directory.replace(/^~\/projects\/[^/]+/, project.directory),
     ...(single && terminal.id === "01"
       ? { command: "claude", process: "claude", state: "running" as const, agent: single }
@@ -251,47 +289,136 @@ export const projectTerminals = (project: Project, withAgents = false): Terminal
   }))
 }
 
-// Each sample project opens one session with the stable ID "initial".
 export const demoSeed = (now: number, agents = false): WorkspaceSeed => ({
   projects: initialProjects.map((project) => ({
     ...project,
     sessions: [
       {
-        id: "initial",
+        id: initialSession,
         name: sessionName(now),
         terminals: projectTerminals(project, agents),
         items: [],
         windows: [],
-        canvasLayout: demoCanvasLayout(),
+        canvasLayout: demoCanvasLayout(project.id),
       },
     ],
   })),
 })
 
-export const createMockTerminal = (number: number, directory: string): TerminalMetadata => {
-  const id = String(number).padStart(2, "0")
+// What the runner names a terminal by default (its `defaultTitle`): the program it was
+// opened to run, else "Terminal".
+// The command a plain demo shell stands for, which names nothing.
+export const shellCommand = "zsh"
+
+export const defaultName = (command?: string): string => {
+  if (command === shellCommand) return "Terminal"
+  const program = command?.trim().split(/\s+/)[0]?.split("/").pop()
+  return program || "Terminal"
+}
+
+export const createMockTerminal = (
+  target: WorkspaceTarget,
+  number: number,
+  directory: string,
+  command?: string,
+): TerminalMetadata => {
+  const id = demoTerminalId(target, number)
   return {
     id,
-    name: `Terminal ${id}`,
+    name: defaultName(command),
+    handle: demoHandle(number),
     directory,
-    command: "zsh",
+    command: command ?? shellCommand,
     process: "zsh",
     state: "idle",
   }
 }
 
+// Builtins that answer nothing when they work.
+const quiet: ReadonlySet<string> = new Set([
+  "cd",
+  "export",
+  "source",
+  "alias",
+  "unset",
+  "set",
+  "true",
+])
+
+// Everyday commands the demo shell doesn't run, each with a short note instead of an error.
+const simulated =
+  "This is a simulated shell, so it doesn't run that. In the real app it is your own."
+const noted: ReadonlySet<string> = new Set([
+  "cat",
+  "head",
+  "tail",
+  "less",
+  "grep",
+  "find",
+  "mkdir",
+  "touch",
+  "rm",
+  "cp",
+  "mv",
+  "open",
+  "code",
+  "vim",
+  "nvim",
+  "nano",
+  "curl",
+  "wget",
+  "ssh",
+  "docker",
+  "make",
+  "python",
+  "python3",
+  "pnpm",
+  "npm",
+  "npx",
+  "yarn",
+  "bun",
+  "node",
+  "deno",
+  "cargo",
+  "go",
+  "which",
+  "env",
+  "history",
+  "top",
+  "ps",
+  "kill",
+  "tree",
+  "man",
+  "exit",
+  "logout",
+  "sudo",
+])
+
+// What the demo's shell answers: a few commands it fakes, a short note for the shell's other
+// everyday commands, and, for real nonsense, a line that says it is a simulation and where to
+// go, since a person who types into it expects a shell. A program is only matched in a shell:
+// an agent's terminal answers any other line as an agent.
 export const mockReply = (command: string, terminal: TerminalMetadata): string => {
   const input = command.trim()
+  const [program = ""] = input.split(/\s+/)
   if (input === "help")
-    return "Local demo commands: help, pwd, ls, whoami, date, echo <text>, clear"
+    return "Local demo commands: help, pwd, ls, whoami, date, echo <text>, git status, claude, clear.\nThis is a simulated shell: the real app runs your own."
   if (input === "pwd") return terminal.directory.replace("~", "/Users/alex")
-  if (input === "ls")
-    return "application/   node_modules/   package.json   pnpm-lock.yaml   README.md"
   if (input === "whoami") return "alex"
   if (input === "date") return new Date().toLocaleString()
   if (input === "echo") return ""
   if (input.startsWith("echo ")) return input.slice(5)
+  if (input === "git status")
+    return "On branch main\nYour branch is up to date with 'origin/main'.\n\nnothing to commit, working tree clean"
   if (demoAgent(terminal))
     return "This is a mock AI session. Your message is saved here, but no model is connected."
-  return `Preview shell: “${input}” isn't connected to a process. Type help to explore.`
+  if (program === "ls")
+    return "application/   node_modules/   package.json   pnpm-lock.yaml   README.md"
+  if (program === "git")
+    return "This is a simulated shell, so git only answers `git status`. In the real app it is your own."
+  if (program === "claude" || program === "codex")
+    return "Agents are simulated here. Open a terminal that is running one and answer what it asks."
+  if (quiet.has(program)) return ""
+  if (noted.has(program)) return simulated
+  return `zsh: command not found: ${program}\nThis is a simulated shell. Type help to see what works, or try ls, git status or claude.`
 }

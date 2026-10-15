@@ -4,16 +4,21 @@ import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { plugin } from "@novadeck/harness-core/harness"
 import { relayPath } from "@novadeck/relay"
 import { afterAll, beforeAll, onTestFinished } from "vitest"
 
-import { plugin } from "../harnesses/harness.js"
+import { readDismissRequest, readRequest } from "../companions/request.js"
 import { unboundNote } from "../messaging/peers.js"
 import { describe, expect, it } from "../test.js"
 import { installShellFiles } from "./install.js"
-import { mcpVersions } from "./mcp.js"
+import { mcpAnswer, mcpVersions } from "./mcp.js"
 import { listenForReports, unheard, type Call, type Reports } from "./reports.js"
 import { shellFiles, shellPaths, staleShellFiles } from "./scripts.js"
+
+/** The runner's own reading of a show or close request, as manager.present and dismiss do. */
+const reading = (type: string, request: object) =>
+  Promise.resolve(type === "dismiss" ? readDismissRequest(request) : readRequest(request))
 
 const token = "0123456789abcdef".repeat(3)
 let folder: string
@@ -140,16 +145,17 @@ describe("Novadeck's MCP server", () => {
       NOVADECK_REPORT_TOKEN: token,
     })
 
-    it("offers its tools: show, showing, open_terminal, close_terminal, send, agents and describe", async () => {
+    it("offers its tools: show, showing, close, open_terminal, close_terminal, send, agents and summarize", async () => {
       const [, tools] = await session(terminal(), [initialize, list])
       expect(tools?.result?.tools?.map((tool) => tool.name)).toEqual([
         "show",
         "showing",
+        "close",
         "open_terminal",
         "close_terminal",
         "send",
         "agents",
-        "describe",
+        "summarize",
       ])
       // Each as MCP lists a tool, without what the server keeps for itself.
       for (const tool of tools?.result?.tools ?? [])
@@ -161,7 +167,8 @@ describe("Novadeck's MCP server", () => {
       answer = {
         ok: true,
         terminalId: "t",
-        handle: "t2",
+        handle: "fox",
+        title: "claude",
         cwd: "/work/app",
         command: "claude",
       }
@@ -186,7 +193,10 @@ describe("Novadeck's MCP server", () => {
       ])
       expect(opened?.result).toEqual({
         content: [
-          { type: "text", text: "Opened a new terminal, t2, running claude in /work/app." },
+          {
+            type: "text",
+            text: "Opened a new terminal, @fox · claude, running claude in /work/app.",
+          },
         ],
         isError: false,
       })
@@ -215,12 +225,13 @@ describe("Novadeck's MCP server", () => {
       answer = {
         ok: true,
         terminalId: "t",
-        handle: "t3",
+        handle: "owl",
+        title: "codex",
         cwd: "/work",
         command: 'codex "[Novadeck: automatic notice, agent messages waiting, k3f9q2]"',
         task: {
           ok: true,
-          to: "t3",
+          to: "owl",
           id: "m-1",
           state: "queued",
           route: "when its agent first prompts",
@@ -238,7 +249,7 @@ describe("Novadeck's MCP server", () => {
         { type: "open", request: { agent: "codex", message: "Review a.ts" } },
       ])
       expect((opened!.result as { content: { text: string }[] }).content[0]?.text).toMatch(
-        /, t3, running codex .* Its task, message m-1, waits for the agent's first session there/,
+        /, @owl · codex, running codex .* Its task, message m-1, waits for the agent's first session there/,
       )
       answer = { ...(answer as object), task: { ok: false, reason: "Too many messages." } }
       const [, unsent] = await session(terminal(), [
@@ -275,13 +286,16 @@ describe("Novadeck's MCP server", () => {
           {
             id: 3,
             method: "tools/call",
-            params: { name: "close_terminal", arguments: { to: "t2", force: true } },
+            params: {
+              name: "close_terminal",
+              arguments: { to: "fox", force: true },
+            },
           },
         ])
         return closed?.result as { content: { text: string }[]; isError: boolean }
       }
-      await expect(said({ ok: true, handle: "t2" })).resolves.toEqual({
-        content: [{ type: "text", text: "Closed t2." }],
+      await expect(said({ ok: true, handle: "fox", title: "api-server" })).resolves.toEqual({
+        content: [{ type: "text", text: "Closed @fox · api-server." }],
         isError: false,
       })
       expect(calls).toEqual([
@@ -289,35 +303,72 @@ describe("Novadeck's MCP server", () => {
           type: "close",
           terminalId: "3f1c2b1e-0000-4000-8000-000000000001",
           token,
-          request: { to: "t2" },
+          request: { to: "fox" },
         },
       ])
       const lost = await said({
         ok: true,
-        handle: "t2",
+        handle: "fox",
+        title: "api-server",
         ran: "Codex",
         gone: [
-          { id: "m-1", to: "t2" },
-          { id: "m-0", to: "t3" },
+          { id: "m-1", to: "fox" },
+          { id: "m-0", to: "owl" },
         ],
         others: 2,
       })
       expect(lost.content[0]?.text).toBe(
         [
-          "Closed t2, which ran Codex.",
-          "Your message m-1 to t2 won't arrive, as that terminal is closed.",
-          "Your earlier message m-0 to t3 won't arrive: the agent session it was for ended there.",
+          "Closed @fox · api-server, which ran Codex.",
+          "Your message m-1 to @fox won't arrive, as that terminal is closed.",
+          "Your earlier message m-0 to @owl won't arrive: the agent session it was for ended there.",
           "2 messages other agents sent it won't arrive; Novadeck tells their senders.",
         ].join("\n"),
       )
-      const one = await said({ ok: true, handle: "t2", others: 1 })
+      const one = await said({
+        ok: true,
+        handle: "fox",
+        title: "api-server",
+        others: 1,
+      })
       expect(one.content[0]?.text).toContain(
         "1 message another agent sent it won't arrive; Novadeck tells their senders.",
       )
-      await expect(said({ ok: false, reason: "t1 is your own terminal." })).resolves.toEqual({
-        content: [{ type: "text", text: "t1 is your own terminal." }],
+      await expect(said({ ok: false, reason: "moth is your own terminal." })).resolves.toEqual({
+        content: [{ type: "text", text: "moth is your own terminal." }],
         isError: true,
       })
+    })
+
+    it("tells agents to write a terminal's handle with @ and its title to the user, and takes it either way", async () => {
+      const [, tools] = await session(terminal(), [initialize, list])
+      const described = tools?.result?.tools as {
+        name: string
+        description: string
+      }[]
+      const agents = described.find((tool) => tool.name === "agents")!
+      expect(agents.description).toContain(
+        "write its handle with @ and its title, as `@fox · api-server`",
+      )
+      for (const name of ["send", "close_terminal"])
+        expect(described.find((tool) => tool.name === name)!.description).toContain("such as @fox")
+    })
+
+    it("tells agents to show deliverables when done, never each file they touch", async () => {
+      const [, tools] = await session(terminal(), [initialize, list])
+      const described = tools?.result?.tools as { name: string; description: string }[]
+      const show = described.find((tool) => tool.name === "show")!
+      expect(show.description).toContain(
+        "Show a deliverable when it is done, not each file you touch",
+      )
+      expect(show.description).toContain("the files a change touches on the way aren't")
+      expect(show.description).toContain("the file you are working on together")
+      expect(show.description).toContain(
+        "Set open to true for a deliverable you finish or they asked to see",
+      )
+      expect(show.description).toContain("one item per deliverable")
+      const showing = described.find((tool) => tool.name === "showing")!
+      expect(showing.description).toContain("Check it before showing after a while")
     })
 
     it("tells agents to close only what they are done with or were asked to", async () => {
@@ -336,41 +387,51 @@ describe("Novadeck's MCP server", () => {
       expect(close.inputSchema).toMatchObject({ required: ["to"], additionalProperties: false })
     })
 
-    it("describes only its own terminal, and says when the title stayed", async () => {
+    it("summarizes only its own terminal, naming nothing, and says it did", async () => {
       calls.length = 0
-      const described = async (runner: unknown) => {
-        answer = runner
-        const [, said] = await session(terminal(), [
-          initialize,
-          {
-            id: 3,
-            method: "tools/call",
-            params: {
-              name: "describe",
-              // A target is no argument it takes.
-              arguments: { title: "API", summary: "Builds the users API.", to: "t2" },
+      answer = { ok: true }
+      const [, said] = await session(terminal(), [
+        initialize,
+        {
+          id: 3,
+          method: "tools/call",
+          params: {
+            name: "summarize",
+            // No target and no title are arguments it takes.
+            arguments: {
+              summary: "Builds the users API.",
+              to: "fox",
+              title: "Evil",
             },
           },
-        ])
-        return (said!.result as { content: { text: string }[] }).content[0]?.text
-      }
-      await expect(described({ ok: true, title: "API" })).resolves.toBe(
-        'Described this terminal as "API", with your summary.',
+        },
+      ])
+      expect((said!.result as { content: { text: string }[] }).content[0]?.text).toBe(
+        "Summarized this terminal.",
       )
       expect(calls).toEqual([
         {
-          type: "describe",
+          type: "summarize",
           terminalId: "3f1c2b1e-0000-4000-8000-000000000001",
           token,
-          request: { title: "API", summary: "Builds the users API." },
+          request: { summary: "Builds the users API." },
         },
       ])
-      await expect(described({ ok: true, title: "Mine", kept: "person" })).resolves.toBe(
-        'The user named this terminal "Mine", so that title stays; your summary is saved.',
-      )
-      await expect(described({ ok: true, title: "Mine", kept: "unasked" })).resolves.toBe(
-        "Not renamed: the user named this terminal. Suggest the title to them. Your summary is saved.",
-      )
+      const [, tools] = await session(terminal(), [initialize, list])
+      const offered = (tools?.result?.tools ?? []) as {
+        name: string
+        description: string
+        inputSchema: object
+      }[]
+      const tool = offered.find(({ name }) => name === "summarize")!
+      expect(tool.description).toContain("agents listing")
+      expect(tool.description).toContain("sets no title")
+      expect(tool.inputSchema).toMatchObject({
+        required: ["summary"],
+        additionalProperties: false,
+      })
+      // Murmur's title is no tool at all.
+      expect(offered.map(({ name }) => name)).not.toContain("describe")
     })
 
     it("forwards a call to the terminal's runner with its token, and says what happened", async () => {
@@ -381,7 +442,10 @@ describe("Novadeck's MCP server", () => {
         {
           id: 3,
           method: "tools/call",
-          params: { name: "show", arguments: { path: "hero.png", open: true, extra: "dropped" } },
+          params: {
+            name: "show",
+            arguments: { file: { path: "hero.png" }, open: true, extra: "kept for the runner" },
+          },
         },
       ])
       expect(calls).toEqual([
@@ -389,7 +453,7 @@ describe("Novadeck's MCP server", () => {
           type: "present",
           terminalId: "3f1c2b1e-0000-4000-8000-000000000001",
           token,
-          request: { path: "hero.png", open: true },
+          request: { file: { path: "hero.png" }, open: true, extra: "kept for the runner" },
         },
       ])
       expect(shown?.result).toEqual({
@@ -415,6 +479,35 @@ describe("Novadeck's MCP server", () => {
       expect(shown?.result).toMatchObject({ isError: false })
     })
 
+    it("has the runner name a key no source knows, and the shape a source goes in", async () => {
+      const refused = async (name: "show" | "close", args: unknown) => {
+        const line = JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
+        })
+        const reply = JSON.parse((await mcpAnswer(line, reading))!) as {
+          result: { content: { text: string }[]; isError: boolean }
+        }
+        expect(reply.result.isError).toBe(true)
+        return reply.result.content[0]?.text
+      }
+      const cases = [
+        [{ path: "a.ts" }, "Give one source, file: { path } or url."],
+        [{ file: { path: "a.ts" }, extra: 1 }, 'The request\'s "extra" is not valid.'],
+        [{ url: "http://a/", lines: { from: 1, to: 1 } }, 'The request\'s "lines" is not valid.'],
+      ] as const
+      await Promise.all(
+        (["show", "close"] as const).flatMap((name) =>
+          cases.map(([args, text]) => expect(refused(name, args)).resolves.toBe(text)),
+        ),
+      )
+      await expect(
+        refused("close", { file: { path: "a.ts", lines: { from: 1, to: 1 } } }),
+      ).resolves.toBe('The request\'s "file.lines" is not valid.')
+    })
+
     it("says what the runner did, not what was asked: waiting, or held for secrets", async () => {
       const said = async (runner: unknown) => {
         answer = runner
@@ -423,7 +516,7 @@ describe("Novadeck's MCP server", () => {
           {
             id: 4,
             method: "tools/call",
-            params: { name: "show", arguments: { path: ".env", open: true } },
+            params: { name: "show", arguments: { file: { path: ".env" }, open: true } },
           },
         ])
         return shown?.result
@@ -458,6 +551,44 @@ describe("Novadeck's MCP server", () => {
       ).resolves.toMatchObject({
         content: [
           { type: "text", text: "Showing notes.md again, updated, to the user in Novadeck." },
+        ],
+      })
+      // Moved away by the person, it was updated there.
+      await expect(
+        said({
+          ok: true,
+          id: "a",
+          kind: "file",
+          name: "notes.md",
+          opened: false,
+          again: true,
+          moved: "into a window of its own",
+        }),
+      ).resolves.toMatchObject({
+        content: [
+          {
+            type: "text",
+            text: "notes.md was moved by the user into a window of its own, so it's updated there.",
+          },
+        ],
+      })
+      await expect(
+        said({
+          ok: true,
+          id: "b",
+          kind: "file",
+          name: ".env",
+          opened: false,
+          again: true,
+          moved: "to fox",
+          held: true,
+        }),
+      ).resolves.toMatchObject({
+        content: [
+          {
+            type: "text",
+            text: ".env was moved by the user to fox, so it's updated there. It may hold secrets, so it doesn't open by itself.",
+          },
         ],
       })
       // An image too large to preview is still listed.
@@ -503,7 +634,7 @@ describe("Novadeck's MCP server", () => {
         {
           id: 4,
           method: "tools/call",
-          params: { name: "show", arguments: { path: "gone.txt" } },
+          params: { name: "show", arguments: { file: { path: "gone.txt" } } },
         },
       ])
       expect(refused?.result).toEqual({
@@ -518,7 +649,11 @@ describe("Novadeck's MCP server", () => {
       const [, tools, call, open, sent, listed, closed] = await session(partial, [
         initialize,
         list,
-        { id: 3, method: "tools/call", params: { name: "show", arguments: { path: "a" } } },
+        {
+          id: 3,
+          method: "tools/call",
+          params: { name: "show", arguments: { file: { path: "a" } } },
+        },
         { id: 4, method: "tools/call", params: { name: "open_terminal", arguments: {} } },
         {
           id: 5,
@@ -529,7 +664,7 @@ describe("Novadeck's MCP server", () => {
         {
           id: 7,
           method: "tools/call",
-          params: { name: "close_terminal", arguments: { to: "t2" } },
+          params: { name: "close_terminal", arguments: { to: "fox" } },
         },
       ])
       expect(tools?.result?.tools).toEqual([])
@@ -540,7 +675,7 @@ describe("Novadeck's MCP server", () => {
 
     it("sends a message through the terminal's runner, and says where it is", async () => {
       calls.length = 0
-      const said = async (runner: unknown, args: object = { to: "t2", text: "Review a.ts" }) => {
+      const said = async (runner: unknown, args: object = { to: "fox", text: "Review a.ts" }) => {
         answer = runner
         const [, sent] = await session(terminal(), [
           initialize,
@@ -551,37 +686,37 @@ describe("Novadeck's MCP server", () => {
       const queued = await said(
         {
           ok: true,
-          to: "t2",
+          to: "fox",
           id: "m-1",
           state: "queued",
           route: "when its current turn ends",
         },
-        { to: "t2", text: "Review a.ts", from: "the person" },
+        { to: "fox", text: "Review a.ts", from: "the person" },
       )
       expect(calls).toEqual([
         {
           type: "send",
           terminalId: "3f1c2b1e-0000-4000-8000-000000000001",
           token,
-          request: { to: "t2", text: "Review a.ts" },
+          request: { to: "fox", text: "Review a.ts" },
         },
       ])
       expect(queued.isError).toBe(false)
       expect(queued.content[0]?.text).toContain(
-        "Message m-1 to t2 is queued: it reaches them when its current turn ends.",
+        "Message m-1 to @fox is queued: it reaches them when its current turn ends.",
       )
       expect(queued.content[0]?.text).toContain("End your turn rather than wait")
       const held = await said({
         ok: true,
-        to: "t2",
+        to: "fox",
         id: "m-2",
         state: "held",
         held: "release",
-        gone: [{ id: "m-0", to: "t3" }],
+        gone: [{ id: "m-0", to: "owl" }],
         unbound: true,
       })
       expect(held.content[0]?.text).toContain("waits for the user to release it")
-      expect(held.content[0]?.text).toContain("m-0 to t3 won't arrive")
+      expect(held.content[0]?.text).toContain("m-0 to @owl won't arrive")
       expect(held.content[0]?.text).toContain("/hooks")
       const refused = await said({ ok: false, reason: '"codex" is no terminal\'s handle here.' })
       expect(refused).toEqual({
@@ -589,9 +724,13 @@ describe("Novadeck's MCP server", () => {
         isError: true,
       })
       // Refused, from a terminal whose own session never bound: told both.
-      const unbound = await said({ ok: false, reason: "t2 has no agent.", unbound: true })
+      const unbound = await said({
+        ok: false,
+        reason: "fox has no agent.",
+        unbound: true,
+      })
       expect(unbound).toEqual({
-        content: [{ type: "text", text: `t2 has no agent.\n${unboundNote}` }],
+        content: [{ type: "text", text: `fox has no agent.\n${unboundNote}` }],
         isError: true,
       })
     })
@@ -623,7 +762,7 @@ describe("Novadeck's MCP server", () => {
     it("lists the project's other terminals as the runner renders them", async () => {
       calls.length = 0
       const text =
-        "You are t1 in Novadeck.\nThere are no other terminals in this project and session."
+        "You are @moth in Novadeck.\nThere are no other terminals in this project and session."
       answer = { ok: true, text }
       const [, listed] = await session(terminal(), [
         initialize,
@@ -658,6 +797,10 @@ describe("Novadeck's MCP server", () => {
         expect(description).toContain("ask the user rather than guess")
         expect(description).toContain("end your turn rather than wait or poll")
       }
+      // The listing's summaries are guesses of a small local model, said once, in agents.
+      const listing = described.find((tool) => tool.name === "agents")!.description
+      expect(listing).toContain("the summary its agent gave of its work")
+      expect(listing).not.toContain("machine-written")
       const send = described.find((tool) => tool.name === "send")!
       expect(send.description).toContain("exact handle")
       expect(send.description).not.toMatch(/agent's name/)
@@ -680,7 +823,7 @@ describe("Novadeck's MCP server", () => {
             {
               id: 3,
               method: "tools/call",
-              params: { name: "show", arguments: { path: "hero.png" } },
+              params: { name: "show", arguments: { file: { path: "hero.png" } } },
             },
           ],
           { close: true },
@@ -729,7 +872,7 @@ describe("Novadeck's MCP server", () => {
             {
               id: 3,
               method: "tools/call",
-              params: { name: "show", arguments: { path: "hero.png" } },
+              params: { name: "show", arguments: { file: { path: "hero.png" } } },
             },
           ],
           { start },
@@ -737,11 +880,12 @@ describe("Novadeck's MCP server", () => {
         expect(tools?.result?.tools?.map((tool) => tool.name)).toEqual([
           "show",
           "showing",
+          "close",
           "open_terminal",
           "close_terminal",
           "send",
           "agents",
-          "describe",
+          "summarize",
         ])
         expect(shown?.result).toMatchObject({ isError: false })
         expect(calls).toHaveLength(1)
@@ -769,7 +913,11 @@ describe("Novadeck's MCP server", () => {
         [
           initialize,
           list,
-          { id: 5, method: "tools/call", params: { name: "show", arguments: { path: "a" } } },
+          {
+            id: 5,
+            method: "tools/call",
+            params: { name: "show", arguments: { file: { path: "a" } } },
+          },
         ],
       )
       expect(hello?.result).toMatchObject({ protocolVersion: "2025-06-18" })

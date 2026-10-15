@@ -70,11 +70,36 @@ What a notification shows is the start of the agent's last reply, which the runn
 from the agent's own Stop hook payload or its transcript or rollout, strips of terminal
 escapes, control characters and bidirectional marks and overrides, and cuts to 120 characters
 before it reaches any client (`replyPreview` in
-`application/runner/src/harnesses/harness.ts`). It is the agent's words, so it may echo
+`harnesses/core/src/harness.ts`). It is the agent's words, so it may echo
 what the agent read, a secret included, onto the system's notification centre, which
 other applications and the lock screen may show; turn **Notify when an agent finishes**
 off in Preferences where that matters. A compromised UI can show no more through this
 channel than notifications with text of its choosing, under the app's name.
+
+## Desktop Uninstall
+
+The page asks the desktop host what uninstalling would do (`uninstallPlan`) and to do it
+(`uninstallApp`), and to quit once it has (`quitApp`), on three `novadeck:` channels
+(`uninstallPlanChannel`, `uninstallAppChannel`, `quitAppChannel` in
+`application/host/src/bridge.ts`). The host acts only on a request from the main frame of one
+of its own windows showing the app's own UI, as for appearance reports; any other sender, such
+as a page in the companion pane, is told uninstalling is unavailable and nothing is touched.
+
+The only value a request carries is `keepData`, and the host deletes the person's data only
+when it is exactly `false`; anything else keeps it. The host works out the rest itself
+(`application/host/src/main/uninstall.ts`): the plan from where the running app is installed,
+and every path to delete from the platform's own locations, never from the page. It
+refuses a path that is not absolute and normalized, holds `..` or a control character, or is a
+root, the home folder or a folder that holds it, before the shutdown, so a refusal ends no
+shells. A copy that is portable, unpackaged, or not found where an installer puts it has no
+plan to run. On Linux the host removes the sandbox profile through `pkexec`, which shows the
+system's own password prompt; it never runs `sudo`, and when `pkexec` fails it returns the
+command for the person to run themselves, built from the profile's path alone. On Windows it
+starts the installer's own uninstaller, and, to delete data, a hidden PowerShell helper that
+waits for the app to exit and then, for up to ten minutes, for the uninstaller's file to be
+gone; it deletes nothing if the file is still there, as after a cancelled uninstall. A compromised UI can end the app's shells and remove the app and,
+by sending `keepData: false`, the app's data folder, which it could already do through the
+runner; it can remove no other path through this channel.
 
 ## Pasted Files
 

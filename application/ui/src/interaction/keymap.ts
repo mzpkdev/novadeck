@@ -2,6 +2,7 @@ import type { KeyTarget } from "./dom"
 import {
   jumpShortcut,
   matchesShortcut,
+  pinnedProjectShortcut,
   shortcutBindings,
   workspaceShortcutBindings,
   type Arrow,
@@ -46,6 +47,7 @@ export type CommandId =
   | "switcher.move"
   | "terminal.step"
   | "terminal.jump"
+  | "project.pinned"
   | "view.step"
   | "recent.commitHeld"
   | "recent.cancelHeld"
@@ -62,6 +64,7 @@ export type KeyLayer =
   | "navigation"
   | "jump"
   | "voice-chord"
+  | "pinned-project"
   | "switcher"
   | "anywhere"
   | "app"
@@ -114,12 +117,22 @@ export type KeyState = {
 export type KeyEnvironment = {
   readonly overlayOpen: () => boolean
   readonly tabInteraction: () => boolean
+  /** Whether a modal dialog is open, wherever focus is; none when omitted. */
+  readonly modalOpen?: () => boolean
 }
 
 const phaseLayers: Record<KeyPhase, readonly KeyLayer[]> = {
   // Jumps run in capture, before a terminal's input takes its modified arrows.
   // Escape drops a recording before anything else can take it.
-  capture: ["dictation", "switcher-nav", "escape", "navigation", "jump", "voice-chord"],
+  capture: [
+    "dictation",
+    "switcher-nav",
+    "escape",
+    "navigation",
+    "jump",
+    "voice-chord",
+    "pinned-project",
+  ],
   bubble: ["switcher", "anywhere", "app", "navigate", "workspace"],
   keyup: ["voice", "release"],
   blur: ["voice", "release"],
@@ -162,6 +175,7 @@ const gates: Record<
     !state.switcher &&
     !input.target.editing &&
     !input.target.zenDock &&
+    !input.target.notice &&
     !input.target.companion &&
     !environment.overlayOpen() &&
     !environment.tabInteraction(),
@@ -190,6 +204,15 @@ const gates: Record<
   // Dictation's chord works where the jumps do, and in a chat's box too, which it fills.
   "voice-chord": (input, state) =>
     !state.dialog && !state.switcher && (!input.target.editing || input.target.terminalInput),
+  // Ctrl+Shift or ⌘ and a digit, which a terminal would read as its own input, so it runs in
+  // capture; with no such pin the command lets the key on. It leaves text fields, a tab's
+  // rename among them, their keys, and a modal dialog its question, even one that hasn't
+  // taken focus yet, but works from menus, popovers and the switchers.
+  "pinned-project": (input, state, environment) =>
+    !state.dialog &&
+    !input.target.modal &&
+    !environment.modalOpen?.() &&
+    (!input.target.textEntry || input.target.terminalInput),
   switcher: (_input, state) => Boolean(state.switcher),
   anywhere: (_input, state) => !state.alert,
   app: (_input, state) => !state.dialog,
@@ -307,7 +330,21 @@ export const keymapFor = (platform: Platform): readonly KeyBinding[] => {
       args,
       repeat: "run",
     })),
-    { layer: "switcher", keys: key("Escape", "any"), command: "switcher.close", repeat: "run" },
+    // Ctrl+Shift+1 to 9 (⌘1 to 9 on Apple platforms): the Nth pinned project, from terminal
+    // input too.
+    ...Array.from({ length: 9 }, (_, args): KeyBinding => ({
+      layer: "pinned-project",
+      keys: { shortcut: pinnedProjectShortcut(args, platform) },
+      command: "project.pinned",
+      args,
+      repeat: "swallow",
+    })),
+    {
+      layer: "switcher",
+      keys: key("Escape", "any"),
+      command: "switcher.close",
+      repeat: "run",
+    },
     {
       layer: "switcher",
       keys: key("Enter", "any"),
@@ -405,6 +442,10 @@ export const shortcutGroups = (platform: Platform): readonly ShortcutGroup[] => 
       {
         label: jumpShortcut("up", platform).label,
         display: [...jumpShortcut("up", platform).display.slice(0, -1), "↑", "↓", "←", "→"],
+      },
+      {
+        label: pinnedProjectShortcut(0, platform).label,
+        display: platform === "mac" ? ["⌘", "1–9"] : ["Ctrl", "Shift", "1–9"],
       },
     ],
   },

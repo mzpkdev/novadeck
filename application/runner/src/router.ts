@@ -1,11 +1,19 @@
 import { homedir } from "node:os"
 
-import { contract, errors as contractErrors, protocolVersion } from "@novadeck/protocol"
+import {
+  contract,
+  errors as contractErrors,
+  protocolVersion,
+  type AgentName,
+  type ItemContent,
+} from "@novadeck/protocol"
 import { implement, ORPCError } from "@orpc/server"
 
+import { savePlan } from "./companions/content.js"
 import type { CompanionItems } from "./companions/items.js"
 import { DomainError } from "./errors.js"
 import type { Harnesses } from "./harnesses/service.js"
+import type { Murmur } from "./murmur/service.js"
 import type { Terminals } from "./terminals/index.js"
 import type { Uploads } from "./terminals/uploads.js"
 import type { Voice } from "./voice/service.js"
@@ -48,10 +56,19 @@ export const createRouter = (options: {
   agents: Harnesses
   uploads: Uploads
   voice: Voice
+  murmur: Murmur
   /** Whether the runner is shutting down. */
   closing: () => boolean
 }) => {
-  const { store, terminals, projects, items, agents, uploads, voice } = options
+  const { store, terminals, projects, items, agents, uploads, voice, murmur } = options
+  // A plan's content says whether Novadeck's plugin is installed into its agent, which the
+  // companions can't know: it is looked up as the content leaves.
+  const withSkill = async (content: ItemContent, agent: AgentName | undefined) =>
+    content.state === "ready" && content.content.kind === "plan" && agent !== undefined
+      ? { ...content, content: { ...content.content, skill: await agents.connected(agent) } }
+      : content
+  // The save of each plan under way, which the next waits for.
+  const saving = new Map<string, Promise<void>>()
   const api = implement(contract).$context<Context>()
   const authorized = api.use(async ({ context, next }) => {
     const connection = context.connection
@@ -170,9 +187,7 @@ export const createRouter = (options: {
       restart: authorized.terminals.restart.handler(async ({ input, context }) =>
         terminals.restart(input, context.connection.id),
       ),
-      close: authorized.terminals.close.handler(({ input, context }) =>
-        terminals.close(input, context.connection.id),
-      ),
+      close: authorized.terminals.close.handler(({ input }) => terminals.close(input)),
       rename: authorized.terminals.rename.handler(({ input }) => terminals.rename(input)),
       resetTitle: authorized.terminals.resetTitle.handler(({ input }) =>
         terminals.resetTitle(input),
@@ -226,8 +241,40 @@ export const createRouter = (options: {
       content: authorized.companions.content.handler(async function* ({ input, context, signal }) {
         if (context.connection.closed) return
         try {
-          yield* items.content(input.itemId, input.reveal === true, signal)
+          for await (const content of items.content(input.itemId, input.reveal === true, signal))
+            yield await withSkill(content, store.item(input.itemId)?.plan?.agent)
         } catch (error) {
+          throw apiError(error)
+        }
+      }),
+      save: authorized.companions.save.handler(async ({ input }) => {
+        const item = store.item(input.itemId)
+        if (!item) throw apiError(new DomainError("NOT_FOUND", "Item not found"))
+        // One save of a plan at a time, each judged by the file the one before left.
+        const run = async () => {
+          const result = await savePlan(item, input.text, input.basedOn)
+          if (result.saved) return result
+          const skill = item.plan ? await agents.connected(item.plan.agent) : false
+          return { ...result, current: { ...result.current, skill } }
+        }
+        const answer = (saving.get(item.id) ?? Promise.resolve()).then(run, run)
+        const turn = answer.then(
+          () => {},
+          () => {},
+        )
+        saving.set(item.id, turn)
+        void turn.then(() => {
+          if (saving.get(item.id) === turn) saving.delete(item.id)
+        })
+        try {
+          return await answer
+        } catch (error) {
+          // A plan that can't be written is told to the client; anything else is only seen here.
+          if (!(error instanceof DomainError))
+            console.error(
+              `Novadeck could not save a plan (${(error as NodeJS.ErrnoException | undefined)?.code ?? "unknown"}) at ${item.path ?? "no path"}:`,
+              error,
+            )
           throw apiError(error)
         }
       }),
@@ -280,10 +327,27 @@ export const createRouter = (options: {
         voice.record(context.connection.id, input.clipId, input.offset, input.data),
       ),
       transcribe: authorized.voice.transcribe.handler(({ input, context }) =>
-        voice.transcribe(context.connection.id, input.clipId, input.prompt),
+        voice.transcribe(context.connection.id, input.clipId, input.terminalId),
       ),
       discard: authorized.voice.discard.handler(({ input, context }) =>
         voice.discard(context.connection.id, input.clipId),
+      ),
+    },
+    murmur: {
+      watch: authorized.murmur.watch.handler(async function* ({ context, signal }) {
+        if (context.connection.closed) return
+        try {
+          yield* murmur.watch(context.connection.id, signal)
+        } catch (error) {
+          throw apiError(error)
+        }
+      }),
+      install: authorized.murmur.install.handler(() => murmur.install()),
+      cancel: authorized.murmur.cancel.handler(() => murmur.cancel()),
+      uninstall: authorized.murmur.uninstall.handler(() => murmur.uninstall()),
+      set: authorized.murmur.set.handler(({ input }) => murmur.set(input)),
+      gist: authorized.murmur.gist.handler(({ input }) =>
+        terminals.gistWanted(input.terminalId, input.at),
       ),
     },
     // The store keeps the settings; the terminals apply the transcript switch.

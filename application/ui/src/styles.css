@@ -5,10 +5,12 @@
 @import "./theme/contract.css";
 @import "allotment/dist/style.css" layer(base);
 @import "./theme/base.css" layer(base);
-/* Inter and JetBrains Mono ship with the app: the CSP only loads fonts from the app
-   itself. A theme with its own face imports it in its file, as Phosphor does. */
+/* Inter, JetBrains Mono and Archivo (the wordmark's face) ship with the app: the CSP only
+   loads fonts from the app itself. A theme with its own face imports it in its file, as
+   Phosphor does. */
 @import "./theme/fonts.css" layer(base);
 @import "@fontsource-variable/jetbrains-mono" layer(base);
+@import "@fontsource-variable/archivo/standard.css" layer(base);
 
 /* Recipes, each beside its component. Feature CSS that a lazily loaded view imports
    itself wraps its own rules in `@layer components`. */
@@ -17,6 +19,7 @@
 @import "./ui-toolkit/badge.css" layer(components);
 @import "./ui-toolkit/label.css" layer(components);
 @import "./ui-toolkit/surface.css" layer(components);
+@import "./ui-toolkit/sheet.css" layer(components);
 @import "./ui-toolkit/overlay.css" layer(components);
 @import "./ui-toolkit/item.css" layer(components);
 @import "./ui-toolkit/segmented.css" layer(components);
@@ -25,7 +28,7 @@
 @import "./ui-toolkit/tone.css" layer(components);
 @import "./ui-toolkit/separator.css" layer(components);
 @import "./ui-toolkit/progress.css" layer(components);
-@import "./ui-toolkit/deck-logo.css" layer(components);
+@import "./ui-toolkit/nova-logo.css" layer(components);
 @import "./ui-toolkit/terminal-status.css" layer(components);
 /* The companion's recipes, before those split from the old styles.css, which win a tie
    with them. */
@@ -34,13 +37,15 @@
 @import "./terminals/companion/pane.css" layer(components);
 @import "./terminals/companion/artifact.css" layer(components);
 @import "./terminals/companion/mail.css" layer(components);
+@import "./app/visitor.css" layer(components);
 @import "./shell/region.css" layer(components);
 @import "./shell/panels.css" layer(components);
 @import "./shell/empty-state.css" layer(components);
 @import "./sidebar/sidebar.css" layer(components);
+@import "./inbox/inbox.css" layer(components);
 @import "./projects/project-status.css" layer(components);
 @import "./projects/workspace-switcher.css" layer(components);
-@import "./projects/project-chips.css" layer(components);
+@import "./projects/pins-bar.css" layer(components);
 @import "./terminals/window.css" layer(components);
 @import "./terminals/chat/chat.css" layer(components);
 @import "./terminals/tabs.css" layer(components);
@@ -48,6 +53,7 @@
 @import "./layouts/workspace.css" layer(components);
 @import "./layouts/transition.css" layer(components);
 @import "./app/boot-splash.css" layer(components);
+@import "./shell/notification-badge.css" layer(components);
 @import "./shell/zen-dock.css" layer(components);
 @import "./terminals/companion/prose.css" layer(components);
 @import "./terminals/companion/syntax.css" layer(components);

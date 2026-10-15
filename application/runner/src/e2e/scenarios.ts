@@ -1,6 +1,6 @@
+import { doorbell } from "@novadeck/harness-core/harness"
 import type { AgentName, MessageState } from "@novadeck/protocol"
 
-import { doorbell } from "../harnesses/harness.js"
 import { expectedAgent } from "../terminals/commands.js"
 import type { AgentSetup, Trait } from "./agents/agent.js"
 import { poll, withScreen, type DeckTerminal } from "./deck.js"
@@ -98,14 +98,15 @@ export const unrung = 8000
  * Opens a terminal whose command runs `first`, then `then` once it exits, and waits until
  * the first is Ready at its prompt: the person leaving the first starts the second, with
  * no key pressed at the shell's prompt. Novadeck expects the first there, by its command's
- * first word, which `;` set apart keeps whole.
+ * first word, which `;` set apart keeps whole: `&` in cmd, the terminals' shell on
+ * Windows, which takes `;` as a word of the command.
  */
 export const handing = async (
   { deck }: E2E,
   first: AgentSetup,
   then: AgentSetup,
 ): Promise<DeckTerminal> => {
-  const command = `${first.agent} ; ${then.agent}`
+  const command = `${first.agent} ${process.platform === "win32" ? "&" : ";"} ${then.agent}`
   if (expectedAgent(command, undefined) !== first.agent)
     throw new Error(`Novadeck doesn't expect ${first.agent} first in \`${command}\``)
   const terminal = await deck.open(command)
@@ -168,6 +169,17 @@ export const turn = async (
   await through(terminal, ["working", "settled"], { after: mark })
 }
 
+/**
+ * What the suite's nested runs of a harness are asked, which only their own conversations
+ * hold as a user's words: one a command left running starts (controls.e2e.ts), and one
+ * inside an agent's turn (nested.e2e.ts). A harness that allows a command only by its
+ * whole text is allowed each.
+ */
+export const nestedRuns = {
+  leftRunning: "novadeck-e2e-background command: say done",
+  inTurn: "novadeck-e2e-nested run: say the nested word",
+} as const
+
 /** A rule for the agent's own turns, never a call the harness makes for itself, as a title. */
 export const own =
   (rule: Rule): Rule =>
@@ -229,23 +241,25 @@ export const result = (call: Call): string | undefined => {
 /** Whether the call is the agent's next look after its `open_terminal` opened `handle`. */
 export const opened = (call: Call, handle: string): boolean => {
   const last = call.turns.at(-1)
-  return last?.role === "tool" && last.text.includes(`Opened a new terminal, ${handle},`)
+  return last?.role === "tool" && lead("Opened a new terminal, ", handle).test(last.text)
 }
 
 /** Whether the call is the agent's next look after its `close_terminal` closed `handle`. */
 export const closed = (call: Call, handle: string): boolean => {
   const last = call.turns.at(-1)
-  // Its answer's first word for the terminal, as "Closed t2." or "Closed t2, which ran…",
-  // never another handle that begins the same, as t20.
-  return (
-    last?.role === "tool" && [".", ","].some((end) => last.text.includes(`Closed ${handle}${end}`))
-  )
+  return last?.role === "tool" && lead("Closed ", handle).test(last.text)
 }
+
+/**
+ * `before` and then `@handle`, ending where the handle does: "Closed @fox." and
+ * "Closed @fox · Build, which ran…" name fox, never another handle that begins the same, as @fox2.
+ */
+const lead = (before: string, handle: string): RegExp => new RegExp(`${before}@${handle}(?![\\w])`)
 
 /** Whether the call is the agent's next look after its send to `to` went. */
 export const sent = (call: Call, to: string): boolean => {
   const last = call.turns.at(-1)
-  return last?.role === "tool" && last.text.includes(` to ${to} is queued`)
+  return last?.role === "tool" && new RegExp(` to @?${to} is queued`).test(last.text)
 }
 
 /** The doorbell's line, whatever its nonce (see docs/agent-messaging.md). */

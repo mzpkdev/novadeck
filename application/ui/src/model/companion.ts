@@ -1,3 +1,4 @@
+import { pageKey } from "./pages"
 import type { WorkspaceTarget } from "./types"
 
 // What agents put in front of the user beside their terminals: the plans they write,
@@ -6,7 +7,7 @@ import type { WorkspaceTarget } from "./types"
 // implements this with sample agents; a runner reports the same from the agents' own
 // files and hooks, and from what they present through Novadeck's MCP server.
 
-// A terminal, as the backend port knows it: terminal IDs repeat across sessions.
+// A terminal, as the backend port knows it: a terminal is addressed by its project and session as well as its ID.
 export type CompanionKey = WorkspaceTarget & { readonly terminalId: string }
 
 export const companionKeyId = ({
@@ -84,10 +85,15 @@ export const windowOfItem = (item: CompanionItem): string | undefined =>
 
 type Pointer = Pick<CompanionItem, "kind" | "path" | "url">
 
-// What a file or page item points at, so showing the same thing again finds it. A plan
-// has none here: which agent's plan slot it fills is the backend's to know.
+// What a file or page item points at, so showing the same thing again finds it: a page
+// by the runner's own key for it. A plan has none here: which agent's plan slot it fills
+// is the backend's to know.
 const pointerOf = (item: Pointer): string | null =>
-  item.kind === "plan" ? null : item.kind === "page" ? `page:${item.url}` : `file:${item.path}`
+  item.kind === "plan"
+    ? null
+    : item.kind === "page"
+      ? `page:${pageKey(item.url ?? "")}`
+      : `file:${item.path}`
 
 export const samePointer = (a: Pointer, b: Pointer): boolean => {
   const pointer = pointerOf(a)
@@ -102,6 +108,22 @@ export const ownItemWith = (
   pointer: Pointer,
 ): CompanionItem | undefined =>
   items.find((item) => isOnBar(item, terminalId) && samePointer(item, pointer))
+
+// What terminal `terminalId`'s agent showed that points where `pointer` does, which it
+// updates by showing it again: the item on its own bar, else the latest it showed that
+// the person moved into a window or onto another bar.
+export const shownItemWith = (
+  items: readonly CompanionItem[],
+  terminalId: string,
+  pointer: Pointer,
+): CompanionItem | undefined =>
+  ownItemWith(items, terminalId, pointer) ??
+  items
+    .toSorted((a, b) => a.shownAt - b.shownAt)
+    .findLast(
+      (item) =>
+        item.by === "agent" && item.from.terminalId === terminalId && samePointer(item, pointer),
+    )
 
 // What an item holds as it loads, from the file or page it points at now.
 
@@ -189,6 +211,20 @@ export type PlanSaved =
   | { readonly saved: true; readonly stamp: string }
   | { readonly saved: false; readonly current: PlanVersion }
 
+// Why a plan can't be written, which saving it again won't change until the plan or its
+// folder does: its file is gone, Novadeck may not write in its folder or file, it lives in
+// an agent's messages, it is past what Novadeck writes, or the item is no plan.
+export type PlanUnwritableReason = "gone" | "folder" | "transcript" | "too-large" | "not-a-plan"
+
+// What `save` rejects with when the plan can't be written for good. Any other rejection
+// is a failure that may pass, which the pane tries again.
+export class PlanUnwritableError extends Error {
+  constructor(readonly reason: PlanUnwritableReason) {
+    super(`The plan can't be written: ${reason}`)
+    this.name = "PlanUnwritableError"
+  }
+}
+
 // Where the items' content comes from. The items themselves reach the workspace store
 // as the backend's seed and actions, like terminals.
 export type Companions = {
@@ -200,7 +236,8 @@ export type Companions = {
     options: { readonly reveal: boolean },
     on: (content: ItemContent) => void,
   ) => () => void
-  // Writes the person's edit to the plan, unless it changed since `basedOn`.
+  // Writes the person's edit to the plan, unless it changed since `basedOn`. Rejects with
+  // a `PlanUnwritableError` when the plan can't be written at all.
   readonly save: (
     target: WorkspaceTarget,
     itemId: ItemId,

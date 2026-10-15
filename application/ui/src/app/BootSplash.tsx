@@ -1,11 +1,11 @@
 import type { CSSProperties, ReactNode } from "react"
 
-import { DeckMark, DeckWordmark, deckName } from "../ui-toolkit/DeckLogo"
+import { NovaMark, Wordmark, brandName } from "../ui-toolkit/NovaLogo"
 import { fieldSlots } from "./boot-field"
 
 const slots = fieldSlots()
 
-// The full-window boot splash: the Deck lockup over a field of terminal slots jacking
+// The full-window boot splash: the Nova lockup over a field of terminal slots jacking
 // in, a hairline that fills with real progress, and the current phase.
 export const BootSplash = ({
   line,
@@ -71,12 +71,18 @@ export const BootSplash = ({
         ))}
       </div>
       <div className="boot-splash-hero pointer-events-none absolute inset-0 z-4 flex flex-col items-center justify-center gap-14">
-        <div className="flex items-center gap-[26px]" role="img" aria-label={deckName}>
-          <DeckMark size={94} animated={!finished} />
+        {/* The expanded wordmark runs wide, so a browser narrower than the lockup (the
+            desktop window never is) gets it a size smaller. */}
+        <div
+          className="flex items-center gap-[26px] max-[440px]:gap-5"
+          role="img"
+          aria-label={brandName}
+        >
+          <NovaMark size={94} animated={!finished} className="max-[440px]:size-[72px]" />
           <span className="flex flex-col gap-2.5">
-            <DeckWordmark
+            <Wordmark
               animated={!finished}
-              className="boot-splash-word -mt-[0.08em] -mb-[0.12em] overflow-hidden pt-[0.08em] pb-[0.12em] text-[52px] leading-none"
+              className="-mx-[0.12em] -mt-[0.08em] -mb-[0.12em] overflow-hidden px-[0.12em] pt-[0.08em] pb-[0.12em] text-[52px] leading-none max-[440px]:text-[40px]"
             />
             <span className="boot-splash-tag pl-[3px] text-lead leading-[18px]">
               Terminals, on deck.

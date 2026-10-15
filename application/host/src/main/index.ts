@@ -1,14 +1,32 @@
-import { realpath } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { execFile, spawn } from "node:child_process"
+import { randomUUID } from "node:crypto"
+import { accessSync, existsSync, readFileSync, realpathSync } from "node:fs"
+import {
+  access,
+  constants,
+  mkdir,
+  open,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  rmdir,
+} from "node:fs/promises"
+import { homedir } from "node:os"
+import { basename, dirname, join, win32 } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
+import type { UpdateChannel } from "@novadeck/protocol/bridge"
 import { startHttpServer, type HttpServer } from "@novadeck/runner/http"
 import {
   app,
+  autoUpdater as nativeUpdater,
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   nativeTheme,
+  net,
   Notification,
   powerMonitor,
   session,
@@ -16,6 +34,7 @@ import {
   systemPreferences,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
+  type WebContents,
 } from "electron"
 
 import {
@@ -23,14 +42,74 @@ import {
   directoryPickerChannel,
   noticeClickChannel,
   runnerPortChannel,
+  versionChannel,
 } from "../bridge.js"
 import { keepAppearance, registerAppearanceIpc } from "./appearance.js"
+import {
+  bundleVersionOf,
+  findInstalledApps,
+  moveToApplications,
+  relaunchIntoCopy,
+  renamedMoveReason,
+} from "./applications-folder.js"
 import { dataFolderName } from "./data-folder.js"
+import {
+  extractWithProcess,
+  findInstalled,
+  installAppImage,
+  installLayout,
+} from "./install-linux.js"
+import { isInstalledImage } from "./install-location.js"
+import {
+  findInstalledWindows,
+  hashBody,
+  installedByInstaller,
+  prepareSetup,
+  readInstallRecord,
+  setupArguments,
+  setupName,
+  startDetached,
+  type InstallRecord,
+} from "./install-windows.js"
+import { linuxMenu } from "./menu.js"
 import { notificationText, registerNoticeIpc, showNotices } from "./notices.js"
 import { attachPage, guardPage, lockPagesSession, pagesPartition, webAddress } from "./pages.js"
 import { limitPermissions, ownPage } from "./permissions.js"
+import {
+  installedEnvironment,
+  leaveForNewerInstalled,
+  portableInstaller,
+  registerPortableIpc,
+  type PortableInstall,
+  startAppImage,
+} from "./portable.js"
 import { quitOnShutdown, saveBeforeClose, saveOnSessionEnd, savePages } from "./quit.js"
 import { startRunner, type RunnerHost } from "./runner.js"
+import { registerSandboxIpc, sandboxState } from "./sandbox.js"
+import { registerUninstallIpc, startRemovalAfterExit, uninstaller } from "./uninstall.js"
+import {
+  releaseDownloadsUrl,
+  releaseLatestUrl,
+  releasePageUrl,
+  releaseRepositoryOf,
+} from "./update-release.js"
+import { keepUpdateState } from "./update-state.js"
+import {
+  bundleOf,
+  checkForUpdates,
+  developerIdSigned,
+  installFallbackMs,
+  installOnlyOnOrderlyQuit,
+  installUpdate,
+  portableOf,
+  quitWithoutInstalling,
+  registerUpdateIpc,
+  trackOffer,
+  updatePlan,
+  type Updater,
+  type UpdateBuild,
+  type UpdaterKind,
+} from "./updater.js"
 
 const appId = "dev.mzpk.novadeck"
 // Where the app keeps its data; a development launch keeps its own (see ./data-folder.ts).
@@ -41,6 +120,16 @@ if (!app.commandLine.getSwitchValue("user-data-dir"))
     "userData",
     join(app.getPath("appData"), dataFolderName({ packaged: app.isPackaged })),
   )
+// One instance runs per data folder: Chromium's singleton lock is keyed on userData, so a
+// portable and an installed copy, which share it, exclude each other, as two windows on
+// one database must not run. A second launch quits at once, before it starts anything,
+// and the first brings its window forward; see the `second-instance` handler below.
+const primaryInstance = app.requestSingleInstanceLock()
+if (!primaryInstance) {
+  // A development run shares its folder across worktrees, so say whose it is.
+  console.error(`Novadeck is already running on the data folder ${app.getPath("userData")}.`)
+  app.exit(0)
+}
 const developmentOrigin = "http://127.0.0.1:5173"
 // How long quitting waits for the pages' last saves.
 const saveBeforeQuitMs = 1_500
@@ -50,9 +139,24 @@ const currentDirectory = dirname(fileURLToPath(import.meta.url))
 // white.
 const appearance = keepAppearance(join(app.getPath("userData"), "appearance.json"))
 
+// What the host remembers about updating: the channel, a failed install, how long this copy is behind.
+const updateState = keepUpdateState(join(app.getPath("userData"), "update.json"))
+
 let server: HttpServer | undefined
 let runner: RunnerHost | undefined
 let stopping = false
+// Names this run of the app; see `PortableHost.run`.
+const run = randomUUID()
+// Whether the quit under way began the orderly way: closing the last window, or
+// restarting into the update. On Linux Electron turns SIGTERM, SIGINT and SIGHUP into an
+// ordinary quit, which must not install an update; see ./updater.ts.
+let orderlyQuit = false
+// The auto-updater of a build that looks for updates, once it has loaded, and what keeps
+// its schedule.
+let updater: (Updater & { quitAndInstall(silent: boolean, relaunch: boolean): void }) | undefined
+let updates: ReturnType<typeof checkForUpdates> | undefined
+// The releases this build follows; read from the data folder at launch.
+let channel: UpdateChannel = "stable"
 
 const waitFor = async (origin: string, attempts = 100): Promise<void> => {
   try {
@@ -77,22 +181,57 @@ const relayPath = (): string => {
 }
 
 /**
- * Where voice input finds its engine: the manifest shipped beside the UI, or the one
- * `pnpm build:engine` leaves in application/whisper; and the folder or address its
- * archive is downloaded from, which is the release this build came from once packaged.
+ * The repository the packaged build was released from, as `resources/app-update.yml`
+ * names it, or undefined when that file is missing or names none GitHub could have.
  */
-const voiceEngine = (): { engine: string; source: string } => {
+const releaseRepository = async (): Promise<ReturnType<typeof releaseRepositoryOf>> =>
+  releaseRepositoryOf(
+    await readFile(join(process.resourcesPath, "app-update.yml"), "utf8").catch(() => ""),
+  )
+
+/**
+ * Where voice input finds its engine: the manifest shipped beside the UI, or the one
+ * `pnpm build:engine` leaves in engines/whisper; and the folder or address its
+ * archive is downloaded from, which is the release this build came from once packaged,
+ * in the repository app-update.yml names. Without one the source is empty, and installing
+ * the engine fails rather than download from a guess.
+ */
+const voiceEngine = async (): Promise<{ engine: string; source: string }> => {
   if (!app.isPackaged) {
-    const dist = join(app.getAppPath(), "..", "whisper", "dist")
+    const dist = join(app.getAppPath(), "..", "..", "engines", "whisper", "dist")
     return { engine: join(dist, "engine.json"), source: dist }
   }
+  const repository = process.env.NOVADECK_VOICE_SOURCE ? undefined : await releaseRepository()
   return {
     engine: join(process.resourcesPath, "voice", "engine.json"),
     // NOVADECK_VOICE_SOURCE points a build at another folder or address, as a local or
     // pull request build needs: it has no release of its own to download from.
     source:
-      process.env.NOVADECK_VOICE_SOURCE ??
-      `https://github.com/mzpkdev/novadeck/releases/download/v${app.getVersion()}/`,
+      process.env.NOVADECK_VOICE_SOURCE ||
+      (repository && releaseDownloadsUrl(repository, app.getVersion())) ||
+      "",
+  }
+}
+
+/**
+ * Where murmur finds its engine, as `voiceEngine` does for voice input: the manifest
+ * shipped beside the UI, or the one `pnpm build:engine` leaves in engines/murmur,
+ * and the release this build came from once packaged.
+ */
+const murmurEngine = async (): Promise<{ murmurEngine: string; murmurSource: string }> => {
+  if (!app.isPackaged) {
+    const dist = join(app.getAppPath(), "..", "..", "engines", "murmur", "dist")
+    return { murmurEngine: join(dist, "engine.json"), murmurSource: dist }
+  }
+  const repository = process.env.NOVADECK_MURMUR_SOURCE ? undefined : await releaseRepository()
+  return {
+    murmurEngine: join(process.resourcesPath, "murmur", "engine.json"),
+    // NOVADECK_MURMUR_SOURCE points a build at another folder or address, as a local or
+    // pull request build needs: it has no release of its own to download from.
+    murmurSource:
+      process.env.NOVADECK_MURMUR_SOURCE ||
+      (repository && releaseDownloadsUrl(repository, app.getVersion())) ||
+      "",
   }
 }
 
@@ -116,22 +255,240 @@ const appWindow = (event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | un
   return window
 }
 
-// Asks these windows' pages to finish their saves, skipping any that crashed, went away,
-// or show something other than the app.
+// The pages of these windows that are alive and show the app, skipping any that crashed,
+// went away, or show something other than the app.
+const appPages = (windows: readonly BrowserWindow[]): WebContents[] =>
+  windows
+    .map((window) => window.webContents)
+    .filter(
+      (contents) =>
+        !contents.isDestroyed() &&
+        !contents.isCrashed() &&
+        contents.getURL() !== "" &&
+        isAppPage(contents.getURL()),
+    )
+
+// Asks these windows' pages to finish their saves.
 const saveWindows = (windows: readonly BrowserWindow[]): Promise<void> =>
-  savePages(
-    ipcMain,
-    windows
-      .map((window) => window.webContents)
-      .filter(
-        (contents) =>
-          !contents.isDestroyed() &&
-          !contents.isCrashed() &&
-          contents.getURL() !== "" &&
-          isAppPage(contents.getURL()),
-      ),
-    { sender: (answer) => appWindow(answer)?.webContents, timeoutMs: saveBeforeQuitMs },
-  )
+  savePages(ipcMain, appPages(windows), {
+    sender: (answer) => appWindow(answer)?.webContents,
+    timeoutMs: saveBeforeQuitMs,
+  })
+
+// What quitting and restarting into an update both run: every page saves before the runner
+// ends its shells, so the saves name what still runs.
+const shutDown = async (): Promise<void> => {
+  await saveWindows(BrowserWindow.getAllWindows())
+  await Promise.allSettled([runner?.close(), server?.close()])
+}
+
+// The last update offer, told to the app's pages as it arrives and to any that ask later.
+const offers = trackOffer(() => appPages(BrowserWindow.getAllWindows()))
+
+// Whether `codesign` finds a Developer ID signature on the running macOS app bundle; run
+// once, as the update plan asks.
+let signature: Promise<boolean> | undefined
+const bundleSigned = (): Promise<boolean> =>
+  (signature ??= new Promise((resolve) => {
+    execFile(
+      "codesign",
+      ["--display", "--verbose=2", bundleOf(app.getPath("exe"))],
+      { timeout: 10_000 },
+      // codesign reports on stderr, and exits non-zero for an unsigned bundle.
+      (_error, stdout, stderr) => resolve(developerIdSigned(`${stdout}\n${stderr}`)),
+    )
+  }))
+
+// Whether the signature matters to this launch: a packaged macOS build that looks for
+// updates. Others never ask, and codesign takes a moment.
+const checksSignature = (): boolean =>
+  process.platform === "darwin" &&
+  app.isPackaged &&
+  app.getVersion() !== "0.0.0" &&
+  process.env.NOVADECK_UPDATES !== "off"
+
+// The canonical form of a path, or undefined when it cannot be had.
+const realpathOrUndefined = (path: string): string | undefined => {
+  try {
+    return realpathSync(path)
+  } catch {
+    return undefined
+  }
+}
+
+/** Whether the folder holding the AppImage file can be written to, as replacing it takes. */
+const appImageWritable = (): Promise<boolean> => {
+  const file = process.env.APPIMAGE
+  return file
+    ? access(dirname(file), constants.W_OK).then(
+        () => true,
+        () => false,
+      )
+    : Promise.resolve(false)
+}
+
+// electron-updater is CommonJS, so ESM takes its exports from the default. Each kind of
+// build has its own updater; the one for the build is chosen here, from what was decided
+// in ./updater.ts, rather than left to electron-updater to guess from the environment.
+const loadUpdater = async (kind: UpdaterKind): Promise<NonNullable<typeof updater>> => {
+  const { default: electronUpdater } = await import("electron-updater")
+  switch (kind) {
+    case "nsis":
+      return new electronUpdater.NsisUpdater()
+    case "mac":
+      return new electronUpdater.MacUpdater()
+    case "appimage":
+      return new electronUpdater.AppImageUpdater()
+  }
+}
+
+// What `reg query` says of the value `name` under `key`; "" where the key is not there, an
+// error where the registry could not be asked.
+const queryRegistry = (key: string, name: string): Promise<string> =>
+  new Promise((resolve, reject) => {
+    execFile(
+      join(process.env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe"),
+      ["query", key, "/v", name],
+      { timeout: 5_000, windowsHide: true },
+      (error, stdout) => {
+        if (!error) return resolve(stdout)
+        // reg exits 1 for a key or value that does not exist.
+        const code: unknown = (error as { code?: unknown }).code
+        return code === 1 ? resolve("") : reject(error)
+      },
+    )
+  })
+
+// What the Windows installer recorded of an installed copy; see `readInstallRecord`.
+const installRecord = (): Promise<InstallRecord> => readInstallRecord(appId, queryRegistry)
+
+// The folder the Windows installer puts the app in unless told otherwise.
+const defaultInstallFolder = (): string | undefined =>
+  process.env.LOCALAPPDATA
+    ? win32.join(process.env.LOCALAPPDATA, "Programs", "novadeck")
+    : undefined
+
+// Whether the NSIS installer made this Windows copy; see `installedByInstaller`. The
+// registry is asked only when the uninstaller beside the executable does not settle it.
+const windowsInstalled = async (): Promise<boolean> => {
+  const defaultFolder = defaultInstallFolder()
+  const by = (recorded: string | undefined): boolean =>
+    installedByInstaller({
+      execPath: process.execPath,
+      recorded,
+      defaultFolder,
+      exists: existsSync,
+    })
+  if (by(undefined)) return true
+  const record = await installRecord().catch(() => undefined)
+  return by(record?.location)
+}
+
+// What decides how this build updates, but for the signature, read once. The signature
+// takes a moment to ask, which a launch need not wait for to tell whether it is portable.
+let base: Promise<Omit<UpdateBuild, "signed">> | undefined
+const baseBuild = (): Promise<Omit<UpdateBuild, "signed">> =>
+  (base ??= (async () => {
+    const appDir = process.env.APPDIR
+    const linux = process.platform === "linux"
+    const appImage = process.env.APPIMAGE
+    return {
+      packaged: app.isPackaged,
+      version: app.getVersion(),
+      platform: process.platform,
+      execPath: process.execPath,
+      // The AppImage mounts under TMPDIR, which may reach it through a symlink; the
+      // executable's path is the real one.
+      env: { ...process.env, APPDIR: appDir && (await realpath(appDir).catch(() => appDir)) },
+      inApplications: process.platform === "darwin" && app.isInApplicationsFolder(),
+      appImageWritable: linux && (await appImageWritable()),
+      windowsInstalled: process.platform === "win32" && (await windowsInstalled()),
+      appImageInstalled:
+        linux &&
+        appImage !== undefined &&
+        isInstalledImage(appImage, {
+          env: process.env,
+          home: homedir(),
+          realpath: realpathOrUndefined,
+        }),
+    }
+  })())
+
+// What decides how this build updates, read once.
+let build: Promise<UpdateBuild> | undefined
+const updateBuild = (): Promise<UpdateBuild> =>
+  (build ??= (async () => {
+    const rest = await baseBuild()
+    // Asked only where it matters: codesign takes a moment, and a portable copy only
+    // tells of updates whether it is signed or not.
+    return { ...rest, signed: checksSignature() && rest.inApplications && (await bundleSigned()) }
+  })())
+
+// When this copy first learned that a newer release exists, kept for the running version;
+// undefined if it cannot be kept, which leaves the offer without one.
+const outdatedSince = (): string | undefined => {
+  try {
+    return updateState.outdatedSince(app.getVersion(), new Date())
+  } catch (error) {
+    console.warn("The date this copy fell behind was not kept.", error)
+    return undefined
+  }
+}
+
+// Forgets when this copy fell behind, as a check found it current.
+const clearOutdated = (): void => {
+  try {
+    updateState.clearOutdated()
+  } catch (error) {
+    console.warn("The date this copy fell behind was not cleared.", error)
+  }
+}
+
+// Starts checking for updates in a build that looks for them; see ./updater.ts.
+const startUpdates = async (): Promise<void> => {
+  const state = updateState.read()
+  const plan = updatePlan(await updateBuild())
+  if (!plan) return
+  updater = await loadUpdater(plan.kind)
+  updates = checkForUpdates(updater, {
+    mode: plan.mode,
+    channel,
+    failedVersion: state.installFailedOn,
+    // Squirrel.Mac stages macOS updates; the others install from electron-updater's file.
+    native: process.platform === "darwin" ? nativeUpdater : undefined,
+    offer: (kind, version, notes, percent) =>
+      offers.offer(kind, version, notes, {
+        percent,
+        outdatedSince: plan.portable ? outdatedSince : undefined,
+      }),
+    // A portable that is current again starts a fresh clock when a release comes after.
+    upToDate: plan.portable ? clearOutdated : undefined,
+    // Synchronous: a failed install on quit is reported as the app exits.
+    installFailed: (version) => {
+      try {
+        updateState.recordInstallFailure(version)
+      } catch (error) {
+        console.warn("The failed install was not kept.", error)
+      }
+    },
+    log: (message, error) => console.warn(message, error),
+  })
+}
+
+/** The page of the last offer's release, from the repository the build updates from. */
+const updatePage = async (): Promise<string | undefined> => {
+  const offer = offers.current()
+  if (!offer) return undefined
+  const repository = await releaseRepository()
+  return repository && releasePageUrl(repository, offer.version)
+}
+
+// The quit of the system ending the session: no update installs on the way out, as the
+// system may kill the installer halfway.
+const quitOnSessionEnd = quitWithoutInstalling(
+  () => updater,
+  () => app.quit(),
+)
 
 const createWindow = (origin: string): BrowserWindow => {
   const apiUrl = new URL("/api/", origin).href
@@ -166,7 +523,7 @@ const createWindow = (origin: string): BrowserWindow => {
   // Windows ends a session through its windows: save while the shells still run.
   saveOnSessionEnd(window, {
     save: () => void saveWindows([window]).then(() => runner?.persist()),
-    quit: () => app.quit(),
+    quit: quitOnSessionEnd,
   })
 
   window.webContents.on("will-navigate", (event) => event.preventDefault())
@@ -189,13 +546,313 @@ const createWindow = (origin: string): BrowserWindow => {
   return window
 }
 
+// The copy of this app in /Applications that Electron's move writes: named as the running
+// bundle is, which Finder may have renamed.
+const applicationsCopy = (): string => join("/Applications", basename(bundleOf(app.getPath("exe"))))
+
+// The bundle names an installed copy may have: the running one's, and the packaged name,
+// which is the executable's (`executableName` in electron-builder.yml) and survives a
+// rename of the bundle.
+const installedNames = (): string[] => [
+  basename(bundleOf(app.getPath("exe"))),
+  `${basename(app.getPath("exe"))}.app`,
+]
+
+// The version of the copy of this app already in Applications, if its Info.plist can be read.
+const installedVersion = (): string | undefined => {
+  try {
+    return bundleVersionOf(readFileSync(join(applicationsCopy(), "Contents", "Info.plist"), "utf8"))
+  } catch {
+    return undefined
+  }
+}
+
+// The macOS install: Electron moves the app to Applications, which quits it and starts the
+// moved copy; see `moveToApplications`.
+const moveApp = (): PortableInstall => {
+  const running = basename(bundleOf(app.getPath("exe")))
+  const [, packaged] = installedNames()
+  const refused = renamedMoveReason({
+    running,
+    packaged: packaged ?? running,
+    installed: packaged !== undefined && existsSync(join("/Applications", packaged)),
+  })
+  if (refused !== undefined) return { kind: "failed", reason: refused }
+  const outcome = moveToApplications({
+    move: (conflictHandler) => app.moveToApplicationsFolder({ conflictHandler }),
+    existingVersion: installedVersion,
+    runningVersion: app.getVersion(),
+    log: (message, error) => console.warn(message, error),
+  })
+  switch (outcome.kind) {
+    case "moved":
+      return { kind: "leaving" }
+    case "newer":
+      return { kind: "newer", image: applicationsCopy(), version: outcome.version }
+    case "failed":
+      return outcome
+  }
+}
+
+// Starts the macOS app bundle `image` in place of this one; see `relaunchIntoCopy`. Nothing
+// has to be let go first: the relaunch happens as this process ends.
+const startBundle = (image: string): Promise<boolean> =>
+  Promise.resolve(
+    relaunchIntoCopy({
+      executable: join(image, "Contents", "MacOS", basename(app.getPath("exe"))),
+      exists: existsSync,
+      relaunch: (execPath) => app.relaunch({ execPath }),
+      exit: () => app.exit(0),
+      log: (message, error) => console.warn(message, error),
+    }),
+  )
+
+// The folder this copy's AppImage is mounted at, as the runtime names it and as it resolves.
+const appImageMounts = (): string[] => {
+  const mount = process.env.APPDIR
+  return mount ? [mount, realpathOrUndefined(mount) ?? mount] : []
+}
+
+// Starts the AppImage at `image` in place of this process; see `startAppImage`.
+const startInstalled = (image: string): Promise<boolean> =>
+  startAppImage({
+    image,
+    env: process.env,
+    mounts: appImageMounts(),
+    spawn,
+    runnable: (path) => {
+      try {
+        accessSync(path, constants.X_OK)
+        return true
+      } catch {
+        return false
+      }
+    },
+    releaseLock: () => app.releaseSingleInstanceLock(),
+    exit: () => app.exit(0),
+    log: (message, error) => console.warn(message, error),
+  })
+
+// Starts the installed Windows copy `image` in place of this process; see `startDetached`.
+const startWindowsCopy = (image: string): Promise<boolean> =>
+  startDetached({
+    file: image,
+    cwd: dirname(image),
+    spawn,
+    exists: existsSync,
+    releaseLock: () => app.releaseSingleInstanceLock(),
+    exit: () => app.exit(0),
+    log: (message, error) => console.warn(message, error),
+  })
+
+// Starts the installed copy `image` in place of this one, the way this system does.
+const startInstalledCopy = (image: string): Promise<boolean> =>
+  process.platform === "darwin"
+    ? startBundle(image)
+    : process.platform === "win32"
+      ? startWindowsCopy(image)
+      : startInstalled(image)
+
+// Tells the person that the installed copy at `image` would not start, which leaves the
+// app with nothing to do but quit.
+const alertNotStarted = async (image: string): Promise<void> => {
+  await dialog.showMessageBox({
+    type: "error",
+    message: "The installed Novadeck did not start.",
+    detail:
+      process.platform === "darwin"
+        ? `Open it from your Applications folder. It is at ${image}.`
+        : process.platform === "win32"
+          ? `Open it from the Start menu. It is at ${image}.`
+          : `Start it from your applications menu or with the novadeck command. It is at ${image}.`,
+  })
+}
+
+// The text of `url`, fetched with a time limit; undefined for a 404, and a throw for
+// anything else but 200.
+const fetchText = async (url: string): Promise<string | undefined> => {
+  const response = await net.fetch(url, { signal: AbortSignal.timeout(20_000) })
+  if (response.status === 404) return undefined
+  if (!response.ok) throw new Error(`${url} answered ${response.status}.`)
+  return response.text()
+}
+
+// Where the setup is downloaded to: one folder in the user's temporary folder, emptied
+// before each download, so no more than one setup is ever kept.
+const setupFolder = (): string => join(app.getPath("temp"), "novadeck-setup")
+
+// How long a download may go without data before it is given up.
+const downloadStallMs = 60_000
+
+// Downloads `url` into the setup folder, hashing as it goes. The file is written by this
+// app, so it carries no Mark of the Web; the hash is what vouches for it.
+const downloadSetup = async (
+  url: string,
+  maxBytes: number,
+): Promise<{ file: string; sha512: string }> => {
+  const folder = setupFolder()
+  await rm(folder, { recursive: true, force: true })
+  await mkdir(folder, { recursive: true })
+  const file = join(folder, setupName)
+  // Through Electron's network stack, which honours the system and PAC proxies as the
+  // update check does. The download is given up only when no data comes for a while, so a
+  // slow link is not cut off.
+  const controller = new AbortController()
+  let stall: ReturnType<typeof setTimeout> | undefined
+  const alive = (): void => {
+    clearTimeout(stall)
+    stall = setTimeout(() => controller.abort(), downloadStallMs)
+  }
+  alive()
+  const handle = await open(file, "w")
+  try {
+    const response = await net.fetch(url, { signal: controller.signal })
+    const sha512 = await hashBody(
+      response as unknown as Parameters<typeof hashBody>[0],
+      (chunk) => {
+        alive()
+        return handle.write(chunk).then(() => undefined)
+      },
+      maxBytes,
+    )
+    await handle.close()
+    return { file, sha512 }
+  } catch (error) {
+    await handle.close().catch(() => {})
+    await rm(file, { force: true })
+    throw error
+  } finally {
+    clearTimeout(stall)
+  }
+}
+
+// The Windows install: the latest release's setup is downloaded and checked while the app
+// runs, and run once the app has shut down; see `prepareSetup` and the ordering notes in
+// docs/auto-update.md.
+const stageWindowsSetup = async (): Promise<PortableInstall> => {
+  const repository = await releaseRepository()
+  const outcome = await prepareSetup({
+    downloads: {
+      latest: repository && releaseLatestUrl(repository),
+      own: repository && releaseDownloadsUrl(repository, app.getVersion()),
+    },
+    version: app.getVersion(),
+    text: fetchText,
+    download: downloadSetup,
+    remove: (file) => rm(file, { force: true }),
+    log: (message, error) => console.warn(message, error),
+  })
+  if (outcome.kind === "failed") return outcome
+  return {
+    kind: "staged",
+    // The setup runs silently and starts the installed app when it is done. It is not
+    // given `--updated`, which marks an update made from the running app; this is a fresh
+    // install made after the app has gone. The setup's check for a running app only looks
+    // for novadeck.exe, and this process exits as the setup starts.
+    start: () =>
+      startDetached({
+        file: outcome.setup,
+        args: setupArguments,
+        spawn,
+        exists: existsSync,
+        releaseLock: () => app.releaseSingleInstanceLock(),
+        exit: () => app.exit(0),
+        log: (message, error) => console.warn(message, error),
+      }),
+    alert: async () => {
+      await dialog.showMessageBox({
+        type: "error",
+        message: "Novadeck could not be installed.",
+        detail: `Windows did not run the installer. Your workspace is saved. Run ${outcome.setup} yourself, or download Novadeck again from its Releases page.`,
+      })
+    },
+  }
+}
+
+// Reads the versions of installed AppImages with the environment they are started with.
+const installedExtract = () =>
+  extractWithProcess(installedEnvironment(process.env, appImageMounts()))
+
+// The copies of the app installed on this machine, with their versions.
+const installedCopies = () =>
+  process.platform === "win32"
+    ? findInstalledWindows({
+        defaultFolder: defaultInstallFolder(),
+        executable: basename(process.execPath),
+        record: installRecord,
+        exists: (path) =>
+          access(path).then(
+            () => true,
+            () => false,
+          ),
+      })
+    : process.platform === "darwin"
+      ? findInstalledApps({
+          folders: ["/Applications", join(homedir(), "Applications")],
+          names: installedNames(),
+          exists: (path) =>
+            access(path).then(
+              () => true,
+              () => false,
+            ),
+          readFile: (path) => readFile(path, "utf8"),
+        })
+      : findInstalled({ env: process.env, home: homedir() }, installedExtract())
+
+// Installs the AppImage that is running, over the installed copy `target` or at the
+// installer's path.
+const installAppImageOver = (target: string | undefined): Promise<PortableInstall> =>
+  installAppImage(
+    process.env.APPIMAGE ?? "",
+    installLayout({ env: process.env, home: homedir() }),
+    installedExtract(),
+    target,
+  )
+
 const launch = async (): Promise<void> => {
+  // The signature is not asked here: it takes a moment, and a portable copy is told
+  // without it.
+  const portable = portableOf({ ...(await baseBuild()), signed: false })
+  // A portable copy older than the installed one must not open the data the installed
+  // one may have upgraded; nothing has started yet, so there is nothing to shut down.
+  if (
+    await leaveForNewerInstalled({
+      portable,
+      version: app.getVersion(),
+      find: installedCopies,
+      ask: async (version) => {
+        const { response } = await dialog.showMessageBox({
+          type: "info",
+          message: "A newer Novadeck is installed.",
+          detail: `This copy is version ${app.getVersion()} and the installed one is ${version}, which may have upgraded your workspace in a way this copy cannot open. Open the installed Novadeck instead.`,
+          buttons: ["Open Novadeck", "Quit"],
+          defaultId: 0,
+          cancelId: 1,
+        })
+        return response === 0
+      },
+      start: startInstalledCopy,
+      alert: alertNotStarted,
+      quit: () => app.exit(0),
+      log: (message, error) => console.warn(message, error),
+    })
+  )
+    return
+  // The installed copy has no use for a setup the portable copy left; the installer that
+  // started this copy may still hold it for a moment, so this waits, and gives up quietly.
+  if (process.platform === "win32" && app.isPackaged && !portable)
+    setTimeout(
+      () => void rm(setupFolder(), { recursive: true, force: true }).catch(() => {}),
+      60_000,
+    ).unref()
+  channel = updateState.read().channel
   await appearance.restore(nativeTheme)
   runner = startRunner({
     entry: join(currentDirectory, "runner.js"),
     database: join(app.getPath("userData"), "workspace.sqlite"),
     relay: relayPath(),
-    ...voiceEngine(),
+    ...(await voiceEngine()),
+    ...(await murmurEngine()),
   })
   // A port is shell access: only the main frame of this app's own window showing its
   // own UI may ask for one.
@@ -230,6 +887,168 @@ const launch = async (): Promise<void> => {
       },
     }),
   })
+  // The page learns of an update, can restart into a downloaded one or open the page of
+  // one it must install itself, and chooses the releases the build follows.
+  registerUpdateIpc(ipcMain, {
+    window: (event) => appWindow(event)?.webContents,
+    request: offers.request,
+    install: () =>
+      installUpdate({
+        downloaded: () => offers.current()?.kind === "ready" && updater !== undefined,
+        settled: () => updates?.settled() ?? Promise.resolve(false),
+        stopping: () => stopping,
+        stop: () => {
+          stopping = true
+          orderlyQuit = true
+          updates?.stop()
+        },
+        shutdown: shutDown,
+        install: () => {
+          // On Linux electron-updater starts the new AppImage before it quits this process,
+          // which still holds the lock; a new process refused it would exit at once. It
+          // emits "before-quit-for-update" on Electron's autoUpdater only once the install
+          // went ahead, just before quitting, so let go then: after a quiet failure the lock
+          // stays with this process, which carries on until the fallback quits it. The new
+          // process needs far longer than a tick to ask for the lock. The install on quitting
+          // runs the new image with APPIMAGE_EXIT_AFTER_INSTALL and launches nothing, and the
+          // Windows installer and Squirrel.Mac wait for this process to end first.
+          if (process.platform === "linux")
+            nativeUpdater.once("before-quit-for-update", () => app.releaseSingleInstanceLock())
+          updater?.quitAndInstall(true, true)
+        },
+        quit: () => app.quit(),
+        fallbackMs: installFallbackMs(process.platform),
+      }),
+    openPage: () => {
+      void updatePage()
+        .then((url) => {
+          if (url) return shell.openExternal(url)
+        })
+        .catch((error: unknown) => console.warn("The release page did not open.", error))
+    },
+    channel: () => channel,
+    setChannel: (next) => {
+      if (next === channel) return
+      channel = next
+      updates?.setChannel(next)
+      try {
+        updateState.setChannel(next)
+      } catch (error) {
+        console.warn("The update channel was not kept.", error)
+      }
+    },
+  })
+  // The page learns whether this is a portable copy and may install the app from it, or
+  // open an installed copy found newer.
+  registerPortableIpc(ipcMain, {
+    window: (event) => appWindow(event)?.webContents,
+    installer: portableInstaller({
+      portable,
+      version: app.getVersion(),
+      run,
+      uncheckedAdvice:
+        process.platform === "darwin"
+          ? "Check the copy in your Applications folder, or reinstall Novadeck from the disk image."
+          : process.platform === "win32"
+            ? "Open the installed Novadeck from the Start menu, or uninstall it in Windows Settings and try again."
+            : "Try again, or reinstall Novadeck with install.sh.",
+      find: installedCopies,
+      install: (target) =>
+        process.platform === "darwin"
+          ? Promise.resolve(moveApp())
+          : process.platform === "win32"
+            ? stageWindowsSetup()
+            : installAppImageOver(target),
+      shutdown: () => {
+        stopping = true
+        orderlyQuit = true
+        updates?.stop()
+        return shutDown()
+      },
+      start: startInstalledCopy,
+      alert: alertNotStarted,
+      stopping: () => stopping,
+      fallbackMs: installFallbackMs(process.platform),
+      quit: () => app.quit(),
+      log: (message, error) => console.warn(message, error),
+    }),
+  })
+  // The page learns what removing this copy would do, removes it, and quits afterwards.
+  registerUninstallIpc(ipcMain, {
+    window: (event) => appWindow(event)?.webContents,
+    uninstaller: uninstaller({
+      platform: process.platform,
+      packaged: app.isPackaged,
+      portable,
+      env: process.env,
+      home: homedir(),
+      execPath: app.getPath("exe"),
+      userData: app.getPath("userData"),
+      defaultUserData: join(app.getPath("appData"), dataFolderName({ packaged: app.isPackaged })),
+      uid: process.getuid?.(),
+      realpath: realpathOrUndefined,
+      exists: existsSync,
+      linkTarget: (path) => readlink(path).catch(() => undefined),
+      remove: (path, { recursive }) => rm(path, { recursive, force: true }),
+      removeEmptyFolder: (path) => rmdir(path).catch(() => {}),
+      trash: (path) => shell.trashItem(path),
+      // pkexec shows the system's own password prompt and fails without one to show.
+      privileged: (args) =>
+        new Promise((resolve) =>
+          execFile("pkexec", [...args], { timeout: 120_000 }, (error) => resolve(!error)),
+        ),
+      startUninstaller: (file) =>
+        startDetached({
+          file,
+          cwd: dirname(file),
+          spawn,
+          exists: existsSync,
+          releaseLock: () => {},
+          exit: () => {},
+          log: (message, error) => console.warn(message, error),
+        }),
+      removeAfterExit: (folders, uninstallerFile) =>
+        startRemovalAfterExit({
+          pid: process.pid,
+          folders,
+          setup: uninstallerFile,
+          spawn,
+          log: (message, error) => console.warn(message, error),
+        }),
+      // Quitting as usual, less the install of a waiting update, which would put the app
+      // back.
+      shutdown: () => {
+        stopping = true
+        updates?.stop()
+        if (updater) updater.autoInstallOnAppQuit = false
+        return shutDown()
+      },
+      stopping: () => stopping,
+      quit: () => app.quit(),
+      log: (message, error) => console.warn(message, error),
+    }),
+  })
+  // The page learns whether Electron's sandbox is on, and how to turn it on if not.
+  registerSandboxIpc(ipcMain, {
+    window: appWindow,
+    state: async () =>
+      sandboxState(app.commandLine.hasSwitch("no-sandbox"), {
+        platform: process.platform,
+        repository: await releaseRepository(),
+        restricted: await readFile(
+          "/proc/sys/kernel/apparmor_restrict_unprivileged_userns",
+          "utf8",
+        ).catch(() => undefined),
+        label: await readFile("/proc/self/attr/apparmor/current", "utf8").catch(() =>
+          readFile("/proc/self/attr/current", "utf8").catch(() => undefined),
+        ),
+        env: process.env,
+        home: homedir(),
+        realpath: realpathOrUndefined,
+      }),
+  })
+  // Only the app's own pages learn the version it runs.
+  ipcMain.handle(versionChannel, (event) => (appWindow(event) ? app.getVersion() : ""))
   ipcMain.handle(directoryPickerChannel, async (event) => {
     const window = appWindow(event)
     if (!window) return null
@@ -248,13 +1067,42 @@ const launch = async (): Promise<void> => {
   if (!app.isPackaged) await waitFor(developmentOrigin)
 
   createWindow(server.origin)
+  void startUpdates().catch((error: unknown) => console.warn("Updates did not start.", error))
 }
 
 app.setAppUserModelId(appId)
 
+// A window shown again: the one a second launch asked for.
+const bringForward = (window: BrowserWindow): void => {
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+}
+
+app.on("second-instance", () => {
+  const [window] = BrowserWindow.getAllWindows()
+  if (window) bringForward(window)
+  // On macOS the app lives on with no window, so a second launch has none to show; one
+  // that is quitting opens none.
+  else if (server && !stopping) createWindow(server.origin)
+  if (process.platform === "darwin") app.focus({ steal: true })
+})
+
 app.whenReady().then(() => {
+  if (!primaryInstance) return
   // A system shutdown quits, which saves every page and terminal before the shells end.
-  quitOnShutdown(powerMonitor, () => app.quit())
+  quitOnShutdown(powerMonitor, quitOnSessionEnd)
+  // Ctrl+Q and the menu's Quit are the person's quit, which installs a waiting update; a
+  // signal's is not. See ./menu.ts.
+  if (process.platform === "linux")
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(
+        linuxMenu(() => {
+          orderlyQuit = true
+          app.quit()
+        }),
+      ),
+    )
   limitPermissions(
     session.defaultSession,
     isAppPage,
@@ -275,22 +1123,28 @@ app.whenReady().then(() => {
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      if (server) createWindow(server.origin)
+      if (server && !stopping) createWindow(server.origin)
     }
   })
 })
 
+const declineUnorderlyInstall = installOnlyOnOrderlyQuit(
+  () => updater,
+  () => orderlyQuit,
+)
+
 app.on("before-quit", (event) => {
+  // No new download starts on the way out.
+  updates?.stop()
+  if (process.platform === "linux") declineUnorderlyInstall()
   if ((!server && !runner) || stopping) return
 
   event.preventDefault()
   stopping = true
-  // Pages save before the runner ends its shells, so the saves name what still runs.
-  void saveWindows(BrowserWindow.getAllWindows())
-    .then(() => Promise.allSettled([runner?.close(), server?.close()]))
-    .finally(() => app.quit())
+  void shutDown().finally(() => app.quit())
 })
 
 app.on("window-all-closed", () => {
+  orderlyQuit = true
   if (process.platform !== "darwin") app.quit()
 })

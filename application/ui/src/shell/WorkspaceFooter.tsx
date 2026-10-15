@@ -1,5 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react"
 
+import { FooterSandbox, type FooterSandboxProps } from "./FooterSandbox"
+import { FooterUpdate, type FooterUpdateProps } from "./FooterUpdate"
+
 // How the backend link is doing, most severe first: "ok" shows nothing.
 export type FooterStatus = "restarting" | "unavailable" | "reconnecting" | "ok"
 
@@ -15,7 +18,10 @@ const shown: Record<Exclude<FooterStatus, "ok">, { readonly tone: Tone; readonly
 // The terminal counts under the workspace. While the backend link is in trouble the
 // whole bar takes the status tone, and says so on the right; after it recovers it
 // turns green with "Reconnected" for a moment. The status is short, bold and set in
-// capitals by CSS, so assistive technology still reads ordinary words.
+// capitals by CSS, so assistive technology still reads ordinary words. An update waits
+// beside it as a chip, "Update ready" or "Update available", in the bar's own colours;
+// it opens the update's notice (FooterUpdate.tsx). Without the security sandbox, a chip
+// before it says so (FooterSandbox.tsx).
 export const WorkspaceFooter = ({
   hidden,
   count,
@@ -23,6 +29,8 @@ export const WorkspaceFooter = ({
   status,
   navigate = false,
   onRetry,
+  update,
+  sandbox,
   usage,
 }: {
   readonly hidden: boolean
@@ -33,6 +41,12 @@ export const WorkspaceFooter = ({
   readonly status: FooterStatus
   // Offered while the runner keeps crashing: starts the terminals over.
   readonly onRetry?: (() => void) | undefined
+  // An update waiting, downloaded or to fetch. Quiet: it never tones the bar, and the
+  // link's status keeps its place after it.
+  readonly update?: FooterUpdateProps | undefined
+  // Set while the app runs without its security sandbox: a chip beside the update's
+  // opens the notice that says so.
+  readonly sandbox?: FooterSandboxProps | undefined
   // The account's subscriptions, at its end before the status.
   readonly usage?: ReactNode
 }): React.JSX.Element => {
@@ -57,7 +71,7 @@ export const WorkspaceFooter = ({
     <footer
       hidden={hidden}
       data-tone={current?.tone}
-      className="app-footer max-[701px]:px-3 max-[701px]:text-[8px] h-7 shrink-0 items-center justify-between px-4 text-caption"
+      className="app-footer max-[701px]:px-3 max-[701px]:text-[8px] max-[701px]:leading-3 h-7 shrink-0 items-center justify-between px-4 text-caption"
     >
       <span className="flex items-center gap-2">
         <span>
@@ -73,6 +87,8 @@ export const WorkspaceFooter = ({
       </span>
       <span className="flex items-center gap-4">
         {usage}
+        <FooterSandbox sandbox={sandbox} hidden={hidden} />
+        <FooterUpdate update={update} hidden={hidden} />
         <span className="footer-status flex items-center gap-1.5 font-bold">
           <span role="status" aria-live={current?.tone === "danger" ? "assertive" : "polite"}>
             {current?.text}

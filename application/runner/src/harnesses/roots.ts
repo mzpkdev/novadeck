@@ -1,8 +1,8 @@
+import type { HarnessEvent } from "@novadeck/harness-core/events"
+import type { MessagingProfile } from "@novadeck/harness-core/harness"
 import type { AgentName } from "@novadeck/protocol"
 
 import type { Binding } from "./bindings.js"
-import type { HarnessEvent } from "./events.js"
-import type { MessagingProfile } from "./harness.js"
 
 /**
  * The root session of a terminal's agent: the session its person works with, as
@@ -35,6 +35,8 @@ export type RootChange =
       readonly ready: boolean
       /** When the hook of the report that named the session started, where one did. */
       readonly startedAt?: number
+      /** When that hook's shell started, where its relay could tell (see shell/hook.ts). */
+      readonly firedAt?: number
     }
   | {
       readonly type: "corrected"
@@ -106,6 +108,8 @@ export const followRoot = (
       guess: guessed(next, input.mode),
       ready,
       ...(named && { startedAt: named.startedAt }),
+      ...(named?.type === "session-observed" &&
+        named.firedAt !== undefined && { firedAt: named.firedAt }),
     })
   }
   const correct = (sessionId: string, source: Root["source"]) => {

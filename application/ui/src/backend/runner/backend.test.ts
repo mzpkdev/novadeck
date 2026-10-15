@@ -299,7 +299,7 @@ describe("runner backend", () => {
       // The runner kept the name the person gave one, and named the other itself.
       expect(restored.roster.terminals.map(({ id, name }) => ({ id, name }))).toEqual([
         { id: first.id, name: "api" },
-        { id: second.id, name: expect.stringMatching(/^Terminal \d\d$/) },
+        { id: second.id, name: expect.stringMatching(/^Terminal$/) },
       ])
       expect(
         reloaded.projects.find((project) => project.id === other.id)!.history.map(({ id }) => id),
@@ -372,6 +372,56 @@ describe("runner backend", () => {
     })
   })
 
+  context("when the person closes a terminal", () => {
+    it("ends it for good, though another window controls it", async () => {
+      const app = open()
+      const terminal = app.addTerminal()
+      await app.idle()
+      const { workspaceSessionId } = app.target()
+      // Its link drops, which lets go of control, and another window takes it meanwhile.
+      const other = await runner.another()
+      await runner.drop()
+      const held = await other.terminals.attach(terminal.id)
+      app.commit([{ type: "terminal/close", target: app.target(), terminalId: terminal.id }])
+      await app.idle()
+      const listed = await runner.client.terminals.list({ sessionId: workspaceSessionId })
+      expect(listed.map((item) => item.id)).not.toContain(terminal.id)
+      // Nothing the runner said of it on its way out adds it back here.
+      expect(
+        app.received.filter(
+          (action) => action.type === "terminal/add" && action.terminal.id === terminal.id,
+        ),
+      ).toEqual([])
+      await held.return?.()
+      app.stop()
+    })
+  })
+
+  context("when another window closes a terminal while this one is away", () => {
+    it("closes it here too once back, rather than start it again", async () => {
+      const app = open()
+      const terminal = app.addTerminal()
+      await app.idle()
+      const other = await runner.another()
+      await runner.drop()
+      await other.terminals.close(terminal.id)
+      await vi.waitFor(
+        () =>
+          expect(app.received).toContainEqual({
+            type: "terminal/close",
+            target: app.target(),
+            terminalId: terminal.id,
+          }),
+        eventually,
+      )
+      app.commit([...app.received])
+      await app.idle()
+      const listed = await other.terminals.list({ sessionId: app.target().workspaceSessionId })
+      expect(listed.map((item) => item.id)).not.toContain(terminal.id)
+      app.stop()
+    })
+  })
+
   context("as the runner owns every terminal", () => {
     it("names a new terminal once the runner does, and keeps the person's renames there", async () => {
       const app = open()
@@ -384,7 +434,7 @@ describe("runner backend", () => {
           (action) => action.type === "terminal/update" && action.terminalId === terminal.id,
         )
       await vi.waitFor(() =>
-        expect(named()).toMatchObject({ name: expect.stringMatching(/^Terminal \d\d$/) }),
+        expect(named()).toMatchObject({ name: expect.stringMatching(/^Terminal$/) }),
       )
       app.commit([...app.received])
       app.commit([
@@ -412,7 +462,7 @@ describe("runner backend", () => {
       await vi.waitFor(() =>
         expect(updates()).toContainEqual(
           expect.objectContaining({
-            handle: expect.stringMatching(/^t\d+$/),
+            handle: expect.stringMatching(/^[a-z]{2,12}[0-9]*$/),
             titleSource: { kind: "default" },
           }),
         ),
@@ -504,9 +554,9 @@ describe("runner backend", () => {
       })
       expect(listed.find((item) => item.id === terminal.id)).toMatchObject({
         title: "Docs",
-        handle: expect.stringMatching(/^t\d+$/),
+        handle: expect.stringMatching(/^[a-z]{2,12}[0-9]*$/),
       })
-      expect(listed.find((item) => item.id === plain.id)?.title).toMatch(/^Terminal \d\d$/)
+      expect(listed.find((item) => item.id === plain.id)?.title).toBe("Terminal")
       app.stop()
     })
 
@@ -562,7 +612,7 @@ describe("runner backend", () => {
       const id = companionKeyId({ ...app.target(), terminalId: terminal.id })
       await vi.waitFor(() =>
         expect(messages.state.getSnapshot().terminals[id]).toEqual({
-          handle: expect.stringMatching(/^t\d+$/),
+          handle: expect.stringMatching(/^[a-z]{2,12}[0-9]*$/),
           // A plain shell: no agent takes messages there.
           agent: false,
           threads: [],
@@ -1074,25 +1124,30 @@ describe("runner backend", () => {
     const listed = async (sessionId: string, terminalId: string) =>
       (await runner.client.terminals.list({ sessionId })).find((item) => item.id === terminalId)
 
-    it("keeps a terminal another client closed until asked to restart it", async () => {
+    it("closes here a terminal another client closed, for good", async () => {
       const app = open()
       const terminal = app.addTerminal()
       await app.idle()
       const key = { ...app.target(), terminalId: terminal.id }
       await runner.client.terminals.close(terminal.id)
-      await vi.waitFor(async () => {
-        const last = app.received.findLast(
-          (action) =>
-            "terminalId" in action &&
-            action.terminalId === terminal.id &&
-            action.type === "terminal/status",
-        )
-        expect(last && "status" in last && last.status.state).toMatch(/exited|failed/)
-      }, eventually)
-      expect(await listed(key.workspaceSessionId, terminal.id)).toBeUndefined()
-      app.restart(key)
+      await vi.waitFor(
+        () =>
+          expect(app.received).toContainEqual({
+            type: "terminal/close",
+            target: app.target(),
+            terminalId: terminal.id,
+          }),
+        eventually,
+      )
+      app.commit([...app.received])
       await app.idle()
-      expect((await listed(key.workspaceSessionId, terminal.id))?.exit).toBeNull()
+      expect(await listed(key.workspaceSessionId, terminal.id)).toBeUndefined()
+      // Its shell's exit, told on the way out, does not bring it back.
+      expect(
+        app.received.filter(
+          (action) => action.type === "terminal/add" && action.terminal.id === terminal.id,
+        ),
+      ).toEqual([])
       app.stop()
     })
 
@@ -1110,10 +1165,12 @@ describe("runner backend", () => {
                 {
                   id: lost,
                   sessionId: session.id,
-                  title: "Terminal 01",
+                  title: "Terminal",
                   titleSource: { kind: "default" },
-                  handle: "t1",
+                  handle: "moth",
                   ledBy: null,
+                  openedBy: null,
+                  agentRan: false,
                   started: true,
                   command: null,
                   lastProgram: null,

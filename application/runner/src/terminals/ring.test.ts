@@ -1,8 +1,9 @@
-import { doorbellLine } from "../harnesses/harness.js"
+import { doorbellLine } from "@novadeck/harness-core/harness"
+import type { ScreenText } from "@novadeck/harness-core/screen"
+import { loadProbe } from "@novadeck/harness-core/testing/probes"
+
 import { describe, expect, it } from "../test.js"
-import { loadProbe } from "../testing/probes.js"
 import { checkPaste, findLine, freshNonce, gate } from "./ring.js"
-import type { ScreenText } from "./screen.js"
 
 type Pair = {
   readonly name: string
@@ -249,6 +250,11 @@ describe("the doorbell's gate", () => {
     expect(gate({ ...open, calmMs: 749 })).toBe("restless")
     expect(gate({ ...open, bracketedPaste: false })).toBe("no-bracketed-paste")
     expect(gate({ ...open, foreground: false })).toBe("not-foreground")
+  })
+
+  it("opens on Windows only where the agent's box shows, empty and taking a prompt", () => {
+    expect(gate({ ...open, inputBox: true })).toBe("open")
+    expect(gate({ ...open, inputBox: false })).toBe("no-input-box")
   })
 
   it("rings with a fresh nonce each time, of letters and digits only", () => {

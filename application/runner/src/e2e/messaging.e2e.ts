@@ -9,7 +9,8 @@ import {
 import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 
-import type { Harness } from "../harnesses/harness.js"
+import type { Harness } from "@novadeck/harness-core/harness"
+
 import { harnesses } from "../harnesses/registry.js"
 import { setups } from "./agents/index.js"
 import { describe, e2e, expect, gated, supported } from "./fixture.js"
@@ -108,31 +109,35 @@ for (const setup of setups) {
       expect(t1.summary().agent).toBe(setup.agent)
     })
 
-    it("reaches its own Novadeck's MCP server when another build connected it last", async ({
-      e2e: run,
-    }) => {
-      // Another Novadeck, as a development build beside the installed app, connecting the
-      // agent after this one: every plugin copy names that build's launcher instead.
-      const other = join(run.sandbox.root, "other build", "shell")
-      const marker = join(run.sandbox.root, "other build", "started")
-      mkdirSync(other, { recursive: true })
-      const decoy = join(other, "mcp")
-      writeFileSync(decoy, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o755 })
-      // The copy the harness installed, not only Novadeck's own source of it.
-      const rewritten = renamePlugins(run.sandbox.root, run.deck.shell.mcp, decoy)
-      expect(rewritten.some((path) => path.startsWith(run.sandbox.home))).toBe(true)
-      run.model.use(replies("Say the word", "Pelican-7 says hello."))
-      const t1 = await start(run, setup)
+    // Linux and macOS only: on Windows an agent starts the relay of the build that connected
+    // it, as the README says, so a later connect by another build is that build's server.
+    const unlessWindows = process.platform === "win32" ? it.skip : it
+    unlessWindows(
+      "reaches its own Novadeck's MCP server when another build connected it last",
+      async ({ e2e: run }) => {
+        // Another Novadeck, as a development build beside the installed app, connecting the
+        // agent after this one: every plugin copy names that build's launcher instead.
+        const other = join(run.sandbox.root, "other build", "shell")
+        const marker = join(run.sandbox.root, "other build", "started")
+        mkdirSync(other, { recursive: true })
+        const decoy = join(other, "mcp")
+        writeFileSync(decoy, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o755 })
+        // The copy the harness installed, not only Novadeck's own source of it.
+        const rewritten = renamePlugins(run.sandbox.root, run.deck.shell.mcp, decoy)
+        expect(rewritten.some((path) => path.startsWith(run.sandbox.home))).toBe(true)
+        run.model.use(replies("Say the word", "Pelican-7 says hello."))
+        const t1 = await start(run, setup)
 
-      await turn(t1, "Say the word", "Pelican-7 says hello.")
+        await turn(t1, "Say the word", "Pelican-7 says hello.")
 
-      // The terminal's NOVADECK_MCP started this Novadeck's server, which offers its tools.
-      const call = await run.model.waitFor(
-        (one) => !one.side && latest(one).includes("Say the word"),
-      )
-      expect(tool(call, "send")).toBeDefined()
-      expect(existsSync(marker)).toBe(false)
-    })
+        // The terminal's NOVADECK_MCP started this Novadeck's server, which offers its tools.
+        const call = await run.model.waitFor(
+          (one) => !one.side && latest(one).includes("Say the word"),
+        )
+        expect(tool(call, "send")).toBeDefined()
+        expect(existsSync(marker)).toBe(false)
+      },
+    )
 
     it("rings an idle agent for a message, and its answer reaches the sender", async ({
       e2e: run,
@@ -141,45 +146,45 @@ for (const setup of setups) {
       // doorbell brings it rather than t1's Stop.
       const answering = gate()
       run.model.use(
-        sends("Ask t2 for its colour", "t2", "What is your colour?"),
-        own((call) => (sent(call, "t2") ? { text: "Asked." } : undefined)),
+        sends("Ask fox for its colour", "fox", "What is your colour?"),
+        own((call) => (sent(call, "fox") ? { text: "Asked." } : undefined)),
         own(async (call) => {
-          if (!delivered(call, "t1")) return undefined
-          const reply = await sends("What is your colour?", "t1", "Mine is teal.")(call)
+          if (!delivered(call, "moth")) return undefined
+          const reply = await sends("What is your colour?", "moth", "Mine is teal.")(call)
           if (reply) await answering.opened
           return reply
         }),
-        own((call) => (delivered(call, "t2") ? { text: "t2 says teal." } : undefined)),
+        own((call) => (delivered(call, "fox") ? { text: "fox says teal." } : undefined)),
       )
       const t1 = await start(run, setup)
       const t2 = await start(run, setup)
       const calls = run.model.mark()
       const [from1, from2] = [t1.mark(), t2.mark()]
 
-      await t1.submit("Ask t2 for its colour")
+      await t1.submit("Ask fox for its colour")
 
       // t2, Ready at its first screen, is rung: its prompt is the doorbell's line, and its
       // hook adds the message from t1 beside it.
-      const rung = await run.model.waitFor((call) => delivered(call, "t1"), { after: calls })
+      const rung = await run.model.waitFor((call) => delivered(call, "moth"), { after: calls })
       expect(latest(rung)).toMatch(ring)
-      expect(deliveries(rung)).toEqual([{ from: "t1", text: "What is your colour?" }])
+      expect(deliveries(rung)).toEqual([{ from: "moth", text: "What is your colour?" }])
       await through(
         t2,
-        [holds("t1", "t2", "queued"), "ringing", "working", holds("t1", "t2", "delivered")],
+        [holds("moth", "fox", "queued"), "ringing", "working", holds("moth", "fox", "delivered")],
         { after: from2 },
       )
       // t1's turn ends; then t2 answers, and the doorbell rings t1.
       const done = await t1.reached("settled", { after: from1 })
       answering.open()
       await through(t1, ["ringing", "working"], { after: done.index })
-      const answer = await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
-      expect(deliveries(answer)).toEqual([{ from: "t2", text: "Mine is teal." }])
-      await t1.until("t2 says teal.")
-      await through(t1, [holds("t2", "t1", "delivered"), "settled"], { after: from1 })
+      const answer = await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
+      expect(deliveries(answer)).toEqual([{ from: "fox", text: "Mine is teal." }])
+      await t1.until("fox says teal.")
+      await through(t1, [holds("fox", "moth", "delivered"), "settled"], { after: from1 })
 
       expect(messages(t1).map((one) => [one.from, one.to, one.state])).toEqual([
-        ["t1", "t2", "delivered"],
-        ["t2", "t1", "delivered"],
+        ["moth", "fox", "delivered"],
+        ["fox", "moth", "delivered"],
       ])
       expect(messages(t2)).toEqual(messages(t1))
     })
@@ -191,10 +196,10 @@ for (const setup of setups) {
         // and the continuation asks the person before a tool runs.
         const ending = gate()
         run.model.use(
-          sends("Tell t1 the news", "t1", "The build is green."),
-          own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
+          sends("Tell moth the news", "moth", "The build is green."),
+          own((call) => (sent(call, "moth") ? { text: "Told moth." } : undefined)),
           own((call) => {
-            if (!delivered(call, "t2")) return undefined
+            if (!delivered(call, "fox")) return undefined
             if (result(call) !== undefined) return { text: "Noted the news." }
             return setup.approval!.request(call)
           }),
@@ -209,8 +214,8 @@ for (const setup of setups) {
         const mark = t1.mark()
         await t1.submit("Hold then stop")
         await t1.reached("working", { after: mark })
-        await t2.submit("Tell t1 the news")
-        await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+        await t2.submit("Tell moth the news")
+        await t1.reached(holds("fox", "moth", "queued"), { after: mark })
         ending.open()
 
         // Its Stop continued the turn: it works on, and waits on the person as it asks,
@@ -235,10 +240,10 @@ for (const setup of setups) {
       const ending = gate()
       const continuing = gate()
       run.model.use(
-        sends("Tell t1 the news", "t1", "The build is green."),
-        own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
+        sends("Tell moth the news", "moth", "The build is green."),
+        own((call) => (sent(call, "moth") ? { text: "Told moth." } : undefined)),
         own(async (call) => {
-          if (!delivered(call, "t2")) return undefined
+          if (!delivered(call, "fox")) return undefined
           await continuing.opened
           return { text: "Noted the news." }
         }),
@@ -254,13 +259,13 @@ for (const setup of setups) {
       const calls = run.model.mark()
       await t1.submit("Hold then stop")
       await t1.reached("working", { after: mark })
-      await t2.submit("Tell t1 the news")
-      await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+      await t2.submit("Tell moth the news")
+      await t1.reached(holds("fox", "moth", "queued"), { after: mark })
       ending.open()
 
       // The continuation's model call waits: the agent works, as delivery says, and as its
       // terminal shows, whatever records its Stop left.
-      await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
+      await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
       await sleep(quiet)
       expect(t1.summary().activity?.state).toBe("working")
       expect(t1.history().at(-1)?.delivery).toBe("working")
@@ -280,9 +285,9 @@ for (const setup of setups) {
       // Antigravity's idle status line, end the turn all the same.
       const ending = gate()
       run.model.use(
-        sends("Tell t1 the news", "t1", "The build is green."),
-        own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
-        own((call) => (delivered(call, "t2") ? { text: "Noted the news." } : undefined)),
+        sends("Tell moth the news", "moth", "The build is green."),
+        own((call) => (sent(call, "moth") ? { text: "Told moth." } : undefined)),
+        own((call) => (delivered(call, "fox") ? { text: "Noted the news." } : undefined)),
         own(async (call) => {
           if (call.side || !asked(call, "Hold then stop")) return undefined
           await ending.opened
@@ -304,8 +309,8 @@ for (const setup of setups) {
         const mark = t1.mark()
         await t1.submit("Hold then stop")
         await t1.reached("working", { after: mark })
-        await t2.submit("Tell t1 the news")
-        await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+        await t2.submit("Tell moth the news")
+        await t1.reached(holds("fox", "moth", "queued"), { after: mark })
         ending.open()
         await t1.until("Noted the news.")
         await t1.poll(

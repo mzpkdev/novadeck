@@ -328,6 +328,24 @@ describe("workspace commands", () => {
     })
   })
 
+  context("when the update's notice and the sandbox's share their place", () => {
+    it("closes the sandbox's on opening the update's, and the update's on opening the sandbox's", () => {
+      const app = openCommands()
+      app.commands.setSandboxOpen(true)
+      app.commands.setUpdateOpen(true)
+      expect(app.ui.getSnapshot()).toMatchObject({ updateOpen: true, sandboxOpen: false })
+      app.commands.setSandboxOpen(true)
+      expect(app.ui.getSnapshot()).toMatchObject({ updateOpen: false, sandboxOpen: true })
+    })
+
+    it("leaves the other alone on closing one", () => {
+      const app = openCommands()
+      app.commands.setSandboxOpen(true)
+      app.commands.setUpdateOpen(false)
+      expect(app.ui.getSnapshot().sandboxOpen).toBe(true)
+    })
+  })
+
   context("when closing a terminal", () => {
     it("brings the next selection into view only when the selected one closes outside Canvas", () => {
       const app = openCommands({ workspace: workspaceFixture({ terminals: 3 }) })
@@ -351,7 +369,7 @@ describe("workspace commands", () => {
       app.commands.changeRenameDraft("02", "Gone")
       app.commands.close("02")
       expect(app.ui.getSnapshot().rename).toBeNull()
-      expect(app.state().roster.terminals.map((item) => item.name)).toEqual(["Terminal 01"])
+      expect(app.state().roster.terminals.map((item) => item.name)).toEqual(["Terminal"])
     })
   })
 
@@ -363,6 +381,8 @@ describe("workspace commands", () => {
       app.commands.toggleSidebar("sessions")
       expect(app.shell()).toMatchObject({ zen: null, sidebarCollapsed: false, sidebar: true })
       expect(app.ui.getSnapshot().location.route.panel).toBe("sessions")
+      app.flush()
+      expect(app.effects.at(-1)).toBe("focus sessions toggle")
       app.commands.toggleSidebar("sessions")
       expect(app.shell().sidebarCollapsed).toBe(true)
       expect(app.effects.at(-1)).toBe("focus sessions toggle")
@@ -418,7 +438,7 @@ describe("workspace commands", () => {
     })
 
     it("places it beside the asking terminal on the canvas, not the selected one", () => {
-      // Terminal 01, selected, at the top; 02, which asks, far below it.
+      // The first terminal, selected, at the top; 02, which asks, far below it.
       const workspace = workspaceFixture()
       workspace.projects[0]!.history[0]!.state.layout.canvas.geometry = {
         "01": { position: { x: 0, y: 0 }, width: 600, height: 400 },

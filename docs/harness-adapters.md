@@ -35,7 +35,7 @@ transcripts and telemetry are fixed only after per-harness coverage probes
 | `runner/src/shell/agents.ts`              | Detect config, inspect plugin connection, plan install/remove commands        | `home`, `connected`, `connect`/`disconnect`; shared inspection and setup |
 | `runner/src/shell/resume.ts`              | Build the exact resume command for an identified session                      | `resume` field                                                           |
 | `runner/src/shell/scripts.ts`             | Provider manifests, hook configuration, Codex launch shim                     | `files` and `shims`; shared artifact writer                              |
-| `runner/src/shell/hook.ts`                | Native payload interpretation, nested-session filtering, hook response format | Per-harness `decode.ts` in the runner; one shared hook script            |
+| `runner/src/shell/hook.ts`                | Native payload interpretation, nested-session filtering, hook response format | Per-harness `decode.ts` in its package; one shared hook script           |
 | `runner/src/shell/reports.ts`             | Authenticate and accept session reports                                       | Shared ingress and binding policy                                        |
 | `runner/src/terminals/manager.ts`         | PTY lifetime, resume claims, persistence, foreground ownership                | Terminal manager, using the harness service                              |
 | `ui/src/model/process.ts` and `resume.ts` | Provider recognition and resume eligibility                                   | `programs` and shared recognition; UI keeps generic program presentation |
@@ -85,31 +85,76 @@ An adapter does not receive the terminal manager, workspace store, UI, or raw
 runner RPC router. It receives the values and limited I/O facilities needed by
 its feature. Shared code does not inspect Claude/Codex/AGY names to decide behavior.
 
-Keep the implementation within `application/runner/src/harnesses/` initially:
+The contract and the helpers every adapter shares live in their own package,
+`@novadeck/harness-core` (`harnesses/core/`), and each adapter is a package of its own
+beside it; the registry and the services that use them live in
+`application/runner/src/harnesses/`:
 
 ```text
-harnesses/
+harnesses/core/src/          # @novadeck/harness-core
   harness.ts       # The Harness type and shared plugin helpers
+  events.ts        # Dependency-light normalized facts
+  box.ts           # BoxProfile and the shared readers (`ruledBox`, `markedBox`)
+  dialogs.ts       # DialogAdapter, for answering a harness's dialogs
+  hook-command.ts  # The hook command line, per shell dialect
+  follow.ts        # The shared JSONL follower
+  items.ts, report.ts, screen.ts, width.ts, header.ts
+  testing/         # Test helpers: probes.ts (`loadProbe`), screens.ts, dialogs.ts
+harnesses/claude/src/        # @novadeck/harness-claude
+  index.ts         # claude: Harness
+  decode.ts        # Its hook reports, as normalized events
+  box.ts           # Its input box, as it reads off the screen (`box: BoxProfile`)
+  fixtures/        # Its probes, read by the tests beside them
+harnesses/codex/src/         # @novadeck/harness-codex: same shape; its shim is in its `shims`
+harnesses/agy/src/           # @novadeck/harness-agy
+application/runner/src/harnesses/
   registry.ts      # harnesses: Record<AgentName, Harness>
   eligibility.ts   # Availability of features such as resume, with typed reasons
   service.ts       # createHarnesses: inspection, setup and lifecycle
   bindings.ts      # Pure ownership and observation transitions
-  model.ts         # Accepted state → agent model snapshots/changes
-  events.ts        # Dependency-light normalized facts
-  claude/
-    index.ts       # claude: Harness
-    decode.ts      # Its hook reports, as normalized events
-    box.ts         # Its input box, as it reads off the screen (`box: BoxProfile`)
-  box.ts           # BoxProfile and the shared readers (`ruledBox`, `markedBox`)
-  codex/           # Same shape; its shim is in its `shims`
-  agy/
+  activity.ts      # Accepted state → agent activity
 ```
+
+An adapter imports only `@novadeck/harness-core`, `@novadeck/protocol`, Node and its
+own files, never the runner's modules or another adapter, and harness-core depends on
+neither; `.oxlintrc.json` enforces both. A test that needs the runner's internals (the
+activity machine, say) stays in the runner and reads the adapter's fixtures from its
+package.
+
+Each of these packages builds to `dist`, which builds, packaging and `tsc` use. Their
+exports also name their sources under the `development` condition, which vitest, the
+runner's `pnpm dev` (`tsx --conditions=development`) and the host's `pnpm dev` (Vite's
+own `development` condition in electron-vite's dev build) resolve, so an edit to one
+reaches them without a build. `tsc` and the editor still read the built types: rebuild
+a package (`pnpm --filter @novadeck/harness-core build`) after changing its contract.
+
+What every harness is, as data, is one row of `application/protocol/src/harnesses.ts`:
+its id (also its program's name), its names, the script a Node CLI runs, the variables
+its sessions set on their children and the paths of its secrets. The protocol's
+`agentName` comes from it, and so do the lists and labels the UI and the runner show, so
+the UI reads it without loading any adapter.
+
+Adding a harness:
+
+1. Its row in `application/protocol/src/harnesses.ts`.
+2. Its package, `harnesses/<id>` (`@novadeck/harness-<id>`), shaped like the others, with
+   its probes in `src/fixtures/`.
+3. Its line in `application/runner/src/harnesses/registry.ts` (a compile error until
+   then) and the runner's dependency on its package.
+4. Its lint fence: an override for its folder in `.oxlintrc.json`, and its name in the
+   other adapters' and harness-core's (`scripts/harnesses/fence.test.ts` fails until
+   then).
+5. Its end-to-end setup, its pin, and its cache steps in the E2E workflow (see
+   `docs/e2e-testing.md`, "Adding a harness").
+6. What stays by hand: its icon in the UI's welcome dialog (a type error until then) and
+   its process profile (`application/ui/src/terminals/processes/profiles.ts`), its coverage in
+   `docs/harness-coverage.md`, and any variable of its hooks' environment the runner's
+   `shell/hook.ts` tells nested agents apart by.
 
 Split a harness into more files (a transcript reader, say) only when its
 `index.ts` gets hard to read. `shell/` keeps shell-specific
-startup/quoting; it no longer assembles harness manifests. This does not need a
-new npm package. Public data types live in `application/protocol`, with no imports
-back into provider implementations.
+startup/quoting; it no longer assembles harness manifests. Public data types live in
+`application/protocol`, with no imports back into provider implementations.
 
 ## Agent model
 
@@ -287,8 +332,10 @@ type Harness = {
   /** Its plugin commands, run in order; a failing one marked `optional` is skipped. */
   readonly connect: (install: Install) => readonly Command[]
   readonly disconnect: readonly Command[]
-  /** The command its plugin's hook runs, through the harness's own shell. */
-  readonly hook: (platform: NodeJS.Platform) => string
+  /** The shell it runs hook commands in: `sh`, `powershell` or `cmd`. */
+  readonly hookDialect: (platform: NodeJS.Platform) => Dialect
+  /** The command its plugin runs for a hook event, `hookCommand`'s in that shell. */
+  readonly hook: (platform: NodeJS.Platform, event: string) => string
   /** Plugin manifests and hook registrations, relative to its plugin directory. */
   readonly files: (platform: NodeJS.Platform) => readonly File[]
   /** Programs Novadeck's shells put first on PATH while it is connected, as Codex's shim. */
@@ -409,7 +456,7 @@ runner:
 readonly decode: (report: Report) => readonly HarnessEvent[]
 ```
 
-Decoding in the runner keeps decoders ordinary, tested TypeScript beside their
+Decoding in the runner's process keeps decoders ordinary, tested TypeScript beside their
 harness, checked against the captured fixtures, with no separate build for the
 hook process. The payload travels only over Novadeck's local report socket to
 the runner, which already sees the terminal's output. `decode` performs no I/O,
@@ -457,8 +504,9 @@ Besides the facts shared with the agent model, decoders give
   for the folders a session works in.
 - `session-observed` has `compacted` when the harness says it compacted the session's
   context: Claude Code's and Codex's `SessionStart` with source `compact`. Antigravity
-  reports no compaction. It nudges the agent to describe its terminal again (see
-  [Self-description](agent-messaging.md#self-description)).
+  reports no compaction. It nudges the agent to summarize its terminal again (see
+  [Nudges](agent-messaging.md#nudges)); murmur retitles it only when that summary
+  arrives (see [Naming](agent-messaging.md#when-murmur-titles-a-terminal)).
 - `session-observed` has `atPrompt` when the harness announced the session as its own
   input prompt came up, past any trust, onboarding or login screen: Claude Code's
   `SessionStart` with source `startup`, `clear`, `resume` or `fork`, and Antigravity's
@@ -551,7 +599,7 @@ Antigravity has none: its `PreInvocation` asks before every model call, so its
 `tool` event keeps the short one.
 
 The terminal manager follows each terminal's root session as its profile's `root`
-says (`harnesses/roots.ts`): the bound session; or, for `status-line`, a guess (the
+says (`application/runner/src/harnesses/roots.ts`): the bound session; or, for `status-line`, a guess (the
 session that bound, then that of the first model call after it bound, or of one
 messages wait for) until the status line names the root conversation, which alone
 names another. Messaging reads the root from there. The doorbell knows nothing of how a
@@ -588,7 +636,7 @@ Enter included, that runs what the box holds or answers a dialog. A prompt or an
 that can't read what it needs writes nothing and is refused (`CONFLICT`), and the chat
 falls back to the terminal, where the person sees what the agent shows. The thresholds and
 drawings each reader rests on are probed, with fixtures from real screens
-(`harnesses/*/fixtures/input-box.probe.json`, `shell-mode.probe.json`, `ask.probe.json`;
+(`harnesses/*/src/fixtures/input-box.probe.json`, `shell-mode.probe.json`, `ask.probe.json`;
 `e2e/probes/`); see [Harness coverage](harness-coverage.md).
 
 ### Answer driver
@@ -1100,7 +1148,15 @@ outstanding operations before their late results can change state.
 The hook runs in a short-lived process, Novadeck's relay (`application/relay`), through
 a launcher in Novadeck's integration directory, so it needs no install inside the
 person's project. It is one program for every harness, copied in on each start.
-Each plugin's hook command passes the harness and the event.
+Each plugin's hook command passes the harness and the event. Every harness writes it
+through one module, `harnesses/core/src/hook-command.ts`: `hookCommand(dialect, { agent, event,
+fallback })` in the shell the harness declares (`hookDialect(platform)`): `sh` on Linux
+and macOS, PowerShell for Claude Code and Codex on Windows, and cmd for Antigravity
+there. The quoting, the launcher check, and what a command prints without Novadeck (its
+`fallback`, or nothing, exiting 0) live there, and `hook-command.test.ts` runs each form
+in its real shell, on Windows CI for PowerShell and cmd. Codex's text is pinned by hash
+(`codex/hooks.test.ts`), as Codex asks people to review its hooks again whenever it
+changes.
 
 The relay does the following:
 
@@ -1220,7 +1276,7 @@ nothing else, confirmed by its hook, never retried; see
       turn stays open until the next turn starts. Later sources (Claude Code's
       transcript, the status line) close that gap.
    3. Subagents and transcripts. It starts with a shared JSONL follower
-      (`harnesses/follow.ts`) and a harness `watch` the manager runs for each
+      (`harnesses/core/src/follow.ts`) and a harness `watch` the manager runs for each
       binding: Claude Code's watch follows the session transcript, whose
       interruption record ends the turn and settles its requests after an Esc
       or a denial. Claude Code's and Codex's `SubagentStart` and

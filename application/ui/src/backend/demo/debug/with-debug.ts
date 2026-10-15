@@ -1,3 +1,4 @@
+import type { SandboxState } from "../../../model/sandbox"
 import { createStore, type MutableStore } from "../../../model/store"
 import type { Workspace } from "../../../model/types"
 import type { BootRehearsals } from "../../boot-rehearsal"
@@ -8,10 +9,17 @@ import type {
   BootProgress,
   TerminalKey,
 } from "../../port"
+import { isDemoInbox } from "../inbox"
+import { demoTurns } from "../turns"
 import { createDemo, type DemoVariant } from "../variants"
 import { createDebugPanel } from "./DebugPanel"
+import { inboxGroups } from "./inbox"
+import { planGroups } from "./plans"
+import { createDemoPortable, type DemoPortable } from "./portable"
+import { createDemoSandbox } from "./sandbox"
 import { createDemoStates } from "./states"
 import type { DemoActionContext } from "./types"
+import { createDemoUninstall, type DemoUninstall } from "./uninstall"
 
 // What one connection to the demo knows of the boot that made it, and how the panel
 // asks for another.
@@ -24,6 +32,18 @@ export type DemoLaunch = {
   readonly switchVariant: (variant: DemoVariant) => void
   // Boots again, with the next boot attaching slowly.
   readonly armSlowAttach: () => void
+  // What the host says of its sandbox; undefined where it says nothing, as in a browser.
+  readonly sandbox: SandboxState | undefined
+  // Boots again with the host saying this of its sandbox (or nothing).
+  readonly setSandbox: (sandbox: SandboxState | undefined) => void
+  // The portable copy the host plays; undefined for an installed one.
+  readonly portable: DemoPortable | undefined
+  // Boots again as this portable copy (or an installed one).
+  readonly setPortable: (portable: DemoPortable | undefined) => void
+  // The uninstall the host offers; undefined for a host that offers none.
+  readonly uninstall: DemoUninstall | undefined
+  // Boots again with the host offering this uninstall (or none).
+  readonly setUninstall: (uninstall: DemoUninstall | undefined) => void
 }
 
 // What the panel's groups read and change of the shell around the demo.
@@ -55,7 +75,9 @@ const terminalCount = (workspace: Workspace | undefined): number =>
 export const createDebugDemo = (launch: DemoLaunch): Backend => {
   const connection = createStore<BackendConnectionState>("connected")
   const crashes = createStore(0)
-  const states = createDemoStates()
+  const turns = demoTurns()
+  const states = createDemoStates(turns)
+  if (launch.portable?.offer) states.offer(launch.portable.offer)
   let sink: BackendSink | undefined
   let latest: Workspace | undefined
   let failed: readonly TerminalKey[] = []
@@ -63,7 +85,7 @@ export const createDebugDemo = (launch: DemoLaunch): Backend => {
   const restart = (key: TerminalKey): void => {
     if (sink) states.restart(key, sink.dispatch)
   }
-  const inner = createDemo(launch.variant, { connection, screens: states.screens, restart })
+  const inner = createDemo(launch.variant, { connection, screens: states.screens, restart }, turns)
   const total = Math.max(
     1,
     inner.seed.projects.reduce(
@@ -94,6 +116,7 @@ export const createDebugDemo = (launch: DemoLaunch): Backend => {
       if (!key || !session || !dispatch) return note("Select a terminal first.")
       const target = { projectId: key.projectId, workspaceSessionId: key.workspaceSessionId }
       const terminals = session.state.roster.terminals
+      for (const terminal of terminals) turns.release({ ...key, terminalId: terminal.id })
       dispatch(
         terminals.map((terminal) => ({
           type: "terminal/status",
@@ -144,14 +167,32 @@ export const createDebugDemo = (launch: DemoLaunch): Backend => {
     ...(launch.slowAttach ? { boot } : {}),
     agents: states.agents,
     notices: states.notices,
+    updates: states.updates,
+    ...(launch.sandbox ? { sandbox: createDemoSandbox(launch.sandbox) } : {}),
+    ...(launch.portable ? { portable: createDemoPortable(launch.portable).portable } : {}),
+    ...(launch.uninstall ? { uninstall: createDemoUninstall(launch.uninstall).uninstall } : {}),
     pickDirectory: states.pickDirectory,
     ...(inner.conversations ? { conversations: states.chat(inner.conversations) } : {}),
     DebugPanel: createDebugPanel({
       launch,
       shell,
-      states,
+      states: {
+        ...states,
+        groups: [
+          ...states.groups,
+          ...inboxGroups(isDemoInbox(inner.inbox) ? inner.inbox : undefined),
+          ...planGroups(inner.companions),
+        ],
+      },
       dispatch: () => sink?.dispatch,
       workspace: () => latest,
+      addInBackground: (to) => {
+        const target = { projectId: to.projectId, workspaceSessionId: to.workspaceSessionId }
+        const directory = latest?.projects.find((each) => each.id === to.projectId)?.directory
+        const terminal = inner.newTerminal({ target, directory: directory ?? "~" })
+        sink?.dispatch([{ type: "terminal/add", target, terminal, select: false }])
+        return { ...target, terminalId: terminal.id }
+      },
     }),
   }
 }

@@ -94,21 +94,19 @@ export const shortcutBindings = (
     },
     terminals: {
       label: "Toggle terminal sidebar",
-      key: "1",
-      code: "Digit1",
+      key: "e",
       ctrl: !mac,
       meta: mac,
       shift: true,
-      display: [mac ? "⌘" : "Ctrl", "Shift", "1"],
+      display: [mac ? "⌘" : "Ctrl", "Shift", "E"],
     },
     sessions: {
       label: "Toggle session sidebar",
-      key: "2",
-      code: "Digit2",
+      key: "s",
       ctrl: !mac,
       meta: mac,
       shift: true,
-      display: [mac ? "⌘" : "Ctrl", "Shift", "2"],
+      display: [mac ? "⌘" : "Ctrl", "Shift", "S"],
     },
     preferences: {
       label: "Open preferences",
@@ -141,6 +139,26 @@ export const shortcutBindings = (
       shift: true,
       display: ["Ctrl", "Shift", "M"],
     },
+  }
+}
+
+// Switches to the Nth pinned project (index 0..8): ⌘N on Apple platforms, Ctrl+Shift+N
+// elsewhere, where a bare Ctrl+3 to 8 is a terminal's Esc, Ctrl+\, Ctrl+^ and the like.
+// Matched by physical digit so it holds on any keyboard layout, Shift's symbols included.
+export const pinnedProjectShortcut = (
+  index: number,
+  platform: Platform = currentPlatform(),
+): Shortcut => {
+  const mac = platform === "mac"
+  const digit = String(index + 1)
+  return {
+    label: "Switch to pinned project",
+    key: digit,
+    code: `Digit${digit}`,
+    ctrl: !mac,
+    meta: mac,
+    shift: !mac,
+    display: mac ? ["⌘", digit] : ["Ctrl", "Shift", digit],
   }
 }
 

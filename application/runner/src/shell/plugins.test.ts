@@ -3,9 +3,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { hookSeconds, plugin, type Start } from "@novadeck/harness-core/harness"
 import type { AgentName } from "@novadeck/protocol"
+import { beforeAll } from "vitest"
 
-import { plugin, type Start } from "../harnesses/harness.js"
 import { harnesses } from "../harnesses/registry.js"
 import { describe, expect, it as base } from "../test.js"
 import { installShellFiles } from "./install.js"
@@ -56,14 +57,14 @@ const it = base.extend<{ plugins: Fixture }>({
 })
 
 // Runs a plugin's hook command the way its agent does: sh -c for Claude Code and
-// Antigravity, the login shell for Codex; PowerShell for Claude Code and cmd for the
-// others on Windows.
+// Antigravity, the login shell for Codex; PowerShell for Claude Code and Codex and cmd for
+// Antigravity on Windows.
 const runHook = (agent: AgentName, event: string, hook: string | undefined, stdin: string) => {
   const { NOVADECK_HOOK: _outer, ...rest } = process.env
   const env = hook ? { ...rest, NOVADECK_HOOK: hook } : rest
   const command = harnesses[agent].hook(process.platform, event)
   const [program, args] = windows
-    ? agent === "claude"
+    ? agent !== "agy"
       ? ["powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command]]
       : [process.env.COMSPEC ?? "cmd.exe", ["/d", "/s", "/c", command]]
     : ["/bin/sh", ["-c", command]]
@@ -81,6 +82,18 @@ const timedOut = (result: SpawnSyncReturns<string>) =>
 const events = { claude: "SessionStart", codex: "SessionStart", agy: "PreInvocation" } as const
 
 describe("agent plugin hook commands", () => {
+  // The first cmdlet a cold Windows PowerShell runs, as Test-Path in Claude Code's and
+  // Codex's hooks, has it build its module analysis cache first, over every module on
+  // PSModulePath: on a CI runner, with many, that took up to 45 s (it timed out the first
+  // case to reach Test-Path, as later cases took under 1 s). Warmed once, each case times
+  // the hook itself.
+  beforeAll(() => {
+    if (windows)
+      spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Test-Path ."], {
+        timeout: 170_000,
+      })
+  }, 180_000)
+
   // Codex and Antigravity trust a hook by its definition, so a change asks whoever
   // connected them to review Novadeck's hook again: change these on purpose only.
   it("change only on purpose", () => {
@@ -91,16 +104,16 @@ describe("agent plugin hook commands", () => {
       '[ -n "$NOVADECK_HOOK" ] && "$NOVADECK_HOOK" codex SessionStart || true',
     )
     expect(harnesses.agy.hook("linux", "PreInvocation")).toBe(
-      `if [ -n "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy PreInvocation; else echo '{}'; fi`,
+      `if [ -x "$NOVADECK_HOOK" ]; then "$NOVADECK_HOOK" agy PreInvocation; else echo '{}'; fi`,
     )
     expect(harnesses.claude.hook("win32", "SessionStart")).toBe(
-      "if ($env:NOVADECK_HOOK) { & $env:NOVADECK_HOOK claude SessionStart }",
+      "if ($env:NOVADECK_HOOK -and (Test-Path -LiteralPath $env:NOVADECK_HOOK)) { & $env:NOVADECK_HOOK claude SessionStart }",
     )
     expect(harnesses.codex.hook("win32", "SessionStart")).toBe(
-      "if defined NOVADECK_HOOK %NOVADECK_HOOK% codex SessionStart",
+      "if ($env:NOVADECK_HOOK -and (Test-Path -LiteralPath $env:NOVADECK_HOOK)) { & $env:NOVADECK_HOOK codex SessionStart }",
     )
     expect(harnesses.agy.hook("win32", "PreInvocation")).toBe(
-      "if defined NOVADECK_HOOK (%NOVADECK_HOOK% agy PreInvocation) else (echo {})",
+      "if defined NOVADECK_HOOK (if exist %NOVADECK_HOOK% (%NOVADECK_HOOK% agy PreInvocation) else (echo {})) else (echo {})",
     )
   })
 
@@ -114,6 +127,21 @@ describe("agent plugin hook commands", () => {
         expect(timedOut(result)).toBe(false)
         expect(result.status).toBe(0)
         // Antigravity reads a hook's answer as JSON.
+        expect(result.stdout.trim()).toBe(agent === "agy" ? "{}" : "")
+        expect(plugins.recorded()).toBeUndefined()
+      },
+      hookMs + 5_000,
+    )
+
+    it(
+      `do nothing where the launcher is set but gone for ${agent}, as one that outlived its Novadeck`,
+      ({ plugins }) => {
+        const gone = windows
+          ? "C:/nowhere/novadeck-hook.exe".replaceAll("/", "\\")
+          : "/nowhere/hook"
+        const result = runHook(agent, events[agent], gone, "{}")
+        expect(timedOut(result)).toBe(false)
+        expect(result.status).toBe(0)
         expect(result.stdout.trim()).toBe(agent === "agy" ? "{}" : "")
         expect(plugins.recorded()).toBeUndefined()
       },
@@ -182,13 +210,16 @@ describe("agent plugins", () => {
       "PreToolUse",
       "PostToolUse",
     ])
+    // Codex clamps an Interrupt hook past 3 seconds, warning at every start.
+    expect(codexHooks.Interrupt[0].hooks[0].timeout).toBe(3)
+    expect(codexHooks.Stop[0].hooks[0].timeout).toBe(hookSeconds(process.platform))
     expect(read(agy, "plugin.json")).toEqual({ name: "novadeck" })
-    // PreToolUse waits on a Windows probe there (see harnesses/agy/index.ts).
-    expect(Object.keys(read(agy, "hooks.json").novadeck)).toEqual(
-      process.platform === "win32"
-        ? ["PreInvocation", "Stop", "PostToolUse"]
-        : ["PreInvocation", "Stop", "PreToolUse", "PostToolUse"],
-    )
+    expect(Object.keys(read(agy, "hooks.json").novadeck)).toEqual([
+      "PreInvocation",
+      "Stop",
+      "PreToolUse",
+      "PostToolUse",
+    ])
   })
 })
 

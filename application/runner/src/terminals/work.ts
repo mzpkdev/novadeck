@@ -1,12 +1,14 @@
 import { dirname } from "node:path"
 
-import type { HarnessEvent } from "../harnesses/events.js"
+import type { HarnessEvent } from "@novadeck/harness-core/events"
+
 import { rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 
 /**
  * What the agent session at a terminal's root worked on, as its hooks said: the person's
- * first and latest root prompts there, shortened, never a turn the harness started by
- * itself; how often it wrote in each folder; and when it was last active. A fact of the
+ * first and latest root prompts there, shortened, and the last few at more length, never a
+ * turn the harness started by itself; how often it wrote in each folder, and the files it
+ * wrote last; and when it was last active. A fact of the
  * terminal, kept with its record, so it outlives the agent compacting its context and the
  * runner restarting; agents messaging each other read it.
  */
@@ -26,15 +28,27 @@ export type Work = {
    */
   readonly opened?: true
   readonly latest: string | null
+  /**
+   * The person's last `keptPrompts` root prompts, oldest first, each shortened to
+   * `recentChars`: what murmur describes the terminal from beside `first`.
+   */
+  readonly recent: readonly string[]
   /** Edits by folder, by absolute path, the `keptFolders` written in most. */
   readonly folders: { readonly [folder: string]: number }
+  /** The paths of the `keptFiles` files it wrote in last, the latest first; absent until one. */
+  readonly files?: readonly string[]
   readonly activeAt: number | null
 }
 
 /** How long a prompt shows, in characters. */
 export const promptChars = 120
+/** How many of the person's latest prompts are kept, and how long each shows, in characters. */
+export const keptPrompts = 5
+export const recentChars = 300
 /** How many folders' edits are kept. */
 export const keptFolders = 20
+/** How many files' paths are kept. */
+export const keptFiles = 8
 
 /**
  * Whose the root session's first prompt is: the `user`'s; the `opener`'s, in the first
@@ -70,6 +84,7 @@ export const freshWork = (session: string): Work => ({
   session,
   first: null,
   latest: null,
+  recent: [],
   folders: {},
   activeAt: null,
 })
@@ -86,6 +101,10 @@ export const tallied = (folders: Work["folders"], folder: string): Work["folders
     .slice(0, keptFolders - 1)
   return Object.fromEntries([...others, [folder, edits]])
 }
+
+/** The file paths with `file` the latest, once, kept to the `keptFiles` latest. */
+export const lastFiles = (files: Work["files"], file: string): readonly string[] =>
+  [file, ...(files ?? []).filter((name) => name !== file)].slice(0, keptFiles)
 
 /** The folders a session wrote in most, by edits, at most `count` of them. */
 export const busiestFolders = (
@@ -123,14 +142,25 @@ export const workAfter = (
       // Only the person's prompts say what the session works on.
       const prompt =
         event.cause === "prompt" && event.prompt ? shorten(event.prompt, promptChars) : null
+      const long =
+        event.cause === "prompt" && event.prompt ? shorten(event.prompt, recentChars) : null
       next = {
         ...next,
         ...(prompt && { first: next.first ?? prompt, latest: prompt }),
+        ...(long &&
+          next.recent.at(-1) !== long && {
+            recent: [...next.recent, long].slice(-keptPrompts),
+          }),
         activeAt: now,
       }
     } else if (event.type === "turn-ended") next = { ...next, activeAt: now }
     else if (event.type === "file-touched")
-      next = { ...next, folders: tallied(next.folders, dirname(event.path)), activeAt: now }
+      next = {
+        ...next,
+        folders: tallied(next.folders, dirname(event.path)),
+        files: lastFiles(next.files, event.path),
+        activeAt: now,
+      }
   }
   return next
 }

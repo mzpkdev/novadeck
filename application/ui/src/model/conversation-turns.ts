@@ -1,4 +1,5 @@
 import type { ChatItem } from "./conversation"
+import { harnesses } from "./harnesses"
 import type { AgentStatus } from "./types"
 
 // A conversation's items as a chat shows them: the person's messages, the agent's text,
@@ -214,6 +215,20 @@ const parseFields = (input: string): Fields | null => {
   }
 }
 
+// An object argument, as given or as the JSON text Antigravity may wrap it in.
+const nested = (value: unknown): Fields | null => {
+  if (typeof value === "string") {
+    try {
+      return nested(JSON.parse(value))
+    } catch {
+      return null
+    }
+  }
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Fields)
+    : null
+}
+
 // The first of `keys` the input holds as text.
 const textField = (fields: Fields | null, ...keys: string[]): string => {
   if (!fields) return ""
@@ -373,18 +388,21 @@ const novadeckTool = (tool: string, fields: Fields | null): ToolSummary | undefi
         title: `Closed${text("to") ? ` ${text("to")}` : " a terminal"}`,
         detail: "",
       }
-    case "show": {
+    case "show":
+    case "close": {
       const url = text("url")
+      const file = nested(fields?.file)
+      const path = file ? oneLine(textField(file, "path")) : ""
       return {
         kind: url ? "web" : "read",
-        title: "Showed",
-        detail: url || shortPath(text("path")),
+        title: tool === "show" ? "Showed" : "Closed",
+        detail: url || shortPath(path),
       }
     }
     case "showing":
       return { kind: "read", title: "Checked what's shown", detail: "" }
-    case "describe":
-      return { kind: "agent", title: "Described this terminal", detail: text("title") }
+    case "summarize":
+      return { kind: "agent", title: "Summarized this terminal", detail: text("summary") }
     default:
       return undefined
   }
@@ -571,15 +589,5 @@ export const turnStatus = (agent: AgentStatus | undefined): TurnStatus | null =>
 }
 
 // An agent as its harness names it, as a person does.
-export const agentName = (agent: string | null): string => {
-  switch (agent) {
-    case "claude":
-      return "Claude"
-    case "codex":
-      return "Codex"
-    case "agy":
-      return "Antigravity"
-    default:
-      return "The agent"
-  }
-}
+export const agentName = (agent: string | null): string =>
+  harnesses.find(({ id }) => id === agent)?.shortName ?? "The agent"

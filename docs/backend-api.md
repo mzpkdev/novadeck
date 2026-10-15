@@ -226,18 +226,22 @@ reported a session in the shell since its last prompt, so a client can name the
 program where `process` cannot; it is `null` otherwise. `cwd` is the directory the
 shell last reported at a prompt, or where it started. `title` is, in this order: the
 name the person gave the terminal with `create` or `terminals.rename({ terminalId,
-title })`; the one an agent gave it last (`describe`, or `open_terminal`'s `title`);
-the person's first prompt of its agent's root session, shortened; or the runner's
-default for its session ("Terminal 01", "Terminal 02", …, never given twice).
-`titleSource` says which: `{ kind: "person" }`, `{ kind: "agent", by: "t2" }`,
-`{ kind: "fallback" }` or `{ kind: "default" }`. A terminal the client creates for an
+title })`; the latest title murmur, the opt-in local model, wrote for it; the one the
+agent that opened it gave through `open_terminal`'s `title`; or the runner's default:
+the program it was opened to run (`claude`), else "Terminal", never derived from its
+handle. `titleSource` says
+which: `{ kind: "person" }`, `{ kind: "murmur" }`, `{ kind: "agent", by: "fox" }` or
+`{ kind: "default" }`. The summary its agent gave through `summarize` is not on the wire: only
+`agents()` lists it. A terminal the client creates for an
 agent's request (`terminals.requests`) passes that request's `requestId` to
 `terminals.create`, and takes the title the agent asked for as the agent's.
 `terminals.resetTitle({ terminalId })` takes the person's name away, so it is automatic
-again (see [Agent messaging](agent-messaging.md#self-description)). `handle` is its
-handle for agents' messages, `t3`, numbered from the same counter, so "Terminal 03" is
-`t3`; every terminal takes a number, even one created with its own title, and keeps
-its handle across renames. `command` is what it was opened to run, and
+again (see [Agent messaging](agent-messaging.md#naming)). `handle` is its
+handle for agents' messages, a word such as `moth` that its session gives it (people read
+it as `@moth`); every terminal takes one, even one created with its own title, and keeps
+it across renames. A session never gives a word twice, even once its terminal closes;
+once all are given, they come again numbered (`moth2`). Terminals list in the order they
+were created. `command` is what it was opened to run, and
 `lastProgram` the program it last had in its foreground, which a fresh shell resumes
 where that is an agent.
 
@@ -296,8 +300,7 @@ ten seconds (`timeout`). `connectRunner` accepts a `signal` to cancel the first
 connection; it does not retry that one, so a UI can report a wrong URL or token.
 A MessagePort transport detects a closed runner through the port's `close` event,
 which Electron and Node.js provide. `attach(id, { mode: "observe" })` follows a terminal
-without controlling it; its `write`, `resize`, and `close` reject with
-`CONTROL_REQUIRED`.
+without controlling it; its `write` and `resize` reject with `CONTROL_REQUIRED`.
 
 ### Serving a runner
 
@@ -416,12 +419,17 @@ not command completion.
   but not processes, live terminal records, or replay cursors. There is no persistent
   process supervisor.
 - `terminals.close({ terminalId })`, or `runner.terminals.close(id)` without an
-  attachment, succeeds for the controlling connection or when no connection holds
-  control, and rejects with `CONTROL_IN_USE` otherwise. Once the shell has exited, the
-  runner forgets the terminal: `list` omits it, watchers receive `removed`, and later
-  calls report `TERMINAL_NOT_FOUND`. Attached viewers still receive `exited` first. A
-  shell that exits on its own keeps its record until eviction, and the terminal itself
-  until it is closed. A terminal kept only as saved closes the same way.
+  attachment, closes the terminal for good from any connection, whoever controls it. The
+  runner forgets it as the close begins: `list` omits it, watchers receive `removed`,
+  what restores it is deleted, and nothing saves it again, so a runner that stops before
+  the shell has exited does not bring it back. It then ends the shell; attached viewers
+  still receive `exited`, and later calls report `TERMINAL_NOT_FOUND`. A close reaches a
+  runner that is shutting down too; only a stopped one refuses it, with
+  `RUNTIME_CLOSING`. A shell that exits on its own keeps its record until eviction, and
+  the terminal itself until it is closed. A terminal kept only as saved closes the same
+  way. The runner refuses to create a terminal closed in its lifetime again, restoring
+  or not, even one a `create` was restoring as it closed, with `TERMINAL_NOT_FOUND`: a
+  client takes that as the terminal closed elsewhere.
 - `terminals.restart({ terminalId, cols, rows, resume? })`, or
   `runner.terminals.restart(id, { cols, rows, resume })`, starts a fresh shell in a
   retained exited terminal: the same ID and session, in the shell's last reported
@@ -429,7 +437,7 @@ not command completion.
   earlier one above a separator while transcripts are on. With `resume`, the fresh
   shell resumes that agent's session instead, as for `create`, and then the earlier
   screen is not shown. The
-  same control rule as closing applies, and the caller then holds control. The
+  caller needs control unless no connection holds it, and then holds control. The
   summary's `run` counts shells, 1 at creation and one more per restart, so a client
   can discard a late report about an earlier run. Watchers receive `changed`;
   viewers attach again and get the new screen as a snapshot, even with a cursor from
@@ -543,9 +551,16 @@ work with it, and an option without a value would be read as the agent.
    `{"relay":2,"kind":"hook","terminalId","token","agent","event","seq","deadline","ancestors","env","payload"}`.
    - `seq` is when the hook started, and `deadline` when it gives up, in epoch
      milliseconds with a fraction.
-   - `ancestors` is up to eight `{ pid, name }`, nearest first. They come from `/proc`
-     on Linux and the kernel on macOS, named by the path each was started by; Windows
-     sends none.
+   - `ancestors` is up to eight `{ pid, name, startedAt }`, nearest first, `startedAt`
+     in epoch milliseconds and left out where unknown. They come from `/proc` on Linux
+     and the kernel on macOS, named by the path each was started by, and on Windows from
+     a process snapshot, named by their program without `.exe`, where the walk stops at
+     a recorded parent that started after its child, another process given an ended
+     parent's pid. The runner names the agent's process from them, and on Windows, where
+     a hook's shell starts slowly, when the agent fired the hook (`firedAt`): when the
+     ancestor just below the agent started, the shell the hook runs in, seconds before
+     `seq`. Elsewhere `seq` tells, and the ancestor below the agent may be a long-lived
+     process of its own, as under a wrapper script that doesn't `exec` it.
    - `env` holds the variables `relay.json` names, by name, as the hook found them:
      `CLAUDE_PID`, `CURSOR_VERSION` and `CODEX_THREAD_ID`.
    - `payload` is the agent's JSON as text, unread. The runner prunes it.
@@ -562,6 +577,21 @@ for Claude Code's status line. For the status line, the relay also runs the pers
 command, as their Claude Code settings name it, beside the report, and prints it. Without
 the relay, the hook launcher prints what `relay.json` would, as it is written from the
 same tables.
+
+On Windows the runner also runs the relay for what it would otherwise start PowerShell
+or taskkill for:
+
+- `novadeck-relay environment` prints the registry's environment variables,
+  unexpanded: a line for each text value of the machine's and then the user's
+  `Environment` key, `machine` or `user`, its name and its value, each in base64 of
+  its UTF-8. A new terminal's PATH is built from them, as Windows builds a new
+  console's. Where the relay can't run, Windows PowerShell prints the same lines.
+- `novadeck-relay tree <pid>...` prints, a JSON line per pid,
+  `{"root":<pid>,"processes":[{"pid","startedAt"},...]}`: the process and every one
+  under it, counting a process as a child only if it started no earlier than its
+  recorded parent.
+- `novadeck-relay end <pid>:<startedAt>...` ends each of those processes still running
+  that started then, and no other given its pid since.
 
 The runner saves, per terminal, in a `terminals` table next to the sessions: its
 session, last directory, latest session per agent, when it last showed a prompt, and
@@ -597,7 +627,7 @@ forgets it, including one from an earlier runner.
   is installed into it, read from the agent's own configuration.
   `agents.set({ agent, connected })` installs or removes the plugin with the agent's
   own commands (`claude plugin marketplace add` + `plugin install`, `codex plugin
-marketplace add` + `plugin add`, `agy plugin install`, and their removals). They run
+  marketplace add` + `plugin add`, `agy plugin install`, and their removals). They run
   directly, with `PATH`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` as the user's login shell
   has them (read with `$SHELL -ilc 'echo …; env'`, in the background so listing never
   waits), falling back to `~/.claude/local/claude` for Claude Code's local install; on
@@ -670,7 +700,7 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   never a shell command.
 
   The runner holds the person's keys and reads the agent's input box off its screen,
-  through the harness's adapter (`harnesses/*/box.ts`, which knows how that harness draws it,
+  through the harness's adapter (`harnesses/*/src/box.ts`, which knows how that harness draws it,
   which of its text is a faint suggestion, not the person's, and whether it is in its shell
   mode): where the box is not on the screen, or still holds anything after waiting up to 3 s
   for it to read empty and in its prompt mode (the TUI may be clearing the text of the
@@ -697,7 +727,7 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   columns less the marker's two (tabs spread to multiples of eight columns), plus a row of
   margin, take more rows than the harness leaves for its box; a text the harness certainly
   collapses to a placeholder is not refused. The rows left and the thresholds are each
-  harness's own, probed, in `docs/harness-coverage.md` and `harnesses/*/box.ts`. A box's own
+  harness's own, probed, in `docs/harness-coverage.md` and `harnesses/*/src/box.ts`. A box's own
   lines may be indented, tab and trailing spaces included, and hold blank lines; text is
   compared without its white space, and without the emoji a harness drew blank, unless the
   text is only emoji. The runner's headless terminal counts wide characters (emoji
@@ -720,7 +750,7 @@ marketplace add` + `plugin add`, `agy plugin install`, and their removals). They
   collapsed text is only where its shell mode runs what the placeholder stands for
   (`BoxProfile.shell.expands`: Claude Code and Codex ran 1,500-character and 16-line
   commands so); Antigravity runs the placeholder's own text (`[Pasted text #1 +16 lines]:
-command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16 lines),
+  command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16 lines),
   so there no Enter is pressed (`PROMPT_FAILED`, the command left unsent in its box). Given
   while the agent works: Claude Code and Antigravity queue the command and run it after the
   turn; Codex runs it at once, no model call. Where the `!` never switched the box in time
@@ -739,8 +769,7 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   for the request that answer is for. A prompt that meets a doorbell ring
   whose prompt is yet to confirm it waits for it, up to 10 s (`CONFLICT` after). Both keys go through the bookkeeping the
   person's own do (`Terminals.keyed`): what messaging and the doorbell see of the box and
-  its Enter, the person's prompt attributed from the harness's transcript, the terminal
-  named from its first prompt. A prompt given while the agent works behaves as typing it
+  its Enter, the person's prompt attributed from the harness's transcript. A prompt given while the agent works behaves as typing it
   would: Claude Code and Antigravity queue it (their box shows "Press up to edit queued
   messages") and run it as its own turn once the turn ends; Codex shows it as "Messages to
   be submitted after next tool call", submitting it into the running turn then, or at its
@@ -749,7 +778,7 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   them over and keeps that deadline, so one that is refused at once lets none go earlier. The
   client's `agents.prompt(terminalId, text)` is that call.
 
-- A request's `dialog` in `agents.detail` is what its harness's adapter (`harnesses/<harness>/dialogs.ts`,
+- A request's `dialog` in `agents.detail` is what its harness's adapter (`harnesses/<harness>/src/dialogs.ts`,
   the only code that knows how a harness draws its dialogs) read from the terminal's
   screen, so it can be answered (`agents.answer`): `choices` (a permission's or a plan's
   options, each with an id, its label and whether it takes the person's words: typed
@@ -910,9 +939,23 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
     file is the lines around those pointed at, read to the last of them and up to 4 MiB
     more to count the rest: `total` once it reached the file's end, else `truncated`;
     lines past the end are pulled back to it and marked `clamped`. A plan is its text, cut
-    short past 256 KiB. Every read resolves symlinks again, refuses anything but a plain
+    short past 256 KiB (`truncated`), with `writable` (a plan in a file that is not cut
+    short, which `companions.save` can write) and `skill` (Novadeck's plugin is installed
+    for its agent). Every read resolves symlinks again, refuses anything but a plain
     file and never blocks on a pipe, and a file that now resolves to one that may hold
     secrets is held.
+  - `companions.save({ itemId, text, basedOn })` writes the person's edit to a plan kept in
+    a file, atomically, keeping the file's permissions, unless the file's stamp is no longer
+    `basedOn` (a text plan's stamp is a hash of its text; a file plan's is its size,
+    modification time and inode): then nothing is written and it answers
+    `{ saved: false, current: { stamp, text, truncated, skill } }`; else
+    `{ saved: true, stamp }`. What can never be saved is `PLAN_UNWRITABLE`, whose data says
+    why: `transcript` (the plan is in an agent's messages), `too-large` (a text or file over
+    256 KiB), `gone` (the file is missing or no plain file), `folder` (the runner may not
+    write in the plan's folder) or `not-a-plan`. Any other failure (a full disk, a file held
+    open by another program) is an ordinary error that may pass; an unknown item is
+    `NOT_FOUND`.
+    Saves of one plan are handled one at a time.
   - `companions.attach({ terminalId, path, lines?, title? })` puts a file the person
     picked on a terminal's bar, by a path absolute or from the terminal's directory:
     `TERMINAL_NOT_FOUND`, or `INVALID_FILE` saying why for a missing path, a folder, a
@@ -945,7 +988,7 @@ command not found`, from somewhere between 900 and 1,500 characters, or 8 and 16
   transcript) and whether the person has seen the first-run choice of agents.
 
 Typed errors include `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`, `CONFLICT`,
-`INVALID_DIRECTORY`, `INVALID_FILE`, `NOT_FOUND`, `TERMINAL_NOT_FOUND`, `CONTROL_REQUIRED`, `CONTROL_IN_USE`,
+`INVALID_DIRECTORY`, `INVALID_FILE`, `PLAN_UNWRITABLE` (a plan can never be saved; its data says why), `NOT_FOUND`, `TERMINAL_NOT_FOUND`, `CONTROL_REQUIRED`, `CONTROL_IN_USE`,
 `INVALID_CURSOR`, `UPLOAD_TOO_LARGE`, `RESOURCE_LIMIT` (too many calls in flight; retry later),
 `TERMINAL_LIMIT` (the runner's terminal cap is reached), and `SLOW_CONSUMER`. A
 `CONFLICT` about typing into an agent's terminal (`agents.prompt`, `agents.answer`,

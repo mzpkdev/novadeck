@@ -6,6 +6,10 @@ export const relayArgumentPrefix = "--novadeck-relay="
 export const voiceEngineArgumentPrefix = "--novadeck-voice-engine="
 /** Where the voice engine's archive comes from: an https address ending in "/", or a folder. */
 export const voiceSourceArgumentPrefix = "--novadeck-voice-source="
+/** The manifest of the murmur engine murmur installs: a file shipped with the app. */
+export const murmurEngineArgumentPrefix = "--novadeck-murmur-engine="
+/** Where the murmur engine's archive comes from: an https address ending in "/", or a folder. */
+export const murmurSourceArgumentPrefix = "--novadeck-murmur-source="
 
 /** Renderer-to-main request for a runner port; the answer arrives on the same channel. */
 export const runnerPortChannel = "novadeck:runner-port"
@@ -31,6 +35,62 @@ export const noticeChannel = "novadeck:notice"
 
 /** Main-to-renderer report of the terminal id of a notification the person clicked. */
 export const noticeClickChannel = "novadeck:notice-click"
+
+/**
+ * Main-to-renderer report of an update offer, `{ kind, version, notes, outdatedSince? }`; see
+ * main/updater.ts. A page that starts listening later asks for it on `updateRequestChannel`.
+ */
+export const updateOfferChannel = "novadeck:update-offer"
+
+/** Renderer-to-main request to be told, on `updateOfferChannel`, of the last offer. */
+export const updateRequestChannel = "novadeck:update-request"
+
+/** Renderer-to-main request to restart into the downloaded update. */
+export const installUpdateChannel = "novadeck:install-update"
+
+/** Renderer-to-main request to open the release page of the last offer in the browser. */
+export const openUpdatePageChannel = "novadeck:open-update-page"
+
+/** Renderer-to-main request for the update channel the build follows; answers it. */
+export const updateChannelChannel = "novadeck:update-channel"
+
+/** Renderer-to-main request for the version of the app; answers it. */
+export const versionChannel = "novadeck:version"
+
+/** Renderer-to-main request to follow another update channel. */
+export const setUpdateChannelChannel = "novadeck:set-update-channel"
+
+/** Renderer-to-main request for whether Electron's sandbox is on; answers a `SandboxState`. */
+export const sandboxChannel = "novadeck:sandbox"
+
+/** Renderer-to-main request for whether this is a portable copy; answers a `PortableState`. */
+export const portableChannel = "novadeck:portable"
+
+/**
+ * Renderer-to-main request to install the app from this portable copy; answers an
+ * `InstallResult`. See main/portable.ts.
+ */
+export const installAppChannel = "novadeck:install-app"
+
+/**
+ * Renderer-to-main request to start the installed copy that `installAppChannel` found
+ * newer, in place of this one.
+ */
+export const openInstalledChannel = "novadeck:open-installed"
+
+/**
+ * Renderer-to-main request for what uninstalling this copy would do; answers an
+ * `UninstallPlan`. See main/uninstall.ts.
+ */
+export const uninstallPlanChannel = "novadeck:uninstall-plan"
+
+/**
+ * Renderer-to-main request to remove the app, `{ keepData }`; answers an `UninstallResult`.
+ */
+export const uninstallAppChannel = "novadeck:uninstall-app"
+
+/** Renderer-to-main request to quit the app, once it has been uninstalled. */
+export const quitAppChannel = "novadeck:quit-app"
 
 /** Renderer-to-main request for a folder picker; answers the chosen path or null. */
 export const directoryPickerChannel = "novadeck:pick-directory"

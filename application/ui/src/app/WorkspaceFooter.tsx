@@ -7,7 +7,7 @@ import { readSubscriptionOrder, writeSubscriptionOrder } from "../shell/shell-st
 import { SubscriptionUsage } from "../shell/SubscriptionUsage"
 import { WorkspaceFooter as Footer, type FooterStatus } from "../shell/WorkspaceFooter"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
-import { currentState, sameItems, shallowEqual } from "./selectors"
+import { crashLoopQuestion, currentState, sameItems, shallowEqual } from "./selectors"
 
 const always = (): (() => void) => () => {}
 // The link's state, connected where the backend reports none.
@@ -26,9 +26,30 @@ const allTerminals = (workspace: Workspace) =>
 // The footer wired to the workspace's counts, the account's subscriptions and the
 // backend's link.
 export const WorkspaceFooter = memo((): React.JSX.Element => {
-  const { backend, commands } = useWorkspaceServices()
+  const { backend, commands, workspace: store } = useWorkspaceServices()
+  const { updates, portable: portableHost } = backend
   const connection = useConnection(backend.connection)
   const crashes = useUiState((state) => state.crashLoop)
+  const offer = useUiState((state) => state.update)
+  const updateOpen = useUiState((state) => state.updateOpen)
+  const sandbox = useUiState((state) => state.sandbox)
+  const sandboxOpen = useUiState((state) => state.sandboxOpen)
+  const portable = useUiState((state) => state.portable?.portable === true)
+  // A host that can say it is portable has not yet: the sandbox chip waits, so it does not
+  // flash on a copy whose install entry replaces it.
+  const portablePending = useUiState((state) => state.portable === null) && !!portableHost
+  // A dialog, the switcher or a question holds the notice back until it is answered.
+  const asking = useUiState(
+    (state) =>
+      state.location.route.dialog !== null ||
+      state.closing !== null ||
+      state.recent.switcher !== null ||
+      crashLoopQuestion(state) > 0,
+  )
+  const welcome = useSyncExternalStore(
+    backend.agents?.welcome.subscribe ?? always,
+    () => backend.agents?.welcome.getSnapshot() ?? false,
+  )
   const zen = useUiState((state) => Boolean(state.shell.zen))
   const navigate = useUiState((state) => state.shell.navigate)
   const { count, running } = useWorkspaceState((workspace) => {
@@ -77,6 +98,44 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
       status={status}
       navigate={navigate}
       onRetry={backend.crashLoop ? commands.retryAfterCrashLoop : undefined}
+      update={
+        (offer && updates) || (portable && portableHost)
+          ? {
+              offer: updates ? (offer ?? undefined) : undefined,
+              portable:
+                portable && portableHost
+                  ? {
+                      // The install entry covers the sandbox notice a portable copy would show.
+                      unsandboxed: sandbox !== null && !sandbox.sandboxed,
+                      onInstall: portableHost.install,
+                      onOpenInstalled: portableHost.openInstalled,
+                    }
+                  : undefined,
+              open: updateOpen,
+              blocked: asking || welcome || sandboxOpen,
+              onOpenChange: commands.setUpdateOpen,
+              onShown: commands.updateShown,
+              onInstall: updates?.install ?? (() => {}),
+              onOpenPage: updates?.openPage ?? (() => {}),
+              returnFocus: () => {
+                const { selected, view } = currentState(store.getSnapshot())
+                if (!selected) return false
+                commands.setKeyboardFocus({ id: selected, view })
+                return true
+              },
+            }
+          : undefined
+      }
+      sandbox={
+        sandbox && !sandbox.sandboxed && !portable && !portablePending
+          ? {
+              fix: sandbox.fix,
+              open: sandboxOpen,
+              blocked: asking || welcome,
+              onOpenChange: commands.setSandboxOpen,
+            }
+          : undefined
+      }
       usage={<SubscriptionUsage accounts={accounts} onMove={move} />}
     />
   )

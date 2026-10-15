@@ -2,7 +2,7 @@ import { describe as context, describe, expect, it } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
 import { clickBackground } from "./support/canvas"
-import { escapeFrom, pressShortcut } from "./support/keyboard"
+import { escapeFrom, pressShortcut, newTerminalName } from "./support/keyboard"
 import { currentRoute, pressNewSession } from "./support/sessions"
 import {
   anyRenameField,
@@ -36,6 +36,7 @@ import {
   terminalTabNames,
   visibleTerminalCounts,
   view,
+  labelled,
 } from "./support/workspace"
 
 const views = ["Focus", "Grid", "Canvas"] as const
@@ -84,11 +85,11 @@ describe("creating terminals", () => {
             await pressShortcut("newTerminal")
           } else await newTerminalButton().click()
 
-          await expect.element(commandInput("Terminal 07")).toHaveFocus()
+          await expect.element(commandInput(newTerminalName)).toHaveFocus()
           await expect.element(anyRenameField()).not.toBeInTheDocument()
-          await expectSelected("Terminal 07")
-          await expect.element(terminal("Terminal 07")).toBeInViewport()
-          await expect.element(commandInput("Terminal 07")).toHaveValue("")
+          await expectSelected(newTerminalName)
+          await expect.element(terminal(newTerminalName)).toBeInViewport()
+          await expect.element(commandInput(newTerminalName)).toHaveValue("")
           await expect.poll(visibleTerminalCounts).toEqual(["7 terminals"])
         })
       })
@@ -103,13 +104,13 @@ describe("creating terminals", () => {
           await terminalTab("Dev server").click()
           await pressShortcut("newTerminal")
         } else await newTerminalButton().click()
-        await expect.element(commandInput("Terminal 07")).toHaveFocus()
+        await expect.element(commandInput(newTerminalName)).toHaveFocus()
 
         await press("echo hi")
 
-        await expect.element(commandInput("Terminal 07")).toHaveValue("echo hi")
+        await expect.element(commandInput(newTerminalName)).toHaveValue("echo hi")
         await expect.element(anyRenameField()).not.toBeInTheDocument()
-        await expectSelected("Terminal 07")
+        await expectSelected(newTerminalName)
       })
     }
   })
@@ -118,9 +119,9 @@ describe("creating terminals", () => {
     it("selects the whole name so typing replaces it", async () => {
       await openWorkspace()
       await newTerminalButton().click()
-      await expect.element(commandInput("Terminal 07")).toHaveFocus()
-      await tabAction("Rename Terminal 07").click()
-      await expect.element(sidebarRenameField("Terminal 07")).toHaveFocus()
+      await expect.element(commandInput(newTerminalName)).toHaveFocus()
+      await tabAction(`Rename ${newTerminalName}`).click()
+      await expect.element(sidebarRenameField(newTerminalName)).toHaveFocus()
 
       await press("My shell{Enter}")
 
@@ -131,23 +132,23 @@ describe("creating terminals", () => {
     it("keeps the original name when Escape is pressed", async () => {
       await openWorkspace()
       await newTerminalButton().click()
-      await tabAction("Rename Terminal 07").click()
-      await expect.element(sidebarRenameField("Terminal 07")).toHaveFocus()
+      await tabAction(`Rename ${newTerminalName}`).click()
+      await expect.element(sidebarRenameField(newTerminalName)).toHaveFocus()
 
       await press("Discarded{Escape}")
 
       await expect.element(anyRenameField()).not.toBeInTheDocument()
       await expectStaysAbsent(terminalTab("Discarded"))
-      await expectSelected("Terminal 07")
-      await expect.element(headerName("Terminal 07")).toBeVisible()
+      await expectSelected(newTerminalName)
+      await expect.element(headerName(newTerminalName)).toBeVisible()
     })
 
     it("saves the typed name when clicking away", async () => {
       await openWorkspace()
       await chooseView("Grid")
       await newTerminalButton().click()
-      await tabAction("Rename Terminal 07").click()
-      await expect.element(sidebarRenameField("Terminal 07")).toHaveFocus()
+      await tabAction(`Rename ${newTerminalName}`).click()
+      await expect.element(sidebarRenameField(newTerminalName)).toHaveFocus()
 
       await press("Scratch")
       await sidebar()
@@ -170,9 +171,9 @@ describe("creating terminals", () => {
       await pressShortcut("newTerminal")
 
       await expect.element(sidebar()).toBeVisible()
-      await expect.element(commandInput("Terminal 07")).toHaveFocus()
+      await expect.element(commandInput(newTerminalName)).toHaveFocus()
       await expect.element(anyRenameField()).not.toBeInTheDocument()
-      await expect.element(terminal("Terminal 07")).toBeVisible()
+      await expect.element(terminal(newTerminalName)).toBeVisible()
     })
   })
 
@@ -185,14 +186,64 @@ describe("creating terminals", () => {
 
       await page.getByRole("button", { name: "New terminal" }).click()
 
-      await expect.element(commandInput("Terminal 07")).toHaveFocus()
+      await expect.element(commandInput(newTerminalName)).toHaveFocus()
       await expect.element(anyRenameField()).not.toBeInTheDocument()
-      await headerName("Terminal 07").dblClick()
-      await expect.element(headerRenameField("Terminal 07")).toHaveFocus()
+      await headerName(newTerminalName).dblClick()
+      await expect.element(headerRenameField(newTerminalName)).toHaveFocus()
       await press("Zen shell{Enter}")
       await expect.element(headerName("Zen shell")).toBeVisible()
     })
   })
+})
+
+describe("terminal handles", () => {
+  for (const name of views) {
+    context(`in ${name}`, () => {
+      it("keeps a plain shell's @handle off its tab and on its window's switcher under the pointer, through a rename", async () => {
+        await openWorkspace()
+        await chooseView(name)
+        await terminalTab("Dev server").click()
+
+        // The demo's second terminal is the second word a fresh session gives. Its tab,
+        // a shell the person opened that no agent touched, shows none; the window's
+        // header keeps it folded until the pointer reaches its switcher.
+        expect(
+          terminalTab("Dev server").getByText("@fox", { exact: true }).elements(),
+        ).toHaveLength(0)
+        const handle = terminal("Dev server").getByText("@fox", { exact: true })
+        await expect.element(handle).not.toBeVisible()
+        await headerAction("Dev server", "Switch terminal").hover()
+        await expect.element(handle).toBeVisible()
+
+        // A screen reader names the tab by its handle all the same, right after its name.
+        await expect
+          .element(page.getByRole("button", { name: "Select Dev server, @fox", exact: true }))
+          .toBeVisible()
+        await expect
+          .element(tabAction("Close Dev server"))
+          .toHaveAccessibleName("Close Dev server, @fox")
+
+        await expect
+          .element(headerAction("Dev server", "Close Dev server"))
+          .toHaveAccessibleName("Close Dev server, @fox")
+
+        await headerName("Dev server").dblClick()
+        await expect
+          .element(headerRenameField("Dev server"))
+          .toHaveAccessibleName("Rename Dev server, @fox")
+        await press("Renamed server{Enter}")
+
+        await expect.element(headerName("Renamed server")).toBeVisible()
+        await headerAction("Renamed server", "Switch terminal").hover()
+        await expect
+          .element(terminal("Renamed server").getByText("@fox", { exact: true }))
+          .toBeVisible()
+        await expect
+          .element(page.getByRole("button", { name: "Select Renamed server, @fox", exact: true }))
+          .toBeVisible()
+      })
+    })
+  }
 })
 
 describe("renaming terminals", () => {
@@ -399,7 +450,7 @@ describe("closing terminals", () => {
       const dialog = closeConfirmation()
       await expect.element(dialog).toBeVisible()
       await expect
-        .element(dialog.getByRole("heading", { name: "Close “Checkout implementation”?" }))
+        .element(dialog.getByRole("heading", { name: "Close @moth · “Checkout implementation”?" }))
         .toBeVisible()
       await expect.element(dialog.getByText("zsh is still running in it.")).toBeVisible()
       await expect.element(dialog.getByRole("button", { name: "Cancel" })).toHaveFocus()
@@ -477,7 +528,7 @@ describe("closing terminals", () => {
 
       await newTerminalButton().click()
       await press("{Enter}")
-      await expect.element(terminal("Terminal 07")).toBeVisible()
+      await expect.element(terminal(newTerminalName)).toBeVisible()
     })
   })
 
@@ -548,7 +599,7 @@ describe("a tab's actions", () => {
   it("show Hide and Rename under the pointer, and Close always", async () => {
     await openWorkspace()
     const hide = visibilityToggle("Dev server", "Hide")
-    const rename = sidebar().getByRole("button", { name: "Rename Dev server" })
+    const rename = sidebar().getByRole("button", { name: labelled("Rename ", "Dev server") })
     const close = tabAction("Close Dev server")
     await userEvent.unhover(terminalTab("Dev server"))
     await expect.poll(() => [opacity(hide), opacity(rename)]).toEqual([0, 0])
@@ -571,7 +622,7 @@ describe("hiding terminals from Grid and Canvas", () => {
 
       await userEvent.unhover(show)
 
-      const rename = sidebar().getByRole("button", { name: "Rename Dev server" })
+      const rename = sidebar().getByRole("button", { name: labelled("Rename ", "Dev server") })
       await expect.poll(() => look(show.element())).toEqual(look(rename.element()))
     })
 
@@ -652,7 +703,9 @@ describe("hiding terminals from Grid and Canvas", () => {
 
         await hiddenTerminalTab("Dev server").click()
 
-        await expectSelected("Dev server (hidden)")
+        await expect
+          .element(hiddenTerminalTab("Dev server"))
+          .toHaveAttribute("aria-current", "true")
         await expect.element(terminal("Dev server")).toBeVisible()
         await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(0.5, 1)
         await expect.element(visibilityToggle("Dev server", "Show")).toBeVisible()
@@ -716,7 +769,7 @@ describe("hiding terminals from Grid and Canvas", () => {
       await chooseView("Grid")
       await visibilityToggle("Dev server", "Hide").click()
       await hiddenTerminalTab("Dev server").click()
-      await expectSelected("Dev server (hidden)")
+      await expect.element(hiddenTerminalTab("Dev server")).toHaveAttribute("aria-current", "true")
       await expect.poll(() => renderedOpacity(headerName("Dev server"))).toBeCloseTo(0.5, 1)
 
       await visibilityToggle("Dev server", "Show").click()

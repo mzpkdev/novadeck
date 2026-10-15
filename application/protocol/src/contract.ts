@@ -17,8 +17,11 @@ import {
   directory,
   id,
   itemContent,
+  planSaveResult,
   maxUploadPartLength,
   maxVoicePartLength,
+  murmurSettings,
+  murmurState,
   name,
   project,
   protocolVersion,
@@ -41,17 +44,22 @@ import {
   voiceTranscript,
   voiceUnavailable,
   conflictReason,
+  planUnwritable,
   workspaceSession,
 } from "./schemas.js"
 
 export const errors = {
   UNAUTHORIZED: { status: 401 },
   INCOMPATIBLE_PROTOCOL: { status: 409 },
+  // The workspace database was written by a newer Novadeck, which this runner cannot open.
+  WORKSPACE_TOO_NEW: { status: 409 },
   NOT_FOUND: { status: 404 },
   INVALID_DIRECTORY: { status: 400 },
   INVALID_FILE: { status: 400 },
   // Optional data says why, for typing into an agent's terminal (`conflictReason`).
   CONFLICT: { status: 409, data: conflictReason.optional() },
+  // A plan can't be written, and why (`planUnwritable`): saving it again won't help.
+  PLAN_UNWRITABLE: { status: 409, data: planUnwritable },
   RESOURCE_LIMIT: { status: 429 },
   TERMINAL_LIMIT: { status: 429 },
   TERMINAL_NOT_FOUND: { status: 404 },
@@ -136,7 +144,8 @@ export const contract = {
     // A session resumes in one terminal only, never beside another terminal running it.
     // `command` runs once at the new shell's first prompt, as if typed there; a shell
     // that can't run one, as without Novadeck's shell integration, is SPAWN_FAILED. A
-    // command goes with neither `restore` nor `resume`.
+    // command goes with neither `restore` nor `resume`. A terminal closed in the runner's
+    // lifetime, or one in a project being removed, is TERMINAL_NOT_FOUND: closed for good.
     create: procedure
       .input(
         z
@@ -197,7 +206,7 @@ export const contract = {
       .input(z.strictObject({ terminalId: id, title: terminalTitle }))
       .output(z.void()),
     // Hands a terminal's title back to Novadeck: the title the person gave it goes, and it
-    // takes the one an agent gave it last, the person's first prompt there, or its
+    // takes murmur's latest, else the one the agent that opened it gave, or its
     // default, as `rename` does announcing it. TERMINAL_NOT_FOUND as for `rename`.
     resetTitle: procedure.input(z.strictObject({ terminalId: id })).output(z.void()),
     // Saves a file pasted into a terminal in a folder of its own on the runner's machine,
@@ -298,6 +307,21 @@ export const contract = {
     content: procedure
       .input(z.strictObject({ itemId: id, reveal: z.boolean().optional() }))
       .output(eventIterator(itemContent)),
+    // Writes the person's edit to a plan kept in a file, atomically, unless the file
+    // changed since `basedOn`, the stamp the edit was made on: then nothing is written and
+    // the plan as it now stands comes back. A plan kept in an agent's transcript can't be
+    // written, and nor can one past 256 KiB, a file that is gone, one in a folder the
+    // runner may not write to, or an item that is no plan: PLAN_UNWRITABLE, saying why
+    // (`gone`, `folder`, `transcript`, `too-large`, `not-a-plan`). An unknown item is NOT_FOUND.
+    save: procedure
+      .input(
+        z.strictObject({
+          itemId: id,
+          text: z.string().max(256 * 1024),
+          basedOn: z.string().max(128),
+        }),
+      )
+      .output(planSaveResult),
     // Attaches a file the person picked to a terminal's bar, by a path absolute or from
     // the terminal's directory. A terminal the runner keeps nothing of is
     // TERMINAL_NOT_FOUND; a path that is no file is INVALID_FILE, saying why.
@@ -381,14 +405,37 @@ export const contract = {
         }),
       )
       .output(z.void()),
-    // Transcribes a recorded clip and forgets it. `prompt` names words likely said, such
-    // as file names, to spell them right. An unknown clip is NOT_FOUND, voice input that
+    // Transcribes a recorded clip and forgets it. `terminalId` names the terminal it is
+    // dictated into, whose project, branch, folders, files and prompts the runner hints to
+    // the engine to spell them right. An unknown clip is NOT_FOUND, voice input that
     // cannot be used VOICE_UNAVAILABLE, and an engine that fails VOICE_FAILED, saying why.
     transcribe: procedure
-      .input(z.strictObject({ clipId: id, prompt: z.string().max(1024).optional() }))
+      .input(z.strictObject({ clipId: id, terminalId: id.optional() }))
       .output(voiceTranscript),
     // Forgets a clip without transcribing it. An unknown clip is fine.
     discard: procedure.input(z.strictObject({ clipId: id })).output(z.void()),
+  },
+  // Murmur, the local model that writes terminals' titles (see
+  // `murmurState`).
+  murmur: {
+    // The addon's state, then again on each change.
+    watch: procedure.input(z.void()).output(eventIterator(murmurState)),
+    // Downloads the engine and the model, unless they are there, and checks that they
+    // describe on a GPU. It returns once the install starts; `watch` shows its progress,
+    // and its end or failure. One already installing is a CONFLICT.
+    install: procedure.input(z.void()).output(z.void()),
+    // Stops an install, keeping what had finished before it. Nothing installing is fine.
+    cancel: procedure.input(z.void()).output(z.void()),
+    // Removes the engine and the model, and turns murmur off by choice: it is no longer
+    // wanted, until the next install.
+    uninstall: procedure.input(z.void()).output(z.void()),
+    // Changes the settings given; the others stay. Turning murmur on before any install
+    // says it is wanted, for the install to turn on.
+    set: procedure.input(murmurSettings.partial()).output(z.void()),
+    // Asks murmur for the gist of the reply that ended the terminal's turn at `at`, which the
+    // client shows unread. It lands on the terminal's `activity.lastTurn.gist`. Nothing happens
+    // when murmur can't run, that end is no longer the last, or the terminal is unknown.
+    gist: procedure.input(z.strictObject({ terminalId: id, at: z.number() })).output(z.void()),
   },
   settings: {
     get: procedure.input(z.void()).output(runnerSettings),

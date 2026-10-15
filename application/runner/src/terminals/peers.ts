@@ -1,13 +1,15 @@
-import { isAbsolute, relative } from "node:path"
+import { basename, isAbsolute, relative } from "node:path"
 
-import type { TerminalMessages, TerminalSummary } from "@novadeck/protocol"
+import type { CompanionItem, TerminalMessages, TerminalSummary } from "@novadeck/protocol"
 
 import { planTitle } from "../companions/content.js"
+import { secret } from "../companions/secrets.js"
 import { DomainError } from "../errors.js"
 import type { Activity } from "../harnesses/activity.js"
 import type { AgentsAnswer, Messaging, PeerAnswer, SendAnswer } from "../messaging/messaging.js"
 import type { Waiting, Whereabouts } from "../messaging/peers.js"
 import { unansweredCalls, type Ack, type Call } from "../shell/reports.js"
+import type { HintFacts } from "../voice/hint.js"
 import { gitBranch } from "./branch.js"
 import type { Naming } from "./naming.js"
 import type { Facts } from "./nudges.js"
@@ -186,24 +188,7 @@ export class TerminalPeers {
   }
 
   /**
-   * What other agents' words reached a terminal's agent, as a title it says the person
-   * asked for must not come from: the messages that reached its root session, and the
-   * titles and summaries of the session's other terminals.
-   */
-  seenBy(terminal: PeerTerminal): readonly string[] {
-    const { id, sessionId } = terminal.summary
-    return [
-      ...this.options.messaging.receivedTexts(id),
-      ...this.options
-        .running(sessionId)
-        .flatMap((other) =>
-          other.summary.id === id ? [] : [other.summary.title, other.naming.summary ?? ""],
-        ),
-    ]
-  }
-
-  /**
-   * What tells whether a terminal's work drifted from its description: its root's own
+   * What tells whether a terminal's work drifted from where its agent last summarized it: its root's own
    * plan's title (never a subagent's), the folder it writes in most, and its git branch.
    */
   async facts(terminal: PeerTerminal): Promise<Facts> {
@@ -213,6 +198,37 @@ export class TerminalPeers {
     ])
     const [main] = busiestFolders(terminal.work?.folders ?? {}, 1)
     return { plan, folder: main?.folder ?? null, branch }
+  }
+
+  /**
+   * What a terminal's dictation hint is made of, but its project's name: its folder and
+   * git branch, the folders its work wrote in most, as paths inside its project (or its
+   * own folder, without one), and the names of the files `shown` in its bar, then of
+   * those its work wrote in last. Only what is inside counts, and never a file that may
+   * hold secrets.
+   */
+  async hint(
+    terminal: PeerTerminal,
+    shown: readonly Pick<CompanionItem, "kind" | "path" | "held">[],
+  ): Promise<Omit<HintFacts, "project" | "handles">> {
+    const { cwd, sessionId } = terminal.summary
+    const base = this.options.projectFolder(sessionId) ?? cwd
+    const inside = (path: string): string | undefined => {
+      const within = relative(base, path)
+      return within.startsWith("..") || isAbsolute(within) ? undefined : within
+    }
+    const files = [
+      ...shown.flatMap((item) => (item.kind === "file" && !item.held && item.path) || []),
+      ...(terminal.work?.files ?? []),
+    ]
+    return {
+      cwd,
+      branch: await this.branch(cwd),
+      folders: busiestFolders(terminal.work?.folders ?? {})
+        .map(({ folder }) => inside(folder))
+        .filter((path) => path !== undefined),
+      files: files.filter((path) => inside(path) && !secret(path)).map((path) => basename(path)),
+    }
   }
 
   /**

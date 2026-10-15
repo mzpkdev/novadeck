@@ -1,9 +1,11 @@
-import { HashRouter } from "react-router"
+import { useRef, type ComponentProps } from "react"
+import { HashRouter, MemoryRouter } from "react-router"
 
 import type { CreateBackend } from "../backend/port"
 import { sidebarToggle } from "../interaction/dom"
 import { cancelTerminalTransition } from "../layouts/transition"
 import { useDesktop } from "../shell/desktop"
+import { panelLabels, shownPanel } from "../shell/panels"
 import { sidebarVisible } from "../shell/shell-state"
 import { SidebarRail } from "../shell/SidebarRail"
 import { WorkspacePanels } from "../shell/WorkspacePanels"
@@ -16,9 +18,13 @@ import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controlle
 import { DictationContext, useDictationController } from "./controller/dictation"
 import { useKeyboard } from "./controller/useKeyboard"
 import { useWorkspaceEffects } from "./controller/useWorkspaceEffects"
+import { announceShown, EmbeddedContext } from "./embedded"
 import { HeaderSection } from "./HeaderSection"
+import { InboxHost } from "./InboxHost"
 import { currentState, currentTarget, shallowEqual } from "./selectors"
 import { SidebarSection } from "./SidebarSection"
+import { useNotificationBadge } from "./useNotifications"
+import { VisitorBar, VisitorCover } from "./Visitor"
 import { WorkspaceFooter } from "./WorkspaceFooter"
 import { WorkspaceOverlays } from "./WorkspaceOverlays"
 import { WorkspaceProvider } from "./WorkspaceProvider"
@@ -27,21 +33,40 @@ import { WorkspaceStage } from "./WorkspaceStage"
 export type AppProps = {
   // Read once when the app mounts; later changes are ignored. Defaults to app/backend.ts.
   readonly createBackend?: CreateBackend
+  // True when another page frames the app (see app/embedded.ts). Its address then stays in
+  // memory, so moving around the app adds nothing to the framing page's Back button.
+  readonly embedded?: boolean
 }
 
-export const App = ({ createBackend }: AppProps): React.JSX.Element => (
-  <BackendGate
-    selection={createBackend ? { createBackend } : selectBackend}
-    render={(create, boot) => (
-      <HashRouter useTransitions={false}>
-        <WorkspaceProvider createBackend={create}>
-          <BootReporter report={boot} />
-          <WorkspaceApp />
-        </WorkspaceProvider>
-      </HashRouter>
-    )}
-  />
-)
+export const App = ({ createBackend, embedded = false }: AppProps): React.JSX.Element => {
+  const Router = embedded ? MemoryRouter : HashRouter
+  // Framed, the app tells the page around it once it is in view, once per page load:
+  // StrictMode's second effect run, or a reboot, finds this set.
+  const announced = useRef(false)
+  const shown = (): void => {
+    if (!embedded || announced.current) return
+    announced.current = true
+    announceShown()
+  }
+  return (
+    <EmbeddedContext value={embedded}>
+      <BackendGate
+        onShown={shown}
+        selection={createBackend ? { createBackend } : selectBackend}
+        render={(create, boot) => (
+          <Router useTransitions={false}>
+            <WorkspaceProvider createBackend={create}>
+              <BootReporter report={boot} />
+              <VisitorCover>
+                <WorkspaceApp />
+              </VisitorCover>
+            </WorkspaceProvider>
+          </Router>
+        )}
+      />
+    </EmbeddedContext>
+  )
+}
 
 // The backend's debug panel, where this launch offers one.
 const DebugSection = (): React.JSX.Element | null => {
@@ -70,6 +95,16 @@ const WorkspaceEffects = (): null => {
   return null
 }
 
+// The rail and the Zen dock read the bell's badge themselves, so an unread change that leaves
+// the badge as it was re-renders neither them nor the app around them.
+const RailWithBadge = (
+  props: Omit<ComponentProps<typeof SidebarRail>, "badge">,
+): React.JSX.Element => <SidebarRail {...props} badge={useNotificationBadge()} />
+
+const ZenDockWithBadge = (
+  props: Omit<ComponentProps<typeof ZenDock>, "badge">,
+): React.JSX.Element => <ZenDock {...props} badge={useNotificationBadge()} />
+
 export const WorkspaceApp = (): React.JSX.Element => {
   const services = useWorkspaceServices()
   const { commands, canvas } = services
@@ -82,7 +117,7 @@ export const WorkspaceApp = (): React.JSX.Element => {
       sidebar,
       sidebarCollapsed,
       sidebarVisible: sidebarVisible(state.shell, desktop),
-      sidebarPanel: state.location.route.panel,
+      sidebarPanel: shownPanel(state.location.route.panel, services.backend.inbox !== undefined),
       fontSize: state.preferences.fontSize,
       enabledViews: state.preferences.enabledViews,
     }
@@ -92,62 +127,70 @@ export const WorkspaceApp = (): React.JSX.Element => {
   const voice = useDictationController(services)
   useKeyboard(voice?.dictation)
   const sidebarRail = (mobile = false): React.JSX.Element => (
-    <SidebarRail
+    <RailWithBadge
       mobile={mobile}
       sidebarVisible={shell.sidebarVisible}
       sidebarPanel={sidebarPanel}
       zen={zen}
       toggleSidebar={toggleSidebar}
       hideSidebar={hideSidebar}
+      inbox={services.backend.inbox !== undefined}
     />
   )
   return (
     <DictationContext.Provider value={voice}>
-      <main
-        className="workspace flex h-dvh min-h-100 flex-col overflow-hidden"
-        data-zen={zen}
-        onPointerDownCapture={cancelTerminalTransition}
-        onKeyDownCapture={cancelTerminalTransition}
-        style={
-          {
-            "--terminal-font-size": `${fontSize}px`,
-          } as React.CSSProperties
-        }
-      >
-        <WorkspaceEffects />
-        <HeaderSection />
-        <div className="workspace-body relative flex min-h-0 flex-1">
-          {sidebarRail()}
-          <WorkspacePanels
-            collapsed={zen || sidebarCollapsed}
-            mobileOpen={!zen && sidebar}
-            onMobileOpenChange={(open) => {
-              if (!open) hideSidebar()
-            }}
-            mobileRail={sidebarRail(true)}
-            mobileLabel={sidebarPanel === "sessions" ? "Workspace sessions" : "Terminal sessions"}
-            mobileFinalFocusEl={() => sidebarToggle(sidebarPanel)}
-            sidebar={<SidebarSection />}
-          >
-            <WorkspaceStage canvas={canvas} />
-          </WorkspacePanels>
-          {zen && (
-            <ZenDock
-              view={view}
-              enabledViews={enabledViews}
-              onCreate={() => add()}
-              onViewChange={(next) => {
-                if (next !== view) changeView(next)
+      <InboxHost active={sidebarPanel === "inbox" && shell.sidebarVisible}>
+        <main
+          className="workspace flex h-dvh min-h-100 flex-col overflow-hidden"
+          data-zen={zen}
+          onPointerDownCapture={cancelTerminalTransition}
+          onKeyDownCapture={cancelTerminalTransition}
+          style={
+            {
+              "--terminal-font-size": `${fontSize}px`,
+            } as React.CSSProperties
+          }
+        >
+          <WorkspaceEffects />
+          <VisitorBar />
+          <HeaderSection />
+          <div className="workspace-body relative flex min-h-0 flex-1">
+            {sidebarRail()}
+            <WorkspacePanels
+              collapsed={zen || sidebarCollapsed}
+              mobileOpen={!zen && sidebar}
+              onMobileOpenChange={(open) => {
+                if (!open) hideSidebar()
               }}
-              onExit={exitZen}
-            />
-          )}
-        </div>
-        <WorkspaceFooter />
-        <WorkspaceOverlays />
-        {voice && <DictationOverlay view={voice.view} level={voice.level} docks={voice.docks} />}
-        <DebugSection />
-      </main>
+              mobileRail={sidebarRail(true)}
+              mobileLabel={panelLabels[sidebarPanel]}
+              mobileWide={sidebarPanel === "inbox"}
+              mobileFinalFocusEl={() => sidebarToggle(sidebarPanel)}
+              sidebar={<SidebarSection />}
+            >
+              <WorkspaceStage canvas={canvas} />
+            </WorkspacePanels>
+            {zen && (
+              <ZenDockWithBadge
+                view={view}
+                enabledViews={enabledViews}
+                onCreate={() => add()}
+                onViewChange={(next) => {
+                  if (next !== view) changeView(next)
+                }}
+                onNotifications={() =>
+                  toggleSidebar(services.backend.inbox ? "inbox" : "notifications")
+                }
+                onExit={exitZen}
+              />
+            )}
+          </div>
+          <WorkspaceFooter />
+          <WorkspaceOverlays />
+          {voice && <DictationOverlay view={voice.view} level={voice.level} docks={voice.docks} />}
+          <DebugSection />
+        </main>
+      </InboxHost>
     </DictationContext.Provider>
   )
 }

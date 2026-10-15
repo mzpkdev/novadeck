@@ -9,6 +9,7 @@ import {
 } from "../../model/messages"
 import { createStore } from "../../model/store"
 import type { WorkspaceTarget } from "../../model/types"
+import { demoTerminalId } from "./samples"
 
 // A demo mailbox: threads between the sample terminals, kept the way the runner keeps
 // them, so pausing holds what waits and releasing a thread lets it go on, as there.
@@ -141,9 +142,9 @@ const message = (
   deliveredAt: state === "delivered" ? minutes(now, ago - 0.2) : null,
 })
 
-// The agents demo's checkout work: Claude Code (t1) and Codex (t4) reviewing each other,
-// a test terminal (t3) whose thread went back and forth until it needs the person's
-// release, and a message to the dev server's terminal (t2) whose agent left. Every other
+// The agents demo's checkout work: Claude Code (moth) and Codex (crow) reviewing each other,
+// a test terminal (owl) whose thread went back and forth until it needs the person's
+// release, and a message to the dev server's terminal (fox) whose agent left. Every other
 // session's Claude Code has had no messages yet.
 export const checkoutMailboxes = (
   now: number,
@@ -152,10 +153,10 @@ export const checkoutMailboxes = (
   targets.map((target, index) => ({
     target,
     terminals: [
-      { terminalId: "01", handle: "t1", agent: true },
-      { terminalId: "02", handle: "t2", agent: false },
-      { terminalId: "03", handle: "t3", agent: false },
-      { terminalId: "04", handle: "t4", agent: true },
+      { terminalId: demoTerminalId(target, 1), handle: "moth", agent: true },
+      { terminalId: demoTerminalId(target, 2), handle: "fox", agent: false },
+      { terminalId: demoTerminalId(target, 3), handle: "owl", agent: false },
+      { terminalId: demoTerminalId(target, 4), handle: "crow", agent: true },
     ],
     threads:
       index > 0
@@ -163,7 +164,7 @@ export const checkoutMailboxes = (
         : [
             {
               id: "t-review",
-              between: ["t1", "t4"],
+              between: ["moth", "crow"],
               hops: 4,
               allowed: hopsPerRelease,
               messages: [
@@ -171,8 +172,8 @@ export const checkoutMailboxes = (
                   now,
                   9,
                   1,
-                  "t1",
-                  "t4",
+                  "moth",
+                  "crow",
                   "delivered",
                   "Can you review the checkout changes in src/checkout/? The retry logic is new.",
                 ),
@@ -180,8 +181,8 @@ export const checkoutMailboxes = (
                   now,
                   6,
                   2,
-                  "t4",
-                  "t1",
+                  "crow",
+                  "moth",
                   "delivered",
                   "Looking now. submitOrder() retries on every 503 without backing off, so a bad deploy gets hammered.",
                 ),
@@ -189,8 +190,8 @@ export const checkoutMailboxes = (
                   now,
                   3,
                   3,
-                  "t1",
-                  "t4",
+                  "moth",
+                  "crow",
                   "leased",
                   "Fixed: exponential backoff, capped at 5 tries.\nCould you check it again?",
                 ),
@@ -198,8 +199,8 @@ export const checkoutMailboxes = (
                   now,
                   1,
                   4,
-                  "t1",
-                  "t4",
+                  "moth",
+                  "crow",
                   "queued",
                   "tests/checkout/retry.test.ts covers it now; see `maxTries` and the **cap**.",
                 ),
@@ -207,7 +208,7 @@ export const checkoutMailboxes = (
             },
             {
               id: "t-flaky",
-              between: ["t1", "t3"],
+              between: ["moth", "owl"],
               hops: 13,
               allowed: hopsPerRelease,
               messages: [
@@ -218,8 +219,8 @@ export const checkoutMailboxes = (
                         now,
                         34 - before * 2,
                         before + 1,
-                        "t3",
-                        "t1",
+                        "owl",
+                        "moth",
                         "delivered",
                         `Run ${before / 2 + 1}: cart.spec.ts failed on the coupon case.`,
                       )
@@ -227,8 +228,8 @@ export const checkoutMailboxes = (
                         now,
                         34 - before * 2,
                         before + 1,
-                        "t1",
-                        "t3",
+                        "moth",
+                        "owl",
                         "delivered",
                         "Once more, with the seed logged.",
                       ),
@@ -237,18 +238,26 @@ export const checkoutMailboxes = (
                   now,
                   14,
                   11,
-                  "t3",
-                  "t1",
+                  "owl",
+                  "moth",
                   "delivered",
                   "cart.spec.ts failed again on the coupon case.",
                 ),
-                message(now, 13, 12, "t1", "t3", "delivered", "Run it ten more times and tell me."),
+                message(
+                  now,
+                  13,
+                  12,
+                  "moth",
+                  "owl",
+                  "delivered",
+                  "Run it ten more times and tell me.",
+                ),
                 message(
                   now,
                   12,
                   13,
-                  "t3",
-                  "t1",
+                  "owl",
+                  "moth",
                   "queued",
                   "3 of 10 failed. Want me to quarantine it?",
                 ),
@@ -256,7 +265,7 @@ export const checkoutMailboxes = (
             },
             {
               id: "t-server",
-              between: ["t1", "t2"],
+              between: ["moth", "fox"],
               hops: 1,
               allowed: hopsPerRelease,
               messages: [
@@ -265,8 +274,8 @@ export const checkoutMailboxes = (
                   now,
                   26 * 60,
                   1,
-                  "t1",
-                  "t2",
+                  "moth",
+                  "fox",
                   "gone",
                   "Restart the dev server once the migration lands.",
                 ),
@@ -275,19 +284,19 @@ export const checkoutMailboxes = (
           ],
   }))
 
-// The content preview's two agents: Codex building the studio (t1) asks Claude Code,
-// refactoring auth (t3), about the session API, and waits on its answer.
+// The content preview's two agents: Codex building the studio (moth) asks Claude Code,
+// refactoring auth (owl), about the session API, and waits on its answer.
 export const studioMailbox = (now: number, target: WorkspaceTarget): DemoMailbox => ({
   target,
   terminals: [
-    { terminalId: "01", handle: "t1", agent: true },
-    { terminalId: "02", handle: "t2", agent: false },
-    { terminalId: "03", handle: "t3", agent: true },
+    { terminalId: demoTerminalId(target, 1), handle: "moth", agent: true },
+    { terminalId: demoTerminalId(target, 2), handle: "fox", agent: false },
+    { terminalId: demoTerminalId(target, 3), handle: "owl", agent: true },
   ],
   threads: [
     {
       id: "t-auth",
-      between: ["t1", "t3"],
+      between: ["moth", "owl"],
       hops: 3,
       allowed: hopsPerRelease,
       messages: [
@@ -295,8 +304,8 @@ export const studioMailbox = (now: number, target: WorkspaceTarget): DemoMailbox
           now,
           8,
           1,
-          "t1",
-          "t3",
+          "moth",
+          "owl",
           "delivered",
           "Does the auth refactor change how sessions are read? The studio calls getSession() on every page.",
         ),
@@ -304,8 +313,8 @@ export const studioMailbox = (now: number, target: WorkspaceTarget): DemoMailbox
           now,
           5,
           2,
-          "t3",
-          "t1",
+          "owl",
+          "moth",
           "delivered",
           "Yes: getSession() becomes async and takes the request. I'll keep a sync shim until you've moved over.",
         ),
@@ -313,8 +322,8 @@ export const studioMailbox = (now: number, target: WorkspaceTarget): DemoMailbox
           now,
           2,
           3,
-          "t1",
-          "t3",
+          "moth",
+          "owl",
           "queued",
           "Thanks. Moving now; I'll tell you when it's done.",
         ),

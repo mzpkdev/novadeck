@@ -1,6 +1,5 @@
-import type { AgentSetup } from "./agents/agent.js"
 import { setups } from "./agents/index.js"
-import { occurrences, type DeckTerminal } from "./deck.js"
+import type { DeckTerminal } from "./deck.js"
 import { describe, e2e, expect, supported } from "./fixture.js"
 import { latest, type Call } from "./model/script.js"
 import {
@@ -33,7 +32,7 @@ const remembers = (call: Call): boolean =>
 
 /** Whether the call is of t2's turn asking t1 once more. */
 const again = (call: Call): boolean =>
-  call.turns.some((one) => one.role === "user" && one.text.includes("Ask t1 once more"))
+  call.turns.some((one) => one.role === "user" && one.text.includes("Ask moth once more"))
 
 /**
  * Has the person type `command` at the agent's prompt, then submit it once `meanwhile` has
@@ -72,26 +71,6 @@ const ended = async (terminal: DeckTerminal, from: number, shows: string): Promi
   await through(terminal, ["working", "settled"], { after: from })
 }
 
-/**
- * Waits until the screen shows the harness's banner once more than the fewest times it
- * has since the call: the next instance's, drawn as it starts. One that clears its screen
- * as it exits (Claude Code, Codex) draws it again from none, one that leaves it there
- * (Antigravity) a second time, so the first's banner left on screen can't pass for it.
- * Called once the person's command to leave is submitted.
- */
-const redrawn = (terminal: DeckTerminal, { banner, name }: AgentSetup): Promise<unknown> => {
-  let fewest = Number.POSITIVE_INFINITY
-  return terminal.poll(
-    async () => {
-      const shown = occurrences(await terminal.screen(), banner)
-      fewest = Math.min(fewest, shown)
-      return shown > fewest ? true : undefined
-    },
-    `${name} to draw its banner again as it starts anew`,
-    60_000,
-  )
-}
-
 for (const setup of setups) {
   describe.skipIf(!supported)(setup.name, () => {
     const it = e2e(setup)
@@ -101,10 +80,10 @@ for (const setup of setups) {
     }) => {
       run.model.use(
         replies("Remember the word heron", "Remembered."),
-        sends("Ask t1 for the word", "t1", "Which word did you remember?"),
-        own((call) => (sent(call, "t1") ? { text: "Asked." } : undefined)),
+        sends("Ask moth for the word", "moth", "Which word did you remember?"),
+        own((call) => (sent(call, "moth") ? { text: "Asked." } : undefined)),
         own((call) =>
-          delivered(call, "t2") ? { text: "No word, a new conversation." } : undefined,
+          delivered(call, "fox") ? { text: "No word, a new conversation." } : undefined,
         ),
       )
       const t1 = await start(run, setup)
@@ -128,21 +107,21 @@ for (const setup of setups) {
       const calls = run.model.mark()
       const from1 = t1.mark()
 
-      await t2.submit("Ask t1 for the word")
+      await t2.submit("Ask moth for the word")
 
       // Rung in the new session, which its hook delivers to, with nothing of the old.
-      const rung = await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
+      const rung = await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
       expect(latest(rung)).toMatch(ring)
-      expect(deliveries(rung)).toEqual([{ from: "t2", text: "Which word did you remember?" }])
+      expect(deliveries(rung)).toEqual([{ from: "fox", text: "Which word did you remember?" }])
       expect(remembers(rung)).toBe(false)
       await t1.until("No word, a new conversation.")
       await through(
         t1,
         [
-          holds("t2", "t1", "queued"),
+          holds("fox", "moth", "queued"),
           "ringing",
           "working",
-          holds("t2", "t1", "delivered"),
+          holds("fox", "moth", "delivered"),
           "settled",
         ],
         { after: from1 },
@@ -157,11 +136,11 @@ for (const setup of setups) {
     }) => {
       run.model.use(
         replies("Remember the word heron", "Remembered."),
-        sends("Ask t1 for the word", "t1", "Which word did you remember?"),
-        sends("Ask t1 once more", "t1", "Any word at all?"),
-        own((call) => (sent(call, "t1") ? { text: "Asked." } : undefined)),
+        sends("Ask moth for the word", "moth", "Which word did you remember?"),
+        sends("Ask moth once more", "moth", "Any word at all?"),
+        own((call) => (sent(call, "moth") ? { text: "Asked." } : undefined)),
         own((call) =>
-          delivered(call, "t2") ? { text: "No word, a new conversation." } : undefined,
+          delivered(call, "fox") ? { text: "No word, a new conversation." } : undefined,
         ),
       )
       const t1 = await start(run, setup)
@@ -174,35 +153,35 @@ for (const setup of setups) {
       // The person types /clear; while it waits in the box, Drafting, t2's message comes
       // for the session there, and waits for the person's prompt. They submit the clear.
       await typed(t1, "/clear", async () => {
-        await t2.submit("Ask t1 for the word")
-        await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+        await t2.submit("Ask moth for the word")
+        await t1.reached(holds("fox", "moth", "queued"), { after: mark })
       })
 
       // The harness announced a new session: the message for the old one is gone.
       await cleared(t1)
-      await t1.reached(holds("t2", "t1", "gone"), { after: mark })
+      await t1.reached(holds("fox", "moth", "gone"), { after: mark })
       await t1.reached("ready", { after: mark })
       const [first] = messages(t1)
-      expect(first).toMatchObject({ from: "t2", to: "t1", state: "gone" })
+      expect(first).toMatchObject({ from: "fox", to: "moth", state: "gone" })
       expect((await t1.detail()).sessionId).not.toBe(before)
       await ended(t2, asking, "Asked.")
       const calls = run.model.mark()
       const from1 = t1.mark()
 
-      await t2.submit("Ask t1 once more")
+      await t2.submit("Ask moth once more")
 
       // t2's next send says the first won't arrive; the new session is rung for the
       // second alone.
-      const told = await run.model.waitFor((call) => sent(call, "t1") && again(call), {
+      const told = await run.model.waitFor((call) => sent(call, "moth") && again(call), {
         after: calls,
       })
       expect(result(told)).toContain(
-        `Your earlier message ${first!.id} to t1 won't arrive: the agent session it was for ended there.`,
+        `Your earlier message ${first!.id} to @moth won't arrive: the agent session it was for ended there.`,
       )
-      const rung = await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
-      expect(deliveries(rung)).toEqual([{ from: "t2", text: "Any word at all?" }])
+      const rung = await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
+      expect(deliveries(rung)).toEqual([{ from: "fox", text: "Any word at all?" }])
       expect(remembers(rung)).toBe(false)
-      await through(t1, ["ringing", "working", holds("t2", "t1", "delivered"), "settled"], {
+      await through(t1, ["ringing", "working", holds("fox", "moth", "delivered"), "settled"], {
         after: from1,
       })
       await t1.until("No word, a new conversation.")
@@ -217,10 +196,10 @@ for (const setup of setups) {
     }) => {
       run.model.use(
         replies("Remember the word heron", "Remembered."),
-        sends("Ask t1 for the word", "t1", "Which word did you remember?"),
-        sends("Ask t1 once more", "t1", "Any word at all?"),
-        own((call) => (sent(call, "t1") ? { text: "Asked." } : undefined)),
-        own((call) => (delivered(call, "t2") ? { text: "No word, a new session." } : undefined)),
+        sends("Ask moth for the word", "moth", "Which word did you remember?"),
+        sends("Ask moth once more", "moth", "Any word at all?"),
+        own((call) => (sent(call, "moth") ? { text: "Asked." } : undefined)),
+        own((call) => (delivered(call, "fox") ? { text: "No word, a new session." } : undefined)),
       )
       const t1 = await handing(run, setup, setup)
       await turn(t1, "Remember the word heron", "Remembered.")
@@ -233,43 +212,39 @@ for (const setup of setups) {
       // session there. They submit it, and the agent leaves; its terminal's command then
       // starts the agent again there, another session.
       await typed(t1, "/exit", async () => {
-        await t2.submit("Ask t1 for the word")
-        await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+        await t2.submit("Ask moth for the word")
+        await t1.reached(holds("fox", "moth", "queued"), { after: mark })
       })
-      const anew = redrawn(t1, setup)
-      // Awaited below, once Novadeck has seen the new start; a failure before then is the test's.
-      anew.catch(() => {})
-
       // The agent left, and the message for its session won't arrive; then the new start is
       // Ready. With no shell prompt between the two, Novadeck notices the first's process is
       // gone only as the next reports, in the same handling as the new session it binds, so
       // no Unbound need show between them ("Its harness announces a new session", in
       // docs/agent-messaging.md's transitions).
-      await through(t1, [holds("t2", "t1", "gone"), "ready"], {
+      await through(t1, [holds("fox", "moth", "gone"), "ready"], {
         after: mark,
         timeoutMs: 60_000,
       })
-      await anew
+      // Ready again is the new start's; `after !== before` below says it is another session.
       await prompted(t1, setup)
       const [first] = messages(t1)
-      expect(first).toMatchObject({ from: "t2", to: "t1", state: "gone" })
+      expect(first).toMatchObject({ from: "fox", to: "moth", state: "gone" })
       await ended(t2, asking, "Asked.")
       const calls = run.model.mark()
       const from1 = t1.mark()
 
-      await t2.submit("Ask t1 once more")
+      await t2.submit("Ask moth once more")
 
       // t2's next send says the first won't arrive; the new session gets only the second.
-      const told = await run.model.waitFor((call) => sent(call, "t1") && again(call), {
+      const told = await run.model.waitFor((call) => sent(call, "moth") && again(call), {
         after: calls,
       })
       expect(result(told)).toContain(
-        `Your earlier message ${first!.id} to t1 won't arrive: the agent session it was for ended there.`,
+        `Your earlier message ${first!.id} to @moth won't arrive: the agent session it was for ended there.`,
       )
-      const rung = await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
-      expect(deliveries(rung)).toEqual([{ from: "t2", text: "Any word at all?" }])
+      const rung = await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
+      expect(deliveries(rung)).toEqual([{ from: "fox", text: "Any word at all?" }])
       expect(remembers(rung)).toBe(false)
-      await through(t1, ["ringing", "working", holds("t2", "t1", "delivered"), "settled"], {
+      await through(t1, ["ringing", "working", holds("fox", "moth", "delivered"), "settled"], {
         after: from1,
       })
       await t1.until("No word, a new session.")

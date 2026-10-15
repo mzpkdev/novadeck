@@ -7,13 +7,13 @@ import {
   type ComponentType,
 } from "react"
 import { HashRouter } from "react-router"
-import { afterEach, vi } from "vitest"
+import { afterEach, beforeAll, vi } from "vitest"
 
+import { createSpecBackend } from "../backend/demo/spec-variants"
 import { context, describe, expect, it } from "../test"
 import { itemFixture } from "../test/fixtures"
 import { render } from "../test/render"
 import { WorkspaceApp } from "./App"
-import { selectBackend } from "./backend"
 import { useWorkspaceServices, type WorkspaceServices } from "./controller/context"
 import { WorkspaceProvider } from "./WorkspaceProvider"
 
@@ -89,14 +89,21 @@ vi.mock("../search/TerminalSearch", async (original) => {
   return { ...actual, TerminalSearch: await counted("overlays", actual.TerminalSearch) }
 })
 
-// Rendering the whole page in jsdom is slow on small CI runners, Windows in particular.
-vi.setConfig({ testTimeout: 30_000 })
+// The demo's first two terminals of the storefront.
+const first = "storefront-initial-01"
+const second = "storefront-initial-02"
 
-// Tests run on the backend app/backend.ts picks for them, which is ready at once.
-const demoBackend = () => {
-  if (!("createBackend" in selectBackend)) throw new Error("Tests expect a ready backend")
-  return selectBackend.createBackend
-}
+// Rendering the whole page in jsdom is slow on small CI runners, Windows in particular.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 })
+
+// The mocks above wait on the real module, and a second import from the same module that
+// arrives meanwhile is answered with the real one, unmocked. Slowly loading runners hit that
+// when the page imports Canvas on demand twice at once, and Canvas then goes uncounted. Load
+// them once here, alone, so every later import gets the mock.
+beforeAll(async () => {
+  await import("../layouts/canvas/Canvas")
+  await import("../search/TerminalSearch")
+})
 
 const mounted = new Set<{ unmount: () => void }>()
 afterEach(() => {
@@ -114,7 +121,7 @@ const Grab = ({ found }: { readonly found: (services: WorkspaceServices) => void
 
 // The whole workspace page over the default backend, with its services in reach.
 const open = async () => {
-  window.location.hash = "#/projects/storefront/sessions/initial/canvas?terminal=01"
+  window.location.hash = `#/projects/storefront/sessions/initial/canvas?terminal=${first}`
   let found!: (services: WorkspaceServices) => void
   const handedOver = new Promise<WorkspaceServices>((resolve) => {
     found = resolve
@@ -130,7 +137,7 @@ const open = async () => {
         createElement(
           WorkspaceProvider,
           // The children follow as arguments.
-          { createBackend: demoBackend() } as ComponentProps<typeof WorkspaceProvider>,
+          { createBackend: createSpecBackend } as ComponentProps<typeof WorkspaceProvider>,
           createElement(Grab, { found }),
           createElement(WorkspaceApp),
         ),
@@ -172,8 +179,8 @@ describe("workspace render scope", () => {
           "sidebar",
           "stage",
           "overlays",
-          "tab 02",
-          "frame 02",
+          `tab ${second}`,
+          `frame ${second}`,
         ]),
       )
     })
@@ -202,10 +209,10 @@ describe("workspace render scope", () => {
         .getSnapshot()
         .projects.flatMap((project) => project.history)
         .flatMap((session) => session.state.roster.terminals)
-        .find((item) => item.id === "02")!
+        .find((item) => item.id === second)!
       act(() => services.commands.startRename(terminal, "sidebar"))
-      const seen = rendersDuring(() => services.commands.changeRenameDraft("02", "Server"))
-      expect(seen).toEqual({ "tab 02": 2, "frame 02": 2 })
+      const seen = rendersDuring(() => services.commands.changeRenameDraft(second, "Server"))
+      expect(seen).toEqual({ [`tab ${second}`]: 2, [`frame ${second}`]: 2 })
     })
   })
 
@@ -213,14 +220,14 @@ describe("workspace render scope", () => {
     it("re-renders only that terminal's frame and its tab, which shows its bar", async () => {
       const { services } = await open()
       const target = firstTarget(services)
-      const mine = itemFixture("mine", "01")
-      const theirs = itemFixture("theirs", "02")
+      const mine = itemFixture("mine", first)
+      const theirs = itemFixture("theirs", second)
       act(() =>
         services.workspace.transact([
           { type: "item/upsert", target, item: mine },
           { type: "item/upsert", target, item: theirs },
-          { type: "bar/open", target, terminalId: "01", key: mine.id },
-          { type: "bar/close", target, terminalId: "01" },
+          { type: "bar/open", target, terminalId: first, key: mine.id },
+          { type: "bar/close", target, terminalId: first },
         ]),
       )
       const seen = rendersDuring(() =>
@@ -230,7 +237,7 @@ describe("workspace render scope", () => {
           item: { ...mine, version: 2 },
         }),
       )
-      expect(seen).toEqual({ "frame 01": 2, "tab 01": 2 })
+      expect(seen).toEqual({ [`frame ${first}`]: 2, [`tab ${first}`]: 2 })
     })
   })
 })

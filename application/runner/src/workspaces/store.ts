@@ -1,13 +1,24 @@
-import { chmodSync, closeSync, mkdirSync, openSync, statSync } from "node:fs"
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  statSync,
+} from "node:fs"
 import { realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute } from "node:path"
 import { DatabaseSync, type SQLTagStore } from "node:sqlite"
 
 import {
+  murmurCheck,
   voiceCheck,
   voiceLanguage,
   voiceModel,
   type AgentName,
+  type MurmurCheck,
+  type MurmurSettings,
   type Project,
   type RunnerSettings,
   type VoiceCheck,
@@ -19,6 +30,7 @@ import type { ItemRecord, ItemRecords, Placed, WindowRecord } from "../companion
 import { DomainError } from "../errors.js"
 import type { Message, Thread } from "../messaging/mailbox.js"
 import type { MailboxRecords } from "../messaging/records.js"
+import { nextHandle, wordOf } from "../terminals/handles.js"
 import type { Naming } from "../terminals/naming.js"
 import type {
   ListedTerminal,
@@ -37,11 +49,21 @@ export type VoiceSettingsChange = {
   readonly enabled?: boolean | null | undefined
 }
 
+/** Murmur's settings to change; `enabled: null` forgets the choice, as when it is turned on before an install. */
+export type MurmurSettingsChange = {
+  readonly enabled?: boolean | null | undefined
+}
+
 export type SettingsChange = {
   readonly [K in keyof RunnerSettings]?: RunnerSettings[K] | undefined
 }
 
-const schemaVersion = 1
+// Raise it for any change but an added column: a database with a lower version is an
+// earlier build's. A build that only adds columns may leave it, as a runner reads columns
+// it doesn't know, on a database of its own version, as a newer build's; an added table,
+// index or constraint goes unseen.
+// 2: word handles, given once per session (session_handles), each unique in its session.
+const schemaVersion = 2
 const schema = `
   CREATE TABLE projects (
     position INTEGER PRIMARY KEY,
@@ -67,7 +89,7 @@ const extras = `
   CREATE TABLE IF NOT EXISTS terminals (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
-    -- Its handle in its session, t3, from the same count as its default title.
+    -- Its handle in its session, a word such as moth, given once (see session_handles).
     handle TEXT NOT NULL,
     -- The shell's last reported directory.
     cwd TEXT NOT NULL,
@@ -83,7 +105,9 @@ const extras = `
     -- The latest title an agent gave it, and that agent's terminal's handle.
     agent_title TEXT,
     agent_titled_by TEXT,
-    -- What its own agent said it works on, through describe.
+    -- The title murmur last wrote for it.
+    murmur_title TEXT,
+    -- What its own agent said it works on, through summarize.
     summary TEXT,
     -- The handle of the terminal whose agent opened it; null otherwise.
     opened_by TEXT,
@@ -95,12 +119,14 @@ const extras = `
     -- The program in its foreground when its shell was last seen.
     last_program TEXT,
     -- What its root agent session worked on, for agents messaging each other, as JSON.
-    work TEXT
+    work TEXT,
+    UNIQUE (session_id, handle)
   ) STRICT;
-  -- The last number given to a session's terminals, for their handles and default titles.
-  CREATE TABLE IF NOT EXISTS terminal_numbers (
-    session_id TEXT PRIMARY KEY,
-    last INTEGER NOT NULL
+  -- Every handle a session ever gave its terminals, closed ones' too, so none is given twice.
+  CREATE TABLE IF NOT EXISTS session_handles (
+    session_id TEXT NOT NULL,
+    handle TEXT NOT NULL,
+    PRIMARY KEY (session_id, handle)
   ) STRICT;
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -157,7 +183,7 @@ const extras = `
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     terminal_id TEXT REFERENCES terminals(id) ON DELETE CASCADE,
     window_id TEXT UNIQUE REFERENCES companion_windows(id) ON DELETE CASCADE,
-    -- A file's resolved path, a page's address, or a plan's slot, unique on one bar.
+    -- A file's resolved path, a page's pageKey, or a plan's slot, unique on one bar.
     pointer_key TEXT NOT NULL,
     kind TEXT NOT NULL CHECK (kind IN ('image', 'file', 'page', 'plan')),
     path TEXT,
@@ -238,48 +264,95 @@ const describeColumn = ({ name, type, notnull }: Column): string =>
   `${name} ${type}${notnull ? " NOT NULL" : ""}`
 
 /**
- * How a database's tables differ from those this runner writes, as an earlier build's
- * would; undefined when they don't. Tables it doesn't know are left alone.
+ * How a database's tables differ from those this runner writes; undefined when they
+ * don't. Tables it doesn't know are left alone. `newer` when no table lacks a column this
+ * runner writes and some table has more besides, as a newer build's would, which can add
+ * a column without raising the schema version; otherwise an earlier build wrote it.
  */
-const schemaDifference = (database: DatabaseSync): string | undefined => {
+const schemaDifference = (
+  database: DatabaseSync,
+): { readonly text: string; readonly newer: boolean } | undefined => {
   const actual = columnsOf(database)
-  for (const [table, columns] of expectedColumns()) {
+  const differences = [...expectedColumns()].flatMap(([table, columns]) => {
     const found = actual.get(table)
-    if (!found) return `it has no ${table} table`
+    if (!found) return [{ text: `it has no ${table} table`, missing: 1, extra: 0 }]
     const want = columns.map(describeColumn).toSorted()
     const have = found.map(describeColumn).toSorted()
     const missing = want.filter((column) => !have.includes(column))
     const extra = have.filter((column) => !want.includes(column))
-    if (missing.length > 0 || extra.length > 0)
-      return `its ${table} table differs (${[
-        ...missing.map((column) => `expects ${column}`),
-        ...extra.map((column) => `has ${column}`),
-      ].join(", ")})`
+    if (missing.length === 0 && extra.length === 0) return []
+    const text = `its ${table} table differs (${[
+      ...missing.map((column) => `expects ${column}`),
+      ...extra.map((column) => `has ${column}`),
+    ].join(", ")})`
+    return [{ text, missing: missing.length, extra: extra.length }]
+  })
+  if (differences.length === 0) return undefined
+  return {
+    text: differences.map(({ text }) => text).join("; "),
+    newer: differences.every(({ missing }) => missing === 0),
   }
-  return undefined
+}
+
+/** The database was written by a newer runner, so this one must leave it alone. */
+export class WorkspaceTooNewError extends Error {
+  constructor() {
+    super("The workspace database schema is newer than this runner supports")
+    this.name = "WorkspaceTooNewError"
+  }
 }
 
 /**
- * Creates the schema in a new database, and refuses one written by a newer runner, or by
- * an earlier build whose tables differ: Novadeck has no migrations before its first
- * release, so such a database is to be deleted, never changed here.
+ * The database was written by an earlier build, whose tables or schema version differ.
+ * Novadeck has no migrations before its first release, so it is never changed here: the
+ * runner sets it aside and starts a new one (`setAsideWorkspace`).
+ */
+export class EarlierWorkspaceError extends Error {
+  constructor(path: string, reason: string) {
+    super(
+      `Novadeck's workspace database at ${path} was written by an earlier build: ${reason}. ` +
+        "Novadeck has no migrations before its first release.",
+    )
+    this.name = "EarlierWorkspaceError"
+  }
+}
+
+/**
+ * Moves an earlier build's workspace database aside, with the write-ahead log and index
+ * beside it, so a new one can start at `path`; the old one stays, renamed with the time,
+ * for whoever wants what it held. Returns where it went.
+ */
+export const setAsideWorkspace = (path: string, now = new Date()): string => {
+  const aside = `${path}.earlier-${now.toISOString().replace(/[:.]/g, "-")}`
+  for (const suffix of ["", "-wal", "-shm"])
+    if (existsSync(`${path}${suffix}`)) renameSync(`${path}${suffix}`, `${aside}${suffix}`)
+  return aside
+}
+
+/**
+ * Creates the schema in a new database, and refuses one written by a newer runner, by its
+ * version or by columns this one doesn't know, or by an earlier build whose tables
+ * differ or whose schema version is lower (`EarlierWorkspaceError`), changing neither.
  */
 const prepareSchema = (database: DatabaseSync, path: string): void => {
   database.exec("BEGIN IMMEDIATE")
   try {
     const version = database.prepare("PRAGMA user_version").get()?.user_version
     if (typeof version !== "number" || version > schemaVersion) {
-      throw new Error("The workspace database schema is newer than this runner supports")
+      throw new WorkspaceTooNewError()
     }
     if (version === 0) database.exec(`${schema} PRAGMA user_version = ${schemaVersion};`)
     database.exec(extras)
     const difference = schemaDifference(database)
-    if (difference)
-      throw new Error(
-        `Novadeck's workspace database at ${path} was written by an earlier build: ` +
-          `${difference}. Novadeck has no migrations before its first release, so delete ` +
-          "that file (it holds your projects, sessions and kept terminals) and start again.",
-      )
+    // Only a database of this version can be a newer build's by its columns; one of a
+    // lower version is an earlier build's whatever it holds.
+    if (difference?.newer && version === schemaVersion) throw new WorkspaceTooNewError()
+    const earlier =
+      difference?.text ??
+      (version !== 0 && version < schemaVersion
+        ? `its schema is version ${version}, before ${schemaVersion}`
+        : undefined)
+    if (earlier) throw new EarlierWorkspaceError(path, earlier)
     database.exec("COMMIT")
   } catch (error) {
     database.exec("ROLLBACK")
@@ -299,6 +372,7 @@ type TerminalRow = {
   person_title: string | null
   agent_title: string | null
   agent_titled_by: string | null
+  murmur_title: string | null
   summary: string | null
   opened_by: string | null
   led_by: string | null
@@ -316,7 +390,10 @@ const workOf = (text: string | null): Work | null => {
   }
 }
 
-type NamingRow = Pick<TerminalRow, "person_title" | "agent_title" | "agent_titled_by" | "summary">
+type NamingRow = Pick<
+  TerminalRow,
+  "person_title" | "agent_title" | "agent_titled_by" | "murmur_title" | "summary"
+>
 
 const namingOf = (row: NamingRow): Naming => ({
   person: row.person_title,
@@ -324,6 +401,7 @@ const namingOf = (row: NamingRow): Naming => ({
     row.agent_title !== null && row.agent_titled_by !== null
       ? { title: row.agent_title, by: row.agent_titled_by }
       : null,
+  murmur: row.murmur_title !== null ? { title: row.murmur_title } : null,
   summary: row.summary,
 })
 
@@ -500,12 +578,19 @@ const windowOf = (row: WindowRow): WindowRecord => ({
   personTitle: row.person_title,
 })
 
+// The handles in rows selected for them.
+const column = (rows: unknown): string[] => (rows as { handle: string }[]).map((row) => row.handle)
+
 export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemRecords {
   private readonly database: DatabaseSync
   private readonly queries: SQLTagStore
   private lastSave = 0
+  // The checkpoint that empties the write-ahead log after something was forgotten.
+  private scrubbing: NodeJS.Timeout | undefined
+  private readonly scrubMs: number
 
-  constructor(path = ":memory:") {
+  constructor(path = ":memory:", { scrubMs = 1_000 }: { readonly scrubMs?: number } = {}) {
+    this.scrubMs = scrubMs
     if (path !== ":memory:") prepareFile(path)
     this.database = new DatabaseSync(path, {
       enableForeignKeyConstraints: true,
@@ -519,6 +604,14 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     }
     // Transcripts may hold secrets: what is deleted is overwritten, not left in free pages.
     this.database.exec("PRAGMA secure_delete = ON")
+    // Every save writes synchronously, holding up the whole runner: with a rollback
+    // journal each one created, flushed and deleted a file, which took up to 3.4 s on a
+    // Windows CI runner (500 saves of one test run over 50 ms, against 7 on Linux), long
+    // enough for hooks to miss their deadlines. A write-ahead log appends to one file and
+    // flushes only as it checkpoints: a crash loses nothing, a power cut at most the last
+    // saves. SQLite gives the log and its index the database file's own permissions.
+    this.database.exec("PRAGMA journal_mode = WAL")
+    this.database.exec("PRAGMA synchronous = NORMAL")
     this.queries = this.database.createTagStore(64)
   }
 
@@ -555,24 +648,26 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   /**
    * Deletes the project, its sessions, what they kept of their terminals and their
-   * numbering, and its agents' messages and threads, all at once; an unknown project is
+   * handles, and its agents' messages and threads, all at once; an unknown project is
    * `NOT_FOUND`. Its terminals' shells are the caller's to end first.
    */
   removeProject(projectId: string): void {
     this.project(projectId)
-    this.transaction(() => {
-      const sessions = "SELECT id FROM sessions WHERE project_id = ?"
-      // Its sessions' companion items and windows go with them, by their foreign keys.
-      for (const sql of [
-        "DELETE FROM messages WHERE project_id = ?",
-        "DELETE FROM message_threads WHERE project_id = ?",
-        `DELETE FROM terminals WHERE session_id IN (${sessions})`,
-        `DELETE FROM terminal_numbers WHERE session_id IN (${sessions})`,
-        "DELETE FROM sessions WHERE project_id = ?",
-        "DELETE FROM projects WHERE id = ?",
-      ])
-        this.database.prepare(sql).run(projectId)
-    })
+    this.forget(() =>
+      this.transaction(() => {
+        const sessions = "SELECT id FROM sessions WHERE project_id = ?"
+        // Its sessions' companion items and windows go with them, by their foreign keys.
+        for (const sql of [
+          "DELETE FROM messages WHERE project_id = ?",
+          "DELETE FROM message_threads WHERE project_id = ?",
+          `DELETE FROM terminals WHERE session_id IN (${sessions})`,
+          `DELETE FROM session_handles WHERE session_id IN (${sessions})`,
+          "DELETE FROM sessions WHERE project_id = ?",
+          "DELETE FROM projects WHERE id = ?",
+        ])
+          this.database.prepare(sql).run(projectId)
+      }),
+    )
   }
 
   project(projectId: string): Project {
@@ -626,37 +721,54 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
   terminal(terminalId: string): SavedTerminal | undefined {
     const row = this.queries.get`
       SELECT id, session_id, cwd, agents, prompted_at, transcript, updated_at, handle,
-        person_title, agent_title, agent_titled_by, summary, opened_by, led_by, command, last_program, work
+        person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by,
+        led_by, command, last_program, work
       FROM terminals WHERE id = ${terminalId}
     ` as TerminalRow | undefined
     return row && { ...listed(row), transcript: row.transcript }
   }
 
+  // In the order their handles were given, which is the order they were asked for: a
+  // terminal whose create waited longer is saved later, though it was named first.
   terminals(sessionId?: string): ListedTerminal[] {
     const rows = (
       sessionId === undefined
         ? this.queries.all`
-          SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
-            person_title, agent_title, agent_titled_by, summary, opened_by, led_by,
-            command, last_program, work
-          FROM terminals ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
+          SELECT t.id, t.session_id, t.cwd, t.agents, t.prompted_at, t.updated_at, t.handle,
+            t.person_title, t.agent_title, t.agent_titled_by, t.murmur_title, t.summary,
+            t.opened_by, t.led_by, t.command, t.last_program, t.work
+          FROM terminals t LEFT JOIN session_handles h USING (session_id, handle)
+          ORDER BY h.rowid IS NULL, h.rowid, t.rowid`
         : this.queries.all`
-          SELECT id, session_id, cwd, agents, prompted_at, updated_at, handle,
-            person_title, agent_title, agent_titled_by, summary, opened_by, led_by,
-            command, last_program, work
-          FROM terminals WHERE session_id = ${sessionId}
-          ORDER BY CAST(substr(handle, 2) AS INTEGER), rowid`
+          SELECT t.id, t.session_id, t.cwd, t.agents, t.prompted_at, t.updated_at, t.handle,
+            t.person_title, t.agent_title, t.agent_titled_by, t.murmur_title, t.summary,
+            t.opened_by, t.led_by, t.command, t.last_program, t.work
+          FROM terminals t LEFT JOIN session_handles h USING (session_id, handle)
+          WHERE t.session_id = ${sessionId}
+          ORDER BY h.rowid IS NULL, h.rowid, t.rowid`
     ) as Omit<TerminalRow, "transcript">[]
     return rows.map(listed)
   }
 
-  nextTerminalNumber(sessionId: string): number {
-    const row = this.queries.get`
-      INSERT INTO terminal_numbers (session_id, last) VALUES (${sessionId}, 1)
-      ON CONFLICT (session_id) DO UPDATE SET last = last + 1
-      RETURNING last
-    ` as { last: number }
-    return row.last
+  giveHandle(sessionId: string): string {
+    return this.transaction(() => {
+      const given = column(
+        this.queries.all`SELECT handle FROM session_handles WHERE session_id = ${sessionId}`,
+      )
+      const open = column(
+        this.queries.all`SELECT handle FROM terminals WHERE session_id = ${sessionId}`,
+      )
+      const elsewhere = column(
+        this.queries.all`SELECT handle FROM terminals WHERE session_id != ${sessionId}`,
+      )
+      const handle = nextHandle(
+        { given: new Set([...given, ...open]), open },
+        new Set(elsewhere.map(wordOf)),
+      )
+      void this.queries
+        .run`INSERT INTO session_handles (session_id, handle) VALUES (${sessionId}, ${handle})`
+      return handle
+    })
   }
 
   renameTerminal(terminalId: string, title: string | null): boolean {
@@ -667,7 +779,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   terminalIdentity(terminalId: string): TerminalIdentity | undefined {
     const row = this.queries.get`
-      SELECT handle, person_title, agent_title, agent_titled_by, summary, opened_by, led_by
+      SELECT handle, person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by, led_by
       FROM terminals WHERE id = ${terminalId}
     ` as (NamingRow & Pick<TerminalRow, "handle" | "opened_by" | "led_by">) | undefined
     return (
@@ -687,65 +799,98 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
     const now = Math.max(Date.now(), this.lastSave + 0.001)
     this.lastSave = now
     const { handle, naming, openedBy, ledBy, command, lastProgram } = terminal
-    const { person, summary } = naming
+    const { person } = naming
+    const murmurTitle = naming.murmur?.title ?? null
+    const { summary } = naming
     const agentTitle = naming.agent?.title ?? null
     const agentBy = naming.agent?.by ?? null
     const work = terminal.work === null ? null : JSON.stringify(terminal.work)
     if (terminal.transcript === undefined)
       void this.queries.run`
         INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, updated_at, handle,
-          person_title, agent_title, agent_titled_by, summary, opened_by, led_by,
-          command, last_program, work)
+          person_title, agent_title, agent_titled_by, murmur_title, summary, opened_by,
+          led_by, command, last_program, work)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
           ${terminal.promptedAt}, ${now}, ${handle}, ${person}, ${agentTitle}, ${agentBy},
-          ${summary}, ${openedBy}, ${ledBy}, ${command}, ${lastProgram}, ${work})
+          ${murmurTitle}, ${summary}, ${openedBy}, ${ledBy}, ${command}, ${lastProgram},
+          ${work})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
           updated_at = excluded.updated_at, handle = excluded.handle,
           person_title = excluded.person_title, agent_title = excluded.agent_title,
-          agent_titled_by = excluded.agent_titled_by, summary = excluded.summary,
-          opened_by = excluded.opened_by, led_by = excluded.led_by, command = excluded.command,
+          agent_titled_by = excluded.agent_titled_by, murmur_title = excluded.murmur_title,
+          summary = excluded.summary, opened_by = excluded.opened_by,
+          led_by = excluded.led_by, command = excluded.command,
           last_program = excluded.last_program, work = excluded.work
       `
     else
       void this.queries.run`
         INSERT INTO terminals (id, session_id, cwd, agents, prompted_at, transcript, updated_at,
-          handle, person_title, agent_title, agent_titled_by, summary, opened_by, led_by,
-          command, last_program, work)
+          handle, person_title, agent_title, agent_titled_by, murmur_title, summary,
+          opened_by, led_by, command, last_program, work)
         VALUES (${terminal.id}, ${terminal.sessionId}, ${terminal.cwd}, ${agents},
           ${terminal.promptedAt}, ${terminal.transcript}, ${now}, ${handle}, ${person},
-          ${agentTitle}, ${agentBy}, ${summary}, ${openedBy}, ${ledBy}, ${command},
-          ${lastProgram}, ${work})
+          ${agentTitle}, ${agentBy}, ${murmurTitle}, ${summary}, ${openedBy}, ${ledBy},
+          ${command}, ${lastProgram}, ${work})
         ON CONFLICT (id) DO UPDATE SET session_id = excluded.session_id, cwd = excluded.cwd,
           agents = excluded.agents, prompted_at = excluded.prompted_at,
           transcript = excluded.transcript, updated_at = excluded.updated_at,
           handle = excluded.handle, person_title = excluded.person_title,
           agent_title = excluded.agent_title, agent_titled_by = excluded.agent_titled_by,
-          summary = excluded.summary, opened_by = excluded.opened_by, led_by = excluded.led_by,
-          command = excluded.command, last_program = excluded.last_program,
-          work = excluded.work
+          murmur_title = excluded.murmur_title, summary = excluded.summary,
+          opened_by = excluded.opened_by, led_by = excluded.led_by, command = excluded.command,
+          last_program = excluded.last_program, work = excluded.work
       `
   }
 
   removeTerminal(terminalId: string): void {
-    void this.queries.run`DELETE FROM terminals WHERE id = ${terminalId}`
+    this.forget(() => this.queries.run`DELETE FROM terminals WHERE id = ${terminalId}`)
   }
 
   forgetAgent(agent: AgentName): void {
-    const rows = this.queries.all`SELECT id, agents FROM terminals` as Pick<
-      TerminalRow,
-      "id" | "agents"
-    >[]
-    for (const row of rows) {
-      const { [agent]: forgotten, ...rest } = agentsOf(row.agents)
-      if (forgotten)
-        void this.queries
-          .run`UPDATE terminals SET agents = ${JSON.stringify(rest)} WHERE id = ${row.id}`
-    }
+    this.forget(() => {
+      const rows = this.queries.all`SELECT id, agents FROM terminals` as Pick<
+        TerminalRow,
+        "id" | "agents"
+      >[]
+      for (const row of rows) {
+        const { [agent]: forgotten, ...rest } = agentsOf(row.agents)
+        if (forgotten)
+          void this.queries
+            .run`UPDATE terminals SET agents = ${JSON.stringify(rest)} WHERE id = ${row.id}`
+      }
+    })
   }
 
   clearTranscripts(): void {
-    void this.queries.run`UPDATE terminals SET transcript = NULL`
+    this.forget(() => this.queries.run`UPDATE terminals SET transcript = NULL`)
+  }
+
+  /**
+   * Deletes what people saved, which may hold secrets, so that it stays nowhere but in
+   * pages `secure_delete` overwrote: the write-ahead log keeps the old pages until a
+   * checkpoint, so one moves the log into the database and empties it. It runs about a
+   * second later, once for whatever was forgotten meanwhile, as a checkpoint flushes the
+   * disk and each one would hold the runner up, and at the latest as the store closes.
+   */
+  private forget<T>(work: () => T): T {
+    const result = work()
+    this.scrubbing ??= setTimeout(() => this.scrub(), this.scrubMs)
+    this.scrubbing.unref()
+    return result
+  }
+
+  private scrub(): void {
+    clearTimeout(this.scrubbing)
+    this.scrubbing = undefined
+    if (!this.database.isOpen) return
+    // From a timer, nothing would catch it: a full disk's failure leaves the frames in
+    // the log until the next checkpoint, SQLite's own included, and the runner running.
+    try {
+      this.database.exec("PRAGMA wal_checkpoint(TRUNCATE)")
+    } catch (error) {
+      console.error("Novadeck could not scrub deleted content from its store's log:", error)
+    }
   }
 
   messages(): Message[] {
@@ -771,7 +916,9 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
   }
 
   removeMessages(ids: readonly string[]): void {
-    for (const id of ids) void this.queries.run`DELETE FROM messages WHERE id = ${id}`
+    this.forget(() => {
+      for (const id of ids) void this.queries.run`DELETE FROM messages WHERE id = ${id}`
+    })
   }
 
   threads(): Thread[] {
@@ -797,7 +944,9 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
   }
 
   removeThreads(ids: readonly string[]): void {
-    for (const id of ids) void this.queries.run`DELETE FROM message_threads WHERE id = ${id}`
+    this.forget(() => {
+      for (const id of ids) void this.queries.run`DELETE FROM message_threads WHERE id = ${id}`
+    })
   }
 
   messagingPaused(): boolean {
@@ -886,6 +1035,19 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
       `
   }
 
+  /**
+   * Takes murmur's title from every kept terminal, as murmur is turned off or uninstalled,
+   * and from the disk; the ids it took it from.
+   */
+  clearMurmurTitles(): readonly string[] {
+    const rows = this.forget(
+      () => this.queries.all`
+        UPDATE terminals SET murmur_title = NULL WHERE murmur_title IS NOT NULL RETURNING id
+      `,
+    ) as { id: string }[]
+    return rows.map(({ id }) => id)
+  }
+
   /** Saves what is given; `enabled: null` forgets the choice. */
   saveVoiceSettings(settings: VoiceSettingsChange): void {
     for (const [key, value] of Object.entries(settings)) {
@@ -893,6 +1055,55 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
       else if (value !== undefined)
         void this.queries.run`
         INSERT INTO settings (key, value) VALUES (${`voice.${key}`}, ${String(value)})
+        ON CONFLICT (key) DO UPDATE SET value = excluded.value
+      `
+    }
+  }
+
+  /** Murmur's settings: off until the person turns it on. */
+  murmurSettings(): MurmurSettings {
+    return { enabled: this.murmurEnabledChoice() === true }
+  }
+
+  /** Whether the person chose murmur on or off: `undefined` until they, or an install, did. */
+  murmurEnabledChoice(): boolean | undefined {
+    const row = this.queries.get`SELECT value FROM settings WHERE key = 'murmur.enabled'` as
+      | { value: string }
+      | undefined
+    return row === undefined ? undefined : row.value === "true"
+  }
+
+  /** The check the last install passed, as saved; `null` when there is none or it can't be read. */
+  murmurCheck(): MurmurCheck | null {
+    const row = this.queries.get`SELECT value FROM settings WHERE key = 'murmur.check'` as
+      | { value: string }
+      | undefined
+    if (row === undefined) return null
+    try {
+      const parsed = murmurCheck.safeParse(JSON.parse(row.value))
+      return parsed.success ? parsed.data : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Replaces the saved check; `null` forgets it, as when murmur is removed. */
+  saveMurmurCheck(check: MurmurCheck | null): void {
+    if (check === null) void this.queries.run`DELETE FROM settings WHERE key = 'murmur.check'`
+    else
+      void this.queries.run`
+        INSERT INTO settings (key, value) VALUES ('murmur.check', ${JSON.stringify(check)})
+        ON CONFLICT (key) DO UPDATE SET value = excluded.value
+      `
+  }
+
+  /** Saves what is given; `enabled: null` forgets the choice. */
+  saveMurmurSettings(settings: MurmurSettingsChange): void {
+    for (const [key, value] of Object.entries(settings)) {
+      if (value === null) void this.queries.run`DELETE FROM settings WHERE key = ${`murmur.${key}`}`
+      else if (value !== undefined)
+        void this.queries.run`
+        INSERT INTO settings (key, value) VALUES (${`murmur.${key}`}, ${String(value)})
         ON CONFLICT (key) DO UPDATE SET value = excluded.value
       `
     }
@@ -982,24 +1193,27 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
 
   /** TERMINAL_NOT_FOUND when the terminal is not kept. */
   dockItem(itemId: string, terminalId: string): Placed {
-    return this.transaction(() => {
-      const item = this.item(itemId)
-      if (!item) throw new DomainError("NOT_FOUND", "Item not found")
-      const left = item.windowId === null ? undefined : this.window(item.windowId)
-      const row = this.queries.get`
+    // An item docked where one with its pointer was replaces it, deleting its content.
+    return this.forget(() =>
+      this.transaction(() => {
+        const item = this.item(itemId)
+        if (!item) throw new DomainError("NOT_FOUND", "Item not found")
+        const left = item.windowId === null ? undefined : this.window(item.windowId)
+        const row = this.queries.get`
         SELECT * FROM companion_items
         WHERE terminal_id = ${terminalId} AND pointer_key = ${item.pointerKey} AND id <> ${itemId}
       ` as ItemRow | undefined
-      if (row) void this.queries.run`DELETE FROM companion_items WHERE id = ${row.id}`
-      referencing(
-        "TERMINAL_NOT_FOUND",
-        () => this.queries.run`
+        if (row) void this.queries.run`DELETE FROM companion_items WHERE id = ${row.id}`
+        referencing(
+          "TERMINAL_NOT_FOUND",
+          () => this.queries.run`
           UPDATE companion_items SET terminal_id = ${terminalId}, window_id = NULL
           WHERE id = ${itemId}`,
-      )
-      if (left) void this.queries.run`DELETE FROM companion_windows WHERE id = ${left.id}`
-      return { item: this.item(itemId)!, left, replaced: row && itemOf(row) }
-    })
+        )
+        if (left) void this.queries.run`DELETE FROM companion_windows WHERE id = ${left.id}`
+        return { item: this.item(itemId)!, left, replaced: row && itemOf(row) }
+      }),
+    )
   }
 
   undockItem(itemId: string, window: { readonly id: string; readonly createdAt: number }): Placed {
@@ -1024,15 +1238,17 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
   }
 
   removeItem(itemId: string): { item: ItemRecord; window: WindowRecord | undefined } | undefined {
-    return this.transaction(() => {
-      const item = this.item(itemId)
-      if (!item) return undefined
-      const window = item.windowId === null ? undefined : this.window(item.windowId)
-      // A window goes with its item, which its own deletion takes along.
-      if (window) void this.queries.run`DELETE FROM companion_windows WHERE id = ${window.id}`
-      else void this.queries.run`DELETE FROM companion_items WHERE id = ${itemId}`
-      return { item, window }
-    })
+    return this.forget(() =>
+      this.transaction(() => {
+        const item = this.item(itemId)
+        if (!item) return undefined
+        const window = item.windowId === null ? undefined : this.window(item.windowId)
+        // A window goes with its item, which its own deletion takes along.
+        if (window) void this.queries.run`DELETE FROM companion_windows WHERE id = ${window.id}`
+        else void this.queries.run`DELETE FROM companion_items WHERE id = ${itemId}`
+        return { item, window }
+      }),
+    )
   }
 
   renameWindow(windowId: string, title: string | null): boolean {
@@ -1055,6 +1271,8 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, ItemReco
   }
 
   close(): void {
+    // What was forgotten leaves the log before the store goes.
+    if (this.scrubbing) this.scrub()
     if (this.database.isOpen) {
       this.queries.clear()
       this.database.close()

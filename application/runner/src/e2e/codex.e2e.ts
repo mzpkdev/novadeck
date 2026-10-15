@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
@@ -25,6 +26,24 @@ import {
 // What only Codex needs beyond the shared scenarios (messaging.e2e.ts).
 
 const it = e2e(codex)
+
+/**
+ * Whether macOS asks for less motion (Reduce motion), which Codex follows; never
+ * elsewhere, nor where the setting can't be read.
+ */
+const reducedMotion = (): boolean => {
+  if (process.platform !== "darwin") return false
+  try {
+    return (
+      execFileSync("defaults", ["read", "com.apple.universalaccess", "reduceMotion"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() === "1"
+    )
+  } catch {
+    return false
+  }
+}
 
 /** Ten rows in a row holding braille, as Codex draws its logo. */
 const logo = /(?:^.*[⠀-⣿].*\n){10}/m
@@ -67,27 +86,50 @@ describe.skipIf(!supported)("Codex", () => {
   // and erases it as anything lands there: the doorbell's test paste changes rows far
   // from its line, which it accepts only as text vanishing whole (docs/agent-messaging.md,
   // "The doorbell").
-  it("rings a Codex still at its first screen", async ({ e2e: run }) => {
+  it("rings a Codex still at its first screen", async ({ e2e: run, skip }) => {
     run.model.use(
-      sends("Ask t2 for the code word", "t2", "What is the code word?"),
-      own((call) => (sent(call, "t2") ? { text: "Asked." } : undefined)),
-      own((call) => (delivered(call, "t1") ? { text: "Heron." } : undefined)),
+      sends("Ask fox for the code word", "fox", "What is the code word?"),
+      own((call) => (sent(call, "fox") ? { text: "Asked." } : undefined)),
+      own((call) => (delivered(call, "moth") ? { text: "Heron." } : undefined)),
     )
     const t1 = await start(run, codex)
     const t2 = await start(run, codex)
-    // The case this covers: the logo shows as t2 is rung.
-    await t2.until(logo)
+    // The case this covers: the logo shows as t2 is rung. On Windows Codex draws it on some
+    // machines and not others (on GitHub's Windows Server 2025 runners, never; seen
+    // 2026-10-09, 0.159.3): where it draws none, the case isn't there to test. Elsewhere it
+    // draws none while a warning's banner shows, nor where macOS asks for less motion;
+    // should it not, the failure says why.
+    if (process.platform === "win32") {
+      if (
+        !(await t2.until(logo, 10_000).then(
+          () => true,
+          () => false,
+        ))
+      )
+        skip("Codex drew no logo on this Windows machine, so there is no first screen to ring")
+    } else
+      await t2.until(logo).catch(async (error: unknown) => {
+        if (reducedMotion())
+          throw new Error(
+            "Codex draws no logo where macOS asks for less motion: turn Reduce motion off (System Settings › Accessibility › Display)",
+            { cause: error },
+          )
+        if (!/\d+ warnings?/.test(await t2.screen())) throw error
+        t2.press("\x1bOQ")
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        throw new Error(`Codex drew no logo, warning:\n${await t2.screen()}`, { cause: error })
+      })
     const calls = run.model.mark()
     const mark = t2.mark()
 
-    await t1.submit("Ask t2 for the code word")
+    await t1.submit("Ask fox for the code word")
 
     await through(t2, ["ringing", "working"], { after: mark })
-    const rung = await run.model.waitFor((call) => delivered(call, "t1"), { after: calls })
+    const rung = await run.model.waitFor((call) => delivered(call, "moth"), { after: calls })
     expect(latest(rung)).toMatch(ring)
-    expect(deliveries(rung)).toEqual([{ from: "t1", text: "What is the code word?" }])
+    expect(deliveries(rung)).toEqual([{ from: "moth", text: "What is the code word?" }])
     await t2.until("Heron.")
-    await through(t2, [holds("t1", "t2", "delivered"), "settled"], { after: mark })
+    await through(t2, [holds("moth", "fox", "delivered"), "settled"], { after: mark })
     expect(messages(t2).map((one) => one.state)).toEqual(["delivered"])
   })
 
@@ -103,10 +145,10 @@ describe.skipIf(!supported)("Codex", () => {
       replies("Remember the word heron", "Remembered."),
       replies("Ask on the side", "Answered on the side."),
       own((call) =>
-        asked(call, "Back at the root") ? { text: "Back, with t2's news." } : undefined,
+        asked(call, "Back at the root") ? { text: "Back, with fox's news." } : undefined,
       ),
-      sends("Tell t1 the news", "t1", "The build is green."),
-      own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
+      sends("Tell moth the news", "moth", "The build is green."),
+      own((call) => (sent(call, "moth") ? { text: "Told moth." } : undefined)),
     )
     const t1 = await start(run, codex)
     await turn(t1, "Remember the word heron", "Remembered.")
@@ -120,9 +162,9 @@ describe.skipIf(!supported)("Codex", () => {
     // confirms, so the root stays bound past the title's check.
     await t1.submit("/side")
     await t1.until(side)
-    await t2.submit("Tell t1 the news")
-    await t2.until("Told t1.")
-    await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+    await t2.submit("Tell moth the news")
+    await t2.until("Told moth.")
+    await t1.reached(holds("fox", "moth", "queued"), { after: mark })
     await sleep(unrung)
     expect((await t1.detail()).sessionId).toBe(root)
     // Their keys left it Drafting: the message waits, never rung into the side box.
@@ -155,9 +197,9 @@ describe.skipIf(!supported)("Codex", () => {
       "the side conversation to close",
     )
     await t1.submit("Back at the root")
-    const back = await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
+    const back = await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
     expect(asked(back, "Back at the root")).toBe(true)
-    expect(deliveries(back)).toEqual([{ from: "t2", text: "The build is green." }])
+    expect(deliveries(back)).toEqual([{ from: "fox", text: "The build is green." }])
     // In the root's own conversation, which never held the side question.
     expect(
       back.turns.some((one) => one.role === "user" && one.text.includes("Remember the word heron")),
@@ -165,8 +207,8 @@ describe.skipIf(!supported)("Codex", () => {
     expect(
       back.turns.some((one) => one.role === "user" && one.text.includes("Ask on the side")),
     ).toBe(false)
-    await t1.until("Back, with t2's news.")
-    await through(t1, [holds("t2", "t1", "delivered"), "settled"], { after: mark })
+    await t1.until("Back, with fox's news.")
+    await through(t1, [holds("fox", "moth", "delivered"), "settled"], { after: mark })
     expect((await t1.detail()).sessionId).toBe(root)
   })
   // A spawned agent's approval dialog shows in its root's screen, naming its thread. Esc on
@@ -185,9 +227,9 @@ describe.skipIf(!supported)("Codex", () => {
       }),
       own((call) => (result(call)?.includes('"agent_id"') ? { text: "Spawned it." } : undefined)),
       own((call) => (asked(call, "Helper task") ? codex.approval!.request(call) : undefined)),
-      sends("Tell t1 the news", "t1", "The build is green."),
-      own((call) => (sent(call, "t1") ? { text: "Told t1." } : undefined)),
-      own((call) => (delivered(call, "t2") ? { text: "Noted the news." } : undefined)),
+      sends("Tell moth the news", "moth", "The build is green."),
+      own((call) => (sent(call, "moth") ? { text: "Told moth." } : undefined)),
+      own((call) => (delivered(call, "fox") ? { text: "Noted the news." } : undefined)),
     )
     const t1 = await start(run, codex)
     const t2 = await start(run, codex)
@@ -215,9 +257,9 @@ describe.skipIf(!supported)("Codex", () => {
     expect(waiting.activity?.subagents.map((one) => one.id)).toEqual([asking])
 
     // t2's message waits for it, past the doorbell's settle window: t1 is never rung.
-    await t2.submit("Tell t1 the news")
-    await t2.until("Told t1.")
-    const queued = await t1.reached(holds("t2", "t1", "queued"), { after: mark })
+    await t2.submit("Tell moth the news")
+    await t2.until("Told moth.")
+    const queued = await t1.reached(holds("fox", "moth", "queued"), { after: mark })
     await sleep(unrung)
     expect(
       t1
@@ -248,11 +290,11 @@ describe.skipIf(!supported)("Codex", () => {
     ).toBe(true)
 
     // Then t1 is rung, and its hook delivers.
-    const rung = await run.model.waitFor((call) => delivered(call, "t2"), { after: calls })
+    const rung = await run.model.waitFor((call) => delivered(call, "fox"), { after: calls })
     expect(latest(rung)).toMatch(ring)
-    expect(deliveries(rung)).toEqual([{ from: "t2", text: "The build is green." }])
+    expect(deliveries(rung)).toEqual([{ from: "fox", text: "The build is green." }])
     await t1.until("Noted the news.")
-    await through(t1, ["ringing", "working", holds("t2", "t1", "delivered"), "settled"], {
+    await through(t1, ["ringing", "working", holds("fox", "moth", "delivered"), "settled"], {
       after: pressed,
     })
     // The command never ran: no call of the agent's conversation ever looked at its result.

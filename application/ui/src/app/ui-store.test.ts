@@ -1,23 +1,33 @@
 import { afterEach, beforeEach, vi } from "vitest"
 
+import { clearUpdateRaised, readUpdateRaised } from "../backend/update-raised"
 import { createWorkspaceStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
+import { updateKey, type UpdateOffer } from "../model/update"
 import { context, describe, expect, it } from "../test"
 import { appearance, workspaceFixture } from "../test/fixtures"
 import {
   createUiStore,
   initialUi,
+  noteUpdateShown,
   persist,
   trackRecent,
   watchFinishes,
+  watchPortable,
   watchPresentation,
+  watchSandbox,
   watchSwitcher,
+  watchUpdates,
   type FinishNotify,
   type UiState,
 } from "./ui-store"
 
-const initial = (): UiState =>
+// A run of the app's memory of what it raised outlasts a store, so each test starts one.
+beforeEach(() => clearUpdateRaised())
+
+const initial = (updateSeen: string | null = null): UiState =>
   initialUi({
+    updateSeen,
     location: {
       route: {
         projectId: "project",
@@ -191,6 +201,7 @@ describe("finish watch", () => {
       preferences: { ...initial().preferences, notifyFinished },
     })
     const notices: Parameters<FinishNotify>[0][] = []
+    const gists: [string, number][] = []
     const status = (terminalId: string, agent: AgentStatus) =>
       workspace.dispatch({
         type: "terminal/status",
@@ -205,15 +216,19 @@ describe("finish watch", () => {
       target,
       terminalId: "02",
       name: "Checkout",
-      handle: "t2",
+      handle: "fox",
     })
     select("01")
     status("02", { working: true })
-    const stop = watchFinishes(workspace, ui, (notice) => notices.push(notice), graceMs)
+    const stop = watchFinishes(workspace, ui, {
+      notify: (notice) => notices.push(notice),
+      graceMs,
+      unread: (terminalId, at) => gists.push([terminalId, at]),
+    })
     const unread = () => ui.getSnapshot().unread
     const finish = (at = 10, outcome: "completed" | "failed" | "interrupted" = "completed") =>
       status("02", { working: false, lastTurn: { outcome, reply: "All green.", at } })
-    return { workspace, ui, notices, status, select, unread, finish, stop }
+    return { workspace, ui, notices, gists, status, select, unread, finish, stop }
   }
 
   context("when an agent finishes in a terminal the person isn't looking at", () => {
@@ -221,7 +236,7 @@ describe("finish watch", () => {
       const { notices, unread, finish, stop } = setup()
       finish()
       expect(unread()).toEqual({ "project/initial": { "02": "done" } })
-      expect(notices).toEqual([{ id: "02", title: "t2 is done: Checkout", body: "All green." }])
+      expect(notices).toEqual([{ id: "02", title: "@fox is done: Checkout", body: "All green." }])
       stop()
     })
 
@@ -322,8 +337,45 @@ describe("finish watch", () => {
       finish(10, "failed")
       expect(unread()).toEqual({ "project/initial": { "02": "failed" } })
       expect(notices).toEqual([
-        { id: "02", title: "t2 stopped with an error: Checkout", body: "All green." },
+        { id: "02", title: "@fox stopped with an error: Checkout", body: "All green." },
       ])
+      stop()
+    })
+  })
+
+  context("when a finish is unread", () => {
+    it("tells murmur once, with the end's time", () => {
+      const { gists, finish, stop } = setup()
+      finish(10)
+      expect(gists).toEqual([["02", 10]])
+      stop()
+    })
+
+    it("tells it also when the person turned notifications off", () => {
+      const { gists, notices, finish, stop } = setup(false)
+      finish(10)
+      expect(notices).toEqual([])
+      expect(gists).toEqual([["02", 10]])
+      stop()
+    })
+
+    it("tells it each end that goes unseen", () => {
+      const { gists, status, finish, stop } = setup()
+      finish(10)
+      status("02", { working: true })
+      finish(20)
+      expect(gists).toEqual([
+        ["02", 10],
+        ["02", 20],
+      ])
+      stop()
+    })
+
+    it("does not, for a terminal the person looks at", () => {
+      const { gists, finish, select, stop } = setup()
+      select("02")
+      finish()
+      expect(gists).toEqual([])
       stop()
     })
   })
@@ -341,7 +393,7 @@ describe("finish watch", () => {
     })
     const ui = createUiStore(initial())
     const notices: unknown[] = []
-    const stop = watchFinishes(workspace, ui, (notice) => notices.push(notice))
+    const stop = watchFinishes(workspace, ui, { notify: (notice) => notices.push(notice) })
     workspace.dispatch({ type: "terminal/select", target, terminalId: "01" })
     expect(notices).toEqual([])
     expect(ui.getSnapshot().unread).toEqual({})
@@ -377,5 +429,253 @@ describe("finish watch", () => {
     workspace.dispatch({ type: "terminal/close", target, terminalId: "02" })
     expect(unread()).toEqual({})
     stop()
+  })
+})
+
+const updateHost = () => {
+  let report: ((offer: UpdateOffer) => void) | undefined
+  const updates = {
+    onOffer: (listener: (offer: UpdateOffer) => void) => {
+      report = listener
+      return () => {
+        report = undefined
+      }
+    },
+    install: () => {},
+    openPage: () => {},
+  }
+  return {
+    updates,
+    report: (offer: UpdateOffer) => report?.(offer),
+    listening: () => !!report,
+  }
+}
+
+const offered = (version: string, kind: UpdateOffer["kind"] = "ready"): UpdateOffer => ({
+  kind,
+  version,
+  notes: [],
+})
+
+describe("a waiting update", () => {
+  it("is kept as the offer the backend reports, a newer one replacing it", () => {
+    const { updates, report, listening } = updateHost()
+    const ui = createUiStore(initial())
+    const stop = watchUpdates(updates, ui)
+    expect(ui.getSnapshot().update).toBeNull()
+    report(offered("0.0.80"))
+    expect(ui.getSnapshot().update).toEqual(offered("0.0.80"))
+    report(offered("0.0.81", "available"))
+    expect(ui.getSnapshot().update).toEqual(offered("0.0.81", "available"))
+    stop()
+    expect(listening()).toBe(false)
+  })
+
+  it("opens its notice for a version not shown yet, and again for a newer one", () => {
+    const { updates, report } = updateHost()
+    const ui = createUiStore(initial("ready:0.0.80"))
+    watchUpdates(updates, ui)
+    report(offered("0.0.80"))
+    expect(ui.getSnapshot().updateOpen).toBe(false)
+    report(offered("0.0.81"))
+    expect(ui.getSnapshot().updateOpen).toBe(true)
+  })
+
+  it("opens its notice again when the version already shown turns from ready to available", () => {
+    const { updates, report } = updateHost()
+    const ui = createUiStore(initial("ready:0.0.80"))
+    watchUpdates(updates, ui)
+    report(offered("0.0.80", "available"))
+    expect(ui.getSnapshot().updateOpen).toBe(true)
+  })
+
+  it("is never there where the backend has no updates", () => {
+    const ui = createUiStore(initial())
+    watchUpdates(undefined, ui)()
+    expect(ui.getSnapshot().update).toBeNull()
+  })
+})
+
+describe("the sandbox", () => {
+  it("is kept as the backend says it, once", async () => {
+    const ui = createUiStore(initial())
+    let asked = 0
+    watchSandbox(() => {
+      asked += 1
+      return Promise.resolve({ sandboxed: false, fix: "sudo fix" })
+    }, ui)
+    expect(ui.getSnapshot().sandbox).toBeNull()
+    await vi.waitFor(() =>
+      expect(ui.getSnapshot().sandbox).toEqual({ sandboxed: false, fix: "sudo fix" }),
+    )
+    expect(asked).toBe(1)
+  })
+
+  it("is never there where the backend does not say, or fails to", async () => {
+    const ui = createUiStore(initial())
+    watchSandbox(undefined, ui)()
+    watchSandbox(() => Promise.reject(new Error("no")), ui)
+    await Promise.resolve()
+    expect(ui.getSnapshot().sandbox).toBeNull()
+  })
+
+  it("is not kept once the watch is stopped", async () => {
+    const ui = createUiStore(initial())
+    watchSandbox(() => Promise.resolve({ sandboxed: true }), ui)()
+    await Promise.resolve()
+    expect(ui.getSnapshot().sandbox).toBeNull()
+  })
+})
+
+// A release this copy has known of for 20 days, which a portable copy is stale against.
+const stale = (kind: UpdateOffer["kind"] = "available"): UpdateOffer => ({
+  kind,
+  version: "0.0.80",
+  notes: [],
+  outdatedSince: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+})
+
+describe("a portable copy", () => {
+  const here = { portable: true, version: "0.0.70", run: "run-1" } as const
+
+  it("is kept as the backend says it, once", async () => {
+    const ui = createUiStore(initial())
+    let asked = 0
+    watchPortable(
+      {
+        state: () => {
+          asked += 1
+          return Promise.resolve(here)
+        },
+        install: () => Promise.resolve({ kind: "installing" }),
+        openInstalled: () => {},
+      },
+      ui,
+    )
+    expect(ui.getSnapshot().portable).toBeNull()
+    await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual(here))
+    expect(asked).toBe(1)
+  })
+
+  it("is never there where the backend does not say, or fails to", async () => {
+    const ui = createUiStore(initial())
+    watchPortable(undefined, ui)()
+    expect(ui.getSnapshot().portable).toBeNull()
+    watchPortable(
+      {
+        state: () => Promise.reject(new Error("no")),
+        install: () => Promise.resolve({ kind: "installing" }),
+        openInstalled: () => {},
+      },
+      ui,
+    )
+    await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual({ portable: false }))
+  })
+
+  it("raises the notice of a stale release shown before, whichever is heard first", async () => {
+    const seen = "available:0.0.80"
+    const host = {
+      state: () => Promise.resolve(here),
+      install: () => Promise.resolve({ kind: "installing" as const }),
+      openInstalled: () => {},
+    }
+    // The offer first.
+    const first = updateHost()
+    const early = createUiStore(initial(seen))
+    watchUpdates(first.updates, early)
+    first.report(stale())
+    expect(early.getSnapshot().updateOpen).toBe(false)
+    watchPortable(host, early)
+    await vi.waitFor(() => expect(early.getSnapshot().updateOpen).toBe(true))
+    // The answer first, in another run.
+    clearUpdateRaised()
+    const second = updateHost()
+    const late = createUiStore(initial(seen))
+    watchPortable(host, late)
+    await vi.waitFor(() => expect(late.getSnapshot().portable).toEqual(here))
+    watchUpdates(second.updates, late)
+    second.report(stale())
+    expect(late.getSnapshot().updateOpen).toBe(true)
+  })
+
+  it("marks a notice shown before the host named the run, once it does", async () => {
+    const { updates, report } = updateHost()
+    // A release not yet seen opens its notice at once, before any portable answer.
+    const ui = createUiStore(initial())
+    watchUpdates(updates, ui)
+    report(stale())
+    expect(ui.getSnapshot().updateOpen).toBe(true)
+    // The footer shows it, as the command `updateShown` records, with the run unknown.
+    ui.update((state) => ({ ...state, updateSeen: updateKey(stale()) }))
+    noteUpdateShown(ui.getSnapshot().portable, updateKey(stale()))
+    expect(readUpdateRaised(here.run)).toBeNull()
+    watchPortable(
+      {
+        state: () => Promise.resolve(here),
+        install: () => Promise.resolve({ kind: "installing" }),
+        openInstalled: () => {},
+      },
+      ui,
+    )
+    await vi.waitFor(() => expect(readUpdateRaised(here.run)).toBe(updateKey(stale())))
+  })
+
+  it("does not raise the notice again for a stale release it already heard", async () => {
+    const { updates, report } = updateHost()
+    const ui = createUiStore(initial("available:0.0.80"))
+    ui.update((state) => ({ ...state, portable: here }))
+    watchUpdates(updates, ui)
+    report(stale())
+    expect(ui.getSnapshot().updateOpen).toBe(true)
+    // Shown, then answered with Later.
+    noteUpdateShown(here, updateKey(stale()))
+    ui.update((state) => ({ ...state, updateOpen: false }))
+    report(stale())
+    expect(ui.getSnapshot().updateOpen).toBe(false)
+  })
+
+  context(
+    "in a store made anew within the run, as a page reload or a window opened again does",
+    () => {
+      const seen = "available:0.0.80"
+      const host = {
+        state: () => Promise.resolve(here),
+        install: () => Promise.resolve({ kind: "installing" as const }),
+        openInstalled: () => {},
+      }
+      // A store as a launch makes one, hearing a stale release once the host has said.
+      const launch = async (run: string = here.run): Promise<boolean> => {
+        const { updates, report } = updateHost()
+        const ui = createUiStore(initial(seen))
+        watchUpdates(updates, ui)
+        watchPortable({ ...host, state: () => Promise.resolve({ ...here, run }) }, ui)
+        await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual({ ...here, run }))
+        report(stale())
+        return ui.getSnapshot().updateOpen
+      }
+
+      it("raises the notice again when it was raised but never shown", async () => {
+        expect(await launch()).toBe(true)
+        expect(await launch()).toBe(true)
+      })
+
+      it("does not raise it again once shown, until a relaunch", async () => {
+        expect(await launch()).toBe(true)
+        // The footer shows the notice, as the command `updateShown` records.
+        noteUpdateShown(here, updateKey(stale()))
+        // The window closed and opened again: the page is new and the run the same.
+        sessionStorage.clear()
+        expect(await launch()).toBe(false)
+        expect(await launch("run-2")).toBe(true)
+      })
+    },
+  )
+
+  it("leaves the notice of an installed copy to once per version", () => {
+    const { updates, report } = updateHost()
+    const ui = createUiStore(initial("available:0.0.80"))
+    watchUpdates(updates, ui)
+    report(stale())
+    expect(ui.getSnapshot().updateOpen).toBe(false)
   })
 })

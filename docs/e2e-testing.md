@@ -9,10 +9,27 @@ give the same result every time.
 
 ## Running
 
-The suite runs on Linux only. Its keyring cut is a dead D-Bus address, which doesn't
-keep a harness from the macOS Keychain, and its leftover-process check reads `/proc`.
-On anything else the fixture fails each test, saying so; a scenario file can skip
-instead with `describe.skipIf(!supported)`, `supported` coming from `fixture.ts`.
+The suite runs on Linux, Windows and macOS. On Linux its keyring cut is a dead D-Bus
+address, and its leftover-process check reads `/proc`. On Windows the sandbox moves the
+user's folders too (USERPROFILE, APPDATA, LOCALAPPDATA, TEMP), Claude Code and Codex keep
+their logins in files there, and a test of Antigravity refuses to start while the
+Credential Manager holds its login (`credentials.ts`), as no environment moves that store;
+the leftover-process check reads each process's folder and environment through a small
+lister it compiles once. Windows runs need what CI's runners have: PowerShell 7, Git for
+Windows, and symlinks (an administrator, or Developer Mode). On macOS no environment moves
+the login Keychain either, but only Antigravity's login there is in reach: Claude Code
+names its Keychain items after `CLAUDE_CONFIG_DIR`, the sandbox's own, and Codex is told to
+keep its login in a file. So, as on Windows, a test of Antigravity refuses to start while
+the Keychain holds its item (service `gemini`, account `antigravity`), asked for by its
+attributes alone, never its secret. The leftover-process check asks `ps` and `lsof`, and
+macOS shows no environment of its own programs (bash, sleep), so one of those is found by
+its working folder, as a child of a process found, or in a process group of one, never the
+tests' own. Codex follows the system's Reduce motion and then draws no logo on
+its first screen, a state one scenario rings it in: GitHub's macOS image turns it on, so
+the E2E workflow turns it off there first, and a Mac with it on fails that scenario, saying
+so. Anywhere else the fixture fails each test, saying why (`unsupported` in `support.ts`);
+a scenario file can skip instead with `describe.skipIf(!supported)`, `supported` coming
+from `fixture.ts`.
 
 ```sh
 npm run test:e2e                  # from the repository root; builds the protocol and relay first
@@ -34,11 +51,13 @@ against the hook timeout (ten minutes) rather than a test's. A harness left out 
 `application/runner/vitest.e2e.config.ts` includes them. The unit tests for its parts
 (`src/e2e/**/*.test.ts`) run with the rest.
 
-| Variable                      | Effect                                                                                                                       |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `NOVADECK_E2E_CACHE`          | Where harnesses are installed. Defaults to `$XDG_CACHE_HOME/novadeck/e2e`, or `~/.cache/novadeck/e2e` without XDG_CACHE_HOME |
-| `NOVADECK_E2E_HARNESS=latest` | Installs and runs each harness's newest release instead of its pin, as a drift check                                         |
-| `NOVADECK_E2E_AGENTS`         | The harnesses to run, comma-separated (`claude`, `codex`, `agy`); all when unset. `selected(setup)` in `fixture.ts` reads it |
+| Variable                      | Effect                                                                                                                                                                                                                                                                                                      |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOVADECK_E2E_CACHE`          | Where harnesses are installed. Defaults to `$XDG_CACHE_HOME/novadeck/e2e`, or `~/.cache/novadeck/e2e` without XDG_CACHE_HOME                                                                                                                                                                                |
+| `NOVADECK_E2E_HARNESS=latest` | Installs and runs each harness's newest release instead of its pin, as a drift check                                                                                                                                                                                                                        |
+| `NOVADECK_E2E_AGENTS`         | The harnesses to run, comma-separated (`claude`, `codex`, `agy`); all when unset. `selected(setup)` in `fixture.ts` reads it                                                                                                                                                                                |
+| `NOVADECK_E2E_SPACED=1`       | Names the sandbox with a space (`novadeck e2e-…`), so the home and Novadeck's launcher are too, as Windows CI's quirks job runs it                                                                                                                                                                          |
+| `NOVADECK_E2E_TRACES`         | Where a failed test writes its trace (`trace.ts`): each hook's report and when its hook started, the person's keys, each delivery change, each fact told an agent's activity and what it made of it, each answer to a hook, and the model's calls. CI uploads them as an artifact. Unset, nothing is traced |
 
 In CI (`.github/workflows/e2e.yml`) each harness runs in a job of its own, which runs
 the whole suite with `NOVADECK_E2E_AGENTS` set to that harness, so the scenarios across
@@ -51,7 +70,54 @@ unfinished staging (`*.tmp`), npm's own cache (`<cache>/home`) or anything else 
 job restores the cache of each harness it runs. Unless the run was cancelled, one it
 missed is saved even when the tests fail, so the next run needn't install again, but only
 once a `<cache>/<harness>-*` folder holding the harness's program exists: a failed or
-cancelled install saves nothing under the key.
+cancelled install saves nothing under the key. The key, the folders and that check live in
+the local actions `.github/actions/e2e-harness-cache/restore` and `…/save`, which hash the
+harness's pin themselves; the workflow calls each once per harness, as steps can't loop.
+
+A `plan` job runs first and decides which rows the jobs get (`scripts/e2e/plan`; its rules
+are unit-tested in `plan.test.ts`), so a pull request runs only what it can affect. The
+nightly schedule and a manual dispatch run everything, and so does a pull request when
+turbo's list of affected packages (`turbo ls --affected`, from the pull request's base to
+its head) or git's list of changed files can't be had. Otherwise:
+
+- Everything runs when a package other than an adapter, the runner, the UI or the host is
+  affected (`@novadeck/harness-core`, `protocol`, `relay`, the engines, or one added later,
+  so a new package runs everything until a rule says otherwise; an adapter not yet pinned
+  counts as one; a package outside the paths that trigger this workflow, a new
+  `application/<name>` say, needs its path added there for its changes to run anything),
+  or a changed file is in `application/runner/` (the suite and
+  the pins), `scripts/e2e/`, `.github/actions/e2e-harness-cache/`, or is
+  `.github/workflows/e2e.yml`, the root `package.json`, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml` or `turbo.json`. The runner is judged by its files, not by turbo:
+  turbo calls it affected by any adapter, which would run everything for one harness.
+- Otherwise each affected adapter package (`@novadeck/harness-<id>`) runs that harness's
+  jobs, on all three systems, with the Windows quirks job, and the Mixed job with them.
+- Otherwise (documentation, the UI, the host) no E2E job runs. None is a required check,
+  so a skipped one blocks no merge.
+
+Each of these jobs runs on Linux, on Windows (`windows-latest`, named `… (Windows)`) and
+on macOS (`macos-latest`, Apple silicon, named `… (macOS)`). A Windows job has 45 minutes
+and a macOS one 30, against Linux's 20, as both start processes slower, and both run
+without the network namespace, which neither has (see Isolation). A macOS job first turns
+off the image's Reduce motion (see Running). Every job sets `NOVADECK_E2E_TRACES`, and one
+whose tests failed or that was cancelled uploads the traces its failed tests wrote, as the
+`e2e-traces-<harness>-<os>` artifact, kept seven days.
+
+A `… (Windows quirks)` job per harness covers what those green Windows jobs can't, as
+people's machines differ from the runner's. It changes the runner's own machine, which
+no test may do on a developer's: a PowerShell profile for every user that prints, checked
+to print in a new PowerShell (Claude Code's hooks run in PowerShell, and Codex's, which it
+starts with `-NoProfile`), a folder the user's PATH in the registry
+gains after the runner started, holding `novadeck-registry-marker.cmd`, and, last, in
+Antigravity's job, a cmd AutoRun that prints. With `NOVADECK_E2E_SPACED=1` its sandbox,
+and so the home and Novadeck's launcher, is named with a space, which cmd reads by its
+short name. It runs `messaging`, `requests` and `lifecycle` for its harness;
+`windows-quirks.e2e.ts` (Claude Code's job) opens a terminal whose PATH is read from the
+registry, as the app's are, and runs the marker; and with the AutoRun set, a test in
+`application/runner/src/harnesses/service.test.ts` (`NOVADECK_TEST_CMD_AUTORUN=1`) checks that Antigravity's
+PreToolUse goes unregistered, and that a connected copy that still has it is installed
+again without it. These tests skip anywhere else. Its traces upload as
+`e2e-traces-<harness>-Windows-quirks`.
 
 ## What is pinned
 
@@ -90,10 +156,25 @@ network:
   temporary folder, with a home, a project, XDG folders and a private `XDG_RUNTIME_DIR`.
   Every process the test starts gets only the sandbox's environment, with nothing copied
   from the developer's. Its PATH is the pinned harnesses, a folder holding just `node`,
-  and `/usr/bin:/bin`. The deck gives the runner's terminals the sandbox's environment
+  and `/usr/bin:/bin`. On Windows the sandbox also moves the user's folders into itself
+  (USERPROFILE, APPDATA, LOCALAPPDATA, TEMP, as Node, Go and Rust find a home and
+  configuration by them there, never HOME), and copies Windows' own variables from the
+  tests' environment (`SystemRoot`, `ComSpec`, `PATHEXT`, `ProgramFiles` and the like:
+  the machine's, which its programs need to start, never the developer's). PATH there is
+  the pinned harnesses, `node`'s folder, the system's folders (`System32`, Windows
+  PowerShell's), and git's and PowerShell 7's own installs, as each reports it
+  (`<Git>\cmd`, above `git --exec-path`; `$PSHOME`), not the folder the tests found
+  them in, which may be a package manager's shims of every global tool. Where an install
+  can't be told, as an MSYS2 git's, the folder it was found in stands in, with a warning,
+  and is refused where it holds Node or a harness. The deck gives the runner's terminals the sandbox's environment
   as their `baseEnv`, so they don't start from the runner's own as they do in the app,
   and runs plugin commands with it as it is (`createHarnesses`'s `login: false`), so no
-  login shell's startup files, `/etc/profile` included, can put another PATH first.
+  login shell's startup files, `/etc/profile` included, can put another PATH first. The
+  one thing on Windows no environment moves is the registry: a terminal's `cmd /k` and
+  Antigravity's `cmd /c` for its hooks run the developer's `Command Processor\AutoRun`
+  (clink, doskey macros), as cmd does without `/d`, and the runner leaves it so, as a
+  person's terminal should run it. A developer with one set may see a failure CI, which
+  has none, doesn't.
 - **No keyring.** `DBUS_SESSION_BUS_ADDRESS` points at a socket that doesn't exist, so
   no harness finds a login in the secret service. The kernel keyring (keyutils) needs no
   bus, so for each pinned harness it was checked, from its source or its program's
@@ -113,16 +194,54 @@ network:
     configures none: Novadeck's server runs over stdio.
   - Antigravity 1.2.14 uses `zalando/go-keyring`, which on Linux only talks to the
     secret service over D-Bus. Its program has no `keyctl` call.
+
+  On Windows no bus stands between a harness and a store, as the Credential Manager is
+  the user's, whatever the environment says, so each harness's was checked again:
+
+  - Claude Code keeps its login in `.credentials.json` there too, in the sandbox.
+  - Codex keeps its login in `auth.json` by default, in the sandbox. Set to `keyring` or
+    `auto`, the `keyring` crate's Windows store is the Credential Manager, its entries
+    named after a hash of the canonical `CODEX_HOME`, as on Linux, so a Codex with the
+    sandbox's home looks up names the developer's never wrote.
+  - Antigravity's go-keyring stores its login in the Credential Manager as
+    `gemini:antigravity`, by a name the sandbox can't change. A test of Antigravity
+    refuses to start while that login is there (`credentials.ts`, reading only the
+    targets' names from `cmdkey /list`), asking to sign out or to leave it out with
+    `NOVADECK_E2E_AGENTS`.
+
+  On macOS no bus stands between a harness and the login Keychain either, and the
+  Keychain and the user's defaults (`defaults`, `cfprefsd`) are the user's whatever HOME
+  says, so each harness's was checked again (2026-10-11):
+
+  - Claude Code keeps its login in the Keychain, and names its login's items after
+    `CLAUDE_CONFIG_DIR`, the sandbox's own (`Claude Code-credentials-<8 hex>`), so it
+    never sees the developer's. Not every item: its device key store may use a fixed
+    `Claude Code-device-keys`, which the suite was never seen to reach (2.1.287, every
+    Claude Code scenario on a Mac). The sandbox's own `security`, on its PATH before the
+    system's, refuses it any item with no such suffix, named by argument (`-s`, `-sName`)
+    or anywhere on the input of `security -i`, as Claude Code writes, whatever its spacing
+    or quotes, passing nothing on, so the developer's is neither read nor overwritten
+    through it, and the test fails should one be asked for (`keychainGuard` in
+    `sandbox.ts`), in CI too. It sees only `security` called by name, as Claude Code
+    calls it.
+  - Codex is told to keep its login in a file, as everywhere.
+  - Antigravity's go-keyring asks `/usr/bin/security` for service `gemini`, account
+    `antigravity`, a name the sandbox can't change. A test of Antigravity refuses to
+    start while the Keychain holds it (`credentials.ts`, asking by its attributes alone,
+    never its secret, and failing the run where the Keychain can't be asked).
+  - The defaults are the developer's: Codex reads the system's Reduce motion there, which
+    is why the E2E workflow turns it off on GitHub's macOS image (see Running).
+
 - **No network.** The fake model is also every process's `HTTP(S)_PROXY`, with
   `NODE_USE_ENV_PROXY=1` so Node's own `fetch` takes it too. It refuses each tunnel and
   each request for another server and records its host, never its path. Only loopback
   is exempt. On its own, that blocks egress only for programs that honour the proxy. In
-  CI the suite also runs in a network namespace whose only interface is loopback
+  CI on Linux the suite also runs in a network namespace whose only interface is loopback
   (`scripts/e2e/isolated/main.ts`), so a program that connects directly has no route out
   either, and the proxy still records the hosts the harnesses tried. The harnesses are
   installed before that, outside the namespace, by `scripts/e2e/install/main.ts`, which
   installs those `NOVADECK_E2E_AGENTS` names into the cache as the suite would; the
-  suite's own install then finds them done. Every CI job runs this way, the nightly one
+  suite's own install then finds them done. Every Linux CI job runs this way, the nightly one
   against `latest` included: with `NOVADECK_E2E_HARNESS=latest` the pre-install records
   the newest version it resolved in the cache, and the run inside the namespace reads it
   there instead of looking it up. To run the suite the same way locally:
@@ -145,6 +264,9 @@ network:
   `NOVADECK_E2E_NETNS=user NOVADECK_E2E_NETNS_TESTS=1`. It refuses to run the command if
   the namespace has any interface besides loopback.
 
+  Windows has no such namespace, so there, in CI as locally, the proxy is the only cut: a
+  program that connects directly, ignoring it, is neither stopped nor recorded.
+
 - **No real credential.** Each harness gets a fake key that the fake model accepts. A
   request carrying any other credential, in a credential header or a `key` query
   parameter, is refused and counted, and its value is never stored; an empty value, or
@@ -165,7 +287,11 @@ network:
   nothing to check.
   - Configuration files the developer's own sessions rewrite as they start or run are
     read after the test and searched for the sandbox's root, which a connect or trust
-    that leaked out would write there; nothing read is kept or printed. These are
+    that leaked out would write there; nothing read is kept or printed. The root is
+    searched for as written, JSON- or TOML-escaped, with `\uXXXX` escapes, with forward
+    slashes and as MSYS writes it (`/c/Users/…`), and on Windows also by its 8.3 short
+    name, as the plugin's install writes a launcher's path that needs quoting, and in any
+    case. These are
     `~/.claude/settings.json`, `~/.claude/plugins/installed_plugins.json`,
     `~/.claude/plugins/known_marketplaces.json`, `~/.codex/config.toml` and
     `~/.gemini/antigravity-cli/settings.json`.
@@ -198,7 +324,21 @@ network:
   named by its command and pid, and marked `stopped` should job control have stopped it.
   It looks again, up to five times, until it finds no process it hasn't seen. Should the
   test end early, its teardown does the same, and fails the test for any process it had
-  to end.
+  to end. On Windows, which has no `/proc`, a small lister (`reap-lister.cs`) finds
+  them: compiled once by its source into the system's temporary folder with the .NET
+  Framework's `csc.exe`, and named by its own hash too, checked before it runs, so a
+  program there that isn't what its name says is compiled again. It lists the processes
+  that started at or after the sandbox and reads each one's working folder and
+  environment from its process parameters, for a folder inside the sandbox or a HOME or
+  USERPROFILE that is its home, printing only pids, names and starts. As it reads other
+  processes' memory, an antivirus may quarantine it; reap then fails saying so, naming
+  the program to allow. Windows has no signal to ask with, so one still running after
+  its three seconds is ended (TerminateProcess), then, two seconds later, ended with
+  what it started, awaited, each once the process is checked by its start to be the
+  same one. What it started is the tree Novadeck's relay reads (`novadeck-relay tree`,
+  see backend-api.md), which counts a process as a child only if it started no earlier
+  than its recorded parent, and ends each only as the process it was, as the runner
+  ends a closed terminal's programs.
 - **Enter only on text seen to land.** A deck terminal's `submit` types the text, waits
   until the screen shows it once more than it did before, and only then presses Enter.
   `press` refuses anything holding a carriage return or line feed, the keypad's Enter
@@ -274,7 +414,7 @@ for (const setup of setups) {
   have the behaviour at all, as Claude Code has no hooks review, and its setup says so in
   `absent`, with what a probe of the pinned version found, as Codex's `background` does:
   `absent: { background: "nothing it starts wakes it once its turn has ended (probed
-2026-10-02, 0.159.3)" }`. `lacking` fails on a missing trait with no reason there. A
+  2026-10-02, 0.159.3)" }`. `lacking` fails on a missing trait with no reason there. A
   missing trait never stands in for a gap: a behaviour the harness has that Novadeck
   doesn't yet support the same way is a gap, recorded in `known-gaps.ts` and raised as a
   blocker (see [Known gaps](#known-gaps)).
@@ -381,10 +521,10 @@ for (const setup of setups) {
   the history of its delivery state and its messages' states from the moment it opens.
   `t.mark()` and `t.reached(state or predicate, { after })` wait for a transition after
   a point, and `through(t, steps, { after })` for several in order, such as
-  `["ringing", "working"]` or `holds("t1", "t2", "delivered")`. Each step is met at or
+  `["ringing", "working"]` or `holds("moth", "fox", "delivered")`. Each step is met at or
   after the one before it, in the same snapshot or a later one, as changes the runner
   makes in one go arrive together. On a timeout they fail with every transition since
-  the mark (`t2: ready → ringing → unknown`), and `through` also says which steps were
+  the mark (`fox: ready → ringing → unknown`), and `through` also says which steps were
   met (`met: ringing; waiting for: working`), so a failure says what happened. Their
   failures, and those of `until`, `confirm` and `t.poll(read, what)`, end with what its
   agent is doing (`working, 1 request waiting (permission)`) and the terminal's screen
@@ -415,10 +555,10 @@ for (const setup of setups) {
   probed in the sandbox: Claude Code's
   `<tool_use_error>` for an unknown tool (`Error: No such tool available`) or arguments
   it won't take (`InputValidationError`), Codex's `unsupported call: <tool>` and `failed
-to parse function arguments`, and Antigravity's `Encountered error in tool validation`,
+  to parse function arguments`, and Antigravity's `Encountered error in tool validation`,
   for both. Not refusals, so the scenarios that provoke them keep working: a tool's own
   errors (Novadeck's "has no agent Novadeck can deliver to", Antigravity's `Encountered
-error in tool execution`, Claude Code's other `<tool_use_error>`s such as a missing
+  error in tool execution`, Claude Code's other `<tool_use_error>`s such as a missing
   file) and the person denying a tool, whose result never reaches the model. A new
   harness's `rejection` comes from probing it, never from a guess.
 - **Holding a turn** pins down how something travels. The round trip holds t2's answer
@@ -642,9 +782,9 @@ error in tool execution`, Claude Code's other `<tool_use_error>`s such as a miss
 ## Probe fixtures
 
 The probes under `src/e2e/probes/` record what a real harness showed, and the adapters'
-tests replay it from `harnesses/<agent>/fixtures/*.probe.json` and
+tests replay it from `harnesses/<agent>/src/fixtures/*.probe.json` and
 `terminals/fixtures/doorbell-<agent>.json`. Every screen in them has one shape, a
-`ScreenRecord` (`src/testing/probes.ts`), the one the input-box probe first used:
+`ScreenRecord` (`harnesses/core/src/testing/probes.ts`), the one the input-box probe first used:
 
 ```json
 {
@@ -662,7 +802,7 @@ tests replay it from `harnesses/<agent>/fixtures/*.probe.json` and
 - `bright` holds only the rows whose dim cells blank some of their text (a placeholder
   suggestion), as they read undimmed; every other row reads as `rows` does.
 - `columns`, `cursor` and `bracketedPaste` are optional, kept where the probe knew them.
-  Read back, they default as `testing/screens.ts` does: 80 columns, the cursor on the last
+  Read back, they default as `harnesses/core/src/testing/screens.ts` does: 80 columns, the cursor on the last
   row that shows anything, bracketed paste on. `styles` is a probe's note on each row's
   style runs, for a reader's eyes; no test reads it.
 - A screen sits wherever its fixture needs it (`screens.wide`, `steps[].screen`, a doorbell
@@ -687,7 +827,7 @@ probe output, and keep their own loader.
 
 1. Pin it in `harnesses.json` (an npm package, or an archive with its SHA-512) and make
    sure `installHarness` can install it. Its name must be one of the protocol's
-   `agentName`s.
+   `agentName`s, a row of its harness table (`application/protocol/src/harnesses.ts`).
 2. Write its API's dialect in `src/e2e/model/`, unless it speaks one already there: it
    parses requests into `Call`s and encodes `Reply`s the way the harness reads them. It
    also answers the side endpoints the harness calls on the way to its prompt. To find
@@ -729,10 +869,14 @@ probe output, and keep their own loader.
    - The requests' traits: `rewind`, what Esc-Esc opens at its idle prompt and whether
      it swallows a paste; and `popup`, a popup it raises by itself after its Stop, which
      a reply's `usage` or `limits` (and the `popup` seed) can bring about.
-4. Add the setup to `setups` in `src/e2e/agents/index.ts`. That one list drives the
+4. Add the setup to `byAgent` in `src/e2e/agents/index.ts` (a compile error until then),
+   whose `setups` lists them in the protocol's order. That one list drives the
    messaging scenarios and the tripwire, so every scenario runs for it and its home is
    watched. A gap it shows goes in `known-gaps.ts`, with the test that pins it.
-5. Add it to the CI matrix in `.github/workflows/e2e.yml`, with its display name.
+5. Give it a Restore and a Save step in `.github/workflows/e2e.yml`, beside the others'.
+   Its rows, its place in the Mixed row and its pin's hash come from `harnesses.json`, and
+   its display name from the protocol's harness table. Nothing fails where the steps are
+   missing: its install just isn't cached.
 
 ## Claude Code against the fake model
 
@@ -906,11 +1050,26 @@ probe output, and keep their own loader.
 
 ## Known gaps
 
-None stands today. A known gap is a difference between harnesses the suite works around
-until Novadeck closes it, and is raised with the person first (see AGENTS.md, "Harness
-Parity"): never a reason to leave a harness out.
+A known gap is a difference between harnesses the suite works around until Novadeck
+closes it, and is raised with the person first (see AGENTS.md, "Harness Parity"): never a
+reason to leave a harness out. These stand today:
 
-`known-gaps.ts` names each one as a `Gap`, with the harnesses it affects, documented
+- **Codex on Windows loses characters outside the Basic Multilingual Plane**
+  (`losesAstral`). An emoji such as 👨 mostly never reaches it through the ConPTY that
+  node-pty bundles, though Windows' own ConPTY delivers it: a prompt holding one never
+  shows whole in its box, and fails without Enter, what was pasted left there as a draft
+  the next prompt is refused for until the person clears it. One CI run of many got it
+  through.
+  Pinned by chat.e2e.ts, "gives its agent emoji sequences and CJK, then the next prompt",
+  which takes either until it lands every time.
+- **Antigravity on Windows, two starting together, may race on its own settings**
+  (`racesOwnSettings`). One read them as the other rewrote them and showed its first-run
+  onboarding in place of the folder-trust question, on a CI runner. Its own settings
+  write, not Novadeck's: controls.e2e.ts starts the second once the first asks there,
+  and elsewhere both start together. A race, it has no pin that fails every time.
+
+`known-gaps.ts` names each one as a `Gap`, with the harnesses it affects (and the
+platforms, where only some have it), documented
 with its cause, the test that pins it and what to assert once it is fixed. The scenarios
 never ask which harness they run: they ask a function built on `has`, named for the
 behaviour that differs, which picks the detour. Each gap is also pinned by a test that

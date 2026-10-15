@@ -24,8 +24,39 @@ const rules: Record<string, readonly string[]> = {
   "voice/": ["voice/", "model/", "ui-toolkit/"],
   "terminals/": [...base, "terminals/", "sidebar/"],
   "layouts/": [...base, "layouts/", "sidebar/", "terminals/"],
-  "shell/": [...base, "shell/", "sidebar/", "terminals/", "layouts/", "projects/"],
-  "app/": ["app/", "backend/", ...base, ...features, "terminals/", "layouts/", "shell/", "voice/"],
+  // What asks for the person across the workspace: terminals' requests and unread finishes.
+  "notifications/": [...base, "notifications/", "sidebar/", "terminals/unread-state.ts"],
+  // The Inbox: what asks for the person, answered in place, beside the sidebar's rows, with
+  // the chat's markdown reader and its answers' rules.
+  "inbox/": [
+    ...base,
+    "inbox/",
+    "sidebar/",
+    "terminals/chat/Markdown.tsx",
+    "terminals/chat/answers.ts",
+  ],
+  "shell/": [
+    ...base,
+    "shell/",
+    "sidebar/",
+    "terminals/",
+    "layouts/",
+    "projects/",
+    "notifications/",
+    "inbox/",
+  ],
+  "app/": [
+    "app/",
+    "backend/",
+    ...base,
+    ...features,
+    "terminals/",
+    "layouts/",
+    "shell/",
+    "voice/",
+    "notifications/",
+    "inbox/",
+  ],
   // Commands are plain functions over the stores: no React, no DOM libraries.
   "app/commands/": [
     "app/commands/",
@@ -37,7 +68,11 @@ const rules: Record<string, readonly string[]> = {
     // The keymap's types only: commands never touch the DOM contracts in interaction/dom.ts.
     "interaction/keymap.ts",
     "shell/shell-state.ts",
+    // Which panel a link to the sidebar shows.
+    "shell/panels.ts",
     "terminals/rename-state.ts",
+    // Unread finishes, which the notification center's dismissals clear.
+    "terminals/unread-state.ts",
     // The switcher's arrangement, which commands change by its pure functions.
     "projects/project-arrangement.ts",
     "terminals/recent.ts",
@@ -65,6 +100,9 @@ const rules: Record<string, readonly string[]> = {
   "test.ts": [],
   "class-name.ts": [],
   "content-security-policy.ts": [],
+  "bundle-boundary.ts": [],
+  "search-visibility.ts": [],
+  "hosting-headers.ts": [],
 }
 const adapterRule = (layer: string): readonly string[] => [
   layer,
@@ -75,6 +113,8 @@ const adapterRule = (layer: string): readonly string[] => [
 ]
 // The only file that may import a backend adapter; it exports nothing else.
 const adapterSelection = "app/backend.ts"
+// Tests and specs open the demo through its spec entry, never another adapter module.
+const specBackend = "backend/demo/spec-variants.ts"
 const adapterSelectionExports = ["selectBackend"]
 // Packages are denied unless listed here, owned through `vendors`, or used by an
 // adapter or test code. model/, theme/, interaction/ and app/commands/ use none; core
@@ -87,6 +127,12 @@ const typeOnlyPackages: Record<string, readonly string[]> = {
   "app/commands/": [],
   "interaction/": [],
 }
+// The files in model/ that read the wire package, each through one data-only entry: its
+// table of harnesses, and the key that tells pages apart.
+const protocolData: Record<string, string> = {
+  "model/harnesses.ts": "@novadeck/protocol/harnesses",
+  "model/pages.ts": "@novadeck/protocol/pages",
+}
 const testLayers = new Set(["specs/", "test/", "test.ts"])
 const vendors: Record<string, readonly string[]> = {
   clsx: ["class-name.ts"],
@@ -98,17 +144,20 @@ const vendors: Record<string, readonly string[]> = {
   "react-grid-layout": ["layouts/grid/"],
   allotment: ["shell/"],
   // Terminals' tabs, windows and taskbars, the footer's subscriptions and the project
-  // switcher's projects, which reorder as the taskbar's icons do.
+  // switcher's projects and its pins, which reorder as the taskbar's icons do, and the
+  // drag the switcher hands to the pins bar.
   "@dnd-kit": [
     "terminals/",
     "shell/SubscriptionUsage.tsx",
+    "projects/PinsBar.tsx",
+    "projects/pin-handoff.ts",
     "projects/ProjectList.tsx",
     "projects/ProjectRow.tsx",
   ],
   "react-router": ["app/", "shell/"],
   "react-dom": ["layouts/transition.ts", "main.tsx", "test/"],
   // The runner client, its test runner, and the terminal emulator serve one adapter.
-  "@novadeck": ["backend/runner/"],
+  "@novadeck": ["backend/runner/", ...Object.keys(protocolData)],
   "@xterm": ["backend/runner/"],
 }
 
@@ -162,6 +211,7 @@ const importViolation = (file: string, layer: string | undefined) => {
   const allowed = layer ? allowedFor(file, layer) : []
   return ({ specifier, typeOnly }: { specifier: string; typeOnly: boolean }): string[] => {
     if (!specifier.startsWith(".")) {
+      if (protocolData[file] === specifier) return []
       if (isTest(file) || (layer && (adapterOf(layer) || testLayers.has(layer)))) return []
       const limited = layer ? typeOnlyPackages[layer] : undefined
       const ok = limited
@@ -173,7 +223,8 @@ const importViolation = (file: string, layer: string | undefined) => {
     if (!target) return [`${file} -> ${specifier} (unresolved)`]
     const targetLayer = layerOf(target)
     if (targetLayer && adapterOf(targetLayer) && targetLayer !== layer)
-      return file === adapterSelection
+      return file === adapterSelection ||
+        ((isTest(file) || layer === "specs/") && target === specBackend)
         ? []
         : [`${file} -> ${target} (only ${adapterSelection} selects an adapter)`]
     // Root-level tests exercise the root modules beside them.

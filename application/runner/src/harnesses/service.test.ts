@@ -4,10 +4,12 @@ import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import { MessageChannel } from "node:worker_threads"
 
+import { agy } from "@novadeck/harness-agy/index"
 import { connectRunner, messagePort } from "@novadeck/protocol/client"
+import { vi } from "vitest"
 
 import { createRunner, servePort } from "../index.js"
-import { installShellFiles } from "../shell/install.js"
+import { cmdPrints, installShellFiles } from "../shell/install.js"
 import type { ShellPaths } from "../shell/scripts.js"
 import { describe, expect, it as base } from "../test.js"
 import { WorkspaceStore } from "../workspaces/store.js"
@@ -40,9 +42,15 @@ if (agent === "codex") {
   if (command === "remove novadeck@novadeck") write(file, "")
 }
 if (agent === "agy") {
-  const file = path.join(home, ".gemini", "config", "plugins", "novadeck", "plugin.json")
-  if (command === "install") write(file, "{}")
-  if (command === "uninstall novadeck") fs.rmSync(file, { force: true })
+  // It copies the plugin folder it installs, as the real one does.
+  const folder = path.join(home, ".gemini", "config", "plugins", "novadeck")
+  if (command === "install") {
+    write(path.join(folder, "plugin.json"), "{}")
+    const hooks = path.join(args.at(-1), "hooks.json")
+    // FAKE_REWRITE: an agent that changes what it copies.
+    if (fs.existsSync(hooks)) write(path.join(folder, "hooks.json"), fs.readFileSync(hooks, "utf8") + (process.env.FAKE_REWRITE ?? ""))
+  }
+  if (command === "uninstall novadeck") fs.rmSync(folder, { recursive: true, force: true })
 }
 `
 
@@ -60,7 +68,10 @@ type Fixture = {
 const it = base.extend<{ fixture: Fixture }>({
   fixture: async ({ resources }, use) => {
     const root = mkdtempSync(join(tmpdir(), "novadeck-agents-"))
-    resources.defer(() => rmSync(root, { recursive: true, force: true }))
+    // The relay copied in may still be reading the registry for a background lookup.
+    resources.defer(() =>
+      rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }),
+    )
     const home = join(root, "home")
     const bin = join(root, "bin")
     mkdirSync(home)
@@ -113,6 +124,10 @@ const it = base.extend<{ fixture: Fixture }>({
     await use({ root, home, bin, paths, environment, agents, calls })
   },
 })
+
+// The events an Antigravity hooks file registers.
+const hookEvents = (path: string) =>
+  Object.keys((JSON.parse(readFileSync(path, "utf8")) as { novadeck: object }).novadeck)
 
 const installed = (home: string, ...agents: string[]) => {
   const homes = { claude: [".claude"], codex: [".codex"], agy: [".gemini", "antigravity-cli"] }
@@ -169,10 +184,118 @@ describe("agents Novadeck can connect", () => {
     const statusLine = () =>
       (JSON.parse(readFileSync(settings, "utf8")) as { statusLine?: { command: string } })
         .statusLine
-    if (!windows) expect(statusLine()?.command).toContain('"$NOVADECK_HOOK" agy StatusLine')
+    expect(statusLine()?.command).toContain(
+      windows ? "%NOVADECK_HOOK% agy StatusLine" : '"$NOVADECK_HOOK" agy StatusLine',
+    )
     await agents.set("agy", false)
     expect((await agents.list())[2]).toMatchObject({ connected: false })
-    if (!windows) expect(statusLine()).toBeUndefined()
+    expect(statusLine()).toBeUndefined()
+  })
+
+  it("install the plugin again where an agent's own copy of it differs from Novadeck's", async ({
+    fixture,
+  }) => {
+    installed(fixture.home, "agy", "codex")
+    const agents = fixture.agents()
+    // Not connected yet: nothing to refresh.
+    expect(await agents.refresh()).toEqual([])
+    await agents.set("agy", true)
+    const copy = join(fixture.home, ".gemini", "config", "plugins", "novadeck", "hooks.json")
+    const ours = join(fixture.paths.plugins.agy, "hooks.json")
+    expect(readFileSync(copy, "utf8")).toBe(readFileSync(ours, "utf8"))
+    // Its copy matches: no command runs.
+    const before = fixture.calls().length
+    expect(await agents.refresh()).toEqual([])
+    expect(fixture.calls()).toHaveLength(before)
+    // Novadeck renders its hooks otherwise now, as where cmd prints first.
+    writeFileSync(ours, '{"novadeck":{}}')
+    expect(await agents.refresh()).toEqual(["agy"])
+    expect(fixture.calls().slice(before)).toContainEqual([
+      "agy",
+      "plugin",
+      "install",
+      fixture.paths.plugins.agy,
+    ])
+    expect(readFileSync(copy, "utf8")).toBe('{"novadeck":{}}')
+    expect(await agents.refresh()).toEqual([])
+  })
+
+  // Windows CI's quirks job sets an AutoRun that prints (NOVADECK_TEST_CMD_AUTORUN=1), which
+  // no test may on a developer's machine.
+  it.runIf(process.platform === "win32" && process.env.NOVADECK_TEST_CMD_AUTORUN === "1")(
+    "take PreToolUse out of a connected Antigravity's copy where cmd prints before every command",
+    async ({ fixture }) => {
+      expect(await cmdPrints()).toBe("prints")
+      installed(fixture.home, "agy")
+      const agents = fixture.agents()
+      expect(hookEvents(join(fixture.paths.plugins.agy, "hooks.json"))).not.toContain("PreToolUse")
+      // Connected before cmd printed: its copy still has Antigravity ask Novadeck first.
+      await agents.set("agy", true)
+      const copy = join(fixture.home, ".gemini", "config", "plugins", "novadeck", "hooks.json")
+      const asking = agy
+        .files("win32", { mcp: { command: "mcp" } })
+        .find(({ path }) => path === "hooks.json")!.content
+      writeFileSync(copy, asking)
+      expect(hookEvents(copy)).toContain("PreToolUse")
+      expect(await agents.refresh()).toEqual(["agy"])
+      expect(hookEvents(copy)).not.toContain("PreToolUse")
+    },
+  )
+
+  it("never undo a disconnect asked for before the refresh looked", async ({ fixture }) => {
+    installed(fixture.home, "agy")
+    const agents = fixture.agents()
+    await agents.set("agy", true)
+    writeFileSync(join(fixture.paths.plugins.agy, "hooks.json"), '{"novadeck":{}}')
+    // The person turns it off as Novadeck starts: their change goes first.
+    const off = agents.set("agy", false)
+    const refreshed = agents.refresh()
+    await off
+    expect(await refreshed).toEqual([])
+    expect(await agents.connected("agy")).toBe(false)
+  })
+
+  it("finish at the next start a reinstall a quit cut short, unless disconnected since", async ({
+    fixture,
+  }) => {
+    installed(fixture.home, "agy")
+    const agents = fixture.agents()
+    const marker = `${fixture.paths.plugins.agy}.reinstalling`
+    // Uninstalled, not installed again yet: it looks disconnected.
+    writeFileSync(marker, "")
+    expect(await agents.connected("agy")).toBe(false)
+    expect(await agents.refresh()).toEqual(["agy"])
+    expect(await agents.connected("agy")).toBe(true)
+    expect(existsSync(marker)).toBe(false)
+    // A disconnect the person asks for takes the mark away with it.
+    writeFileSync(marker, "")
+    await agents.set("agy", false)
+    expect(existsSync(marker)).toBe(false)
+    expect(await agents.refresh()).toEqual([])
+    expect(await agents.connected("agy")).toBe(false)
+  })
+
+  it("drop an unfinished reinstall for an agent uninstalled since", async ({ fixture }) => {
+    const agents = fixture.agents()
+    const marker = `${fixture.paths.plugins.agy}.reinstalling`
+    // Antigravity's home is gone: the mark goes, and nothing is installed.
+    writeFileSync(marker, "")
+    expect(await agents.refresh()).toEqual([])
+    expect(existsSync(marker)).toBe(false)
+    expect(fixture.calls()).toEqual([])
+  })
+
+  it("say so where the agent's copy still differs once installed again", async ({ fixture }) => {
+    installed(fixture.home, "agy")
+    const agents = fixture.agents({ FAKE_REWRITE: " " })
+    await agents.set("agy", true)
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect(await agents.refresh()).toEqual(["agy"])
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("its copy still differs"))
+    } finally {
+      logged.mockRestore()
+    }
   })
 
   it.skipIf(windows)(
@@ -274,8 +397,8 @@ describe.skipIf(windows)("resuming an agent's saved session", () => {
         cwd: fixture.home,
         agents: { claude: { sessionId, seq: 1 } },
         promptedAt: null,
-        handle: "t1",
-        naming: { person: null, agent: null, summary: null },
+        handle: id === before ? "moth" : "fox",
+        naming: { person: null, agent: null, murmur: null, summary: null },
         openedBy: null,
         ledBy: null,
         command: null,

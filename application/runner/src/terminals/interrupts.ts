@@ -1,10 +1,16 @@
 import { setTimeout as sleep } from "node:timers/promises"
 
+import {
+  endsText,
+  isEmpty,
+  sameText,
+  type BoxProfile,
+  type InputBox,
+} from "@novadeck/harness-core/box"
+import type { ScreenText } from "@novadeck/harness-core/screen"
 import type { InterruptResult } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
-import { endsText, isEmpty, sameText, type BoxProfile, type InputBox } from "../harnesses/box.js"
-import type { ScreenText } from "./screen.js"
 
 /** The waits of an interrupt, in milliseconds. */
 export type InterruptOptions = {
@@ -18,7 +24,15 @@ export type InterruptOptions = {
    * a second Escape then would stop nothing.
    */
   readonly settleMs?: number
+  /**
+   * How long, once Escape stopped a turn with messages queued behind it, it waits for the
+   * turn the harness starts with them, which the second Escape stops.
+   */
+  readonly queuedTurnMs?: number
 }
+
+// A screen as one string, to tell whether it has changed.
+const rowsOf = (screen: ScreenText | undefined): string => screen?.rows.join("\n") ?? ""
 
 /** What interrupts need of the terminal manager and messaging, by terminal. */
 export type InterruptHost = {
@@ -66,6 +80,7 @@ export class Interrupts {
   private readonly restoreMs: number
   private readonly restoreCalmMs: number
   private readonly settleMs: number
+  private readonly queuedTurnMs: number
 
   constructor(
     private readonly host: InterruptHost,
@@ -74,6 +89,7 @@ export class Interrupts {
     this.restoreMs = options.restoreMs ?? 2_000
     this.restoreCalmMs = options.restoreCalmMs ?? 500
     this.settleMs = options.settleMs ?? 1_000
+    this.queuedTurnMs = options.queuedTurnMs ?? 3_000
   }
 
   /**
@@ -116,8 +132,19 @@ export class Interrupts {
     let box = await this.settled(terminalId, profile)
     // Claude Code and Codex send what was queued as the next turn, or a steer, which a
     // second Escape stops; Claude Code then puts that message back in its box. One Escape
-    // does nothing at an idle prompt, and two are never written here.
+    // does nothing at an idle prompt, and two are never written here. That turn may start
+    // only after the box has settled, as once the stopped turn took a busy machine longer
+    // to end (Codex on Windows CI: its queued turn began 0.8 s after the first Escape, and a
+    // second Escape 0.6 s after it stopped nothing): it is waited for first.
+    // Text the box holds by then, with no such turn, is the person's, typed meanwhile, as
+    // nothing was put back yet: it is left as it is, as no second Escape goes over it.
     if (box !== undefined && isEmpty(box) && queued && host.alive(terminalId)) {
+      const started = await this.turnStarts(terminalId)
+      if (!started) {
+        const screen = await host.screen(terminalId)
+        const now = screen && profile.read(screen)
+        if (now !== undefined && !isEmpty(now)) return none
+      }
       host.type(terminalId, "\x1b")
       box = await this.settled(terminalId, profile)
     }
@@ -147,26 +174,58 @@ export class Interrupts {
   }
 
   /**
+   * Whether the terminal's agent works again, on the turn it starts with what was queued,
+   * within `queuedTurnMs`, which bounds how long this holds the terminal's input queue.
+   * Nothing else ends the wait: the second Escape must come after that turn has started,
+   * or it stops nothing. The queued messages leaving the screen says nothing either:
+   * Codex's Escape sends them at once as a steer, though the turn that runs them came
+   * 1.4 s later on Windows CI.
+   */
+  private async turnStarts(terminalId: string): Promise<boolean> {
+    const { host } = this
+    const until = Date.now() + this.queuedTurnMs
+    while (host.alive(terminalId) && Date.now() < until) {
+      if (host.working(terminalId)) return true
+      // eslint-disable-next-line no-await-in-loop -- Looks again until it works.
+      await sleep(50)
+    }
+    return host.working(terminalId)
+  }
+
+  /**
    * Clears the text of the box with the profile's keys, written, not typed (the box is
    * empty after them, which the person's keys never say), and looks that it reads empty,
-   * writing them again up to twice if not. False where it does not.
+   * writing them again up to twice if not, as the screen then calls for. False where it
+   * does not.
    */
   private async cleared(terminalId: string, profile: BoxProfile, box: InputBox): Promise<boolean> {
     const { host } = this
     let now = box
+    // What the screen shows as each try is made: a harness's keys may need to follow what it
+    // has taken of the last (Claude Code's second Escape, once its first has come).
+    let seen = await host.screen(terminalId)
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      host.write(terminalId, profile.clear!(now))
-      const until = Date.now() + this.restoreCalmMs
-      while (Date.now() < until) {
+      host.write(terminalId, profile.clear!(now, seen))
+      // The same keys are written again only once the screen has changed since they were
+      // (something of them was taken, and says what is left), or `restoreMs` has passed with
+      // no change at all (they were lost): a harness slow to take them, as Claude Code on a
+      // busy Windows machine, is not given a second pair over its first (the Escapes of
+      // the second would open its rewind picker, seen in CI after 0.5 s of no change).
+      const before = rowsOf(seen)
+      const wrote = Date.now()
+      while (Date.now() < wrote + this.restoreMs) {
         // eslint-disable-next-line no-await-in-loop -- The screen is looked at in turn.
         await sleep(50)
         // eslint-disable-next-line no-await-in-loop -- As above.
         const after = await host.screen(terminalId)
         const read = after && profile.read(after)
         if (!after || !host.alive(terminalId)) return false
-        if (read === undefined) continue
-        if (isEmpty(read)) return true
-        now = read
+        seen = after
+        if (read !== undefined) {
+          if (isEmpty(read)) return true
+          now = read
+        }
+        if (Date.now() >= wrote + this.restoreCalmMs && rowsOf(after) !== before) break
       }
     }
     return false

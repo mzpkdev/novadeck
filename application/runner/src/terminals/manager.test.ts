@@ -5,17 +5,23 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSy
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 
+import type { ActivityEvent } from "@novadeck/harness-core/events"
+import { screen as screenWith } from "@novadeck/harness-core/testing/screens"
 import type { TerminalChange, TerminalEvent } from "@novadeck/protocol"
 import headless from "@xterm/headless"
 import { vi } from "vitest"
 
-import { escapeVerdictMs, started as fresh, type Activity } from "../harnesses/activity.js"
-import type { ActivityEvent } from "../harnesses/events.js"
+import {
+  escapeScreenMs,
+  escapeVerdictMs,
+  started as fresh,
+  type Activity,
+} from "../harnesses/activity.js"
 import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
 import { WorkspaceStore } from "../workspaces/store.js"
-import { InputQueue } from "./input-queue.js"
+import { type HoldBudget, InputQueue } from "./input-queue.js"
 import { forceKill, Terminals } from "./manager.js"
 
 const cwd = process.cwd()
@@ -145,6 +151,9 @@ describe("holding the person's input", () => {
   })
 })
 
+// Every line the fixture children traced in this test process.
+const traced = (): string[] => ptyTrace(Number.MAX_SAFE_INTEGER).split("\n")
+
 describe("an answer's hold of the person's input", () => {
   it("never replays the mouse's wheel and motion reports it held, once released", async ({
     terminals,
@@ -159,26 +168,37 @@ describe("an answer's hold of the person's input", () => {
       { terminalId: terminal.id, data: command({ type: "write", data: "\x1b[?1003h\x1b[?1006h" }) },
       "creator",
     )
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    // Until the screen shows it asked, however long a busy machine's child takes: only
+    // then is the wheel's report one the TUI asked for, rather than typed text.
+    const { screen } = (
+      manager as unknown as {
+        records: Map<string, { screen: { modes: { mouseTrackingMode: string } } }>
+      }
+    ).records.get(terminal.id)!
+    await vi.waitFor(() => expect(screen.modes.mouseTrackingMode).toBe("any"), {
+      timeout: 5_000,
+    })
+    // An answer's hold, as the queue gives it: its keys deferred until delivered.
     const hold = (
       manager as unknown as {
-        holdInput: (
-          id: string,
-          cap: number,
-          options: object,
-        ) => { release: () => void; settle: () => void }
+        holdInput: (id: string, budget: HoldBudget) => { release: () => void; settle: () => void }
       }
-    ).holdInput(terminal.id, 5_000, { deferKeys: true })
-    // 16 characters, which no other write of this test has: the child traces lengths.
-    manager.write({ terminalId: terminal.id, data: "\x1b[<64;123;456M" }, "creator")
+    ).holdInput(terminal.id, { inputMs: 5_000, sizeMs: 5_000, deferred: true })
+    // What the children traced from here on, however much a busy machine traced before.
+    const mark = traced().length
+    const since = (): string => traced().slice(mark).join("\n")
+    // A length no other write of this test has: the child traces lengths.
+    const wheel = "\x1b[<64;123;456M"
+    manager.write({ terminalId: terminal.id, data: wheel }, "creator")
     manager.write({ terminalId: terminal.id, data: "k" }, "creator")
     hold.release()
     hold.settle()
+    // The key went once released; the wheel report, held before it, never did.
+    await vi.waitFor(() => expect(since()).toContain("received 1 chars"), { timeout: 5_000 })
     await new Promise((resolve) => setTimeout(resolve, 400))
-    const trace = ptyTrace(40)
-    // The key went once released; the wheel report never did.
-    expect(trace).toContain("received 1 chars")
-    expect(trace).not.toContain("received 16 chars")
+    // Neither alone nor with the key.
+    expect(since()).not.toContain(`received ${wheel.length} chars`)
+    expect(since()).not.toContain(`received ${wheel.length + 1} chars`)
   })
 })
 
@@ -656,9 +676,6 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     expect(() =>
       manager.resize({ terminalId: terminal.id, cols: 40, rows: 10 }, "observer"),
     ).toThrow(expect.objectContaining({ code: "CONTROL_REQUIRED" }))
-    await expect(manager.close({ terminalId: terminal.id }, "observer")).rejects.toMatchObject({
-      code: "CONTROL_IN_USE",
-    })
     const pending = controller.next()
     signal.abort()
     expect((await pending).done).toBe(true)
@@ -854,7 +871,7 @@ describe.skipIf(process.platform === "win32")("terminal manager", () => {
     const pid = Number(/PID=(\d+)\r?\n/.exec(await untilPid(manager, stream))![1])
     const control = terminals.attach(manager, terminal.id, "control")
     await control.next()
-    await manager.close({ terminalId: terminal.id }, "control")
+    await manager.close({ terminalId: terminal.id })
     expect(manager.list()).toEqual([])
     expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
     const second = await manager.create(
@@ -1197,21 +1214,21 @@ describe("terminal closing", () => {
     const observer = terminals.attach(manager, closed.id, "observer", undefined, "observe")
     await observer.next()
 
-    await manager.close({ terminalId: closed.id }, "owner")
+    await manager.close({ terminalId: closed.id })
     expect(await watch.until((change) => change.type === "removed")).toEqual({
       type: "removed",
       terminalId: closed.id,
       sessionId: "session",
     })
     expect(manager.list().map((terminal) => terminal.id)).toEqual([ended.id])
-    // Its id stays taken while the observer is still attached.
+    // Closed for good: its id never starts a terminal again.
     await expect(
       manager.create({ id: closed.id, sessionId: "session", cwd, cols: 80, rows: 24 }, "owner"),
-    ).rejects.toMatchObject({ code: "CONFLICT" })
+    ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
     // The observer still drains and acknowledges its stream through the exit.
     const events = await until(manager, observer, "observer", (event) => event.type === "exited")
     expect(events.at(-1)).toMatchObject({ type: "exited" })
-    await expect(manager.close({ terminalId: closed.id }, "owner")).rejects.toMatchObject({
+    await expect(manager.close({ terminalId: closed.id })).rejects.toMatchObject({
       code: "TERMINAL_NOT_FOUND",
     })
     await expect(terminals.attach(manager, closed.id, "late").next()).rejects.toMatchObject({
@@ -1245,14 +1262,12 @@ describe("terminal closing", () => {
       })
       expect(isRunning(started)).toBe(true)
 
-      await manager.close({ terminalId: terminal.id }, "owner")
+      await manager.close({ terminalId: terminal.id })
       await vi.waitFor(() => expect(isRunning(started)).toBe(false), { timeout: 15_000 })
     },
   )
 
-  it("lets any connection close a terminal nobody controls, but not another's", async ({
-    terminals,
-  }) => {
+  it("lets any connection close a terminal, whoever controls it", async ({ terminals }) => {
     const manager = terminals.manager(ptyOptions)
     const create = () =>
       manager.create({ id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
@@ -1261,14 +1276,14 @@ describe("terminal closing", () => {
     const controller = terminals.attach(manager, held.id, "owner")
     await controller.next()
     manager.release("owner")
-    await manager.close({ terminalId: released.id }, "other")
+    await manager.close({ terminalId: released.id })
     expect(manager.list().map((terminal) => terminal.id)).toEqual([held.id])
+    // Another window controls it: closing it here still ends it, as it is gone here.
     const retaken = terminals.attach(manager, held.id, "holder")
     await retaken.next()
-    await expect(manager.close({ terminalId: held.id }, "other")).rejects.toMatchObject({
-      code: "CONTROL_IN_USE",
-    })
-    await expect(manager.close({ terminalId: randomUUID() }, "other")).rejects.toMatchObject({
+    await manager.close({ terminalId: held.id })
+    expect(manager.list()).toEqual([])
+    await expect(manager.close({ terminalId: randomUUID() })).rejects.toMatchObject({
       code: "TERMINAL_NOT_FOUND",
     })
   })
@@ -1400,6 +1415,19 @@ describe("project closing", () => {
       manager.restart({ terminalId: id, cols: 80, rows: 24 }, "owner"),
     ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
   })
+
+  it("starts no terminal in a closed project's sessions, unless the project stays", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    await manager.closeProject("project", ["session"])
+    const create = () =>
+      manager.create({ id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
+    await expect(create()).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+    // Its removal failed after the close: terminals start in it again.
+    manager.projectKept(["session"])
+    await expect(create()).resolves.toMatchObject({ sessionId: "session" })
+  })
 })
 
 describe.skipIf(process.platform === "win32")("terminal environment", () => {
@@ -1443,6 +1471,32 @@ describe.skipIf(process.platform === "win32")("terminal environment", () => {
       ),
     ).toContain("[|own|]")
   })
+
+  it.runIf(process.platform === "darwin")(
+    "gives a shell on macOS a UTF-8 LANG where the runner has no locale, as an app opened from the Dock has none",
+    async ({ terminals }) => {
+      // sh with no startup files: a developer's own rc can't set LANG for it.
+      const manager = terminals.manager({
+        shell: "/bin/sh",
+        shellArgs: [],
+        baseEnv: { PATH: process.env.PATH },
+        env: { PS1: "", ENV: "" },
+      })
+      const terminal = await manager.create(
+        { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+        "owner",
+      )
+      const stream = terminals.attach(manager, terminal.id, "owner")
+      await stream.next()
+      manager.write({ terminalId: terminal.id, data: "printf '[%s]\\n' \"$LANG\"\n" }, "owner")
+      const events = await until(manager, stream, "owner", (_event, text) =>
+        /\[[^\]\r\n]*\]\r\n/.test(text),
+      )
+      const printed = events.map((event) => ("data" in event ? event.data : "")).join("")
+
+      expect(printed).toMatch(/\[[a-z]{2,3}_[A-Z]{2}\.UTF-8\]/)
+    },
+  )
 })
 
 describe.skipIf(process.platform === "win32")("terminal limits", () => {
@@ -1552,6 +1606,48 @@ describe.skipIf(process.platform === "win32")("terminal message watches", () => 
   })
 })
 
+describe("a terminal's output", () => {
+  type Inside = {
+    records: Map<string, { process: unknown }>
+    output: (record: unknown, child: unknown, data: string) => void
+    applySize: (record: unknown, size: { cols: number; rows: number }) => void
+    emit: (record: unknown, payload: { type: string; data?: string }) => void
+  }
+
+  it("is drawn in order with a resize queued between, never joining a draw ahead of it", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as Inside
+    const record = inside.records.get(terminal.id)!
+    const seen: string[] = []
+    const { emit } = inside
+    inside.emit = function (target, payload) {
+      if (payload.type === "resized") seen.push("resized")
+      else if (payload.type === "output")
+        for (const mark of ["DRAW-A", "DRAW-B", "DRAW-C"])
+          if (payload.data?.includes(mark)) seen.push(mark)
+      emit.call(this, target, payload)
+    }
+    try {
+      // Output, a resize as a pane changes size, and the program's redraw after it.
+      inside.output(record, record.process, "DRAW-A")
+      inside.applySize(record, { cols: 100, rows: 30 })
+      inside.output(record, record.process, "DRAW-B")
+      // Output while a draw waits, with nothing between, still joins it.
+      inside.output(record, record.process, "DRAW-C")
+      await vi.waitFor(() => expect(seen).toHaveLength(4))
+      expect(seen).toEqual(["DRAW-A", "resized", "DRAW-B", "DRAW-C"])
+    } finally {
+      inside.emit = emit
+    }
+  })
+})
+
 describe("a turn the person's Escape ended", () => {
   type Inside = {
     records: Map<string, { binding: unknown; activity: Activity | null }>
@@ -1599,6 +1695,151 @@ describe("a turn the person's Escape ended", () => {
       vi.useRealTimers()
     }
   })
+
+  // Each case can wait out the whole window, and a timeout would leave the platform stubbed.
+  it("reads completed with no Stop, on Windows, where Antigravity's transcript holds the reply and its screen shows no interruption", async ({
+    terminals,
+  }) => {
+    const manager = terminals.manager(ptyOptions)
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as Inside & { screenOf: (id: string) => Promise<unknown> }
+    const record = inside.records.get(terminal.id)! as {
+      transcript: string | null
+      verdict?: unknown
+    } & (typeof inside.records extends Map<string, infer R> ? R : never)
+    const binding = { agent: "agy", sessionId: "s", instance: null } as const
+    record.binding = binding
+    const directory = mkdtempSync(join(tmpdir(), "novadeck-escape-"))
+    const asked = JSON.stringify({
+      source: "USER_EXPLICIT",
+      type: "USER_INPUT",
+      content: "Hold on",
+    })
+    const answered = JSON.stringify({
+      source: "MODEL",
+      type: "PLANNER_RESPONSE",
+      content: "Too late.",
+    })
+    // Antigravity's screen after the turn: its reply, maybe its word that the Escape
+    // stopped it, then its box; or no box at all, as mid-redraw.
+    const rule = "─".repeat(60)
+    const shown = (word: boolean) => {
+      const rows = [
+        "> Hold on",
+        "",
+        "  Too late.",
+        ...(word ? ["", "  ⎿  Interrupted · What should Antigravity CLI do instead?"] : []),
+        rule,
+        "> ",
+        rule,
+      ]
+      return screenWith({ rows, cursor: { row: rows.length - 2, column: 2 } })
+    }
+    // As the probe captured them: the transcript's two steps, and the screen's rows.
+    const cutOff = [
+      JSON.stringify({
+        step_index: 0,
+        source: "USER_EXPLICIT",
+        type: "USER_INPUT",
+        status: "DONE",
+        content: "<USER_REQUEST>\nCheck the folder\n</USER_REQUEST>",
+      }),
+      JSON.stringify({
+        step_index: 1,
+        source: "MODEL",
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        created_at: "2026-10-11T17:09:15Z",
+        content: "Let me check the folder.",
+      }),
+    ]
+    const cutOffRows = [
+      rule,
+      "> Check the folder",
+      "",
+      "  Let me check the folder.",
+      "⢿  Generating...",
+      "",
+      "  ⎿  Interrupted · What should Antigravity CLI do instead?",
+      rule,
+      ">",
+      rule,
+      "? for shortcuts",
+    ]
+    const cutOffScreen = screenWith({ rows: cutOffRows, cursor: { row: 8, column: 2 } })
+    const unreadable = screenWith({ rows: ["$ "] })
+    const cases = [
+      ["the reply, shown alone", [asked, answered], shown(false), "completed"],
+      ["the reply, with the interruption", [asked, answered], shown(true), "interrupted"],
+      // The word drawn after the reply, as a loaded machine may.
+      [
+        "the reply, then the interruption",
+        [asked, answered],
+        [shown(false), shown(true)],
+        "interrupted",
+      ],
+      // A read mid-redraw tells nothing: the reads after it do.
+      [
+        "the reply, after an unreadable read",
+        [asked, answered],
+        [unreadable, shown(false)],
+        "completed",
+      ],
+      [
+        "the reply, with no read after the window that tells",
+        [asked, answered],
+        [shown(false), unreadable],
+        "interrupted",
+      ],
+      [
+        "the reply, with no box to read",
+        [asked, answered],
+        screenWith({ rows: ["$ "] }),
+        "interrupted",
+      ],
+      ["no reply since the prompt", [answered, asked], shown(false), "interrupted"],
+      // An Escape between a response's words and the tool call after them: Antigravity
+      // records the words alone as the response, then draws its interruption (probed
+      // 2026-10-11, 1.2.14, the call streamed 1.5 s after the words, every run).
+      ["the words before a call the Escape cut off", cutOff, cutOffScreen, "interrupted"],
+    ] as const
+    // The wait for the screen runs on Windows only.
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    Object.defineProperty(process, "platform", { value: "win32" })
+    try {
+      for (const [what, lines, screen, outcome] of cases) {
+        record.transcript = join(directory, `${randomUUID()}.jsonl`)
+        writeFileSync(record.transcript, `${lines.join("\n")}\n`)
+        // One screen a read once the window has passed, the last for the rest; the first
+        // for anything that looks before.
+        const reads = [screen].flat()
+        let reading = 0
+        inside.screenOf = () =>
+          Promise.resolve(reads[record.verdict ? 0 : Math.min(reading++, reads.length - 1)])
+        record.activity = fresh(0, true, false)
+        inside.applyFact(record, {
+          ...binding,
+          type: "turn-started",
+          cause: "prompt",
+          startedAt: 10,
+        })
+        inside.messaging.escaped = () => ({ ...binding, type: "turn-escaped", startedAt: 20 })
+        inside.escaped(record)
+        // eslint-disable-next-line no-await-in-loop -- Each case waits for its own verdict.
+        await vi.waitFor(
+          () => expect(record.activity?.lastTurn?.escaped?.settled ?? true).toBe(true),
+          { timeout: escapeVerdictMs + escapeScreenMs + 2000 },
+        )
+        expect(record.activity?.lastTurn?.outcome, what).toBe(outcome)
+      }
+    } finally {
+      Object.defineProperty(process, "platform", platform)
+      rmSync(directory, { recursive: true, force: true })
+    }
+  }, 60_000)
 })
 
 describe("saving a terminal that was closed", () => {
@@ -1627,12 +1868,122 @@ describe("saving a terminal that was closed", () => {
       const record = inside.records.get(id)
       expect(store.terminal(id)).toBeDefined()
 
-      await manager.close({ terminalId: id }, "creator")
+      await manager.close({ terminalId: id })
       expect(store.terminal(id)).toBeUndefined()
       inside.save(record, false)
       inside.save(record, true)
 
       expect(store.terminal(id)).toBeUndefined()
+    } finally {
+      store.close()
+    }
+  })
+
+  it("forgets one closed as the runner stops, before its shell has ended", async ({
+    terminals,
+  }) => {
+    const { store, sessionId } = await stored()
+    try {
+      const manager = terminals.manager({ ...ptyOptions, records: store })
+      const { id } = await manager.create(
+        { id: randomUUID(), sessionId, cwd, cols: 80, rows: 24 },
+        "creator",
+      )
+      // A shell that ignores the hangup ends only at the forced kill, a second later.
+      const stream = terminals.attach(manager, id, "creator")
+      manager.write({ terminalId: id, data: command({ type: "ignoreHangup" }) }, "creator")
+      await until(manager, stream, "creator", (_event, text) => text.includes("HANGUP_IGNORED"))
+
+      const closing = manager.close({ terminalId: id })
+      // Forgotten as the close begins, before the shell has ended.
+      expect(store.terminal(id)).toBeUndefined()
+      // The app quits meanwhile: the runner's last save must not keep it.
+      await manager.shutdown()
+      await closing
+
+      expect(store.terminal(id)).toBeUndefined()
+    } finally {
+      store.close()
+    }
+  })
+
+  it("does not restore one closed while its restore was under way", async ({ terminals }) => {
+    const { store, sessionId } = await stored()
+    try {
+      const first = terminals.manager({ ...ptyOptions, records: store })
+      const { id } = await first.create(
+        { id: randomUUID(), sessionId, cwd, cols: 80, rows: 24 },
+        "creator",
+      )
+      await first.shutdown()
+      expect(store.terminal(id)).toBeDefined()
+
+      // The next runner keeps it only as saved, until a window restores it.
+      const manager = terminals.manager({ ...ptyOptions, records: store })
+      const restoring = manager.create(
+        { id, sessionId, cwd, cols: 80, rows: 24, restore: true },
+        "creator",
+      )
+      await manager.close({ terminalId: id })
+
+      await expect(restoring).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+      expect(store.terminal(id)).toBeUndefined()
+      expect(manager.list()).toEqual([])
+    } finally {
+      store.close()
+    }
+  })
+
+  it("starts or attaches nothing to one closed while its shell still ends", async ({
+    terminals,
+  }) => {
+    const { store, sessionId } = await stored()
+    try {
+      const manager = terminals.manager({ ...ptyOptions, records: store })
+      const { id } = await manager.create(
+        { id: randomUUID(), sessionId, cwd, cols: 80, rows: 24 },
+        "creator",
+      )
+      const stream = terminals.attach(manager, id, "creator")
+      manager.write({ terminalId: id, data: command({ type: "ignoreHangup" }) }, "creator")
+      await until(manager, stream, "creator", (_event, text) => text.includes("HANGUP_IGNORED"))
+
+      const closing = manager.close({ terminalId: id })
+      // Another window, back from away, restores it or attaches to it meanwhile.
+      await expect(
+        manager.create({ id, sessionId, cwd, cols: 80, rows: 24, restore: true }, "other"),
+      ).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+      await expect(terminals.attach(manager, id, "other").next()).rejects.toMatchObject({
+        code: "TERMINAL_NOT_FOUND",
+      })
+      await closing
+
+      expect(store.terminal(id)).toBeUndefined()
+    } finally {
+      store.close()
+    }
+  })
+
+  it("does not start one closed before its restore, though nothing of it was saved", async ({
+    terminals,
+  }) => {
+    const { store, sessionId } = await stored()
+    try {
+      const manager = terminals.manager({ ...ptyOptions, records: store })
+      // A window restores a terminal the runner has no record of, as after a runner
+      // restart, and the person closes it meanwhile.
+      const id = randomUUID()
+      const restoring = manager.create(
+        { id, sessionId, cwd, cols: 80, rows: 24, restore: true },
+        "creator",
+      )
+      await expect(manager.close({ terminalId: id })).rejects.toMatchObject({
+        code: "TERMINAL_NOT_FOUND",
+      })
+
+      await expect(restoring).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+      expect(store.terminal(id)).toBeUndefined()
+      expect(manager.list()).toEqual([])
     } finally {
       store.close()
     }

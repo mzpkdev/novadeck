@@ -1,5 +1,7 @@
 appId: dev.mzpk.novadeck
-productName: novadeck.
+productName: Novadeck
+# The file names stay lowercase: the executable, and on macOS the bundle, novadeck.app,
+# which builder names after it. The product name is what menus, the Dock and helpers show.
 executableName: novadeck
 asar: true
 # PTY libraries and their spawn helpers must run from the real filesystem.
@@ -12,8 +14,9 @@ directories:
   output: release
   # The app icon's sources; `build/` is ignored by git, so they live here.
   buildResources: resources
-# The Deck mark, rendered from resources/icon.svg by scripts/render-icons.mjs; builder
-# converts the 1024 px PNG for macOS and Windows.
+# The Nova mark on a Graphite tile, rendered from resources/icon.svg by
+# scripts/render-icons.mjs. macOS and Windows have their own icon.icns and icon.ico, which
+# keep the hand-placed small sizes; this 1024 px PNG covers anything that names no icon.
 icon: resources/icon.png
 files:
   - out/**
@@ -28,35 +31,124 @@ extraResources:
       - novadeck-relay*
   # The manifest of the voice engine, which voice input downloads on install from this
   # release; the archive it names is a release asset, not part of the app. See
-  # application/whisper.
-  - from: ../whisper/dist/engine.json
+  # engines/whisper.
+  - from: ../../engines/whisper/dist/engine.json
     to: voice/engine.json
-artifactName: novadeck-${version}-${os}-${arch}.${ext}
+  # The same for murmur's engine, llama.cpp; see engines/murmur.
+  - from: ../../engines/murmur/dist/engine.json
+    to: murmur/engine.json
+# Where installed apps look for updates. Builder writes this into the app as
+# resources/app-update.yml, and beside the packages the latest*.yml files and blockmaps
+# that name them, even with --publish never. Every release from main is a prerelease until
+# someone promotes it to stable. The owner and repo here are the defaults of a local build;
+# the release workflow passes the repository it runs in, so a moved repository needs no edit.
+publish:
+  provider: github
+  owner: novadeck-org
+  repo: novadeck
+  releaseType: prerelease
+# No package name carries a version, so releases/latest/download/<name> is always the newest
+# stable build. The AppImage replaces itself in place, and electron-updater renames the file
+# when its name carries a version, which would break whatever launches it; without one, the
+# file keeps its path across updates. Builder renders ${arch} as x86_64 for the AppImage
+# and universal for macOS.
+artifactName: novadeck-${os}-${arch}.${ext}
+# The installers name the install folder after the package's name, which for the
+# workspace's @novadeck/host would be "@novadeckhost". Electron names the app by
+# productName first, so this changes nothing at run time.
+extraMetadata:
+  name: novadeck
 mac:
+  # The app and disk image icon; builder uses an .icns as it is.
+  icon: resources/icon.icns
   # node-pty ships prebuilds for both architectures, and the relay is built universal; the
   # universal merge sees them unchanged in the x64 and arm64 copies, and each runs the
   # architecture of the host.
   x64ArchFiles: "{Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-*/*,Contents/Resources/relay/*}"
-  # Electron resolves helpers from CFBundleName; builder strips the branding's trailing dot.
   extendInfo:
-    CFBundleName: novadeck
     NSMicrophoneUsageDescription: Novadeck uses the microphone for voice input, transcribed on this computer.
-  identity: null
+    # What macOS shows when a program run in a terminal asks; see the entitlements.
+    NSCameraUsageDescription: A program running in Novadeck wants to use the camera.
+    NSAppleEventsUsageDescription: A program running in Novadeck wants to control another app.
+    NSContactsUsageDescription: A program running in Novadeck wants to read your contacts.
+    NSCalendarsUsageDescription: A program running in Novadeck wants to use your calendars.
+    NSCalendarsFullAccessUsageDescription: A program running in Novadeck wants to use your calendars.
+    NSRemindersUsageDescription: A program running in Novadeck wants to use your reminders.
+    NSRemindersFullAccessUsageDescription: A program running in Novadeck wants to use your reminders.
+    NSLocationUsageDescription: A program running in Novadeck wants to use your location.
+    NSLocationWhenInUseUsageDescription: A program running in Novadeck wants to use your location.
+    NSPhotoLibraryUsageDescription: A program running in Novadeck wants to use your photos.
+    NSBluetoothAlwaysUsageDescription: A program running in Novadeck wants to use Bluetooth.
+    NSLocalNetworkUsageDescription: A program running in Novadeck wants to reach devices on your local network.
+    NSDesktopFolderUsageDescription: A program running in Novadeck wants to use files on your Desktop.
+    NSDocumentsFolderUsageDescription: A program running in Novadeck wants to use files in your Documents folder.
+    NSDownloadsFolderUsageDescription: A program running in Novadeck wants to use files in your Downloads folder.
+    NSRemovableVolumesUsageDescription: A program running in Novadeck wants to use files on a removable volume.
+    NSNetworkVolumesUsageDescription: A program running in Novadeck wants to use files on a network volume.
+  # Only this platform's PTY binaries: signing would otherwise reach the Linux and Windows
+  # prebuilds, which codesign cannot sign as code.
+  files:
+    - "!node_modules/node-pty/prebuilds/{linux,win32}-*{,/**}"
+    - "!node_modules/node-pty/third_party{,/**}"
+  # Signed with the Developer ID certificate in the keychain and notarized with the App
+  # Store Connect key in APPLE_API_KEY*, when the release workflow has them; without a
+  # certificate the app is left unsigned. See docs/release-signing.md.
+  hardenedRuntime: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  notarize: true
   category: public.app-category.utilities
+  # The disk image people drag to Applications, and the ZIP that Squirrel.Mac installs
+  # updates from. The app inside both is the one signed, notarized and stapled.
   target:
     - target: zip
       arch:
         - universal
+    - target: dmg
+      arch:
+        - universal
 win:
+  # The executable, installer and uninstaller icon; builder takes it when nothing more
+  # specific is set.
+  icon: resources/icon.ico
+  # Signed through Azure Artifact Signing when the release workflow passes
+  # azureSignOptions; see docs/release-signing.md. Executables are signed by default; the
+  # libraries and native modules too, so antivirus heuristics see a known publisher.
+  signExts:
+    - .dll
+    - .node
+  # Only the x64 PTY binaries: signtool fails on the macOS and Linux prebuilds, and the x64
+  # app never loads the arm64 ones, even emulated on an arm64 computer.
+  files:
+    - "!node_modules/node-pty/prebuilds/{darwin,linux}-*{,/**}"
+    - "!node_modules/node-pty/prebuilds/win32-arm64{,/**}"
+    - "!node_modules/node-pty/third_party{,/**}"
+  # The installer, and the ZIP of the unpacked app that runs from any folder: builder zips
+  # win-unpacked after signing it, so both hold the same signed executables. The ZIP is no
+  # update source: builder writes latest.yml for the installer alone, and a ZIP-run app
+  # does not update itself.
   target:
-    - target: portable
+    - target: nsis
       arch:
         - x64
+    - target: zip
+      arch:
+        - x64
+nsis:
+  # One click, for the current user, into %LOCALAPPDATA%\Programs\novadeck, with no
+  # administrator prompt; uninstalling keeps the projects and sessions in app data.
+  artifactName: novadeck-${os}-${arch}-setup.${ext}
+toolsets:
+  appimage: 1.0.3
 linux:
   icon: resources/icons
   category: Utility
-  maintainer: mzpkdev
   syncDesktopName: true
+  # The AppImage is the only Linux package. Builder's default runtime needs libfuse2, which
+  # current distributions no longer install; this toolset swaps in its static runtime, which
+  # mounts through FUSE 3 (fusermount3). It also stops builder from putting --no-sandbox in
+  # the menu entry's Exec line. AppRun still adds it when the kernel refuses unprivileged user
+  # namespaces, as Ubuntu's AppArmor does until install.sh's profile allows them.
   target:
     - target: AppImage
       arch:

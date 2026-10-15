@@ -258,6 +258,23 @@ the terminal (inside its window in Focus and Grid, attached to its node in Canva
 Nothing opens on its own unless the user asked for it; everything else waits in the
 taskbar, marked new.
 
+What belongs there is a deliverable: something made to be looked at (an image or
+screenshot, a rendered page or dev server, a report, mockup, diagram or generated
+document, the one file the user asked for, or whatever they ask to see), shown once it
+is done, with `open` so it opens at once; without `open` for anything supporting, which
+waits marked new. A source file counts while it is the one
+the user and the agent work on together; the files a change touches on the way do not,
+and the user reads those in the diff. Every harness hears this two ways, as no plugin ships a skill: the `show` tool's
+own description carries the rule, which every harness reads alike from `tools/list`,
+and the runner's prompt-time hook adds Novadeck's artifacts notice, one paragraph, at
+the person's first quiet prompt of each root session and after a compaction
+(`artifactsNotice` in `terminals/nudges.ts`; it rides with the summary nudge but a
+`summarize` never clears it; see [Agent messaging](agent-messaging.md), "Nudges"). A
+worker another agent runs by briefs alone hears it at the person's first prompt there,
+so until then its tool description is what tells it. In Antigravity an injected message
+lasts one model call, so there the notice is read once at the prompt and the tool
+description is what lasts; a lasting injection is a gap to probe.
+
 What is shown is a companion item: a pointer to a file, a page or a plan, never a copy,
 held by exactly one terminal's bar or one undocked window. The runner keeps items and
 windows (`companions.*`, see [Backend API](backend-api.md)), so they survive restarts.
@@ -290,13 +307,18 @@ the UI merges the edit into it line by line, as it merges an agent's rewrite, an
 again. The last stamp both sides agreed on is the merge base, so an agent's rewrite
 that already contains the user's edits merges cleanly. A rewrite reported while a save
 is under way waits for that save's answer, since it may have been written over it. A
-stamp must change whenever the text does, so derive it from the content (a hash), not
-a timestamp: two writes in one tick would otherwise share one. A backend following the
+stamp must change whenever the text does, so a backend derives it from the content, not
+from a timestamp alone: the runner stamps a text plan by a hash of its text, and a plan
+file by its size, modification time and inode, which a save changes by replacing the file. A backend following the
 file may report the UI's own save back; it must carry the stamp the save answered
-with, and the UI takes it as its own. The runner can't write plans yet, so its plans
-are read-only; the content-preview demo writes them. A save that
-fails, or goes unanswered for 20 seconds, is tried again, less often each time, and the
-plan shows it isn't saved yet until it is, or until there's nothing left to save. The
+with, and the UI takes it as its own. The runner writes plans kept in files (`companions.save`, atomic,
+refused on a stale stamp) and carries `writable` and `skill` in the plan's content; a
+plan in an agent's transcript, or one over 256 KiB, is read-only. A save that
+can never work (`PLAN_UNWRITABLE`: the file is gone, its folder can't be written, the plan
+is in a transcript or too large) stops at once and the plan says why. One that fails
+for a moment, or goes unanswered for 20 seconds, is tried again after 2, 4, 8 and 16
+seconds, then stalls after 5 tries with a Retry button. Until it is saved the plan shows it
+isn't, and the edits stay in the editor, which can Copy my edits. The
 file keeps its line breaks when it uses one kind throughout; a mixed file saves as LF.
 
 ### The runner's items
@@ -313,14 +335,22 @@ with every safety check again at that time:
   harness's own decoders (`Harness.plans`, see [harness adapters](harness-adapters.md)),
   so a moved one keeps working after its terminal closes and after a restart; while
   that terminal still runs the session, its live activity is read first. No plan text
-  is copied into the database. When another agent session binds the terminal, the
-  plans its own bar mirrored of the earlier one go; moved ones stay.
+  is copied into the database. A plan the person moved into a window or onto another
+  bar is updated there. When another agent session binds the terminal, the plans its
+  own bar mirrored of the earlier one go; moved ones stay.
 - **Other items** come from Novadeck's MCP server, which ships inside the agent plugin
   Novadeck already installs: `.mcp.json` for Claude Code, `mcpServers` in Codex's
   plugin manifest (with `env_vars` naming the terminal's variables, since Codex starts
   MCP servers without the terminal's environment), `mcp_config.json` for Antigravity.
-  Its first tool, `show`, takes a path and optional lines, or a page's `url`, plus a
-  title and `open`, which the agent sets when the user asked to see it (`asked`). The server finds its terminal
+  Its first tool, `show`, takes one source under the key that names it, with that
+  source's own options inside: a `file` (its path and optional lines) or a page's
+  `url`; beside it the options every source shares, a title and `open`, which the agent
+  sets for a deliverable it finished or one the user asked to see (`asked`). A new kind of artifact adds a source key
+  of its own rather than more fields beside these. `close` takes the same `file` (its
+  path alone) or `url` and removes what the agent showed under it from its own bar, as
+  the person closing it would; what the person attached, moved away from it, or another
+  terminal placed there is refused with a word on whose it is, and plans are never
+  addressable this way. The server finds its terminal
   from `NOVADECK_TERMINAL_ID`, `NOVADECK_REPORT` and `NOVADECK_REPORT_TOKEN`. Like
   the hooks, it is installed for every session, but outside Novadeck's terminals it
   lists no tools, so the agent never sees `show`, and a call anyway does nothing.
@@ -339,13 +369,18 @@ with every safety check again at that time:
   user name or password, or is too long. Binary files are accepted and load as
   `binary`; an image over 8 MB is accepted and loads as too large to preview, which the
   answer says. Showing the same file or page again updates the item on the agent's own
-  bar; one moved elsewhere is never touched. A file that often holds secrets (`.env`,
+  bar, or else the latest it showed that the person moved into a window or onto another
+  bar, where it stays. Items are told apart by a file's real path or a page's `pageKey`
+  (`protocol/src/pages.ts`): its address without the fragment, or for a server on this
+  machine (`localhost`, `127.0.0.1`, `[::1]`, `0.0.0.0` and `[::]` alike) its scheme and port
+  alone, so a dev server stays one item whatever route the agent shows. A file that often holds secrets (`.env`,
   keys, credentials, agents' and tools' logins, shell history) is held: it never opens
   by itself, even when the agent says the person asked; the pane never falls back to
   it, its taskbar peek shows no preview, and it goes by its own name, not the agent's
   title. So none appears unasked while they share their screen. A file that resolves
   to such a file only later is held when it loads. The server's `showing` tool lists
-  what the agent's bar holds now, with where each item points and who put it there.
+  what the agent's bar holds now, with where each item points and who put it there,
+  then what it showed that the person moved elsewhere.
   The UI follows each item with `companions.content`, never by path.
 - **New terminals** come from the same server's second tool, `open_terminal`, listed
   only inside Novadeck's terminals like `show`. It opens a terminal beside the agent's,
@@ -389,11 +424,11 @@ with every safety check again at that time:
   shutdown keeps every terminal.
 - **Messages** between agents come from the same server's `send` and `agents` tools,
   listed only inside Novadeck's terminals like the others: an agent messages another
-  terminal of its project and session by its handle, such as `t3`, which `open_terminal` also
+  terminal of its project and session by its handle, such as `@moth`, which `open_terminal` also
   answers with, and the message reaches that agent through its own hooks. The runner
   keeps the mailbox with the workspace and lists, pauses and releases it through
-  `messages.list`, `messages.pause` and `messages.release`. Its `describe` tool names
-  the agent's own terminal and says what it works on. See
+  `messages.list`, `messages.pause` and `messages.release`. Its `agents` listing carries
+  the summaries the terminals' agents gave through `summarize`. See
   [Agent messaging](agent-messaging.md).
 - **Pages** are any http(s) address; an address with a user name or password is
   refused. The desktop app loads them live in the pane, in Electron's `<webview>`,

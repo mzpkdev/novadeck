@@ -12,6 +12,7 @@ import {
   type CompanionChange,
   type CompanionItem,
   type CompanionWindow,
+  type PlanSaveResult,
   type ItemContent,
   type Project,
   type RunnerSettings,
@@ -24,6 +25,8 @@ import {
   type TerminalSummary,
   type RequestAnswer,
   type TranscriptChange,
+  type MurmurSettings,
+  type MurmurState,
   type VoiceModel,
   type VoiceSettings,
   type VoiceState,
@@ -191,9 +194,9 @@ export type Runner = {
      */
     watch(): AsyncIterableIterator<TerminalWatchItem, undefined>
     /**
-     * Ends the shell and, once it has exited, removes the terminal: `list` omits it and
-     * watchers see `removed`. Needs no attachment, but rejects with `CONTROL_IN_USE`
-     * while another connection controls the terminal.
+     * Closes the terminal for good, whoever controls it: the runner forgets it at once,
+     * so `list` omits it, watchers see `removed` and a restart does not bring it back,
+     * then ends its shell. Needs no attachment.
      */
     close(terminalId: string): Promise<void>
     /**
@@ -203,7 +206,7 @@ export type Runner = {
     rename(terminalId: string, title: string): Promise<void>
     /**
      * Takes away the title the person gave a terminal, so its title is automatic again:
-     * the one an agent gave it last, the person's first prompt there, or its default.
+     * murmur's latest, else the one the agent that opened it gave, or its default.
      * Rejects as `rename` does.
      */
     resetTitle(terminalId: string): Promise<void>
@@ -319,6 +322,18 @@ export type Runner = {
       options?: { readonly reveal?: boolean },
     ): AsyncIterableIterator<ItemContent, undefined>
     /**
+     * Writes the person's edit to a plan kept in a file, unless it changed since `basedOn`,
+     * the stamp the edit was made on: then nothing is written and the plan as it now
+     * stands is `current`. Rejects with `NOT_FOUND`, or `PLAN_UNWRITABLE` saying why for a
+     * plan the agent keeps in its transcript, past 256 KiB, a file gone, or in a folder the
+     * runner may not write to (or no plan at all).
+     */
+    save(input: {
+      readonly itemId: string
+      readonly text: string
+      readonly basedOn: string
+    }): Promise<PlanSaveResult>
+    /**
      * Attaches a file to a terminal's bar, by a path absolute or from the terminal's
      * directory. Rejects with `TERMINAL_NOT_FOUND`, or `INVALID_FILE` saying why.
      */
@@ -379,10 +394,35 @@ export type Runner = {
      * `offset` into it, in as many calls as it takes.
      */
     record(clipId: string, offset: number, audio: Uint8Array): Promise<void>
-    /** Transcribes a recorded clip and forgets it; `prompt` names words likely said. */
-    transcribe(clipId: string, options?: { readonly prompt?: string }): Promise<VoiceTranscript>
+    /**
+     * Transcribes a recorded clip and forgets it; `terminalId` names the terminal it is
+     * dictated into, whose words the runner hints to the engine.
+     */
+    transcribe(clipId: string, options?: { readonly terminalId?: string }): Promise<VoiceTranscript>
     /** Forgets a clip without transcribing it. */
     discard(clipId: string): Promise<void>
+  }
+  readonly murmur: {
+    /**
+     * Follows the murmur addon: its state, then again on each change, across
+     * reconnections, each subscription starting with a fresh one. Iteration ends when the
+     * runner closes, or on `return()`.
+     */
+    watch(): AsyncIterableIterator<MurmurState, undefined>
+    /** Starts installing the engine, if missing, and the model; `watch` shows progress. */
+    install(): Promise<void>
+    /** Stops an install. */
+    cancel(): Promise<void>
+    /** Removes the engine and the model, and turns murmur off. */
+    uninstall(): Promise<void>
+    /** Changes the settings given; the others stay. */
+    set(settings: Partial<MurmurSettings>): Promise<void>
+    /**
+     * Asks murmur to write the gist of the reply that ended the terminal's turn at `at`,
+     * which the client shows unread; it arrives in the terminal's activity. Does nothing
+     * when murmur can't run, that end is no longer the last, or the terminal is unknown.
+     */
+    gist(terminalId: string, at: number): Promise<void>
   }
   readonly settings: {
     get(): Promise<RunnerSettings>
@@ -395,7 +435,7 @@ export type Runner = {
 
 type Link = { readonly wire: WireClient; readonly runnerId: string; readonly channel: Channel }
 
-const fatal = ["UNAUTHORIZED", "INCOMPATIBLE_PROTOCOL", "CLOSED"] as const
+const fatal = ["UNAUTHORIZED", "INCOMPATIBLE_PROTOCOL", "WORKSPACE_TOO_NEW", "CLOSED"] as const
 const backoff = (attempt: number) => Math.min(250 * 2 ** attempt, 5_000)
 
 const asRunnerError = (error: unknown): RunnerError => {
@@ -1193,6 +1233,7 @@ export const connectRunner = async (
         new Resubscription(connection, (wire, signal) =>
           wire.companions.content({ itemId, ...(reveal !== undefined && { reveal }) }, { signal }),
         ),
+      save: (input) => call((wire) => wire.companions.save(input)),
       attach: (input) => call((wire) => wire.companions.attach(input)),
       move: (itemId, terminalId) => call((wire) => wire.companions.move({ itemId, terminalId })),
       undock: (itemId, windowId) => call((wire) => wire.companions.undock({ itemId, windowId })),
@@ -1228,9 +1269,18 @@ export const connectRunner = async (
           at += size
         }
       },
-      transcribe: (clipId, { prompt } = {}) =>
-        call((wire) => wire.voice.transcribe({ clipId, ...(prompt ? { prompt } : {}) })),
+      transcribe: (clipId, { terminalId } = {}) =>
+        call((wire) => wire.voice.transcribe({ clipId, ...(terminalId ? { terminalId } : {}) })),
       discard: (clipId) => call((wire) => wire.voice.discard({ clipId })),
+    },
+    murmur: {
+      watch: () =>
+        new Resubscription(connection, (wire, signal) => wire.murmur.watch(undefined, { signal })),
+      install: () => call((wire) => wire.murmur.install()),
+      cancel: () => call((wire) => wire.murmur.cancel()),
+      uninstall: () => call((wire) => wire.murmur.uninstall()),
+      set: (settings) => call((wire) => wire.murmur.set(settings)),
+      gist: (terminalId, at) => call((wire) => wire.murmur.gist({ terminalId, at })),
     },
     settings: {
       get: () => call((wire) => wire.settings.get()),

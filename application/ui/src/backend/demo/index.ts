@@ -1,6 +1,7 @@
-import type { ReactNode } from "react"
+import { createElement, type ReactNode } from "react"
 
 import { emptyCompanions } from "../../model/companion"
+import type { Conversations } from "../../model/conversation"
 import type { WorkspaceSeed } from "../../model/seed"
 import { createStore } from "../../model/store"
 import type { TerminalMetadata, TitleSource, Workspace } from "../../model/types"
@@ -12,15 +13,26 @@ import type {
   CreateBackend,
   TerminalKey,
 } from "../port"
+import { DemoAgentContext, type DemoAgentLink } from "./agent-link"
 import { createDemoChat } from "./chat"
-import { agentSays, turnEnded } from "./debug/terminals"
-import type { DemoSurfaceRuntime } from "./debug/types"
 import { createDemoTerminal } from "./DemoTerminal"
 import { createDemoEngine, type DemoEngine } from "./engine"
+import { demoHandle } from "./handles"
+import { createDemoInbox } from "./inbox"
 import { checkoutMailboxes, createDemoMessages } from "./messages"
-import { createMockTerminal, demoFinishes, demoSeed } from "./samples"
+import { createDemoMurmur } from "./murmur"
+import {
+  createMockTerminal,
+  defaultName,
+  demoFinishes,
+  demoSeed,
+  demoTerminalId,
+  terminalSlot,
+} from "./samples"
 import { createShowcase } from "./showcase/simulation"
 import { storefrontArtifacts } from "./showcase/storefront"
+import type { DemoSurfaceRuntime } from "./surface"
+import { terminalOf } from "./terminals"
 import { agentTranscripts, type DemoTranscript } from "./transcripts"
 import { demoTurns, type DemoTurns } from "./turns"
 import { createDemoVoice } from "./voice"
@@ -31,6 +43,9 @@ const sampleAgents: readonly AgentConnection[] = [
   { agent: "codex", available: true, connected: false, busy: false },
   { agent: "agy", available: false, connected: false, busy: false },
 ]
+
+// A session by its full address: every sample project's session shares one ID.
+const addressOf = (projectId: string, sessionId: string) => `${projectId}/${sessionId}`
 
 // A self-contained backend with sample projects and simulated terminals. It keeps no
 // transcripts and connects no agents, but its settings switch like the runner's.
@@ -47,25 +62,34 @@ export const demoBackend = (
   const agents = createStore(sampleAgents)
   const welcomeOpen = createStore(welcome)
   const voice = createDemoVoice()
+  const murmur = createDemoMurmur()
   // Standing in for the runner, it numbers each session's terminals itself, never
   // giving a number twice, from the workspace it last saw.
   const seed = demoSeed(Date.now())
   const numbers = new Map(
     seed.projects.flatMap((project) =>
-      project.sessions.map((session) => [session.id, session.terminals.length] as const),
+      project.sessions.map(
+        (session) => [addressOf(project.id, session.id), session.terminals.length] as const,
+      ),
     ),
   )
   let latest: Workspace | undefined
   return {
     seed,
-    newTerminal: ({ target, directory, title }) => {
+    newTerminal: ({ target, directory, title, launch }) => {
       const session = latest?.projects
         .find((project) => project.id === target.projectId)
         ?.history.find((each) => each.id === target.workspaceSessionId)
-      const count = session?.state.roster.terminals.length ?? 0
-      const number = Math.max(numbers.get(target.workspaceSessionId) ?? count, count) + 1
-      numbers.set(target.workspaceSessionId, number)
-      const terminal = createMockTerminal(number, directory)
+      const highest = Math.max(
+        0,
+        ...(session?.state.roster.terminals ?? []).map((terminal) =>
+          Number(terminalSlot(terminal.id)),
+        ),
+      )
+      const address = addressOf(target.projectId, target.workspaceSessionId)
+      const number = Math.max(numbers.get(address) ?? highest, highest) + 1
+      numbers.set(address, number)
+      const terminal = createMockTerminal(target, number, directory, launch?.command)
       return title ? { ...terminal, name: title } : terminal
     },
     commit: (workspace, actions) => {
@@ -74,19 +98,25 @@ export const demoBackend = (
       const gone = latest?.projects.filter(
         (project) => !workspace.projects.some((each) => each.id === project.id),
       )
-      for (const session of gone?.flatMap((project) => project.history) ?? [])
-        numbers.delete(session.id)
+      for (const project of gone ?? [])
+        for (const session of project.history) numbers.delete(addressOf(project.id, session.id))
       latest = workspace
       engine.reconcile(workspace, actions)
     },
     TerminalSurface: createDemoTerminal(engine, introOf, runtime),
     voice,
+    murmur,
+    // Older than every update the demo offers (see debug/states.ts).
+    version: () => Promise.resolve("0.0.79"),
     // The demo's command line takes dictation as typed text, which it never submits.
     typeInto: (key, text) => {
       engine.setDraft(key, engine.getSnapshot(key).draft + text.replaceAll(/\s*\r?\n\s*/g, " "))
       return true
     },
-    transcripts: { enabled: transcripts, set: (enabled) => transcripts.update(() => enabled) },
+    transcripts: {
+      enabled: transcripts,
+      set: (enabled) => transcripts.update(() => enabled),
+    },
     agents: {
       state: agents,
       set: (agent, connected) =>
@@ -123,20 +153,20 @@ export const windowReset = (
 
 // Who named each sample terminal, and the name Novadeck gives it back on a reset.
 const namings: Readonly<
-  Record<string, { readonly source: TitleSource; readonly automatic: string }>
+  Record<string, { readonly source: TitleSource; readonly automatic?: string }>
 > = {
   "01": { source: { kind: "person" }, automatic: "Checkout flow" },
-  "02": { source: { kind: "person" }, automatic: "Terminal 02" },
-  "03": { source: { kind: "fallback" }, automatic: "Tests" },
-  "04": { source: { kind: "agent", by: "t1" }, automatic: "Checkout review" },
-  "05": { source: { kind: "person" }, automatic: "Terminal 05" },
-  "06": { source: { kind: "person" }, automatic: "Terminal 06" },
+  "02": { source: { kind: "person" } },
+  "03": { source: { kind: "murmur" }, automatic: "Tests" },
+  "04": { source: { kind: "agent", by: "moth" }, automatic: "Checkout review" },
+  "05": { source: { kind: "person" } },
+  "06": { source: { kind: "person" } },
 }
 
 // What a reset names a sample terminal: the agent's name for the first, else the
 // session's default.
-const automaticSource = (terminalId: string): TitleSource =>
-  terminalId === "01" ? { kind: "agent", by: "t1" } : { kind: "default" }
+const automaticSource = (slot: string): TitleSource =>
+  slot === "01" ? { kind: "agent", by: "moth" } : { kind: "default" }
 
 // The agents demo with messages between its agents: handles, who named each terminal,
 // threads in every state, one held for release, and the pause switch.
@@ -149,10 +179,12 @@ export const withMessages = (backend: Backend, now: number): Backend => {
         ...session,
         terminals: session.terminals.map((terminal) => ({
           ...terminal,
-          handle: `t${Number(terminal.id)}`,
+          handle: demoHandle(Number(terminalSlot(terminal.id))),
           // The agent that named the checkout review opened it.
-          ...(terminal.id === "04" ? { ledBy: "t1" } : {}),
-          ...(namings[terminal.id] ? { titleSource: namings[terminal.id]!.source } : {}),
+          ...(terminalSlot(terminal.id) === "04" ? { ledBy: "moth" } : {}),
+          ...(namings[terminalSlot(terminal.id)]
+            ? { titleSource: namings[terminalSlot(terminal.id)]!.source }
+            : {}),
         })),
       })),
     })),
@@ -175,6 +207,7 @@ export const withMessages = (backend: Backend, now: number): Backend => {
     messages: createDemoMessages(checkoutMailboxes(now, targets)),
     resetTitle: (key) => {
       const { projectId, workspaceSessionId, terminalId } = key
+      const slot = terminalSlot(terminalId)
       const window = windowReset(latest, key)
       sink?.dispatch(
         window.length
@@ -184,8 +217,8 @@ export const withMessages = (backend: Backend, now: number): Backend => {
                 type: "terminal/update",
                 target: { projectId, workspaceSessionId },
                 terminalId,
-                name: namings[terminalId]?.automatic ?? `Terminal ${terminalId}`,
-                titleSource: automaticSource(terminalId),
+                name: namings[slot]?.automatic ?? defaultName(terminalOf(latest, key)?.command),
+                titleSource: automaticSource(slot),
               },
             ],
       )
@@ -201,15 +234,29 @@ export const withMessages = (backend: Backend, now: number): Backend => {
 
 // A backend with the conversations of its agents, as `transcripts` open them and `turns`
 // run what the person sends: the status of each turn goes through the sink it starts with.
+// Its terminals' screens read the conversations as the chat does (see `DemoAgentLink`);
+// `wrap` gives both the same conversations, for a demo whose agents act on what they are
+// told, so a prompt or an answer from the screen reaches them as one from the chat.
 export const withConversations = (
   backend: Backend,
   transcripts: Readonly<Record<string, DemoTranscript>>,
   turns: DemoTurns,
+  wrap: (conversations: Conversations) => Conversations = (conversations) => conversations,
 ): Backend => {
   const chat = createDemoChat(backend.seed, transcripts, turns)
+  const conversations = wrap(chat.conversations)
+  const link: DemoAgentLink = {
+    conversations,
+    opening: chat.opening,
+  }
+  // One component per backend, so its identity stays stable.
+  const Surface = backend.TerminalSurface
+  const TerminalSurface: Backend["TerminalSurface"] = (props) =>
+    createElement(DemoAgentContext, { value: link }, createElement(Surface, props))
   return {
     ...backend,
-    conversations: chat.conversations,
+    TerminalSurface,
+    conversations,
     commit: (workspace, actions) => {
       backend.commit(workspace, actions)
       chat.observe(workspace)
@@ -227,13 +274,13 @@ export const withConversations = (
 
 // The agents demo's storefront terminals hold what their agents showed, on their bars,
 // to open, peek at and move; nothing there changes.
-const withStorefrontArtifacts = (backend: Backend): Backend => {
+export const withStorefrontArtifacts = (backend: Backend): Backend => {
   const session = { projectId: "storefront", workspaceSessionId: "initial" }
   const showcase = createShowcase({
     agents: [],
-    shown: Object.entries(storefrontArtifacts).map(([terminalId, artifacts]) => ({
-      key: { ...session, terminalId },
-      handle: `t${Number(terminalId)}`,
+    shown: Object.entries(storefrontArtifacts).map(([slot, artifacts]) => ({
+      key: { ...session, terminalId: demoTerminalId(session, Number(slot)) },
+      handle: demoHandle(Number(slot)),
       artifacts,
     })),
   })
@@ -269,40 +316,40 @@ const finishAfterMs = 2500
 
 // The agents demo, whose agents in design-system and infra end their turn a moment after
 // it opens (see `demoFinishes`), so the switcher marks their projects done and failed.
-const withFinishes = (backend: Backend): Backend => ({
+const withFinishes = (backend: Backend, turns: DemoTurns): Backend => ({
   ...backend,
   start: (sink) => {
     const stop = backend.start?.(sink)
-    const timer = setTimeout(
-      () =>
-        sink.dispatch(
-          demoFinishes.flatMap(({ projectId, terminalId, outcome }) =>
-            agentSays(
-              { projectId, workspaceSessionId: "initial", terminalId },
-              turnEnded(outcome, Date.now()),
-            ),
-          ),
-        ),
-      finishAfterMs,
-    )
-    return () => {
-      clearTimeout(timer)
-      stop?.()
-    }
+    for (const { projectId, terminalId, outcome } of demoFinishes)
+      turns.finish(
+        { projectId, workspaceSessionId: "initial", terminalId },
+        backend.seed.projects
+          .find((project) => project.id === projectId)
+          ?.sessions.find((session) => session.id === "initial")
+          ?.terminals.find((terminal) => terminal.id === terminalId),
+        outcome,
+        { after: finishAfterMs },
+      )
+    return () => stop?.()
   },
 })
 
 // The demos with no content showcase: the plain one, the agents', the agents' with
-// messages between them, and the plain one with its first-run welcome dialog open.
-export type PlainVariant = "plain" | "agents" | "messages" | "welcome"
+// messages between them, the agents' with the Inbox, and the plain one with its first-run
+// welcome dialog open. Only the Inbox demo has an Inbox: it is not built yet, so the demos
+// that tests, try mode and the website run on must not show it.
+export type PlainVariant = "plain" | "agents" | "messages" | "inbox" | "welcome"
 
-export const plainDemo = (variant: PlainVariant, runtime?: DemoSurfaceRuntime): Backend => {
-  // The agents demo's idle agents take a prompt, work a moment, and finish; its chats'
-  // prompts drive the same turns.
-  const turns = demoTurns()
-  const engine = createDemoEngine(variant === "agents" ? turns.reply : undefined)
+export const plainDemo = (
+  variant: PlainVariant,
+  runtime?: DemoSurfaceRuntime,
+  turnMs?: number,
+  turns: DemoTurns = demoTurns(turnMs),
+): Backend => {
+  // Every agent takes a prompt, works a moment, and finishes, however it is sent; the
+  // seeds and the debug panel drive the same turns.
   const backend = demoBackend(
-    engine,
+    createDemoEngine(),
     variant === "welcome" ||
       (import.meta.env.DEV && import.meta.env.VITE_WELCOME_PREVIEW === "true"),
     undefined,
@@ -312,21 +359,32 @@ export const plainDemo = (variant: PlainVariant, runtime?: DemoSurfaceRuntime): 
   const transcripts = agentTranscripts(now)
   if (variant === "messages")
     return withConversations(
-      withFinishes(withMessages({ ...backend, seed: demoSeed(now, true) }, now)),
+      withFinishes(withMessages({ ...backend, seed: demoSeed(now, true) }, now), turns),
       transcripts,
       turns,
     )
-  return withConversations(
-    variant === "agents"
-      ? withFinishes(withStorefrontArtifacts({ ...backend, seed: demoSeed(now, true) }))
+  const conversing = withConversations(
+    variant === "agents" || variant === "inbox"
+      ? withFinishes(withStorefrontArtifacts({ ...backend, seed: demoSeed(now, true) }), turns)
       : backend,
     transcripts,
     turns,
   )
+  return variant === "inbox" ? { ...conversing, inbox: createDemoInbox(now) } : conversing
 }
 
-// The variant the address's hash asks for, as specs do with `?demo=`.
+// The variant the address's hash asks for, as specs do with `?demo=`, and how long an
+// agent's turn works with `&turnMs=`, as a spec does that must act on the screen before
+// the turn ends, which a busy machine may not in the usual 1.5 s.
 export const createDemoBackend: CreateBackend = () => {
-  const demo = new URLSearchParams(window.location.hash.split("?")[1]).get("demo")
-  return plainDemo(demo === "agents" || demo === "messages" || demo === "welcome" ? demo : "plain")
+  const params = new URLSearchParams(window.location.hash.split("?")[1])
+  const demo = params.get("demo")
+  const turnMs = Number(params.get("turnMs"))
+  return plainDemo(
+    demo === "agents" || demo === "messages" || demo === "inbox" || demo === "welcome"
+      ? demo
+      : "plain",
+    undefined,
+    turnMs > 0 ? turnMs : undefined,
+  )
 }

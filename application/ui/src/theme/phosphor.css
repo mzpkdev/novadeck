@@ -32,6 +32,8 @@
   --shadow-modal:
     0 0 0 1px color-mix(in srgb, var(--color-strong) 22%, transparent),
     0 0 48px color-mix(in srgb, var(--color-strong) 18%, transparent);
+  /* A sheet's edge is its border and the ring around it; its arrow, one line, takes both. */
+  --sheet-arrow-border-color: color-mix(in srgb, var(--color-strong) 45%, var(--color-line-strong));
 
   /* Shape and type: square corners, and one face for the whole tube. */
   --radius-control: 0;
@@ -99,6 +101,10 @@
   --color-scrim: rgb(0 6 0 / 0.65);
   --color-selection: #134a20;
   --color-shadow: rgb(0 0 0);
+  /* The Nova mark's cursor: the beam at its whitest, so it reads as the lit part beside
+     chevrons in the green's own colour. */
+  --nova-mark-core-fg: #c8ffd0;
+
   /* Tones: tints of the tube, each keeping its warning apart by hue as far as a green
      monitor can. */
   --color-success: #0d2a14;
@@ -157,6 +163,10 @@
   --color-scrim: rgb(6 3 0 / 0.65);
   --color-selection: #4a2f0c;
   --color-shadow: rgb(0 0 0);
+  /* The Nova mark's cursor: the beam at its whitest, so it reads as the lit part beside
+     chevrons in the amber's own colour. */
+  --nova-mark-core-fg: #ffe2b0;
+
   /* Tones: tints of the tube, each keeping its warning apart by hue as far as an amber
      monitor can. */
   --color-success: #1c1c06;

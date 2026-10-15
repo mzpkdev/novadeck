@@ -2,11 +2,18 @@ import type { ComponentType, ReactNode } from "react"
 
 import type { Companions } from "../model/companion"
 import type { Conversations } from "../model/conversation"
+import type { AgentName } from "../model/harnesses"
+import type { Inbox } from "../model/inbox"
 import type { Messages } from "../model/messages"
+import type { Murmur } from "../model/murmur"
+import type { InstallResult, PortableState } from "../model/portable"
+import type { SandboxState } from "../model/sandbox"
 import type { WorkspaceSeed } from "../model/seed"
 import type { WorkspaceAction } from "../model/state"
 import type { Store } from "../model/store"
 import type { TerminalKey, TerminalMetadata, Workspace, WorkspaceTarget } from "../model/types"
+import type { UninstallPlan, UninstallResult } from "../model/uninstall"
+import type { UpdateChannel, UpdateOffer } from "../model/update"
 import type { Voice } from "../model/voice"
 
 // The UI-owned contract every terminal backend implements. Only app/ talks to it.
@@ -148,7 +155,7 @@ export type Backend = {
   readonly agents?: {
     readonly state: Store<readonly AgentConnection[]>
     // Connects or disconnects the agent; the state shows the change as it goes.
-    readonly set: (agent: AgentId, connected: boolean) => void
+    readonly set: (agent: AgentName, connected: boolean) => void
     // Looks again at which agents are installed and connected.
     readonly refresh: () => void
     // Whether to offer connecting them when the app opens for the first time.
@@ -174,6 +181,13 @@ export type Backend = {
   // Optional. Voice input: the person speaks, and the backend transcribes it on its
   // machine. Absent where the backend cannot transcribe.
   readonly voice?: Voice
+  // Optional. Murmur: a model on the backend's machine writes titles for its terminals.
+  // Absent where the backend cannot run one.
+  readonly murmur?: Murmur
+  // Optional. The Inbox: what the agents in every project wait on the person for, one
+  // item per agent terminal, answered in place. Absent where the backend has none; the
+  // runner's has none yet, and only the demo's `inbox` variant does.
+  readonly inbox?: Inbox
   // Optional. Types text into a terminal as a paste, bracketed where its program asks,
   // without pressing Enter, as dictation does. Says whether it typed: false when the
   // terminal has gone or has no screen to take the text. Absent where terminals take no input.
@@ -197,12 +211,56 @@ export type Backend = {
     readonly show: (notice: Notice) => void
     readonly onClick: (listener: (terminalId: string) => void) => () => void
   }
+  // Optional. The desktop app's self-updates: `onOffer` hears each update the app learns
+  // of, at once when one already waits and again for each newer one, and returns the
+  // stop. A `ready` offer is downloaded: `install` restarts the app into it once the
+  // pages have saved. An `available` one the app can't install itself, so the person
+  // gets it from its release page, which `openPage` opens. `channel`, where the app
+  // lets the person choose, reads which releases it follows and switches them. Absent
+  // where the app does not update itself, as in a browser.
+  readonly updates?: {
+    readonly onOffer: (listener: (offer: UpdateOffer) => void) => () => void
+    readonly install: () => void
+    readonly openPage: () => void
+    readonly channel?: {
+      readonly get: () => Promise<UpdateChannel>
+      readonly set: (channel: UpdateChannel) => void
+    }
+  }
+  // Optional. The version of the desktop app, asked once when Preferences needs it. Absent
+  // in a browser and in a host that does not say.
+  readonly version?: () => Promise<string>
+  // Optional. Whether the desktop app runs in Electron's security sandbox, asked once at
+  // startup since the answer holds for the whole run. Absent in a browser and in a host
+  // that does not say.
+  readonly sandbox?: () => Promise<SandboxState>
+  // Optional. Whether the desktop app is a portable copy, asked once at startup. A portable
+  // never updates itself; `install` puts the app that does in place, keeping the workspace,
+  // and on `installing` the app is about to restart into it. On `newer`, an installed copy
+  // newer than this one was left alone and `openInstalled` restarts into it. Absent in a
+  // browser and in a host that has no portable copy.
+  readonly portable?: {
+    readonly state: () => Promise<PortableState>
+    readonly install: () => Promise<InstallResult>
+    readonly openInstalled: () => void
+  }
+  // Optional. Removing the desktop app from this computer. `plan` says what that would do
+  // here, asked each time Preferences opens; `run` removes the app, after the page has
+  // disconnected the agents, and keeps the person's data folders when `keepData`; `quit`
+  // ends the app once `run` said `removed`. Absent in a browser and in a host that has no
+  // uninstall.
+  readonly uninstall?: {
+    readonly plan: () => Promise<UninstallPlan>
+    readonly run: (options: { readonly keepData: boolean }) => Promise<UninstallResult>
+    readonly quit: () => void
+  }
   // Optional. The debug panel, where this launch offers it: it triggers the states
   // the backend can be in. See README "Debug panel".
   readonly DebugPanel?: ComponentType<DebugPanelProps>
+  // Optional. Marks a public build for a website's visitors: the app shows it is a
+  // simulation, with a call to download, and a narrow window gets a panel instead.
+  readonly visitor?: true
 }
-
-export type AgentId = "claude" | "codex" | "agy"
 
 // How the page looks, for the window around it: the scheme its native parts use
 // (`system` while the page follows the system, so the page keeps seeing the system's
@@ -222,7 +280,7 @@ export type Notice = {
 
 // An agent the backend can connect, as the Preferences switches show it.
 export type AgentConnection = {
-  readonly agent: AgentId
+  readonly agent: AgentName
   // Installed where the backend runs.
   readonly available: boolean
   readonly connected: boolean
@@ -230,6 +288,8 @@ export type AgentConnection = {
   readonly busy: boolean
   // Why the last change did not work, for the person.
   readonly error?: string
+  // What keeps its messaging from working whole while connected, as the runner says.
+  readonly limited?: "own-status-line" | undefined
 }
 
 // What the debug panel may ask of the workspace.
@@ -264,10 +324,10 @@ export type ConnectBackend = (
 ) => Promise<BackendConnection>
 
 // Why connecting failed, sorted by what the person can do about it: a transient
-// failure retries on its own, a different version can only quit, and the rest wait
-// for Retry. `message` is for people; `code` and `detail` are for a bug report.
+// failure retries on its own, a different version or a workspace a newer Novadeck used can
+// only quit, and the rest wait for Retry. `message` is for people; `code` and `detail` are for a bug report.
 export type ConnectFailure = {
-  readonly kind: "transient" | "incompatible" | "unauthorized" | "unknown"
+  readonly kind: "transient" | "incompatible" | "outdated" | "unauthorized" | "unknown"
   readonly message: string
   readonly code: string
   readonly detail: string

@@ -1,13 +1,14 @@
+import type { ActivityEvent, Background, HarnessEvent } from "@novadeck/harness-core/events"
+import { hookShellSlackMs, silentFor, type MessagingProfile } from "@novadeck/harness-core/harness"
 import type { AgentName, MessageThread, TerminalMessages } from "@novadeck/protocol"
 import { z } from "zod"
 
 import { DomainError } from "../errors.js"
 import type { Binding } from "../harnesses/bindings.js"
-import type { ActivityEvent, Background, HarnessEvent } from "../harnesses/events.js"
-import { silentFor, type MessagingProfile } from "../harnesses/harness.js"
 import { agents as allAgents, harnesses } from "../harnesses/registry.js"
 import { rootedIn, type Root, type RootChange } from "../harnesses/roots.js"
 import type { HookAnswer } from "../shell/reports.js"
+import { bareHandle, mention } from "../terminals/handles.js"
 import {
   continues,
   phaseOf,
@@ -18,6 +19,7 @@ import {
   transition,
   unbound,
   type Delivery,
+  firing,
   pendingEnter,
   type DeliveryEvent,
   type KeyKind,
@@ -157,6 +159,11 @@ export type MessagingOptions = {
   readonly restoreMs?: number
   /** Whether a terminal exists, running or kept; one running counts when omitted. */
   readonly exists?: (terminalId: string) => boolean
+  /**
+   * The platform the harnesses' hooks run on, whose shells may hold a hook back (see
+   * `hookShellSlackMs`); the runner's own when omitted.
+   */
+  readonly platform?: NodeJS.Platform
 }
 
 /**
@@ -198,7 +205,7 @@ const runsOn = (background: Background | undefined): boolean =>
   background !== undefined && (background.agents > 0 || background.more === true)
 
 const sendRequest = z.strictObject({
-  to: z.string().min(1).max(64),
+  to: z.string().min(1).max(65).transform(bareHandle),
   text: z.string().max(64 * 1024),
 })
 
@@ -255,6 +262,8 @@ const deliveredBytes = (message: Message): number => {
 export class Messaging {
   private readonly records: MailboxRecords
   private readonly now: () => number
+  /** How much later a hook may come, for the shell it starts in (see `firing`). */
+  private readonly slackMs: number
   private readonly exists: (terminalId: string) => boolean
   /** Everyone following changes: the doorbell, and each `messages.watch`. */
   private readonly listeners = new Set<(change: MessagingChange) => void>()
@@ -263,8 +272,6 @@ export class Messaging {
   private readonly threads = new Map<string, Thread>()
   private readonly leases: Leases
   private paused: boolean
-  /** Every message leased in this runner's lifetime, as one its hook may have printed. */
-  private readonly everLeased = new Set<string>()
   // Send times, for the rates: by sender, by sender and recipient, and all.
   private readonly sent = new Map<string, readonly number[]>()
   private readonly pairs = new Map<string, readonly number[]>()
@@ -280,6 +287,7 @@ export class Messaging {
   constructor(options: MessagingOptions = {}) {
     this.records = options.records ?? memoryMailbox()
     this.now = options.now ?? Date.now
+    this.slackMs = hookShellSlackMs(options.platform ?? process.platform)
     this.exists = options.exists ?? ((terminalId) => this.live.has(terminalId))
     this.leases = new Leases(options.leaseMs ?? 5_000, (lease) => this.lapse(lease))
     this.paused = this.read(() => this.records.messagingPaused(), false)
@@ -418,13 +426,14 @@ export class Messaging {
     prefix: string | null,
     replaces = false,
     at = this.now(),
+    firedAt?: number,
   ): void {
     const live = this.live.get(terminalId)
     if (!live || (live.root && !replaces)) return
     const learned = live.shown?.agent !== agent || live.shown.prefix !== prefix
     live.shown = { agent, prefix }
     live.untrusted = null
-    this.step(live, { type: "shown", at, replaces })
+    this.step(live, { type: "shown", at, replaces, ...(firedAt !== undefined && { firedAt }) })
     // A prefix it learns later may make other messages its own.
     if (learned) this.changed(terminalId)
   }
@@ -675,6 +684,15 @@ export class Messaging {
     for (const key of kinds) this.step(live, { type: "key", key, asked, at })
   }
 
+  /**
+   * The terminal's screen shows its agent's box empty, where only a doubt kept its delivery
+   * Drafting (`Box.doubted`) in the `epoch` it was read in: it is Ready.
+   */
+  emptied(terminalId: string, epoch: number): void {
+    const live = this.live.get(terminalId)
+    if (live) this.step(live, { type: "emptied", at: this.now(), epoch })
+  }
+
   /** No request waits on the person any more: what they typed meanwhile counts now. */
   askedCleared(terminalId: string): void {
     const live = this.live.get(terminalId)
@@ -715,23 +733,6 @@ export class Messaging {
   }
 
   /**
-   * The texts of the messages that may have reached the terminal's root session: delivered,
-   * or ever leased to its hooks, as a lease that lapsed may still have been printed.
-   */
-  receivedTexts(terminalId: string): readonly string[] {
-    const root = this.live.get(terminalId)?.root
-    if (!root) return []
-    return [...this.messages.values()]
-      .filter(
-        (message) =>
-          message.to.terminalId === terminalId &&
-          (message.state === "delivered" || this.everLeased.has(message.id)) &&
-          this.addressed(message, root),
-      )
-      .map(({ text }) => text)
-  }
-
-  /**
    * When the terminal last became Settled, its turn ended, or Ready, its session bound; if
    * it is either.
    */
@@ -746,12 +747,15 @@ export class Messaging {
   }
 
   /**
-   * When the person's bare Enter came, if a root turn whose hook started at `startedAt`
-   * would be their submission: within the window, before anything they typed after it.
+   * When the person's bare Enter came, if a root turn whose hook started at `startedAt`,
+   * its shell at `firedAt` where told, would be their submission: within the window,
+   * before anything they typed after it.
    */
-  pendingSubmission(terminalId: string, startedAt: number): number | undefined {
+  pendingSubmission(terminalId: string, startedAt: number, firedAt?: number): number | undefined {
     const delivery = this.live.get(terminalId)?.delivery
-    return delivery && pendingEnter(delivery, startedAt)
+    if (!delivery) return undefined
+    const fired = firing({ at: startedAt, ...(firedAt !== undefined && { firedAt }) }, this.slackMs)
+    return pendingEnter(delivery, fired.at, fired.windowMs)
   }
 
   /** The doorbell starts ringing the terminal with its nonce; false when it may not now. */
@@ -871,12 +875,14 @@ export class Messaging {
     const root = recipient.root
     if (!root && !recipient.shown && recipient.untrusted)
       return refused(
-        `${recipient.handle} has no agent Novadeck can deliver to: ` +
+        `${mention(recipient.handle)} has no agent Novadeck can deliver to: ` +
           `${untrustedNote(recipient.untrusted)}.`,
       )
     const agent = root?.agent ?? recipient.shown?.agent ?? recipient.expecting
     if (!agent)
-      return refused(`${recipient.handle} has no agent running there that Novadeck can deliver to.`)
+      return refused(
+        `${mention(recipient.handle)} has no agent running there that Novadeck can deliver to.`,
+      )
     const now = this.now()
     const same = duplicateOf(this.messages.values(), terminalId, recipient.terminalId, text, now)
     if (same) return { ...this.answer(same, recipient), ...this.extras(live) }
@@ -939,7 +945,11 @@ export class Messaging {
     if (textRefusal) return textRefusal
     // The longest handle a terminal may have, so the size is never underestimated.
     const vetted = this.vet(
-      this.draft(live, clean, { terminalId: "", handle: "t999999999", agent }),
+      this.draft(live, clean, {
+        terminalId: "",
+        handle: "z".repeat(12) + "999999999",
+        agent,
+      }),
     )
     return vetted.ok ? undefined : vetted.reason
   }
@@ -1001,7 +1011,7 @@ export class Messaging {
     ).length
     if (waitingThere >= maxUndelivered)
       return refused(
-        `${to.handle} already has ${maxUndelivered} messages waiting; ` +
+        `${mention(to.handle)} already has ${maxUndelivered} messages waiting; ` +
           "wait for it to take them before sending more.",
       )
     const now = message.sentAt
@@ -1147,10 +1157,7 @@ export class Messaging {
    */
   forgetProject(projectId: string): void {
     for (const [id, message] of this.messages)
-      if (message.projectId === projectId) {
-        this.messages.delete(id)
-        this.everLeased.delete(id)
-      }
+      if (message.projectId === projectId) this.messages.delete(id)
     for (const [id, thread] of this.threads)
       if (thread.projectId === projectId) this.threads.delete(id)
   }
@@ -1167,10 +1174,7 @@ export class Messaging {
         !this.exists(message.to.terminalId) &&
         now - Math.max(message.sentAt, message.deliveredAt ?? 0) >= retentionMs,
     )
-    for (const { id } of old) {
-      this.messages.delete(id)
-      this.everLeased.delete(id)
-    }
+    for (const { id } of old) this.messages.delete(id)
     if (old.length > 0) this.write(() => this.records.removeMessages(old.map(({ id }) => id)))
     const kept = new Set([...this.messages.values()].map(({ thread }) => thread))
     const threads = [...this.threads.keys()].filter((id) => !kept.has(id))
@@ -1309,10 +1313,7 @@ export class Messaging {
     const messages = deliveryOf(queued, (taken) => prints(taken) <= maxDeliveryBytes)
     // The first always goes, as it fits alone; beside what the turn holds it may not.
     if (messages.length === 0 || prints(messages) > maxDeliveryBytes) return undefined
-    for (const message of messages) {
-      this.everLeased.add(message.id)
-      this.put({ ...message, state: "leased" })
-    }
+    for (const message of messages) this.put({ ...message, state: "leased" })
     const text = wrap(messages, isFromLead, mark)
     return this.leases.grant({
       terminalId: live.terminalId,
@@ -1379,7 +1380,7 @@ export class Messaging {
           )
             this.gone(message)
       } else if (change.type === "new")
-        this.rootAt(live, change.root, change.guess, change.ready, change.startedAt)
+        this.rootAt(live, change.root, change.guess, change.ready, change.startedAt, change.firedAt)
       else this.correct(live, change.from, change.root, change.confirmed)
     }
   }
@@ -1397,6 +1398,7 @@ export class Messaging {
     guess: boolean,
     ready: boolean,
     startedAt = this.now(),
+    firedAt?: number,
   ): void {
     live.root = root
     // Its first session came: from now on, only a bound session takes messages.
@@ -1405,7 +1407,12 @@ export class Messaging {
     live.untrusted = null
     // Judged by when the hook that bound it started, not when it was heard, as a loaded
     // machine boots the hook late: the person's Enter before it may have submitted.
-    this.step(live, { type: "bound", ready, at: startedAt })
+    this.step(live, {
+      type: "bound",
+      ready,
+      at: startedAt,
+      ...(firedAt !== undefined && { firedAt }),
+    })
     for (const message of this.messages.values()) {
       if (message.to.terminalId !== live.terminalId) continue
       if (message.to.sessionId === null) {
@@ -1465,6 +1472,7 @@ export class Messaging {
           ...(event.nonce !== undefined && { nonce: event.nonce }),
           at: this.now(),
           startedAt: event.startedAt,
+          ...(event.firedAt !== undefined && { firedAt: event.firedAt }),
         })
         // A new root turn: the prompt that started it, if a prompt with text did.
         if (live.delivery.epoch !== epoch)
@@ -1503,7 +1511,7 @@ export class Messaging {
 
   private step(live: Live, event: DeliveryEvent): void {
     const before = live.delivery
-    live.delivery = transition(before, event)
+    live.delivery = transition(before, event, this.slackMs)
     if (live.delivery === before) return
     // A turn that ended, or a new one, leaves the last one's delivery behind.
     if ((running(before) && !running(live.delivery)) || live.delivery.epoch !== before.epoch)

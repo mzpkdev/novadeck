@@ -1,4 +1,5 @@
-import type { HarnessEvent } from "../harnesses/events.js"
+import type { HarnessEvent } from "@novadeck/harness-core/events"
+
 import type { Root } from "../harnesses/roots.js"
 import { describe, expect, it } from "../test.js"
 import {
@@ -6,8 +7,12 @@ import {
   firstFrom,
   freshWork,
   judgedFirst,
+  keptFiles,
   keptFolders,
+  lastFiles,
+  keptPrompts,
   promptChars,
+  recentChars,
   shorten,
   tallied,
   workAfter,
@@ -44,9 +49,39 @@ describe("what a root session worked on", () => {
     expect(work!.first).toMatch(/^Build/)
   })
 
+  it("keeps the person's last few prompts, longer than the first and latest, oldest first", () => {
+    let work = workAfter(null, root, [prompted(`Start ${"x".repeat(400)}`)], 1)
+    expect(work!.recent).toHaveLength(1)
+    expect(work!.recent[0]!.length).toBe(recentChars)
+    expect(work!.first!.length).toBe(promptChars)
+    for (const text of ["two", "three", "four", "five", "six", "seven"])
+      work = workAfter(work, root, [prompted(text)], 2)
+    // The harness's own turns never count; the oldest drop out past the cap.
+    work = workAfter(work, root, [prompted("<task-notification>done", "harness")], 3)
+    expect(work!.recent).toEqual(["three", "four", "five", "six", "seven"])
+    expect(work!.recent).toHaveLength(keptPrompts)
+    // The same prompt told twice, as by a hook and a transcript, is kept once.
+    expect(workAfter(work, root, [prompted("seven")], 4)!.recent).toEqual(work!.recent)
+  })
+
   it("tallies the folders it writes in, and when it was last active", () => {
     const work = workAfter(null, root, [touched("/w/src/a.ts"), touched("/w/src/b.ts")], 9)
-    expect(work).toMatchObject({ folders: { "/w/src": 2 }, activeAt: 9 })
+    expect(work).toMatchObject({
+      folders: { "/w/src": 2 },
+      files: ["/w/src/b.ts", "/w/src/a.ts"],
+      activeAt: 9,
+    })
+  })
+
+  it("keeps the paths of the files written in last, each once, the latest first", () => {
+    let files: readonly string[] | undefined
+    for (let index = 0; index < 30; index += 1) files = lastFiles(files, `f${index}.ts`)
+    expect(files).toHaveLength(keptFiles)
+    expect(files![0]).toBe("f29.ts")
+    expect(lastFiles(files, "f25.ts")).toEqual([
+      "f25.ts",
+      ...files!.filter((name) => name !== "f25.ts"),
+    ])
   })
 
   it("starts afresh for another session, keeps its own, and is kept without a root", () => {
@@ -57,6 +92,7 @@ describe("what a root session worked on", () => {
       session: "codex:s2",
       first: null,
       latest: null,
+      recent: [],
       folders: {},
       activeAt: null,
     })
@@ -80,7 +116,9 @@ describe("what a root session worked on", () => {
       session: "agy:c-root",
       first: null,
       latest: null,
+      recent: [],
       folders: { "/w": 1 },
+      files: ["/w/a.ts"],
       activeAt: 4,
     })
     // Without the correction, another session starts afresh.
@@ -126,16 +164,16 @@ describe("whose a root session's first prompt is", () => {
     expect(firstFrom(first({ firstByPerson: false }), null)).toBe("user")
     expect(firstFrom(first(), null)).toBe("user")
     expect(firstFrom(freshWork("claude:s1"), null)).toBeNull()
-    expect(firstFrom(null, "t1")).toBeNull()
+    expect(firstFrom(null, "moth")).toBeNull()
   })
 
   it("is the opener's in an agent-opened terminal's first session, unless the person submitted it", () => {
-    expect(firstFrom(first({ opened: true, firstByPerson: false }), "t1")).toBe("opener")
+    expect(firstFrom(first({ opened: true, firstByPerson: false }), "moth")).toBe("opener")
     // Not told yet: the opener's, until told otherwise.
-    expect(firstFrom(first({ opened: true }), "t1")).toBe("opener")
-    expect(firstFrom(first({ opened: true, firstByPerson: true }), "t1")).toBe("user")
+    expect(firstFrom(first({ opened: true }), "moth")).toBe("opener")
+    expect(firstFrom(first({ opened: true, firstByPerson: true }), "moth")).toBe("user")
     // A later session there is the person's.
-    expect(firstFrom(first({ firstByPerson: false }), "t1")).toBe("user")
+    expect(firstFrom(first({ firstByPerson: false }), "moth")).toBe("user")
   })
 
   it("is told once, and only of a first prompt", () => {

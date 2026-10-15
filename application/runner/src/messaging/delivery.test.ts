@@ -16,7 +16,7 @@ import {
 } from "./delivery.js"
 
 const run = (from: Delivery, ...events: (DeliveryEvent | readonly DeliveryEvent[])[]): Delivery =>
-  events.flat().reduce(transition, from)
+  events.flat().reduce((delivery, event) => transition(delivery, event), from)
 
 const at = 1_000_000
 // A session binds with nothing showing its prompt is up, or one its harness announced at
@@ -124,9 +124,13 @@ describe("a terminal's delivery state", () => {
   it("lets a stray Left after an Enter that started no prompt cost no later submission", () => {
     // The Enter's window long gone, the key is input as anywhere else, and the person's next
     // submission empties the box again.
-    const stale = run(settled, enter, key("neutral", at + 5_000))
+    const stale = run(settled, enter, key("neutral", at + submitWindowMs + 3_000))
     expect(stale.state).toBe("drafting")
-    const next = run(stale, key("enter", at + 6_000), prompted(at + 6_100))
+    const next = run(
+      stale,
+      key("enter", at + submitWindowMs + 4_000),
+      prompted(at + submitWindowMs + 4_100),
+    )
     expect(next.byPerson).toBe(true)
     expect(transition(next, stop).state).toBe("settled")
   })
@@ -502,12 +506,20 @@ describe("the person's submission", () => {
   })
 
   it("is judged by when the prompt's hook started, not when it was heard", () => {
-    // A loaded machine boots the hook late: started 1.5 s after the Enter, heard at 2.6 s.
-    const late = run(drafting, key("enter"), prompted(at + 2_600, at + 1_500))
+    // A loaded machine boots the hook late: started just inside the window, heard past it.
+    const late = run(
+      drafting,
+      key("enter"),
+      prompted(at + submitWindowMs + 600, at + submitWindowMs - 500),
+    )
     expect(late).toMatchObject({ byPerson: true, box: { empty: true } })
     expect(transition(late, stop).state).toBe("settled")
     // Started past the window, however soon it was heard: not the Enter's.
-    const missed = run(drafting, key("enter"), prompted(at + 2_150, at + 2_100))
+    const missed = run(
+      drafting,
+      key("enter"),
+      prompted(at + submitWindowMs + 150, at + submitWindowMs + 100),
+    )
     expect(missed.byPerson).toBe(false)
     expect(transition(missed, stop).state).toBe("drafting")
   })
@@ -784,6 +796,33 @@ describe("a new session at its own prompt", () => {
       state: "drafting",
       box: { empty: false },
     })
+    // Drafting only by doubt: the screen showing the box empty settles it (a /clear that
+    // took longer than the window, as on Windows), once, and not after a key of theirs.
+    expect(late.at - at).toBeGreaterThan(submitWindowMs)
+    const doubted = run(settled, typing, enter, late)
+    expect(doubted.box.doubted).toBe(true)
+    const empty = { type: "emptied", at: at + 5_000, epoch: doubted.epoch } as const
+    expect(transition(doubted, empty)).toMatchObject({ state: "ready", box: { empty: true } })
+    expect(transition(doubted, { ...empty, epoch: doubted.epoch - 1 })).toBe(doubted)
+    expect(transition(run(doubted, typing), empty).state).toBe("drafting")
+    // A key ends the doubt, a neutral one (Left may open a view) and one while asked too.
+    expect(transition(doubted, key("neutral", at + 3_000)).box.doubted).toBe(false)
+    const answering = transition(doubted, key("content", at + 3_000, true))
+    expect(answering.box).toMatchObject({ doubted: false, draftWhileAsked: true })
+    expect(transition(answering, empty).state).toBe("drafting")
+    // Escape at the prompt, and Enter or Escape while a request waits, end it as well.
+    for (const ending of [key("escape", at + 3_000), key("enter", at + 3_000, true)]) {
+      const after = transition(doubted, ending)
+      expect(after.box.doubted).toBe(false)
+      expect(transition(after, empty).state).toBe("drafting")
+    }
+    // A prompt queued or held stays a draft, not a doubt: it starts the next session's turn.
+    const queued = run(working, typing, enter, late)
+    expect(queued).toMatchObject({ state: "drafting", box: { doubted: false } })
+    expect(transition(queued, { ...empty, epoch: queued.epoch })).toBe(queued)
+    // A draft of the person's own is no doubt.
+    const typed = run(unbound, typing, enter, typing, announced)
+    expect(transition(typed, { ...empty, epoch: typed.epoch })).toBe(typed)
     // Their /clear and its Enter, just before the binding: submitted.
     expect(run(settled, typing, enter, { ...announced, at: at + submitWindowMs }).state).toBe(
       "ready",
@@ -919,5 +958,38 @@ describe("the person's Enter window", () => {
     expect(pendingEnter(entered, at + submitWindowMs + 1)).toBeUndefined()
     expect(pendingEnter(run(entered, typing), at + 1)).toBeUndefined()
     expect(pendingEnter(drafting, at)).toBeUndefined()
+  })
+
+  it("judges a prompt by when its hook's shell started, where the relay told", () => {
+    const entered = run(drafting, key("enter"))
+    // Its relay started 15 s after the Enter, behind a cold PowerShell; its shell 1 s after.
+    const late = { ...prompted(at + 15_100, at + 15_000), firedAt: at + 1_000 } as const
+    expect(transition(entered, late, 20_000).byPerson).toBe(true)
+    // Its shell too started past the window: no slack makes it the person's.
+    const past = { ...late, firedAt: at + submitWindowMs + 1 } as const
+    expect(transition(entered, past, 20_000).byPerson).toBe(false)
+  })
+
+  it("takes a hook whose shell's start reads a clock tick before the Enter as after it", () => {
+    const entered = run(drafting, key("enter"))
+    // Windows' process start moves in ticks of about 15.6 ms, coarser than the Enter's.
+    const sameTick = { ...prompted(at + 900, at + 800), firedAt: at - 10 } as const
+    expect(transition(entered, sameTick, 20_000).byPerson).toBe(true)
+    const before = { ...sameTick, firedAt: at - 100 } as const
+    expect(transition(entered, before, 20_000).byPerson).toBe(false)
+  })
+
+  it("widens by the shell's slack only where the hook's shell start isn't told", () => {
+    const entered = run(drafting, key("enter"))
+    const late = prompted(at + 15_100, at + 15_000)
+    expect(transition(entered, late, 20_000).byPerson).toBe(true)
+    expect(transition(entered, late, 0).byPerson).toBe(false)
+  })
+
+  it("keeps a key typed while a held-back hook may still come as the person's draft", () => {
+    const entered = run(drafting, key("enter"))
+    const strayed = transition(entered, key("neutral", at + 5_000), 20_000)
+    expect(strayed.box.strayed).toBe(true)
+    expect(transition(entered, key("neutral", at + 5_000), 0).box.strayed).toBe(false)
   })
 })

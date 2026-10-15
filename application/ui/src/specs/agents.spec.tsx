@@ -1,16 +1,19 @@
 import { describe as context, describe, expect, it, onTestFinished } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
+import { settled } from "./support/canvas"
 import { escapeFrom, expectFocusWithin, preferencesDialog } from "./support/keyboard"
 import { workspaceSwitcher } from "./support/sessions"
 import {
   chooseView,
   commandInput,
   expectStaysAbsent,
+  isMac,
   openWorkspace,
   tabDescription,
   terminal,
   terminalTab,
+  labelled,
 } from "./support/workspace"
 
 const agentSwitch = (scope: Locator, name: "Claude Code" | "Codex" | "Antigravity"): Locator =>
@@ -32,13 +35,13 @@ describe("An agent waiting on the person", () => {
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
-    const tab = page.getByRole("button", { name: "Select Checkout review" })
+    const tab = page.getByRole("button", { name: labelled("Select ", "Checkout review") })
     await expect
       .poll(() => tabDescription("Checkout review"))
       .toBe("Needs permission, 2 subagents: 2 explorer")
     await tab.click()
     await expect
-      .element(page.getByRole("region", { name: "Checkout review terminal" }))
+      .element(terminal("Checkout review"))
       .toHaveAttribute("aria-description", "Needs permission")
   })
 
@@ -80,10 +83,10 @@ describe("An agent that plans", () => {
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
-    const tab = page.getByRole("button", { name: "Select Checkout implementation" })
+    const tab = page.getByRole("button", { name: labelled("Select ", "Checkout implementation") })
     await expect.poll(() => tabDescription("Checkout implementation")).toBe("Plan ready for review")
     await tab.click()
-    const window = page.getByRole("region", { name: "Checkout implementation terminal" })
+    const window = terminal("Checkout implementation")
     await expect.element(window).toHaveAttribute("aria-description", "Plan ready for review")
     // Whether it plans is its own terminal's to show, not its window's header.
     await expect.element(window.getByText("planning", { exact: true })).not.toBeInTheDocument()
@@ -118,8 +121,8 @@ describe("An agent's subagents", () => {
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
-    await page.getByRole("button", { name: "Select Checkout review" }).click()
-    const window = page.getByRole("region", { name: "Checkout review terminal" })
+    await page.getByRole("button", { name: labelled("Select ", "Checkout review") }).click()
+    const window = terminal("Checkout review")
     await expect.poll(() => tabDescription("Checkout review")).toContain("2 subagents")
     await expect.element(window.getByText("2 subagents")).not.toBeInTheDocument()
   })
@@ -131,8 +134,8 @@ describe("An agent whose turn left work running", () => {
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
-    await page.getByRole("button", { name: "Select Tests" }).click()
-    const window = page.getByRole("region", { name: "Tests terminal" })
+    await page.getByRole("button", { name: labelled("Select ", "Tests") }).click()
+    const window = terminal("Tests")
     await expect.element(window).toHaveAttribute("data-terminal-phase", "running")
     await expect.poll(() => tabDescription("Tests")).toContain("2 agents · 1 task")
     await expect.element(window.getByText("2 agents · 1 task")).not.toBeInTheDocument()
@@ -143,8 +146,8 @@ describe("An agent whose turn left work running", () => {
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
-    await page.getByRole("button", { name: "Select Build" }).click()
-    const window = page.getByRole("region", { name: "Build terminal" })
+    await page.getByRole("button", { name: labelled("Select ", "Build") }).click()
+    const window = terminal("Build")
     await expect.element(window).toHaveAttribute("data-terminal-phase", "idle")
   })
 })
@@ -157,19 +160,23 @@ describe("An agent Novadeck can't hear from", () => {
     if (await skip.query()) await skip.click()
     const said = "Not reporting · Novadeck can't hear from this agent"
     await expect.poll(() => tabDescription("Runtime")).toBe(said)
-    await page.getByRole("button", { name: "Select Runtime" }).click()
-    const window = page.getByRole("region", { name: "Runtime terminal" })
+    await page.getByRole("button", { name: labelled("Select ", "Runtime") }).click()
+    const window = terminal("Runtime")
     await expect.element(window).toHaveAttribute("aria-description", said)
     await expect.element(window).toHaveAttribute("data-terminal-phase", "unheard")
   })
 })
 
 // The demo's Claude Code in Build is idle at its prompt; a prompt there works a moment,
-// then finishes with a reply, the command it left running still running.
-const promptBuild = async (): Promise<void> => {
-  await openWorkspace("/?demo=agents")
+// then finishes with a reply, the command it left running still running. A `view` is
+// chosen before the prompt, so the turn's moment goes to looking away from it. The turn
+// works 5 s, so a busy machine's click elsewhere lands before it ends, which the demo's
+// usual 1.5 s didn't always leave room for.
+const promptBuild = async (view?: "Grid"): Promise<void> => {
+  await openWorkspace("/?demo=agents&turnMs=5000")
   const skip = page.getByRole("button", { name: "Skip for now" })
   if (await skip.query()) await skip.click()
+  if (view) await chooseView(view)
   await terminalTab("Build").click()
   await commandInput("Build").fill("Ship the docs")
   await userEvent.keyboard("{Enter}")
@@ -182,7 +189,7 @@ describe("An agent that finishes", () => {
       await promptBuild()
       await terminalTab("Tests").click()
       await expect
-        .poll(() => tabDescription("Build"), { timeout: 5000 })
+        .poll(() => tabDescription("Build"), { timeout: 10_000 })
         // The command its turn left running still counts.
         .toBe("Done · reply unread, 1 task")
       const row = terminalTab("Build").element().closest(".terminal-tab")!
@@ -197,11 +204,12 @@ describe("An agent that finishes", () => {
     })
 
     it("shows it on a window in view, and clears once the person selects it", async () => {
-      await promptBuild()
-      await chooseView("Grid")
+      await promptBuild("Grid")
       await terminalTab("Tests").click()
       const window = terminal("Build")
-      await expect.element(window, { timeout: 5000 }).toHaveAttribute("data-terminal-phase", "done")
+      await expect
+        .element(window, { timeout: 10_000 })
+        .toHaveAttribute("data-terminal-phase", "done")
       await expect.element(window).toHaveAttribute("aria-description", "Done · reply unread")
       // Its phase line marks it, its name bold; its description says it in words.
       await expect.element(window.getByText("Done", { exact: true })).not.toBeInTheDocument()
@@ -225,7 +233,9 @@ describe("An agent that finishes", () => {
     it("leaves it as it was", async () => {
       await promptBuild()
       const window = terminal("Build")
-      await expect.element(window, { timeout: 5000 }).toHaveAttribute("data-terminal-phase", "idle")
+      await expect
+        .element(window, { timeout: 10_000 })
+        .toHaveAttribute("data-terminal-phase", "idle")
       // Past the grace a completed end waits before it is marked (`finishGraceMs`).
       await expectStaysAbsent(window.getByText("Done · reply unread"), { ms: 1500 })
       // Only the command its turn left running.
@@ -240,8 +250,8 @@ describe("An agent's model and context", () => {
     await openWorkspace("/?demo=agents")
     const skip = page.getByRole("button", { name: "Skip for now" })
     if (await skip.query()) await skip.click()
-    await page.getByRole("button", { name: "Select Checkout review" }).click()
-    const window = page.getByRole("region", { name: "Checkout review terminal" })
+    await page.getByRole("button", { name: labelled("Select ", "Checkout review") }).click()
+    const window = terminal("Checkout review")
     const ring = window.getByRole("img", {
       name: "gpt-6-astra · high, Context 15% full · 30k of 200k tokens",
     })
@@ -434,42 +444,413 @@ describe("Connecting agents", () => {
   })
 })
 
-describe("A pinned project", () => {
-  it("shows as a chip in the header, and the switcher's dot leaves it out", async () => {
-    // Pinned, docs-site shows beside the switcher, its agent asking a question; the dot
-    // leaves it out, so it shows the next most pressing: api-service's waiting agents.
-    localStorage.setItem(
-      "novadeck.project-arrangement",
-      JSON.stringify({ order: ["docs-site"], pinned: ["docs-site"] }),
+const pinsBar = () => page.getByRole("group", { name: "Pinned projects" })
+// The words on the bar saying where to drop a project dragged from the switcher.
+const dropHint = (): HTMLElement => document.querySelector<HTMLElement>(".pins-bar-drop-hint")!
+const pin = (name: string) => pinsBar().getByRole("button", { name: new RegExp(`${name}$`) })
+const arrange = (pinned: string[]): void =>
+  localStorage.setItem("novadeck.project-arrangement", JSON.stringify({ order: pinned, pinned }))
+const switcherRow = (name: string) =>
+  page
+    .getByRole("dialog", { name: "Switch workspace" })
+    .getByRole("button", { name: new RegExp(`^${name}`) })
+// Presses Escape once the bar is dragging the pin a project handed over, before the
+// drag is let go.
+const escapeOnceHandedOver = (name: string): void => {
+  const moved = (): void => {
+    if (!document.querySelector(`.pin[data-pin="${name}"][data-dragging="true"]`)) return
+    window.removeEventListener("pointermove", moved, true)
+    // After the bar has followed this move.
+    setTimeout(() =>
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
     )
+  }
+  window.addEventListener("pointermove", moved, true)
+}
+
+// The switcher's projects as it lists them, while it is open.
+const switcherOrder = () =>
+  [
+    ...(page
+      .getByRole("dialog", { name: "Switch workspace" })
+      .query()
+      ?.querySelectorAll(".workspace-switcher-project strong") ?? []),
+  ].map((name) => name.textContent)
+const skipWelcome = async (): Promise<void> => {
+  const skip = page.getByRole("button", { name: "Skip for now" })
+  if (await skip.query()) await skip.click()
+}
+
+describe("A pinned project", () => {
+  it("shows in the bar under the header, and the switcher's dot leaves it out", async () => {
+    // Pinned, docs-site shows in the bar, its agent asking a question; the dot leaves it
+    // out, so it shows the next most pressing: api-service's waiting agents.
+    arrange(["docs-site"])
     await openWorkspace("/?demo=agents")
-    const skip = page.getByRole("button", { name: "Skip for now" })
-    if (await skip.query()) await skip.click()
-    const chip = page
-      .getByRole("group", { name: "Pinned projects" })
-      .getByRole("button", { name: "docs-site" })
-    await expect.element(chip).toHaveAttribute("aria-description", "Asks a question")
+    await skipWelcome()
+    await expect.element(pin("docs-site")).toHaveAttribute("aria-description", "Asks a question")
     await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status", "attention")
 
-    // Switching to it keeps its chip in place, marked current; the others still wait
-    // in the dot.
-    await chip.click()
+    // Switching to it keeps its pin in place, marked current; the others still wait in
+    // the dot.
+    await pin("docs-site").click()
     await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
-    await expect.element(chip).toHaveAttribute("aria-current", "true")
+    await expect.element(pin("docs-site")).toHaveAttribute("aria-current", "true")
     await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status")
   })
 
-  it("leaves the header where its chip doesn't fit, and the dot covers it again", async () => {
-    localStorage.setItem(
-      "novadeck.project-arrangement",
-      JSON.stringify({ order: ["docs-site"], pinned: ["docs-site"] }),
-    )
-    await page.viewport(860, 900)
+  it("is absent with no pins, and appears when pinning from the switcher menu", async () => {
+    await openWorkspace()
+    await expect.element(pinsBar()).not.toBeInTheDocument()
+
+    await workspaceSwitcher().click()
+    await page.getByRole("button", { name: "Pin api-service" }).click()
+
+    await expect.element(pin("api-service")).toBeVisible()
+    await expect.element(pin("api-service")).toHaveTextContent("1api-service")
+  })
+
+  context("reordered", () => {
+    const pinNames = () =>
+      pinsBar()
+        .getByRole("button")
+        .elements()
+        .map((button) => button.textContent)
+
+    it("by dragging a pin along the bar, which the switcher and the numbers follow", async () => {
+      arrange(["storefront", "api-service", "mobile-app"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      expect(pinNames()).toEqual(["1storefront", "2api-service", "3mobile-app"])
+
+      const first = pin("storefront")
+      const last = pin("mobile-app")
+      const from = first.element().getBoundingClientRect()
+      const to = last.element().getBoundingClientRect()
+      await userEvent.dragAndDrop(first, last, {
+        sourcePosition: { x: from.width / 2, y: from.height / 2 },
+        targetPosition: { x: to.width - 4, y: to.height / 2 },
+        steps: 12,
+      })
+      await expect.poll(pinNames).toEqual(["1api-service", "2mobile-app", "3storefront"])
+      await expect
+        .element(pin("storefront"))
+        .toHaveAttribute(
+          "aria-keyshortcuts",
+          isMac() ? "Meta+3 Alt+ArrowLeft" : "Control+Shift+3 Alt+ArrowLeft",
+        )
+      // Still pinned, and the switcher lists them in that order.
+      await workspaceSwitcher().click()
+      const listed = page
+        .getByRole("dialog", { name: "Switch workspace" })
+        .getByRole("button", { name: /^(storefront|api-service|mobile-app)/ })
+        .elements()
+        .map((button) => button.querySelector("strong")?.textContent)
+      expect(listed.slice(0, 3)).toEqual(["api-service", "mobile-app", "storefront"])
+    })
+
+    it("unpins a pin dragged off the bar and let go there", async () => {
+      arrange(["storefront", "api-service", "mobile-app"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      const from = pin("api-service").element().getBoundingClientRect()
+      await userEvent.dragAndDrop(pin("api-service"), page.elementLocator(document.body), {
+        sourcePosition: { x: from.width / 2, y: from.height / 2 },
+        targetPosition: { x: from.left + from.width / 2, y: from.bottom + 160 },
+        steps: 12,
+        force: true,
+      })
+
+      await expect.poll(pinNames).toEqual(["1storefront", "2mobile-app"])
+    })
+
+    it("only by a drag: a click still switches", async () => {
+      arrange(["storefront", "api-service", "mobile-app"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await pin("api-service").click()
+      await expect.element(pin("api-service")).toHaveAttribute("aria-current", "true")
+      expect(pinNames()).toEqual(["1storefront", "2api-service", "3mobile-app"])
+    })
+
+    it("by Alt and the arrows, with the focus kept, and never out of the bar", async () => {
+      arrange(["storefront", "api-service", "mobile-app"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      pin("storefront").element().focus()
+      await userEvent.keyboard("{Alt>}{ArrowRight}{/Alt}")
+      await expect.poll(pinNames).toEqual(["1api-service", "2storefront", "3mobile-app"])
+      await expect.element(pin("storefront")).toHaveFocus()
+      await userEvent.keyboard("{Alt>}{ArrowRight}{/Alt}")
+      await expect.poll(pinNames).toEqual(["1api-service", "2mobile-app", "3storefront"])
+      // The last one stays pinned.
+      await userEvent.keyboard("{Alt>}{ArrowRight}{/Alt}")
+      expect(pinNames()).toEqual(["1api-service", "2mobile-app", "3storefront"])
+      await userEvent.keyboard("{Alt>}{ArrowLeft}{/Alt}")
+      await expect.poll(pinNames).toEqual(["1api-service", "2storefront", "3mobile-app"])
+      await expect.element(pin("storefront")).toHaveFocus()
+    })
+  })
+
+  context("dragged from the switcher menu", () => {
+    // Drags a project's row out of the open menu and lets it go at a point on the screen:
+    // by default on the bar under the header, past its pins and the menu.
+    // More steps leave more moves after the handoff, for what shows as the menu closes.
+    const dragOut = async (
+      name: string,
+      to?: { x: number; y: number },
+      steps = 16,
+    ): Promise<void> => {
+      // Once the menu has opened in full: a drag begun while it still slides in starts
+      // off the row, and the drag never takes (seen once on a macOS runner).
+      const from = await settled(() => switcherRow(name).element().getBoundingClientRect())
+      const header = workspaceSwitcher().element().closest("header")!.getBoundingClientRect()
+      await userEvent.dragAndDrop(switcherRow(name), page.elementLocator(document.body), {
+        sourcePosition: { x: 40, y: from.height / 2 },
+        targetPosition: to ?? { x: window.innerWidth - 80, y: header.bottom + 16 },
+        steps,
+        force: true,
+      })
+    }
+
+    it("pins it where it is let go, after the pins it passes", async () => {
+      arrange(["storefront", "api-service"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+
+      await dragOut("mobile-app")
+
+      await expect.element(pin("mobile-app")).toHaveTextContent("3mobile-app")
+      // The menu closed as the drag left it, handing the bar a pin; it lists it as pinned.
+      await expect
+        .element(page.getByRole("dialog", { name: "Switch workspace" }))
+        .not.toBeInTheDocument()
+      await workspaceSwitcher().click()
+      await expect.element(switcherRow("mobile-app").getByLabelText("Pinned")).toBeInTheDocument()
+    })
+
+    it("opens an empty bar for the drag, and the project becomes the first pin", async () => {
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await expect.element(pinsBar()).not.toBeInTheDocument()
+      await workspaceSwitcher().click()
+
+      await dragOut("docs-site")
+
+      await expect.element(pin("docs-site")).toHaveTextContent("1docs-site")
+    })
+
+    it("says where to drop until the drag is let go, after the menu has closed", async () => {
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      await expect
+        .element(page.getByRole("dialog", { name: "Switch workspace" }))
+        .toHaveAttribute("data-state", "open")
+      // What shows at the last move before the drag is let go, the bar dragging the pin the
+      // menu handed over.
+      let seen: {
+        readonly menu: boolean
+        readonly hint: boolean
+        readonly target: boolean
+      } | null = null
+      const moved = (): void => {
+        if (!document.querySelector('.pin[data-pin="docs-site"][data-dragging="true"]')) return
+        seen = {
+          // Open, rather than still in the page as it fades out.
+          menu:
+            page.getByRole("dialog", { name: "Switch workspace" }).query()?.dataset.state ===
+            "open",
+          hint: dropHint().checkVisibility({ visibilityProperty: true }),
+          target: document.querySelector('.pins-bar[data-receiving="true"]') !== null,
+        }
+      }
+      window.addEventListener("pointermove", moved, true)
+
+      await dragOut("docs-site", undefined, 48)
+      window.removeEventListener("pointermove", moved, true)
+
+      expect(seen).toEqual({ menu: false, hint: true, target: true })
+      await expect.element(pin("docs-site")).toHaveTextContent("1docs-site")
+      await expect.poll(() => dropHint().checkVisibility({ visibilityProperty: true })).toBe(false)
+      expect(document.querySelector('.pins-bar[data-receiving="true"]')).toBeNull()
+    })
+
+    it("marks a bar with pins as a place to drop, its words after them", async () => {
+      arrange(["storefront", "api-service"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      let seen: {
+        readonly hint: boolean
+        readonly target: boolean
+        readonly after: boolean
+      } | null = null
+      const moved = (): void => {
+        if (!document.querySelector('.pin[data-pin="docs-site"][data-dragging="true"]')) return
+        const last = pin("api-service").element().getBoundingClientRect()
+        seen = {
+          hint: dropHint().checkVisibility({ visibilityProperty: true }),
+          target: document.querySelector('.pins-bar[data-receiving="true"]') !== null,
+          after: dropHint().getBoundingClientRect().left >= last.right,
+        }
+      }
+      window.addEventListener("pointermove", moved, true)
+
+      await dragOut("docs-site")
+      window.removeEventListener("pointermove", moved, true)
+
+      expect(seen).toEqual({ hint: true, target: true, after: true })
+      await expect.element(pin("docs-site")).toHaveTextContent("3docs-site")
+      expect(document.querySelector('.pins-bar[data-receiving="true"]')).toBeNull()
+    })
+
+    it("keeps its words clear of the pins in a crowded bar", async () => {
+      // Three pins in a narrow window, which the dragged one's slot fills: the words show
+      // only after the last pin shown and that slot, or not at all.
+      arrange(["storefront", "api-service", "mobile-app"])
+      await page.viewport(620, 900)
+      onTestFinished(() => page.viewport(1440, 900))
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      const overlaps: string[] = []
+      let sampled = 0
+      const moved = (): void => {
+        if (!document.querySelector('.pin[data-pin="docs-site"][data-dragging="true"]')) return
+        sampled++
+        if (!dropHint().checkVisibility({ visibilityProperty: true })) return
+        const left = dropHint().getBoundingClientRect().left
+        // The pins shown, and the slot the dragged one holds, where it lands.
+        for (const shown of document.querySelectorAll<HTMLElement>(
+          ".pin[data-dnd-placeholder], .pin:not([inert]):not([data-dragging])",
+        ))
+          if (shown.getBoundingClientRect().right > left) overlaps.push(shown.dataset.pin!)
+      }
+      window.addEventListener("pointermove", moved, true)
+
+      await dragOut("docs-site")
+      window.removeEventListener("pointermove", moved, true)
+
+      expect(sampled).toBeGreaterThan(0)
+      expect(overlaps).toEqual([])
+    })
+
+    it("still reorders the list when dragged to its top, with the bar behind it", async () => {
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      const first = switcherOrder()[0]!
+      const top = switcherRow(first).element().getBoundingClientRect()
+      await dragOut("docs-site", { x: top.left + 60, y: top.top + 6 })
+
+      await expect.poll(() => switcherOrder()[0]).toBe("docs-site")
+      await expectStaysAbsent(pin("docs-site"))
+    })
+
+    it("pins nothing when let go off the bar", async () => {
+      arrange(["storefront"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      const before = switcherOrder()
+      expect(before).toContain("mobile-app")
+      await dragOut("mobile-app", { x: 700, y: 400 })
+      await expectStaysAbsent(pin("mobile-app"))
+      expect(pinsBar().getByRole("button").elements()).toHaveLength(1)
+      // Nor does it move in the list.
+      await workspaceSwitcher().click()
+      await expect.poll(switcherOrder).toEqual(before)
+    })
+
+    it("pins nothing when Escape cancels the drag on the bar", async () => {
+      arrange(["storefront"])
+      await openWorkspace("/?demo=agents")
+      await skipWelcome()
+      await workspaceSwitcher().click()
+      const before = switcherOrder()
+      escapeOnceHandedOver("mobile-app")
+      await dragOut("mobile-app")
+      await expectStaysAbsent(pin("mobile-app"))
+      expect(pinsBar().getByRole("button").elements()).toHaveLength(1)
+      await workspaceSwitcher().click()
+      await expect.poll(switcherOrder).toEqual(before)
+    })
+  })
+
+  it("hides the pins that don't fit, and the dot covers them again", async () => {
+    // Seven pins in a narrow window: the last, docs-site, has no room, so the dot shows
+    // its question instead of leaving it out.
+    arrange([
+      "storefront",
+      "api-service",
+      "mobile-app",
+      "design-system",
+      "infra",
+      "dotfiles",
+      "docs-site",
+    ])
+    await page.viewport(600, 900)
     onTestFinished(() => page.viewport(1440, 900))
     await openWorkspace("/?demo=agents")
-    const skip = page.getByRole("button", { name: "Skip for now" })
-    if (await skip.query()) await skip.click()
+    await skipWelcome()
+    await expect.element(pin("storefront")).toBeVisible()
+    await expect.element(pin("docs-site")).not.toBeInTheDocument()
     await expect.element(workspaceSwitcher()).toHaveAttribute("data-project-status", "question")
-    await expect.element(page.getByRole("button", { name: "docs-site" })).not.toBeInTheDocument()
+  })
+
+  it("keeps the other pins where they are when switching", async () => {
+    arrange(["storefront", "api-service", "docs-site", "mobile-app"])
+    await openWorkspace("/?demo=agents")
+    await skipWelcome()
+    const xs = () =>
+      pinsBar()
+        .getByRole("button")
+        .elements()
+        .map((button) => Math.round(button.getBoundingClientRect().right * 100) / 100)
+    await pin("storefront").click()
+    await expect.element(pin("storefront")).toHaveAttribute("aria-current", "true")
+    const before = xs()
+    // Each pin in turn becomes current, and every pin keeps its width, so none moves.
+    for (const name of ["api-service", "docs-site", "mobile-app", "storefront"]) {
+      // eslint-disable-next-line no-await-in-loop -- Each pin is current in turn.
+      await pin(name).click()
+      // eslint-disable-next-line no-await-in-loop -- Each pin is current in turn.
+      await expect.element(pin(name)).toHaveAttribute("aria-current", "true")
+      expect(xs()).toEqual(before)
+    }
+  })
+
+  it("keeps a moved pin shown: the last shown pin can't step into the hidden ones", async () => {
+    arrange([
+      "storefront",
+      "api-service",
+      "mobile-app",
+      "design-system",
+      "infra",
+      "dotfiles",
+      "docs-site",
+    ])
+    await page.viewport(600, 900)
+    onTestFinished(() => page.viewport(1440, 900))
+    await openWorkspace("/?demo=agents")
+    await skipWelcome()
+    const shownNames = () =>
+      pinsBar()
+        .getByRole("button")
+        .elements()
+        .filter((button) => !button.hasAttribute("inert"))
+        .map((button) => button.textContent)
+    const before = shownNames()
+    expect(before.length).toBeGreaterThan(1)
+    expect(before.length).toBeLessThan(7)
+    const lastShown = before[before.length - 1]!.replace(/^\d+/, "")
+    const lastPin = pin(lastShown)
+    expect(lastPin.element().getAttribute("aria-keyshortcuts")).not.toContain("Alt+ArrowRight")
+    lastPin.element().focus()
+    await userEvent.keyboard("{Alt>}{ArrowRight}{/Alt}")
+    expect(shownNames()).toEqual(before)
+    await expect.element(lastPin).toHaveFocus()
   })
 })

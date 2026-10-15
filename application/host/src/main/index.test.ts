@@ -36,6 +36,8 @@ describe("compiled desktop host", () => {
       expect(main).toContain("runner.js")
       expect(main).toContain("voiceEngineArgumentPrefix")
       expect(main).toContain("voiceSourceArgumentPrefix")
+      expect(main).toContain("murmurEngineArgumentPrefix")
+      expect(main).toContain("murmurSourceArgumentPrefix")
       expect(main).toContain("MessageChannelMain")
       expect(main).toContain("senderFrame")
       expect(preload).toContain("novadeck:runner-port")
@@ -64,6 +66,136 @@ describe("compiled desktop host", () => {
       expect(main).toContain("saveBeforeQuitChannel")
       expect(preload).toContain("novadeck:save-before-quit")
       expect(preload).toContain("beforeQuit")
+    })
+
+    it("loads the updater only in a build that updates itself, and shuts down as quitting does before installing", async () => {
+      const main = await read("main/index.js")
+      const preload = await read("preload/index.cjs")
+
+      // The decision itself is covered in ./updater.test.ts.
+      expect(main).toContain("updatePlan(")
+      expect(main).toContain('await import("electron-updater")')
+      expect(main).toContain("shutdown: shutDown")
+      expect(main).toContain("quitAndInstall(")
+      expect(preload).toContain("novadeck:update-offer")
+      expect(preload).toContain("novadeck:install-update")
+      expect(preload).toContain("novadeck:open-update-page")
+      expect(preload).toContain("novadeck:set-update-channel")
+      // electron-builder's portable Windows target is not shipped, and its variable is not read.
+      expect(main).not.toContain("PORTABLE_EXECUTABLE_DIR")
+    })
+
+    it("takes the single-instance lock before anything starts, and brings the window forward for a second launch", async () => {
+      const main = await read("main/index.js")
+
+      expect(main).toContain("requestSingleInstanceLock()")
+      expect(main).toContain('app.on("second-instance"')
+      expect(main.indexOf("requestSingleInstanceLock()")).toBeLessThan(main.indexOf("whenReady()"))
+      // A second launch says which data folder is taken before it quits.
+      const refusal = main.slice(main.indexOf("if (!primaryInstance)"))
+      expect(refusal.indexOf("console.error(")).toBeGreaterThan(-1)
+      expect(refusal.indexOf("console.error(")).toBeLessThan(refusal.indexOf("app.exit(0)"))
+      expect(refusal.slice(0, refusal.indexOf("app.exit(0)"))).toContain('getPath("userData")')
+    })
+
+    it("starts the installed AppImage as a detached child after letting go of the lock, never through app.relaunch", async () => {
+      const main = await read("main/index.js")
+
+      expect(main).toContain("releaseLock: () => app.releaseSingleInstanceLock()")
+      expect(main).toContain("exit: () => app.exit(0)")
+      expect(main).toContain('import { execFile, spawn } from "node:child_process"')
+      // The lock goes first so the child can take it; the child is let go of before this one
+      // exits. The bundler may rename `spawn`.
+      expect(main).toMatch(
+        /releaseLock\(\);[\s\S]*?spawn\d*\(file, args, \{\s*detached: true,\s*stdio: "ignore"[\s\S]*?child\.unref\(\);\s*exit\(\);/u,
+      )
+      // Electron's relaunch hands the child no-new-privileges, which stops an AppImage from
+      // mounting; only macOS still uses it, and with the executable alone.
+      expect(main).not.toContain("args: []")
+      expect(main.match(/app\.relaunch\(/gu)).toHaveLength(1)
+    })
+
+    it("opens a window for a second launch when the app has none, as on macOS", async () => {
+      const main = await read("main/index.js")
+      const handler = main.slice(main.indexOf('app.on("second-instance"'))
+
+      expect(handler.slice(0, handler.indexOf("\n});"))).toMatch(
+        /bringForward\(window\);\s*else if \(server && !stopping\) createWindow\(server\.origin\);\s*if \(process\.platform === "darwin"\) app\.focus\(\{ steal: true \}\)/u,
+      )
+    })
+
+    it("reads installed versions with the environment the installed copy gets", async () => {
+      const main = await read("main/index.js")
+
+      expect(main).toMatch(
+        /extractWithProcess\(installedEnvironment\(process\.env, appImageMounts\(\)\)\)/u,
+      )
+    })
+
+    it("lets go of the lock before electron-updater starts the new AppImage on a restart", async () => {
+      const main = await read("main/index.js")
+
+      // On Electron's own autoUpdater, which electron-updater emits on; the bundler may
+      // rename the import.
+      const native =
+        /\{[^}]*\bautoUpdater(?: as ([\w$]+))?(?=\s*[,}])[^}]*\} from "electron"/u.exec(main)
+      expect(native).not.toBeNull()
+      const name = (native?.[1] ?? "autoUpdater").replaceAll("$", "\\$")
+      expect(main).toMatch(
+        new RegExp(
+          `process\\.platform === "linux"\\)\\s*${name}\\.once\\("before-quit-for-update", \\(\\) => app\\.releaseSingleInstanceLock\\(\\)\\);\\s*updater\\?\\.quitAndInstall\\(true, true\\)`,
+          "u",
+        ),
+      )
+    })
+
+    it("tells a portable copy of a newer installed one before the runner starts, and offers the install to the page", async () => {
+      const main = await read("main/index.js")
+      const preload = await read("preload/index.cjs")
+
+      expect(main.indexOf("await leaveForNewerInstalled(")).toBeGreaterThan(-1)
+      expect(main.indexOf("await leaveForNewerInstalled(")).toBeLessThan(
+        main.indexOf("runner = startRunner("),
+      )
+      // The signature is left out, so macOS never waits for codesign to open its window.
+      expect(main).toMatch(/portableOf\(\{ \.\.\.\(?await baseBuild\(\)\)?/u)
+      expect(main).not.toMatch(/portableOf\(await updateBuild\(\)\)/u)
+      expect(main).toContain("registerPortableIpc(")
+      expect(preload).toContain("novadeck:portable")
+      expect(preload).toContain("novadeck:install-app")
+      expect(preload).toContain("novadeck:open-installed")
+    })
+
+    it("moves to Applications only when the page asks to install, and opens release pages only from app-update.yml", async () => {
+      const main = await read("main/index.js")
+
+      // Linux's Ctrl+Q and Quit item mark the quit as the person's before quitting.
+      expect(main).toContain("linuxMenu(")
+      expect(main).toContain("Menu.setApplicationMenu")
+      expect(main).toContain("moveToApplicationsFolder")
+      expect(main).toContain("isInApplicationsFolder")
+      // No launch-time modal asks; the move is the install of a portable copy.
+      expect(main).not.toContain("Move Novadeck to your Applications folder?")
+      expect(main).not.toContain("await moveToApplications()")
+      expect(main).toMatch(/process\.platform === "darwin" \? Promise\.resolve\(moveApp\(\)\)/u)
+      expect(main).toContain('"app-update.yml"')
+      expect(main).not.toContain("novadeck-org/novadeck/releases/tag")
+    })
+
+    it("installs on Windows from a setup staged while the app runs, started detached and never through the shell", async () => {
+      const main = await read("main/index.js")
+
+      expect(main).toContain("stageWindowsSetup()")
+      expect(main).toContain("releaseLatestUrl(")
+      expect(main).toContain("setupArguments")
+      // Only a copy the installer did not make is portable, which the launch checks.
+      expect(main).toContain("windowsInstalled")
+      // The setup is never opened through the shell, which would apply SmartScreen.
+      expect(main).not.toContain("shell.openPath")
+      // The Windows copy, unlike Linux's, lets go of the lock inside startDetached.
+      expect(main).toContain("startWindowsCopy")
+      // Downloads go through Electron's network stack, which honours the system proxy.
+      expect(main).toContain("net.fetch(")
     })
 
     it("opens windows on the page's last ground and follows its appearance", async () => {

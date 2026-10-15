@@ -2,10 +2,10 @@ import { act, createElement, Fragment, useEffect, type ComponentProps } from "re
 import { HashRouter } from "react-router"
 import { vi } from "vitest"
 
+import { createSpecBackend } from "../backend/demo/spec-variants"
 import type { CreateBackend, TerminalSurfaceProps } from "../backend/port"
 import { context, describe, expect, it } from "../test"
 import { render } from "../test/render"
-import { selectBackend } from "./backend"
 import {
   useWorkspaceServices,
   useWorkspaceState,
@@ -23,6 +23,9 @@ vi.hoisted(() => {
     disconnect(): void {}
   }
 })
+
+// The second terminal of the demo's storefront.
+const second = "storefront-initial-02"
 
 const Subject = ({ id }: { id: string }): React.JSX.Element => {
   const terminal = useWorkspaceState((workspace) =>
@@ -42,8 +45,7 @@ const open = async (id: string) => {
   window.location.hash = "#/projects/storefront/sessions/initial/focus"
   const lifecycle = { mounted: 0, unmounted: 0 }
   const createBackend: CreateBackend = () => {
-    if (!("createBackend" in selectBackend)) throw new Error("Tests expect a ready backend")
-    const backend = selectBackend.createBackend()
+    const backend = createSpecBackend()
     const TerminalSurface = ({
       terminal,
       renderWindow,
@@ -146,7 +148,7 @@ const beginHeaderRename = (container: HTMLElement): HTMLInputElement => {
 describe("process windows", () => {
   context("when the foreground process changes", () => {
     it("presents Claude and Codex in the same window and returns to the terminal without remounting the surface", async () => {
-      const page = await open("02")
+      const page = await open(second)
       try {
         const terminal = visibleWindow(page.container)
         expect(terminal.querySelector("[data-terminal-input]")).not.toBeNull()
@@ -176,7 +178,7 @@ describe("process windows", () => {
     })
 
     it("keeps other programs in the plain terminal window", async () => {
-      const page = await open("02")
+      const page = await open(second)
       try {
         const terminal = visibleWindow(page.container)
         page.process("vim")
@@ -188,7 +190,7 @@ describe("process windows", () => {
     })
 
     it("shows the regular terminal again when an agent session fails", async () => {
-      const page = await open("02")
+      const page = await open(second)
       try {
         page.process("claude")
         expect(visibleWindow(page.container).dataset.processWindow).toBe("claude")
@@ -202,7 +204,7 @@ describe("process windows", () => {
     })
 
     it("shows the terminal during a fresh shell startup even while the last program is an agent", async () => {
-      const page = await open("02")
+      const page = await open(second)
       try {
         page.process("codex")
         expect(visibleWindow(page.container).dataset.processWindow).toBe("codex")
@@ -218,7 +220,7 @@ describe("process windows", () => {
 
   context("while the terminal is being renamed", () => {
     it("keeps the header's draft, caret and focus when a program starts and ends", async () => {
-      const page = await open("02")
+      const page = await open(second)
       try {
         const field = beginHeaderRename(page.container)
         typeDraft(field, "My new na")
@@ -242,10 +244,10 @@ describe("process windows", () => {
     })
 
     it("leaves focus in another rename field when a program starts", async () => {
-      const page = await open("02")
+      const page = await open(second)
       // Stands in for the sidebar's field, which continues the same rename.
       const sidebar = document.createElement("input")
-      sidebar.dataset.renameTerminal = "02"
+      sidebar.dataset.renameTerminal = second
       document.body.append(sidebar)
       try {
         const header = beginHeaderRename(page.container)

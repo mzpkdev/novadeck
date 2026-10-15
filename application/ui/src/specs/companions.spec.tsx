@@ -1,4 +1,4 @@
-import { describe as context, describe, expect, it } from "vitest"
+import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { page, userEvent } from "vitest/browser"
 
 import { boxOf, canvasView, dragBackground, settled, viewBox } from "./support/canvas"
@@ -19,7 +19,14 @@ import {
   windowMenu,
 } from "./support/companions"
 import { gridView } from "./support/layouts"
-import { expectStaysAbsent, terminal, terminalTab } from "./support/workspace"
+import {
+  chooseView,
+  expectStaysAbsent,
+  isMac,
+  openWorkspace,
+  terminal,
+  terminalTab,
+} from "./support/workspace"
 
 describe("A terminal's taskbar", () => {
   it("shows its agent's plan, what it showed, and its messages, stacked by kind", async () => {
@@ -180,6 +187,203 @@ describe("A plan", () => {
   })
 })
 
+describe("A plan whose edits can't be saved", () => {
+  // Opens Build Studio's plan with the debug panel's fault in place, and types into it.
+  const typeInto = async (fault: string): Promise<void> => {
+    await openWorkspace(`/projects/studio/sessions/initial/grid?demo=showcase&planFault=${fault}`)
+    await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+    const content = (): HTMLElement | null =>
+      companionPane("Build Studio").element().querySelector<HTMLElement>(".cm-content")
+    await expect.poll(content).not.toBeNull()
+    content()!.focus()
+    await userEvent.keyboard("Draft ")
+    await expect.poll(() => content()!.textContent).toContain("Draft ")
+  }
+
+  it("says why, keeps the edits, and offers to copy them or try again", async () => {
+    await typeInto("folder")
+    const pane = companionPane("Build Studio")
+    await expect
+      .element(
+        pane.getByText(
+          "Novadeck can't write to this plan's folder, so your edits can't be saved. Your edits are kept here until you close this plan.",
+        ),
+      )
+      .toBeVisible()
+    await expect.element(pane.getByRole("button", { name: "Copy my edits" })).toBeVisible()
+    const notice = (): Element | null => pane.element().querySelector(".plan-notice")
+    const before = notice()
+    await pane.getByRole("button", { name: "Try saving again" }).click()
+    // A new save was tried, which the folder refused again: the notice went and came back.
+    await expect.poll(() => notice() !== null && notice() !== before).toBe(true)
+    await expect.element(pane.getByText(/Novadeck can't write to this plan's folder/)).toBeVisible()
+    expect(pane.element().querySelector(".cm-content")!.textContent).toContain("Draft ")
+  })
+
+  it("asks before closing the plan once it was placed elsewhere, copying the edits first", async () => {
+    await typeInto("folder")
+    await dragIconToBar("Build Studio", "Plan: A home for Studio", "Refactor auth")
+    // Beside Refactor auth's own plan, which only hides; the placed one would be lost.
+    await chooseFromIconMenu("Refactor auth", "2 plans", "Close 2 plans")
+    const dialog = page.getByRole("alertdialog")
+    await expect
+      .element(dialog.getByText(/couldn't be saved, and closing it loses them/))
+      .toBeVisible()
+    await dialog.getByRole("button", { name: "Cancel" }).click()
+    await expect.element(dialog).not.toBeInTheDocument()
+    const placed = taskbarIcon("Refactor auth", "Plan: A home for Studio")
+    await expect.element(placed).toBeVisible()
+
+    await chooseFromIconMenu("Refactor auth", "Plan: A home for Studio", "Close")
+    await page.getByRole("button", { name: "Copy my edits and close" }).click()
+    await expect.element(placed).not.toBeInTheDocument()
+  })
+
+  it("keeps saying a plan in its agent's messages is read-only", async () => {
+    await openWorkspace("/projects/studio/sessions/initial/grid?demo=showcase&planFault=transcript")
+    await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+    await expect
+      .element(companionPane("Build Studio").getByText(/^Read-only: this plan lives in Codex/))
+      .toBeVisible()
+  })
+
+  it("only says a save is being tried again while a failure may pass", async () => {
+    await typeInto("failing")
+    const pane = companionPane("Build Studio")
+    await expect.element(pane.getByText("Not saved yet. Trying again.")).toBeVisible()
+  })
+})
+
+describe("Switching terminals in Focus", () => {
+  it("finds a plan's pane as it was left, without building it again", async () => {
+    await openShowcase("focus")
+    await terminalTab("Build Studio").click()
+    await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+    const path = companionPane("Build Studio").getByText("plans/studio.md", { exact: true })
+    await expect.element(path).toBeVisible()
+    const scroll = path.element().closest(".plan-reader")!.querySelector(".plan-document-scroll")!
+    await expect.poll(() => scroll.querySelector(".cm-editor")).not.toBeNull()
+    const editor = scroll.querySelector(".cm-editor")
+    await expect.poll(() => scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight + 100)
+    scroll.scrollTop = 100
+    await expect.poll(() => scroll.scrollTop).toBe(100)
+
+    await terminalTab("Refactor auth").click()
+    // Past its fade out, parked.
+    await expect.poll(() => scroll.closest("[data-parked]")).not.toBeNull()
+    await terminalTab("Build Studio").click()
+
+    await expect.element(path).toBeVisible()
+    expect(scroll.isConnected).toBe(true)
+    expect(scroll.querySelector(".cm-editor")).toBe(editor)
+    expect(scroll.scrollTop).toBe(100)
+  })
+})
+
+/**
+ * Keeps the page's main thread busy for `milliseconds`, in stretches longer than a frame, as a
+ * loaded CI machine does: seen to end a restored scroll too early (Windows and Linux CI).
+ */
+const starving = new Set<ReturnType<typeof setInterval>>()
+const starve = (milliseconds: number): void => {
+  const timer = setInterval(() => {
+    const end = performance.now() + 220
+    while (performance.now() < end) {
+      // Busy.
+    }
+  }, 260)
+  starving.add(timer)
+  setTimeout(() => {
+    clearInterval(timer)
+    starving.delete(timer)
+  }, milliseconds)
+}
+/** Ends any stalls still running, so none reaches the next test. */
+const calm = (): void => {
+  for (const timer of starving) clearInterval(timer)
+  starving.clear()
+}
+
+describe("Switching views", () => {
+  afterEach(calm)
+
+  it("opens a plan that wasn't scrolled at its very top again", async () => {
+    await openShowcase("grid")
+    await taskbarIcon("Refactor auth", "Plan: refactor-auth.md").click()
+    const plan = (): HTMLElement | null | undefined =>
+      companionPane("Refactor auth").element().querySelector<HTMLElement>(".plan-document-scroll")
+    await expect.poll(() => plan()?.querySelector(".cm-content")).toBeTruthy()
+
+    await chooseView("Focus")
+    await chooseView("Grid")
+
+    await expect.poll(() => plan()?.querySelector(".cm-content")).toBeTruthy()
+    // Past the half second a restore may take.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(plan()!.scrollTop).toBe(0)
+  })
+
+  for (const busy of [true, false])
+    it(`opens a plan's editor as it was left: scrolled, and with what can be undone${busy ? ", though the page is busy" : ""}`, async () => {
+      await openShowcase("grid")
+      await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+      const plan = (): HTMLElement =>
+        companionPane("Build Studio").element().querySelector<HTMLElement>(".plan-document-scroll")!
+      const content = (): HTMLElement => plan().querySelector<HTMLElement>(".cm-content")!
+      await expect.poll(() => plan()?.querySelector(".cm-content")).not.toBeNull()
+      content().focus()
+      await userEvent.keyboard("Draft ")
+      await expect.poll(() => content().textContent).toContain("Draft ")
+      await expect.poll(() => plan().scrollHeight).toBeGreaterThan(plan().clientHeight + 200)
+      plan().scrollTop = 200
+      await expect.poll(() => plan().scrollTop).toBe(200)
+
+      // The first line with words showing at the pane's top, and how far down it the top
+      // is, as a share of the line, which holds however wide or zoomed the pane is.
+      const place = (): { readonly line: string; readonly into: number } | undefined => {
+        const { top } = plan().getBoundingClientRect()
+        const line = [...plan().querySelectorAll(".cm-line")].find(
+          (each) => each.getBoundingClientRect().bottom > top + 1 && each.textContent?.trim(),
+        )
+        if (!line) return undefined
+        const box = line.getBoundingClientRect()
+        return { line: line.textContent ?? "", into: (top - box.top) / box.height }
+      }
+      const reading = place()!
+      expect(reading.line).toBeTruthy()
+      const backAt = async (): Promise<void> => {
+        await expect.poll(() => place()?.line).toBe(reading.line)
+        await expect.poll(() => Math.abs(place()!.into - reading.into)).toBeLessThan(0.1)
+      }
+
+      await chooseView("Focus")
+      await terminalTab("Build Studio").click()
+      await backAt()
+      // Canvas shows the pane zoomed, as it fits the board. A busy page draws few frames in
+      // which the editor measures and the pane zooms: the place is kept all the same.
+      if (busy) starve(1500)
+      await chooseView("Canvas")
+      await backAt()
+      await chooseView("Grid")
+
+      await expect
+        .poll(() => companionPane("Build Studio").element().querySelector(".cm-content"))
+        .not.toBeNull()
+      await expect.poll(() => Math.abs(plan().scrollTop - 200)).toBeLessThan(24)
+      content().focus()
+      await userEvent.keyboard(isMac() ? "{Meta>}z{/Meta}" : "{Control>}z{/Control}")
+      await expect.poll(() => content().textContent).not.toContain("Draft ")
+
+      // The undo reached the plan, not only the editor.
+      await chooseView("Focus")
+      await chooseView("Grid")
+      await expect
+        .poll(() => companionPane("Build Studio").element().querySelector(".cm-content"))
+        .not.toBeNull()
+      expect(content().textContent).not.toContain("Draft ")
+    })
+})
+
 /** The states of what a tab shows of its terminal's bar, in order. */
 const tabKinds = (name: string): string[] =>
   [...terminalTab(name).element().querySelectorAll(".terminal-tab-kind")].map(
@@ -263,19 +467,19 @@ describe("Placing an item on another terminal's taskbar", () => {
       await openShowcase()
       await dragCardToBar("Build Studio", "2 images", "hero.png", "Refactor auth")
       await expect
-        .element(taskbarIcon("Refactor auth", "hero.png, from Build Studio"))
+        .element(taskbarIcon("Refactor auth", "hero.png, from @moth · Build Studio"))
         .toBeVisible()
       await expect.element(taskbarIcon("Build Studio", "about.png")).toBeVisible()
       await expectStaysAbsent(taskbarIcon("Build Studio", "2 images"))
 
       await chooseFromIconMenu(
         "Refactor auth",
-        "hero.png, from Build Studio",
-        "Send back to Build Studio",
+        "hero.png, from @moth · Build Studio",
+        "Send back to @moth · Build Studio",
       )
       await expect.element(taskbarIcon("Build Studio", "2 images")).toBeVisible()
       await expect
-        .element(taskbarIcon("Refactor auth", "hero.png, from Build Studio"))
+        .element(taskbarIcon("Refactor auth", "hero.png, from @moth · Build Studio"))
         .not.toBeInTheDocument()
     })
   })
@@ -285,7 +489,7 @@ describe("Placing an item on another terminal's taskbar", () => {
       await openShowcase()
       cancelPointerOver(taskbar("Refactor auth"))
       await dragCardToBar("Build Studio", "2 images", "hero.png", "Refactor auth")
-      await expectStaysAbsent(taskbarIcon("Refactor auth", "hero.png, from Build Studio"))
+      await expectStaysAbsent(taskbarIcon("Refactor auth", "hero.png, from @moth · Build Studio"))
       await expect.element(taskbarIcon("Build Studio", "2 images")).toBeVisible()
     })
   })
@@ -301,7 +505,7 @@ describe("Placing an item on another terminal's taskbar", () => {
       })
       await dragCardToBar("Build Studio", "2 images", "about.png", "Refactor auth")
       await expect
-        .element(taskbarIcon("Refactor auth", "about.png, from Build Studio"))
+        .element(taskbarIcon("Refactor auth", "about.png, from @moth · Build Studio"))
         .toBeVisible()
       await expect.element(taskbarIcon("Build Studio", "hero.png")).toBeVisible()
     })
@@ -312,7 +516,7 @@ describe("Placing an item on another terminal's taskbar", () => {
       await openShowcase()
       await dragIconToBar("Build Studio", "Messages", "Refactor auth")
       await expect.element(taskbarIcon("Build Studio", "Messages")).toBeVisible()
-      await expectStaysAbsent(taskbarIcon("Refactor auth", "Messages, from Build Studio"))
+      await expectStaysAbsent(taskbarIcon("Refactor auth", "Messages, from @moth · Build Studio"))
       expect(taskbarIcons("Refactor auth")).toEqual([
         "Plan: refactor-auth.md, new",
         "Messages, 1 message waiting",

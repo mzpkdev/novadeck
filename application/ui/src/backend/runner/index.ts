@@ -12,7 +12,15 @@ import {
 import { sessionName } from "../../model/session-name"
 import type { BackendConnection, ConnectFailure } from "../port"
 import { runnerBackend, type RunnerBackend } from "./backend"
-import { desktopHost, desktopNotices } from "./desktop-host"
+import {
+  desktopHost,
+  desktopNotices,
+  desktopPortable,
+  desktopSandbox,
+  desktopUninstall,
+  desktopUpdates,
+  desktopVersion,
+} from "./desktop-host"
 import { pause } from "./pause"
 import type { RunnerListing } from "./seed"
 
@@ -101,6 +109,14 @@ export const connectFailure = (error: unknown): ConnectFailure => {
       code,
       detail,
     }
+  if (code === "WORKSPACE_TOO_NEW")
+    return {
+      kind: "outdated",
+      message:
+        "A newer version of Novadeck has used this workspace. Open the newer Novadeck instead; this copy is out of date.",
+      code,
+      detail,
+    }
   if (code === "UNAUTHORIZED")
     return { kind: "unauthorized", message: "The runner didn't accept this app.", code, detail }
   return { kind: "unknown", message: "Something went wrong starting Novadeck.", code, detail }
@@ -134,6 +150,11 @@ export const connectRunnerBackend = async (
     const beforeQuit = desktopHost()?.beforeQuit
     const showAppearance = desktopHost()?.showAppearance
     const notices = desktopNotices(desktopHost())
+    const updates = desktopUpdates(desktopHost())
+    const version = desktopVersion(desktopHost())
+    const sandbox = desktopSandbox(desktopHost())
+    const portable = desktopPortable(desktopHost())
+    const uninstall = desktopUninstall(desktopHost())
     // StrictMode creates a backend twice and keeps the first, so the last one created is
     // not necessarily the one running: close waits on them all (an unstarted one is idle).
     const created: RunnerBackend[] = []
@@ -145,6 +166,11 @@ export const connectRunnerBackend = async (
           ...(beforeQuit ? { beforeQuit: (save) => beforeQuit(save) } : {}),
           ...(showAppearance ? { showAppearance: (look) => showAppearance(look) } : {}),
           ...(notices ? { notices } : {}),
+          ...(updates ? { updates } : {}),
+          ...(version ? { version } : {}),
+          ...(sandbox ? { sandbox } : {}),
+          ...(portable ? { portable } : {}),
+          ...(uninstall ? { uninstall } : {}),
           livePages: desktopHost()?.livePages === true,
           transcripts,
           agents,

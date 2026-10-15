@@ -1,10 +1,10 @@
 import { join } from "node:path"
 
+import { plugin, type Launchers, type Machine, type Start } from "@novadeck/harness-core/harness"
+import { header } from "@novadeck/harness-core/header"
 import type { AgentName } from "@novadeck/protocol"
 
-import { plugin, type Launchers, type Start } from "../harnesses/harness.js"
 import { agents, harnesses } from "../harnesses/registry.js"
-import { header } from "./header.js"
 import { hookVariables } from "./hook.js"
 import { mcpVersions } from "./mcp.js"
 
@@ -420,12 +420,13 @@ const file = (path: string, content: string, mode = 0o600): ShellFile => ({ path
 
 /**
  * Every file for this platform, with the permissions each needs. Plugins start the MCP
- * server as `launchers.mcp` says.
+ * server as `launchers.mcp` says, and register their hooks as `machine` lets them.
  */
 export const shellFiles = (
   paths: ShellPaths,
   platform = process.platform,
   launchers: Launchers = { mcp: mcpStart(paths, platform) },
+  machine: Machine = {},
 ): ShellFile[] => {
   const common = [
     file(paths.relayConfig, `${JSON.stringify(relayConfig, null, 2)}\n`),
@@ -437,7 +438,7 @@ export const shellFiles = (
     file(paths.powershell, powershell),
     ...agents.flatMap((agent) =>
       harnesses[agent]
-        .files(platform, launchers)
+        .files(platform, launchers, machine)
         .map((each) => file(join(paths.plugins[agent], each.path), each.content, each.mode)),
     ),
   ]

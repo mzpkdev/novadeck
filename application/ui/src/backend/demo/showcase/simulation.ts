@@ -2,7 +2,8 @@ import {
   companionKeyId,
   itemIdOf,
   notesIn,
-  ownItemWith,
+  PlanUnwritableError,
+  shownItemWith,
   type CompanionItem,
   type CompanionKey,
   type Companions,
@@ -20,6 +21,20 @@ import { applyEdits, removeNotes } from "./revise"
 // plans over the file as the person left it, and show things, on a delay as if thinking.
 // It reports all of it as a backend would, items through the workspace's actions and
 // their content through `follow`, so the companion pane can't tell it from a runner.
+// What can go wrong with an agent's plan for the person's edits, for the debug panel and
+// specs to reach: it lives in the agent's messages (`transcript`), its file is deleted
+// (`gone`), its folder can't be written (`folder`), it is too large to write
+// (`too-large`), or saves fail for a while without saying why (`failing`).
+export type PlanFault = "transcript" | "gone" | "folder" | "too-large" | "failing"
+
+export const planFaults: readonly PlanFault[] = [
+  "transcript",
+  "gone",
+  "folder",
+  "too-large",
+  "failing",
+]
+
 export type Showcase = Companions & {
   // What the terminals held before the demo started, for the seed.
   readonly items: readonly CompanionItem[]
@@ -30,11 +45,19 @@ export type Showcase = Companions & {
     report: (actions: readonly BackendAction[]) => void,
     current: () => readonly CompanionItem[],
   ) => () => void
-  // What the person typed in an agent's terminal.
-  readonly told: (key: CompanionKey, input: string) => void
+  // What the person typed in an agent's terminal. Where it has the agent revise its plan,
+  // `revised` is called once the revision is written.
+  readonly told: (key: CompanionKey, input: string, revised?: () => void) => void
   // The terminal closed: its agent is gone.
   readonly closed: (key: CompanionKey) => void
+  // Puts the plan of the agent in this terminal in a fault, or back to normal; false where
+  // the terminal has no agent with a plan.
+  readonly fault: (key: CompanionKey, fault: PlanFault | undefined) => boolean
 }
+
+// Whether a backend's companions are the showcase's, which the debug panel can fault.
+export const isShowcase = (companions: Companions): companions is Showcase =>
+  "fault" in companions && "told" in companions
 
 // A terminal of the showcase's, by the handle its agents know it by.
 type Holder = { readonly key: CompanionKey; readonly handle: string }
@@ -52,12 +75,13 @@ type Running = Holder & {
   file: string
   writes: number
   version: number
-  // Its plan's item on its own bar, and every item it ever had for its plan: one moved
-  // or undocked away stays the person's, and still shows the plan.
+  // Its plan's item, on its own bar or wherever the person moved it, and every item it
+  // ever had for its plan: each still shows the plan.
   planId: string
   planIds: Set<string>
   // How many of `artifacts.next` it has shown.
   shown: number
+  fault?: PlanFault | undefined
 }
 
 const noItems = (): readonly CompanionItem[] => []
@@ -117,12 +141,13 @@ const versionOf = (agent: Running): PlanVersion => ({
     kind: "plan",
     text: agent.file,
     truncated: false,
-    writable: true,
+    writable: agent.fault !== "transcript",
     skill: agent.sample.plan.skill,
   },
 })
 
 const contentOf = (agent: Running): ItemContent => {
+  if (agent.fault === "gone") return { state: "unavailable", reason: "gone", size: null }
   const { stamp, plan } = versionOf(agent)
   return { state: "ready", stamp, content: plan }
 }
@@ -189,20 +214,25 @@ export const createShowcase = (
     written(agent)
   }
   // The agent wrote its plan: a new version, which its bar marks. As the runner does, it
-  // updates the plan on its own bar; one the person moved or undocked stays where it is,
-  // and the plan comes to its own bar anew.
+  // updates the plan where it is, on its own bar or where the person moved it; one the
+  // person closed comes to its own bar anew.
   const wrote = (agent: Running, text: string): void => {
     const own = current().find((item) => item.id === agent.planId)
-    const away =
-      own && !("terminalId" in own.holder && own.holder.terminalId === agent.key.terminalId)
-    if (away || (started && !own)) {
+    if (started && !own) {
       agent.planId = `${agent.sample.plan.id}-${agent.planIds.size + 1}`
       agent.planIds.add(agent.planId)
       agent.version = 0
     }
     agent.version += 1
     write(agent, text)
-    report?.([{ type: "item/upsert", target: agent.key, item: planItemOf(agent, now()) }])
+    const item = planItemOf(agent, now())
+    report?.([
+      {
+        type: "item/upsert",
+        target: agent.key,
+        item: own ? { ...item, holder: own.holder } : item,
+      },
+    ])
   }
 
   // The agent reads the plan file and writes over it: its next revision, when it's
@@ -217,10 +247,10 @@ export const createShowcase = (
     wrote(agent, text)
   }
 
-  // The agent shows something: on its own bar, updating what's there of the same file or
-  // page, or anew.
+  // The agent shows something: on its own bar, updating what it showed of the same file
+  // or page, there or wherever the person moved it, or anew.
   const show = (agent: Running, artifact: SampleArtifact, asked: boolean): void => {
-    const own = ownItemWith(current(), agent.key.terminalId, artifact.item)
+    const own = shownItemWith(current(), agent.key.terminalId, artifact.item)
     const item: CompanionItem = own
       ? { ...own, version: own.version + 1, asked, shownAt: now() }
       : itemOf(agent, artifact, { asked, shownAt: now() })
@@ -280,12 +310,14 @@ export const createShowcase = (
     save: (target, id, text, basedOn) => {
       const agent = planOf(target, id)
       if (!agent) return Promise.reject(new Error(`No plan ${id}`))
+      if (agent.fault === "failing") return Promise.reject(new Error("The save didn't go through"))
+      if (agent.fault) return Promise.reject(new PlanUnwritableError(agent.fault))
       if (basedOn !== String(agent.writes))
         return Promise.resolve({ saved: false, current: versionOf(agent) })
       write(agent, text)
       return Promise.resolve({ saved: true, stamp: String(agent.writes) })
     },
-    told: (key, input) => {
+    told: (key, input, revised) => {
       const agent = agentAt(key)
       if (!agent) return
       const said = input.trim()
@@ -303,6 +335,8 @@ export const createShowcase = (
       // Without the skill the agent re-reads the plan only when asked to.
       if (!agent.sample.plan.skill && notesIn(agent.file) && /re-?read/i.test(said)) {
         later(1200, () => revise(agent, true))
+        // A decline that asked it comes back to its plan once the turn its words began ends.
+        if (revised) later(1800, revised)
         return
       }
       if (agent.phase !== "planning") return
@@ -314,10 +348,20 @@ export const createShowcase = (
         return
       }
       agent.phase = "revising"
-      later(1800, () => revise(agent, agent.sample.plan.skill))
+      later(1800, () => {
+        revise(agent, agent.sample.plan.skill)
+        revised?.()
+      })
     },
     closed: (key) => {
       running.delete(companionKeyId(key))
+    },
+    fault: (key, fault) => {
+      const agent = agentAt(key)
+      if (!agent) return false
+      agent.fault = fault
+      written(agent)
+      return true
     },
   }
 }

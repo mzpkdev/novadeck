@@ -1,5 +1,8 @@
 packages:
   - application/*
+  - engines/*
+  - harnesses/*
+  - atlas
 
 publicHoistPattern:
   - electron

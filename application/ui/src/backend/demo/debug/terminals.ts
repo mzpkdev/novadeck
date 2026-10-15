@@ -1,5 +1,5 @@
-import { isAgentProgram } from "../../../model/process"
-import type { AgentStatus, AgentTurnEnd, TerminalMetadata, Workspace } from "../../../model/types"
+import { terminalAsks, type TerminalAsk } from "../../../model/terminal-ending"
+import type { AgentStatus, TerminalMetadata, Workspace } from "../../../model/types"
 import type { BackendAction, TerminalKey } from "../../port"
 
 // The actions that put a terminal in a state, as the backend would report it. Pure, so
@@ -9,16 +9,6 @@ const target = ({ projectId, workspaceSessionId }: TerminalKey) => ({
   projectId,
   workspaceSessionId,
 })
-
-// The terminal as the workspace last held it.
-export const terminalOf = (
-  workspace: Workspace | undefined,
-  { projectId, workspaceSessionId, terminalId }: TerminalKey,
-): TerminalMetadata | undefined =>
-  workspace?.projects
-    .find((project) => project.id === projectId)
-    ?.history.find((session) => session.id === workspaceSessionId)
-    ?.state.roster.terminals.find((terminal) => terminal.id === terminalId)
 
 // The other live terminals of the session, which an agent can finish in while the person
 // looks at `key`.
@@ -33,7 +23,7 @@ export const othersOf = (workspace: Workspace | undefined, key: TerminalKey): Te
         terminal.state !== "failed",
     ) ?? []
 
-export const setStatus = (
+const setStatus = (
   key: TerminalKey,
   status: Extract<BackendAction, { type: "terminal/status" }>["status"],
 ): BackendAction => ({
@@ -43,7 +33,7 @@ export const setStatus = (
   status,
 })
 
-export const setProcess = (key: TerminalKey, process: string): BackendAction => ({
+const setProcess = (key: TerminalKey, process: string): BackendAction => ({
   type: "terminal/process",
   target: target(key),
   terminalId: key.terminalId,
@@ -86,6 +76,20 @@ export const runProgram = (key: TerminalKey, program: string): BackendAction[] =
   setStatus(key, { state: "running" }),
 ]
 
+// A shell an agent opened, here the demo's first terminal's, for a program it runs: its
+// tab keeps its handle, which the agent names it by.
+export const openedByAgent = (key: TerminalKey, program: string): BackendAction[] => [
+  { type: "terminal/update", target: target(key), terminalId: key.terminalId, openedBy: "moth" },
+  ...runProgram(key, program),
+]
+
+// Back at a shell's prompt after an agent ran there and exited: its tab keeps its handle,
+// which what the agent left behind still names it by.
+export const agentRanHere = (key: TerminalKey): BackendAction[] => [
+  { type: "terminal/update", target: target(key), terminalId: key.terminalId, agentRan: true },
+  ...backToPrompt(key),
+]
+
 // Back at the shell's prompt.
 export const backToPrompt = (key: TerminalKey, shell = "zsh"): BackendAction[] => [
   setProcess(key, shell),
@@ -93,18 +97,8 @@ export const backToPrompt = (key: TerminalKey, shell = "zsh"): BackendAction[] =
 ]
 
 // What its agent says now, for a terminal already running one.
-export const agentSays = (key: TerminalKey, agent: AgentStatus): BackendAction[] => [
+const agentSays = (key: TerminalKey, agent: AgentStatus): BackendAction[] => [
   setStatus(key, { state: "running", agent }),
-]
-
-// An agent in the terminal with this status; a terminal not running one becomes Claude Code.
-export const agentIn = (
-  key: TerminalKey,
-  terminal: TerminalMetadata | undefined,
-  agent: AgentStatus,
-): BackendAction[] => [
-  ...(terminal && isAgentProgram(terminal.process) ? [] : [setProcess(key, "claude")]),
-  ...agentSays(key, agent),
 ]
 
 // An agent started at the prompt, resting.
@@ -120,66 +114,104 @@ export const unheardAgent = (key: TerminalKey, program: string): BackendAction[]
 ]
 
 export const resting: AgentStatus = { working: false }
-export const working: AgentStatus = { working: true }
-export const planning: AgentStatus = { working: true, planning: true }
-
-export const asking = (kind: "permission" | "question" | "plan", count: number): AgentStatus => ({
-  working: true,
-  attention: { kind, count },
-})
-
-export const withSubagents: AgentStatus = {
-  working: true,
-  subagents: [
-    { id: "sub-1", type: "Explore" },
-    { id: "sub-2", type: "code-reviewer" },
-    { id: "sub-3", type: null },
-  ],
-}
-
-// Subagents it runs, counted, in the middle of its turn or after it: it works until they
-// finish. Else work its turn left that runs on without it, counted or not.
-export const finishingSubagents: AgentStatus = {
-  working: true,
-  background: { agents: 2, tasks: 0 },
-}
-export const backgroundWork: AgentStatus = { working: false, background: { agents: 1, tasks: 2 } }
-export const uncountedWork: AgentStatus = { working: false, background: { agents: 0, tasks: 0 } }
 
 // Context and rate limits, as an agent's records tell them.
-export const withUsage = (now: number): AgentStatus => ({
-  working: false,
-  usage: {
-    context: { occupied: 84_000, capacity: 200_000 },
-    limits: [
-      { minutes: 300, used: 0.42, resetsAt: now + 2 * 3_600_000 },
-      { minutes: 10_080, used: 0.78, resetsAt: now + 3 * 86_400_000 },
-    ],
-    model: "gpt-6-astra",
-    effort: "medium",
-  },
+export const withUsage = (now: number): NonNullable<AgentStatus["usage"]> => ({
+  context: { occupied: 84_000, capacity: 200_000 },
+  limits: [
+    { minutes: 300, used: 0.42, resetsAt: now + 2 * 3_600_000 },
+    { minutes: 10_080, used: 0.78, resetsAt: now + 3 * 86_400_000 },
+  ],
+  model: "gpt-6-astra",
+  effort: "medium",
 })
 
 // How much its context holds, where its harness doesn't say of how much.
-export const contextOnly: AgentStatus = {
-  working: false,
-  usage: {
-    context: { occupied: 84_000, capacity: null },
-    limits: [],
-    model: "Opus 5.5",
-    effort: null,
-  },
+export const contextOnly: NonNullable<AgentStatus["usage"]> = {
+  context: { occupied: 84_000, capacity: null },
+  limits: [],
+  model: "Opus 5.5",
+  effort: null,
 }
 
-const replies: Record<AgentTurnEnd["outcome"], string | undefined> = {
-  completed: "Done. The checkout total now rounds per line, and the tests pass.",
-  failed: "I could not finish: the test suite fails to compile.",
-  interrupted: "Stopped before the second file.",
-  unknown: undefined,
+// What murmur would say of each notification, in its words, for the notification center to
+// show without it.
+export const murmurHeadlines = {
+  question: "Asks which database to use",
+  plan: "Plan to split the billing service",
+} as const
+export const murmurGists = {
+  done: { text: "Checkout totals round per line, tests pass", asks: true },
+  failed: { text: "Test suite no longer compiles" },
+} as const
+
+// The live terminals of every session of every project but the one the person views,
+// project by project in turn, so each kind of notification lands in several projects. An
+// unread finish marks only a terminal the person doesn't look at.
+export const otherTerminals = (
+  workspace: Workspace | undefined,
+  viewed: TerminalKey | undefined,
+): TerminalKey[] => {
+  const perProject = (workspace?.projects ?? []).map((project) =>
+    project.history.flatMap((session) =>
+      session.state.roster.terminals
+        .filter(
+          (terminal) =>
+            terminal.state !== "exited" &&
+            terminal.state !== "failed" &&
+            !(
+              viewed?.projectId === project.id &&
+              viewed.workspaceSessionId === session.id &&
+              viewed.terminalId === terminal.id
+            ),
+        )
+        .map((terminal) => ({
+          projectId: project.id,
+          workspaceSessionId: session.id,
+          terminalId: terminal.id,
+        })),
+    ),
+  )
+  const keys: TerminalKey[] = []
+  for (let round = 0; perProject.some((each) => each.length > round); round += 1)
+    for (const each of perProject) if (each[round]) keys.push(each[round]!)
+  return keys
 }
 
-// An agent whose turn just ended, with the start of its last reply where its harness says.
-export const turnEnded = (outcome: AgentTurnEnd["outcome"], now: number): AgentStatus => {
-  const reply = replies[outcome]
-  return { working: false, lastTurn: { outcome, ...(reply ? { reply } : {}), at: now } }
-}
+// The kinds of notification dealt out to `count` terminals in turn, most pressing first.
+export const dealKinds = (count: number): TerminalAsk[] =>
+  Array.from({ length: count }, (_, index) => terminalAsks[index % terminalAsks.length]!)
+
+// The keys of the terminals the predicate picks, in every session of every project.
+const terminalsWhere = (
+  workspace: Workspace | undefined,
+  pick: (terminal: TerminalMetadata) => boolean,
+): TerminalKey[] =>
+  workspace?.projects.flatMap((project) =>
+    project.history.flatMap((session) =>
+      session.state.roster.terminals.filter(pick).map((terminal) => ({
+        projectId: project.id,
+        workspaceSessionId: session.id,
+        terminalId: terminal.id,
+      })),
+    ),
+  ) ?? []
+
+// The agents that still work, wait on the person, hold a finished turn or leave work
+// running behind it: what resting leaves nothing of.
+export const noisyAgents = (workspace: Workspace | undefined): TerminalKey[] =>
+  terminalsWhere(
+    workspace,
+    (terminal) =>
+      terminal.state === "running" &&
+      (terminal.agent?.working === true ||
+        terminal.agent?.attention !== undefined ||
+        terminal.agent?.lastTurn !== undefined ||
+        terminal.agent?.background !== undefined ||
+        (terminal.agent?.subagents?.length ?? 0) > 0),
+  )
+
+// The terminals back at their shell's prompt. One may still hold an unread finish from
+// the agent it ran, which only a new turn of an agent there clears.
+export const promptTerminals = (workspace: Workspace | undefined): TerminalKey[] =>
+  terminalsWhere(workspace, (terminal) => terminal.state === "idle")

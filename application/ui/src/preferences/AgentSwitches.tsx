@@ -1,20 +1,20 @@
+import { harnesses, type AgentName } from "../model/harnesses"
 import { Switch } from "../ui-toolkit/Switch"
 import { settingRowClasses, settingsCardClasses } from "./settings"
 
 // An agent the person can connect, as its switch shows it.
 export type AgentSwitch = {
-  readonly agent: "claude" | "codex" | "agy"
+  readonly agent: AgentName
   readonly available: boolean
   readonly connected: boolean
   readonly busy: boolean
   readonly error?: string
+  readonly limited?: "own-status-line" | undefined
 }
 
-export const agentLabels: Record<AgentSwitch["agent"], string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  agy: "Antigravity",
-}
+export const agentLabels = Object.fromEntries(
+  harnesses.map(({ id, name }) => [id, name]),
+) as Record<AgentName, string>
 
 // Only a state worth knowing gets a note; the switch already shows on or off.
 export const agentNote = ({
@@ -29,6 +29,16 @@ export const agentNote = ({
   return undefined
 }
 
+// What a connected agent's limit means for messaging with it, under its name; nothing
+// where none, or while it changes.
+const limitNotes: Readonly<Record<NonNullable<AgentSwitch["limited"]>, string>> = {
+  "own-status-line":
+    "It runs your own status line, which keeps Novadeck's out on Windows, so messages can't wake it until you've sent it a prompt. Removing your status line from its settings lifts this.",
+}
+
+export const agentLimit = ({ connected, busy, limited }: AgentSwitch): string | undefined =>
+  !connected || busy || limited === undefined ? undefined : limitNotes[limited]
+
 // One switch per agent: on installs Novadeck's plugin into it, off removes it. An agent
 // that is not installed, or one mid-change, cannot be switched.
 export const AgentSwitches = ({
@@ -42,14 +52,24 @@ export const AgentSwitches = ({
     {agents.map((item) => {
       const label = agentLabels[item.agent]
       const note = agentNote(item)
+      const limit = agentLimit(item)
       return (
         <li key={item.agent} className={settingRowClasses}>
           <div className="flex min-w-0 flex-col gap-1">
             <span id={`agent-${item.agent}`}>{label}</span>
+            {limit && (
+              <span
+                id={`agent-${item.agent}-limit`}
+                className="settings-note text-control leading-5"
+                data-tone="warning"
+              >
+                {limit}
+              </span>
+            )}
             {note && item.error && (
               <span
                 id={`agent-${item.agent}-note`}
-                className="settings-note text-control leading-relaxed"
+                className="settings-note text-control leading-5"
                 data-tone="danger"
                 role="alert"
               >
@@ -68,7 +88,16 @@ export const AgentSwitches = ({
               checked={item.connected}
               onChange={(connected) => onChange(item.agent, connected)}
               labelledBy={`agent-${item.agent}`}
-              {...(note ? { describedBy: `agent-${item.agent}-note` } : {})}
+              {...(note || limit
+                ? {
+                    describedBy: [
+                      note && `agent-${item.agent}-note`,
+                      limit && `agent-${item.agent}-limit`,
+                    ]
+                      .filter(Boolean)
+                      .join(" "),
+                  }
+                : {})}
               disabled={!item.available || item.busy}
               busy={item.busy}
             />

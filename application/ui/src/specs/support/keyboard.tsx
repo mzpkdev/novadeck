@@ -1,7 +1,7 @@
 import { expect } from "vitest"
 import { page, type Locator } from "vitest/browser"
 
-import { isMac, press } from "./workspace"
+import { isMac, labelled, press } from "./workspace"
 
 // Vocabulary for keyboard, search, switcher, and Preferences specs.
 
@@ -26,8 +26,8 @@ export const shortcut = {
   focus: (): Chord => command("{Enter}", "Enter"),
   newTerminal: (): Chord => command(isMac() ? "t" : "T", "T"),
   zen: (): Chord => commandShift("Z"),
-  terminals: (): Chord => commandShift("1"),
-  sessions: (): Chord => commandShift("2"),
+  terminals: (): Chord => commandShift("E"),
+  sessions: (): Chord => commandShift("S"),
   preferences: (): Chord =>
     isMac()
       ? { label: "Cmd+,", keys: "{Meta>},{/Meta}" }
@@ -72,9 +72,9 @@ export const findDialog = (): Locator => page.getByRole("dialog", { name: "Find 
 export const searchField = (): Locator =>
   findDialog().getByRole("combobox", { name: "Search terminals" })
 
-/** A search result, matched by the terminal name it starts with. */
+/** A search result, matched by the terminal name it starts with, after its @handle. */
 export const searchResult = (name: string): Locator =>
-  findDialog().getByRole("option", { name: new RegExp(`^${name} `) })
+  findDialog().getByRole("option", { name: new RegExp(`^(?:@[a-z0-9]+ )?${name} `) })
 
 /** Waits until search is ready for typing: its field focused and its results listed. */
 export const expectSearchReady = async (): Promise<void> => {
@@ -85,11 +85,16 @@ export const expectSearchReady = async (): Promise<void> => {
 export const recentSwitcher = (): Locator => page.getByRole("dialog", { name: "Terminal switcher" })
 
 export const recentOption = (name: string): Locator =>
-  recentSwitcher().getByRole("option", { name, exact: true })
+  recentSwitcher().getByRole("option", { name: labelled("", name) })
 
 export const preferencesDialog = (): Locator => page.getByRole("dialog", { name: "Preferences" })
 
-export const newTerminalName = "Terminal 07"
+/**
+ * What a new plain terminal is called, as the runner names one: "Terminal". The workspace's
+ * other terminals have names of their own, so it is the only one by it; a spec that makes
+ * a second tells them apart by handle.
+ */
+export const newTerminalName = "Terminal"
 
 /** The Terminals sidebar heading, which counts the open terminals. */
 export const terminalCount = (count: number): Locator =>

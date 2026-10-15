@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe as context, describe, expect, it } from "vitest"
+import {
+  afterEach,
+  beforeEach,
+  describe as context,
+  describe,
+  expect,
+  it,
+  onTestFailed,
+} from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
 import { clickBackground } from "./support/canvas"
@@ -16,6 +24,8 @@ import {
   terminalCount,
   viewRegion,
 } from "./support/keyboard"
+import { workspaceSwitcher } from "./support/sessions"
+import { sidebarRenameField, tabAction } from "./support/terminals"
 import {
   chooseView,
   commandInput,
@@ -28,6 +38,8 @@ import {
   focusTab,
   navigateChip,
   expectStaysAbsent,
+  isMac,
+  labelled,
   openWorkspace,
   press,
   reloadWorkspace,
@@ -53,6 +65,7 @@ describe("recent terminals", () => {
 
       await press("{Control>}{Tab}")
       await expect.element(recentOption("Dev server")).toHaveAttribute("aria-selected", "true")
+      await expect.element(recentOption("Dev server")).toHaveAccessibleName("Dev server, @fox")
       await expect.element(terminal("Runtime")).toBeVisible()
 
       await press("{/Control}")
@@ -652,6 +665,182 @@ describe("workspace keys after choosing a view", () => {
   )
 })
 
+// ⌘ and the digit on a Mac, Ctrl+Shift and the digit elsewhere.
+const pressDigit = (digit: number): Promise<void> =>
+  press(isMac() ? `{Meta>}${digit}{/Meta}` : `{Control>}{Shift>}${digit}{/Shift}{/Control}`)
+const pinInOrder = (): void =>
+  localStorage.setItem(
+    "novadeck.project-arrangement",
+    JSON.stringify({
+      order: ["docs-site", "api-service"],
+      pinned: ["docs-site", "api-service"],
+    }),
+  )
+
+const digitKeydown = (
+  digit: number,
+  init: KeyboardEventInit = {},
+  target: Element = document.body,
+): KeyboardEvent => {
+  const event = new KeyboardEvent("keydown", {
+    // Shift turns a digit into its symbol, as US keys do.
+    key: isMac() ? String(digit) : (")!@#$%^&*("[digit] ?? ""),
+    code: `Digit${digit}`,
+    ctrlKey: !isMac(),
+    shiftKey: !isMac(),
+    metaKey: isMac(),
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  })
+  target.dispatchEvent(event)
+  return event
+}
+
+describe("pinned project shortcuts", () => {
+  context("when pressing the pin's number", () => {
+    it("switches to that pinned project, in the order they are pinned", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await expect.element(workspaceSwitcher()).toHaveTextContent("storefront")
+
+      await pressDigit(2)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+
+      await pressDigit(1)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+    })
+
+    it("works from a terminal input without typing the digit there", async () => {
+      pinInOrder()
+      await openWorkspace()
+      const input = commandInput("Checkout implementation").element()
+      await commandInput("Checkout implementation").click()
+
+      // The key is ours, so it never reaches the terminal's own handlers.
+      expect(digitKeydown(2, {}, input).defaultPrevented).toBe(true)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+      await pressDigit(1)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+    })
+
+    it("works from the open project switcher, and closes it", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await workspaceSwitcher().click()
+      await expect.element(page.getByRole("dialog")).toBeVisible()
+
+      await pressDigit(2)
+
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+      await expect.element(page.getByRole("dialog")).not.toBeInTheDocument()
+    })
+
+    it("works from the terminal switcher, and closes it", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await terminal("Checkout implementation")
+        .getByRole("button", { name: "Switch terminal" })
+        .click()
+      await expectFocusWithin(recentSwitcher())
+
+      await pressDigit(2)
+
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+      await expect.element(recentSwitcher()).not.toBeInTheDocument()
+    })
+
+    // On macOS the pin's chord is ⌘ and a digit, so the Ctrl held for the switcher isn't
+    // part of it there.
+    it.skipIf(isMac())("works from the terminal switcher held open with Ctrl+Tab", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await press("{Control>}{Tab}")
+      await expect.element(recentSwitcher()).toBeVisible()
+
+      await press("{Shift>}2{/Shift}")
+
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+      await expect.element(recentSwitcher()).not.toBeInTheDocument()
+      await press("{/Control}")
+    })
+
+    it("keeps the key from the terminal even when the pin is already the current project", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await pressDigit(1)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+
+      expect(digitKeydown(1).defaultPrevented).toBe(true)
+      expect(digitKeydown(1, { repeat: true }).defaultPrevented).toBe(true)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("docs-site")
+    })
+
+    it("does not switch again on a held key", async () => {
+      pinInOrder()
+      await openWorkspace()
+
+      expect(digitKeydown(2).defaultPrevented).toBe(true)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+      expect(digitKeydown(1, { repeat: true }).defaultPrevented).toBe(true)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("api-service")
+    })
+
+    it("leaves the key to a tab's rename field", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await tabAction("Rename Dev server").click()
+      await expect.element(sidebarRenameField("Dev server")).toHaveFocus()
+
+      const event = digitKeydown(2, {}, sidebarRenameField("Dev server").element())
+
+      expect(event.defaultPrevented).toBe(false)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("storefront")
+    })
+
+    it("leaves the project as it is behind a confirmation", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await workspaceSwitcher().click()
+      await page.getByRole("button", { name: "Remove storefront" }).click({ force: true })
+      const confirm = page.getByRole("alertdialog", { name: "Remove “storefront”?" })
+      await expect.element(confirm).toBeVisible()
+
+      await pressDigit(2)
+
+      await expect.element(confirm).toBeVisible()
+      // The workspace behind the confirmation is hidden from the accessibility tree.
+      await expect
+        .element(page.getByRole("button", { name: "Switch workspace", includeHidden: true }))
+        .toHaveTextContent("storefront")
+    })
+  })
+
+  context("when there is no such pin", () => {
+    it("changes nothing and leaves the key, held or not, to the terminal", async () => {
+      pinInOrder()
+      await openWorkspace()
+      await commandInput("Checkout implementation").click()
+      const input = commandInput("Checkout implementation").element()
+
+      expect(digitKeydown(3, {}, input).defaultPrevented).toBe(false)
+      expect(digitKeydown(9, {}, input).defaultPrevented).toBe(false)
+      expect(digitKeydown(3, { repeat: true }, input).defaultPrevented).toBe(false)
+
+      await expect.element(workspaceSwitcher()).toHaveTextContent("storefront")
+      await expect.element(commandInput("Checkout implementation")).toHaveFocus()
+    })
+
+    it("leaves every press and repeat alone when nothing is pinned", async () => {
+      await openWorkspace()
+
+      expect(digitKeydown(1).defaultPrevented).toBe(false)
+      expect(digitKeydown(8, { repeat: true }).defaultPrevented).toBe(false)
+      await expect.element(workspaceSwitcher()).toHaveTextContent("storefront")
+    })
+  })
+})
+
 describe("typing in a terminal", () => {
   context("when typing workspace keys into a command input", () => {
     it("types them instead of running workspace shortcuts", async () => {
@@ -807,7 +996,9 @@ const installVoice = async (): Promise<void> => {
   await pressShortcut("preferences")
   await expectFocusWithin(preferencesDialog())
   await preferencesDialog().getByRole("tab", { name: "Addons" }).click()
-  const addons = preferencesDialog().getByRole("tabpanel", { name: "Addons" })
+  const addons = preferencesDialog()
+    .getByRole("tabpanel", { name: "Addons" })
+    .getByRole("region", { name: "Voice input" })
   await addons.getByRole("button", { name: "Install" }).click()
   // Only an installed card offers Uninstall; the switch shows before the install too.
   await expect
@@ -830,11 +1021,81 @@ const saying = (text: string | RegExp): Locator =>
 const layer = (element: Element): number => Number(getComputedStyle(element).zIndex)
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
+/**
+ * Waits for `until`, and where it fails says what the dictation strip showed meanwhile and
+ * how many microphone tracks were live: a clip's notice fades in four seconds, long before a
+ * wait for the words ends, and a clip too short to keep leaves none, so a failure would not
+ * otherwise say which of them it was. `until` waits less than the test does, so this
+ * reports before the test's own timeout does.
+ */
+const saidWhile = async (
+  microphone: { readonly live: () => number },
+  until: () => Promise<unknown>,
+): Promise<void> => {
+  const said: string[] = []
+  const timer = setInterval(() => {
+    const text = page
+      .getByRole("status")
+      .elements()
+      .filter((one) => one.classList.contains("dictation-strip"))
+      .map((one) => one.textContent?.trim())
+      .filter(Boolean)
+      .join(" | ")
+    if (text && said.at(-1) !== text) said.push(text)
+  }, 100)
+  try {
+    await until()
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\n` +
+        `The status line said: ${said.length > 0 ? said.join(" → ") : "nothing"}; ` +
+        `${microphone.live()} microphone track(s) live.`,
+      { cause: error },
+    )
+  } finally {
+    clearInterval(timer)
+  }
+}
+
+/**
+ * Records what dictation shows and the page's state for a whole test, every 50 ms and only
+ * as it changes, and prints it where the test fails: its strip, the microphone's live tracks,
+ * and whether the page has focus and shows. A failure of the first wait of a test, before
+ * `saidWhile` is in place, would not otherwise say what the strip did meanwhile.
+ */
+const watchDictation = (microphone: { readonly live: () => number }): (() => void) => {
+  const began = performance.now()
+  const history: string[] = []
+  let last = ""
+  const note = (): void => {
+    const strip = page
+      .getByRole("status")
+      .elements()
+      .filter((one) => one.classList.contains("dictation-strip"))
+      .map((one) => one.textContent?.trim())
+      .filter(Boolean)
+      .join(" | ")
+    const now = `${strip || "-"} | ${microphone.live()} track(s) live | focus ${document.hasFocus()} | ${document.visibilityState}`
+    if (now === last) return
+    last = now
+    history.push(`+${Math.round(performance.now() - began)} ms ${now}`)
+  }
+  const timer = setInterval(note, 50)
+  onTestFailed(() => console.error(`Dictation, as it changed:\n${history.join("\n")}`))
+  return () => clearInterval(timer)
+}
 
 describe("dictation", () => {
   let microphone: ReturnType<typeof fakeMicrophone>
-  beforeEach(() => void (microphone = fakeMicrophone()))
-  afterEach(() => microphone.restore())
+  let unwatch: () => void
+  beforeEach(() => {
+    microphone = fakeMicrophone()
+    unwatch = watchDictation(microphone)
+  })
+  afterEach(() => {
+    unwatch()
+    microphone.restore()
+  })
 
   context("when voice input is not installed", () => {
     it("points to Preferences instead of recording", async () => {
@@ -862,7 +1123,7 @@ describe("dictation", () => {
       await terminalTab("Checkout implementation").click()
       // Until voice input is installed, it says what it does: lead to the setup.
       const mic = terminal("Checkout implementation").getByRole("button", {
-        name: "Set up voice input for Checkout implementation",
+        name: labelled("Set up voice input for ", "Checkout implementation"),
       })
       await mic.click()
       const dialog = preferencesDialog()
@@ -871,7 +1132,9 @@ describe("dictation", () => {
         .toHaveAttribute("aria-selected", "true")
       expect(microphone.live()).toBe(0)
 
-      const enabled = dialog.getByRole("switch", { name: "Enabled" })
+      const enabled = dialog
+        .getByRole("region", { name: "Voice input" })
+        .getByRole("switch", { name: "Enabled" })
       await expect.element(enabled).toHaveAttribute("aria-checked", "true")
       await enabled.click()
       await expect.element(enabled).toHaveAttribute("aria-checked", "false")
@@ -899,9 +1162,11 @@ describe("dictation", () => {
       await press("{/M}")
 
       // "Transcribing" shows only as long as the demo takes, too briefly to wait for.
-      await expect
-        .element(commandInput("Checkout implementation"))
-        .toHaveValue("Add a retry to the checkout request and run the tests.")
+      await saidWhile(microphone, async () => {
+        await expect
+          .element(commandInput("Checkout implementation"), { timeout: 15_000 })
+          .toHaveValue("Add a retry to the checkout request and run the tests.")
+      })
       expect(microphone.live()).toBe(0)
     })
 
@@ -917,9 +1182,11 @@ describe("dictation", () => {
 
       await press(`${dictateKeys}${releaseKeys}`)
       // "Transcribing" shows only as long as the demo takes, too briefly to wait for.
-      await expect
-        .element(commandInput("Checkout implementation"))
-        .toHaveValue("Add a retry to the checkout request and run the tests.")
+      await saidWhile(microphone, async () => {
+        await expect
+          .element(commandInput("Checkout implementation"), { timeout: 15_000 })
+          .toHaveValue("Add a retry to the checkout request and run the tests.")
+      })
     })
 
     it("shows its strip over a terminal's chat, not under it", async () => {

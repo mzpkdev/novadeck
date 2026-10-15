@@ -1,7 +1,7 @@
 import { expect } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
-import { openWorkspace, terminal, terminalTab } from "./workspace"
+import { labelled, openWorkspace, terminal, terminalTab } from "./workspace"
 
 // Vocabulary for agents' messages: the counts on terminals' tabs, a terminal's messages
 // in its companion pane, and who named a terminal.
@@ -39,7 +39,7 @@ export const openMessages = async (name: string): Promise<Locator> => {
 
 /** A thread in a messages pane, by the peer's name and handle. */
 export const thread = (pane: Locator, peer: string, handle: string): Locator =>
-  pane.getByRole("region", { name: `Thread with ${peer} (${handle})` })
+  pane.getByRole("region", { name: `Thread with ${peer} (@${handle})` })
 
 /** The messages of a thread, oldest first, as their items read. */
 export const messageItems = (within: Locator): Locator => within.getByRole("listitem")
@@ -50,7 +50,7 @@ export const pauseSwitch = (pane: Locator): Locator =>
 /** Opens a terminal tab's menu, as a right-click does. */
 export const tabMenu = async (name: string): Promise<Locator> => {
   await terminalTab(name).click({ button: "right" })
-  const menu = page.getByRole("menu", { name: `${name} actions` })
+  const menu = page.getByRole("menu", { name: labelled("", name, " actions") })
   await expect.element(menu).toBeVisible()
   return menu
 }

@@ -7,7 +7,7 @@ export type ProjectArrangement = {
   readonly pinned: readonly string[]
 }
 
-export const pinLimit = 3
+export const pinLimit = 9
 
 export const noArrangement: ProjectArrangement = { order: [], pinned: [] }
 
@@ -82,6 +82,32 @@ export const togglePin = (
   if (!restIds.includes(id) || pinnedIds.length >= pinLimit) return current
   return arrangement(
     [...pinnedIds, id, ...restIds.filter((each) => each !== id)],
+    pinnedIds.length + 1,
+  )
+}
+
+// Pins a project at `index` among the pinned ones, as a drop on the pins bar does: one
+// already pinned moves there, one that isn't is pinned there unless `pinLimit` are.
+export const pinAt = (
+  projects: readonly { readonly id: string }[],
+  current: ProjectArrangement,
+  id: string,
+  index: number,
+): ProjectArrangement => {
+  const { pinned, rest } = arrangeProjects(projects, current)
+  const pinnedIds = pinned.map((project) => project.id)
+  const restIds = rest.map((project) => project.id)
+  if (pinnedIds.includes(id))
+    return moveProject(projects, current, id, Math.min(index, pinnedIds.length - 1))
+  if (!restIds.includes(id) || pinnedIds.length >= pinLimit) return current
+  const to = Math.max(0, Math.min(index, pinnedIds.length))
+  return arrangement(
+    [
+      ...pinnedIds.slice(0, to),
+      id,
+      ...pinnedIds.slice(to),
+      ...restIds.filter((each) => each !== id),
+    ],
     pinnedIds.length + 1,
   )
 }

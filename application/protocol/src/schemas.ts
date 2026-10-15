@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { harnessIds } from "./harnesses.js"
+
 export const protocolVersion = 1
 export const id = z.uuid()
 export const name = z.string().trim().min(1).max(200)
@@ -55,12 +57,21 @@ export const foregroundProcess = z.strictObject({
 // Agents whose sessions Novadeck identifies and can resume once connected: Claude Code,
 // Codex and Antigravity. An agent session id is what the agent itself names its
 // session: a UUID today, kept to a plain token so a shell can run it as it is.
-export const agentName = z.enum(["claude", "codex", "agy"])
+export const agentName = z.enum(harnessIds)
 export const agentSessionId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)
 
 // How long the start of an agent's last reply runs at most, in UTF-16 code units: enough
 // for a notification's line, and never the whole reply.
 export const replyPreviewLength = 120
+
+// Murmur's words for the person, never for agents: one line, no control characters.
+// eslint-disable-next-line no-control-regex -- These are the characters it refuses.
+const oneLine = /^[^\x00-\x1f\x7f-\x9f]*$/
+const murmurLine = (max: number) => z.string().min(1).max(max).regex(oneLine)
+export const murmurHeadlineLength = 64
+export const murmurGistLength = 96
+export const murmurHeadline = murmurLine(murmurHeadlineLength)
+export const murmurGist = z.strictObject({ text: murmurLine(murmurGistLength), asks: z.boolean() })
 
 // What the agent holding a terminal's foreground is doing, as its own hooks report it:
 // working on a turn, or with its turn over while subagents it started run on, which will
@@ -82,6 +93,9 @@ export const agentActivity = z.strictObject({
   attention: z.strictObject({
     pending: z.number().int().nonnegative(),
     kind: z.enum(["permission", "question", "plan"]).nullable(),
+    // Murmur's headline for the oldest request, a question's or a plan's ("Asks which database
+    // to use"); null for a permission, without murmur, and until it wrote one.
+    headline: murmurHeadline.nullable(),
   }),
   // Whether it plans rather than acts, as its hooks last said.
   planning: z.boolean(),
@@ -106,6 +120,10 @@ export const agentActivity = z.strictObject({
       outcome: z.enum(["completed", "failed", "interrupted", "unknown"]),
       reply: z.string().min(1).max(replyPreviewLength).nullable(),
       at: z.number(),
+      // Murmur's gist of the last reply, written once a client showed this end unread
+      // (`murmur.gist`), and whether the reply asks the person something. It never changes
+      // `outcome`.
+      gist: murmurGist.nullable(),
     })
     .nullable(),
 })
@@ -369,18 +387,19 @@ export const terminalTitle = z
     "A title must be one line, without control characters.",
   )
 
-// A terminal's handle: `t` and a number its Novadeck session gives it as it is created,
-// never twice, from the same count as its default title ("Terminal 03" is `t3`). It
-// stays as the terminal is renamed, and agents address each other by it.
-export const handle = z.string().regex(/^t[1-9][0-9]{0,8}$/)
+// A terminal's handle: a word its Novadeck session gives it as it is created, such as
+// `moth`, never twice; once a session has given every word, they come again with a
+// number, as `moth2`. It stays as the terminal is renamed, agents address each other by
+// it, and people read it as `@moth`.
+export const handle = z.string().regex(/^[a-z]{2,12}(?:[2-9]|[1-9][0-9]{1,8})?$/)
 
-// Who a terminal's title is from: the person; an agent, by its terminal's handle (the
-// one that opened it with a title, or its own through `describe`); the person's first
-// prompt of its agent's root session (`fallback`); or its session's `default`.
+// Who a terminal's title is from: the person; murmur, the local model that describes
+// terminals; an agent, by its terminal's handle (the one that opened it with a title); or
+// its session's `default`.
 export const titleSource = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("person") }),
   z.strictObject({ kind: z.literal("agent"), by: handle }),
-  z.strictObject({ kind: z.literal("fallback") }),
+  z.strictObject({ kind: z.literal("murmur") }),
   z.strictObject({ kind: z.literal("default") }),
 ])
 
@@ -389,9 +408,9 @@ export const titleSource = z.discriminatedUnion("kind", [
 export const terminalSummary = z.strictObject({
   id,
   sessionId: id,
-  // The title the person gave the terminal; else the one an agent gave it last, or the
-  // person's first prompt to its agent, shortened; else the runner's default for its
-  // session ("Terminal 01", "Terminal 02", … in the order they were created).
+  // The title the person gave the terminal; else murmur's latest, if it is on; else the
+  // one the agent that opened it gave; else the runner's default: the program the terminal
+  // was opened to run, as "claude", or "Terminal".
   title: terminalTitle,
   // Who the title is from.
   titleSource,
@@ -405,6 +424,13 @@ export const terminalSummary = z.strictObject({
   // when none. It changes only when the lead is set or ended, as when the agent here
   // exits, not while the lead's terminal runs or stops.
   ledBy: handle.nullable(),
+  // The handle of the terminal whose agent opened this one, for an agent, a command or a
+  // plain shell; null when the person opened it. It never changes.
+  openedBy: handle.nullable(),
+  // Whether an agent has reported a session in it since it opened, running now or since
+  // exited. It stays true, so what names the terminal by its handle keeps a terminal to
+  // find, until the person disconnects that agent's harness.
+  agentRan: z.boolean(),
   // The command it was opened to run at its first prompt; null for a plain shell.
   command: startupCommand.nullable(),
   // The program in its foreground when its shell was last seen, which a fresh shell
@@ -495,6 +521,22 @@ export const companionChange = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("synced") }),
 ])
 
+// `companions.save`: the plan's new stamp, or, when it changed since the stamp the edit was
+// made on, the plan as it now stands.
+export const planSaveResult = z.discriminatedUnion("saved", [
+  z.strictObject({ saved: z.literal(true), stamp: z.string().max(128) }),
+  z.strictObject({
+    saved: z.literal(false),
+    current: z.strictObject({
+      stamp: z.string().max(128),
+      text: z.string().max(256 * 1024),
+      truncated: z.boolean(),
+      // As in the plan's content.
+      skill: z.boolean(),
+    }),
+  }),
+])
+
 // `companions.content`: what an item points at, read as it is now. `stamp` changes with
 // it. A file is the lines around the ones pointed at, numbered from `firstLine`, with
 // its line count where it was read to its end (`truncated` otherwise), and `clamped`
@@ -523,6 +565,12 @@ export const itemContent = z.discriminatedUnion("state", [
         text: z.string().max(256 * 1024),
         truncated: z.boolean(),
         changedAt: z.number().nullable(),
+        // Whether `companions.save` can write it: a plan in a file, not one the agent
+        // keeps in its transcript.
+        writable: z.boolean(),
+        // Whether Novadeck's plugin is installed into the plan's agent, which tells it to
+        // re-read the plan and apply the notes left in it.
+        skill: z.boolean(),
       }),
     ]),
   }),
@@ -594,6 +642,10 @@ export const agentIntegration = z.strictObject({
   agent: agentName,
   available: z.boolean(),
   connected: z.boolean(),
+  // What keeps a connected agent's messaging from working whole, where something does:
+  // `own-status-line`, Antigravity on Windows running the person's own status line, which
+  // keeps Novadeck's out, so it is never seen Ready at its first prompt.
+  limited: z.enum(["own-status-line"]).optional(),
 })
 
 // Runner-wide settings a client can change.
@@ -660,6 +712,67 @@ export const voiceState = z.strictObject({
   // caller's error alone.
   failure: z.string().max(1024).nullable(),
 })
+
+// Murmur: a small model that runs on this machine's GPU and writes terminals' titles,
+// opt-in from Preferences like voice input. It has one engine and one model.
+
+// What an install is doing: downloading the engine or the model, or checking that they
+// describe, with the bytes received of the step's total.
+export const murmurInstall = z.strictObject({
+  step: z.enum(["engine", "model", "check"]),
+  received: z.int().nonnegative(),
+  total: z.int().nonnegative(),
+})
+
+// The device that passed the check after an install: its name, whether it is an
+// integrated GPU, and how long the test description took.
+export const murmurCheck = z.strictObject({
+  device: z.string().max(256),
+  integrated: z.boolean(),
+  milliseconds: z.int().nonnegative(),
+})
+
+export const murmurState = z.strictObject({
+  // Whether this build has an engine for this platform; without one nothing installs.
+  available: z.boolean(),
+  // Whether the engine and the model are on disk; false until an install finishes.
+  installed: z.boolean(),
+  // Whether the person turned murmur on; it needs to be installed.
+  enabled: z.boolean(),
+  // Whether the person wants murmur, installed or not: until they turn it off, the app
+  // offers it.
+  wanted: z.boolean(),
+  // Download sizes in bytes: the engine for this platform, and the model.
+  sizes: z.strictObject({ engine: z.int().nonnegative(), model: z.int().nonnegative() }),
+  installing: murmurInstall.nullable(),
+  // Null until a check passes. A machine with no working GPU stays null, and `failure`
+  // says murmur needs one.
+  check: murmurCheck.nullable(),
+  // Why murmur is not working, in words for the person: the last install or engine update
+  // that failed, until the next install, update or removal; the GPU it was checked on being
+  // gone (the check is then null, and Try again installs just the check); a worker that
+  // would not start; or the engine failing three jobs in a row (the check stands) until a job
+  // succeeds. Turning murmur on clears the last two.
+  failure: z.string().max(1024).nullable(),
+})
+
+export const murmurSettings = z.strictObject({
+  enabled: z.boolean(),
+})
+
+/**
+ * Why `companions.save` can't write a plan, in `PLAN_UNWRITABLE`'s data, which retrying
+ * won't change until the plan or its folder does:
+ * - `gone`: the plan's file is no longer there.
+ * - `folder`: Novadeck may not write in the plan's folder or file.
+ * - `transcript`: the plan lives in an agent's messages, not a file.
+ * - `too-large`: the plan is past what Novadeck writes (256 KiB).
+ * - `not-a-plan`: the item is no plan.
+ */
+export const planUnwritable = z.strictObject({
+  reason: z.enum(["gone", "folder", "transcript", "too-large", "not-a-plan"]),
+})
+export type PlanUnwritable = z.infer<typeof planUnwritable>
 
 /**
  * Why a `CONFLICT` about typing into an agent's terminal is one, as its data, so a client
@@ -787,6 +900,7 @@ export type CompanionItem = z.infer<typeof companionItem>
 export type CompanionWindow = z.infer<typeof companionWindow>
 export type CompanionChange = z.infer<typeof companionChange>
 export type ItemContent = z.infer<typeof itemContent>
+export type PlanSaveResult = z.infer<typeof planSaveResult>
 export type TerminalRequest = z.infer<typeof terminalRequest>
 export type TerminalRequestAnswer = z.infer<typeof terminalRequestAnswer>
 export type TerminalEvent = z.infer<typeof terminalEvent>
@@ -809,6 +923,10 @@ export type VoiceState = z.infer<typeof voiceState>
 export type VoiceUnavailable = z.infer<typeof voiceUnavailable>
 export type VoiceSettings = z.infer<typeof voiceSettings>
 export type VoiceTranscript = z.infer<typeof voiceTranscript>
+export type MurmurInstall = z.infer<typeof murmurInstall>
+export type MurmurCheck = z.infer<typeof murmurCheck>
+export type MurmurState = z.infer<typeof murmurState>
+export type MurmurSettings = z.infer<typeof murmurSettings>
 export type MessageState = z.infer<typeof messageState>
 export type DeliveryState = z.infer<typeof deliveryState>
 export type AgentMessage = z.infer<typeof agentMessage>

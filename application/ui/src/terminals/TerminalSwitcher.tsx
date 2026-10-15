@@ -1,8 +1,10 @@
 import { ArrowUpRight, Layers, Terminal, X } from "lucide-react"
 import { useEffect, useRef } from "react"
 
+import { terminalLabel } from "../model/handle"
 import { isWindow } from "../model/roster"
 import type { Tile } from "../model/types"
+import { HandleChip } from "../ui-toolkit/HandleChip"
 import { searchResultClasses } from "../ui-toolkit/SearchCombobox"
 
 export const TerminalSwitcher = ({
@@ -88,15 +90,21 @@ export const TerminalSwitcher = ({
                 id={`recent-terminal-${terminal.id}`}
                 ref={current ? active : undefined}
                 role="option"
-                aria-label={terminal.name}
+                aria-label={terminalLabel(
+                  terminal.name,
+                  isWindow(terminal) ? undefined : terminal.handle,
+                )}
                 aria-selected={current}
                 data-highlighted={current ? "" : undefined}
                 onClick={() => onSelect(terminal.id)}
                 className={searchResultClasses}
               >
-                <Terminal size={15} strokeWidth={1.5} aria-hidden="true" />
+                <Terminal size={14} strokeWidth={1.5} aria-hidden="true" />
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <p className="m-0 truncate text-body leading-4 font-medium">{terminal.name}</p>
+                  <p className="m-0 flex min-w-0 items-center gap-1.5 text-body leading-4 font-medium">
+                    {!isWindow(terminal) && <HandleChip handle={terminal.handle} />}
+                    <span className="truncate">{terminal.name}</span>
+                  </p>
                   <p className="switcher-process item-detail m-0 truncate text-caption">
                     {isWindow(terminal) ? "window" : terminal.process || terminal.command}
                   </p>
