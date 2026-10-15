@@ -310,8 +310,9 @@ export const contract = {
     // Writes the person's edit to a plan kept in a file, atomically, unless the file
     // changed since `basedOn`, the stamp the edit was made on: then nothing is written and
     // the plan as it now stands comes back. A plan kept in an agent's transcript can't be
-    // written, and nor can one past 256 KiB, a file that is gone or one the runner may not
-    // write: PLAN_UNWRITABLE, saying why. An unknown item is NOT_FOUND.
+    // written, and nor can one past 256 KiB, a file that is gone, one in a folder the
+    // runner may not write to, or an item that is no plan: PLAN_UNWRITABLE, saying why
+    // (`gone`, `folder`, `transcript`, `too-large`, `not-a-plan`). An unknown item is NOT_FOUND.
     save: procedure
       .input(
         z.strictObject({

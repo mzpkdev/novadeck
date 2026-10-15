@@ -576,10 +576,14 @@ export const savePlan = async (
     const { text: now, truncated, stamp } = before
     return { saved: false, current: { stamp, text: now, truncated } }
   }
-  const stats = await lstat(path).catch(() => undefined)
+  const stats = await lstat(path).catch((error: unknown) => {
+    if (isMissing(error)) return undefined
+    throw error
+  })
   if (!stats?.isFile()) throw unwritable("gone", "The plan's file is gone.")
   const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${Date.now()}.tmp`)
   const mode = stats.mode & 0o777
+  let renaming = false
   try {
     const handle = await open(
       temporary,
@@ -608,6 +612,7 @@ export const savePlan = async (
       const { text: current, truncated, stamp } = now
       return { saved: false, current: { stamp, text: current, truncated } }
     }
+    renaming = true
     await renameSettled(temporary, path)
     // Its size, change time and file survive the rename.
     return { saved: true, stamp: stampOf(written) }
@@ -615,8 +620,9 @@ export const savePlan = async (
     await unlink(temporary).catch(() => {})
     if (error instanceof DomainError) throw error
     const code = errnoOf(error)
-    // The folder or file refuses the runner, or its folder is gone: saving again won't help.
-    if (code === "EACCES" || code === "EPERM" || code === "EROFS")
+    // The folder refuses the runner: saving again won't help. A rename refused after the
+    // temporary file was written in that folder is a plan another program holds: it passes.
+    if (code === "EROFS" || (!renaming && (code === "EACCES" || code === "EPERM")))
       throw unwritable("folder", "The plan's folder can't be written to.")
     if (code === "ENOENT") throw unwritable("gone", "The plan's file is gone.")
     throw error
