@@ -75,21 +75,25 @@ export const limitGraceMs = 60_000
  * Antigravity's status line lists every model's buckets. The windows only tell when it
  * resets: of those with a reset to come after the turn ended, in a record made (`seenAt`)
  * by the turn's end or within `limitGraceMs` after it, the used-up one that resets last, as
- * nothing runs before it does, else the most-used one. Latch it on the turn (`withLimit`):
- * it stays after the window's records move on.
+ * nothing runs before it does, else the most-used one (`spent` false), which a used-up
+ * window seen within the grace replaces. Latch it on the turn (`withLimit`): it stays after
+ * the window's records move on.
  */
 export const limitOf = (
   lastTurn: LastTurn | null,
   limits: readonly Window[],
   seenAt: number,
-): { minutes: number | null; resetsAt: number } | null => {
-  if (!lastTurn?.limited || lastTurn.outcome === "interrupted" || lastTurn.limit) return null
+): { minutes: number | null; resetsAt: number; spent: boolean } | null => {
+  if (!lastTurn?.limited || lastTurn.outcome === "interrupted") return null
+  // A window used up fixes the latch; one picked as the most used gives way to it.
+  if (lastTurn.limit && !lastTurn.guessed) return null
   if (seenAt > lastTurn.at + limitGraceMs) return null
   const ahead = limits.filter(
     (window): window is Window & { resetsAt: number } =>
       window.resetsAt !== null && window.resetsAt > lastTurn.at,
   )
   const spent = ahead.filter(({ used }) => used >= 1)
+  if (lastTurn.limit && spent.length === 0) return null
   const pick =
     spent.length > 0
       ? spent.reduce((a, b) => (b.resetsAt > a.resetsAt ? b : a))
@@ -97,5 +101,5 @@ export const limitOf = (
           (a, b) => (!a || b.used > a.used ? b : a),
           null,
         )
-  return pick && { minutes: pick.minutes, resetsAt: pick.resetsAt }
+  return pick && { minutes: pick.minutes, resetsAt: pick.resetsAt, spent: spent.length > 0 }
 }

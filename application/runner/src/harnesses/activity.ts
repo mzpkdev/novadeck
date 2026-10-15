@@ -136,6 +136,8 @@ export type LastTurn = {
   readonly limited?: true
   /** The usage-limit window this end ran into; see `limitOf`. Kept once set. */
   readonly limit?: { readonly minutes: number | null; readonly resetsAt: number }
+  /** `limit` was picked as the most-used window, none shown used up yet; one that is replaces it. */
+  readonly guessed?: true
   /**
    * The files its turn wrote: as `Activity.files` held them at its end, and any a later
    * report timestamped in the turn adds, until a new turn starts.
@@ -377,6 +379,7 @@ const turnEnded = (activity: Activity, event: TurnEnded): Activity | undefined =
       ...(error && { error }),
       ...(limited && { limited: true as const }),
       ...(before?.limit && { limit: before.limit }),
+      ...(before?.guessed && { guessed: true as const }),
       files: activity.files,
       from: before?.from ?? activity.turnAt,
     },
@@ -880,11 +883,20 @@ export const withGist = (
  */
 export const withLimit = (
   activity: Activity,
-  limit: { readonly minutes: number | null; readonly resetsAt: number },
+  limit: { readonly minutes: number | null; readonly resetsAt: number; readonly spent: boolean },
 ): Activity | undefined => {
   const { lastTurn } = activity
-  if (activity.state === "working" || !lastTurn || lastTurn.limit) return undefined
-  return { ...activity, lastTurn: { ...lastTurn, limit: { ...limit } } }
+  if (activity.state === "working" || !lastTurn || (lastTurn.limit && !lastTurn.guessed))
+    return undefined
+  const { guessed: _, ...kept } = lastTurn
+  return {
+    ...activity,
+    lastTurn: {
+      ...kept,
+      limit: { minutes: limit.minutes, resetsAt: limit.resetsAt },
+      ...(!limit.spent && { guessed: true as const }),
+    },
+  }
 }
 
 const unheadlined = (request: Request): Request => {

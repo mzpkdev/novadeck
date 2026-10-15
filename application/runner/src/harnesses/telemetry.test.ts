@@ -120,21 +120,21 @@ describe("the limit a turn ran into", () => {
   }
 
   it("takes a window used up, as the turn ended or since", () => {
-    expect(limitOf(turn(), [window(300, 0.4, 5_000), window(10_080, 1, 9_000)])).toEqual({
+    expect(limitOf(turn(), [window(300, 0.4, 5_000), window(10_080, 1, 9_000)])).toMatchObject({
       minutes: 10_080,
       resetsAt: 9_000,
     })
   })
 
   it("takes the one that resets last of several used up", () => {
-    expect(limitOf(turn(), [window(300, 1, 5_000), window(10_080, 1, 9_000)])).toEqual({
+    expect(limitOf(turn(), [window(300, 1, 5_000), window(10_080, 1, 9_000)])).toMatchObject({
       minutes: 10_080,
       resetsAt: 9_000,
     })
   })
 
   it("takes the most-used window when its harness said the turn hit a limit and none shows used up", () => {
-    expect(limitOf(turn(), [window(300, 0.4, 5_000), window(10_080, 0.9, 9_000)])).toEqual({
+    expect(limitOf(turn(), [window(300, 0.4, 5_000), window(10_080, 0.9, 9_000)])).toMatchObject({
       minutes: 10_080,
       resetsAt: 9_000,
     })
@@ -152,7 +152,10 @@ describe("the limit a turn ran into", () => {
 
   it("takes a window used up seen within the grace after the turn, not one that fills later", () => {
     const full = [window(300, 1, 900_000)]
-    expect(limitOf(turn(), full, 1_000 + limitGraceMs)).toEqual({ minutes: 300, resetsAt: 900_000 })
+    expect(limitOf(turn(), full, 1_000 + limitGraceMs)).toMatchObject({
+      minutes: 300,
+      resetsAt: 900_000,
+    })
     expect(limitOf(turn(), full, 1_000 + limitGraceMs + 1)).toBeNull()
   })
 
@@ -161,7 +164,7 @@ describe("the limit a turn ran into", () => {
     const full = [window(300, 1, 900_000)]
     for (const outcome of ["completed", "failed", "unknown"] as const)
       expect(limitOf(plain({ outcome }), full)).toBeNull()
-    expect(limitOf(turn({ outcome: "completed" }), full)).toEqual({
+    expect(limitOf(turn({ outcome: "completed" }), full)).toMatchObject({
       minutes: 300,
       resetsAt: 900_000,
     })
@@ -180,6 +183,19 @@ describe("the limit a turn ran into", () => {
       limitOf(turn({ limited: true }), [window(300, 0, 950_000)], 1_000 + limitGraceMs + 1),
     ).toBeNull()
     expect(limitOf(plain(), [window(300, 1, 950_000)])).toBeNull()
+  })
+
+  it("replaces a latch picked as the most used with a window seen used up within the grace", () => {
+    const guessed = turn({ limit: { minutes: 300, resetsAt: 5_000 }, guessed: true })
+    // Still none used up: nothing to correct it with.
+    expect(limitOf(guessed, [window(300, 0.9, 5_000)])).toBeNull()
+    expect(limitOf(guessed, [window(300, 0.9, 5_000), window(10_080, 1, 9_000)])).toMatchObject({
+      minutes: 10_080,
+      resetsAt: 9_000,
+      spent: true,
+    })
+    // Not after the grace.
+    expect(limitOf(guessed, [window(10_080, 1, 9_000)], 1_000 + limitGraceMs + 1)).toBeNull()
   })
 
   it("keeps the window it latched whatever the records say after", () => {

@@ -1820,7 +1820,7 @@ describe("what a turn wrote and how it failed", () => {
       error: "out of quota",
       limited: true,
     })
-    const limited = withLimit(records, { minutes: 300, resetsAt: 9_000 })!
+    const limited = withLimit(records, { minutes: 300, resetsAt: 9_000, spent: true })!
     const hook = stop(limited, 3, { outcome: "failed" })
     expect(summary(hook).lastTurn).toMatchObject({
       at: 2,
@@ -1837,13 +1837,21 @@ describe("what a turn wrote and how it failed", () => {
     })
   })
 
+  it("lets a window used up replace a latch picked as the most used, and no other", () => {
+    const ended = stop(turn(started(0), 1), 2)
+    const guessed = withLimit(ended, { minutes: 300, resetsAt: 5, spent: false })!
+    const fixed = withLimit(guessed, { minutes: 10_080, resetsAt: 9, spent: true })!
+    expect(summary(fixed).lastTurn?.limit).toEqual({ minutes: 10_080, resetsAt: 9 })
+    expect(withLimit(fixed, { minutes: 1, resetsAt: 1, spent: true })).toBeUndefined()
+  })
+
   it("latches a limit on the last turn only once, while none runs, and drops it with the next turn", () => {
     const running = turn(started(0), 1)
-    expect(withLimit(running, { minutes: null, resetsAt: 9 })).toBeUndefined()
+    expect(withLimit(running, { minutes: null, resetsAt: 9, spent: true })).toBeUndefined()
     const ended = stop(running, 2)
-    const latched = withLimit(ended, { minutes: null, resetsAt: 9 })!
+    const latched = withLimit(ended, { minutes: null, resetsAt: 9, spent: true })!
     expect(summary(latched).lastTurn?.limit).toEqual({ minutes: null, resetsAt: 9 })
-    expect(withLimit(latched, { minutes: 5, resetsAt: 10 })).toBeUndefined()
+    expect(withLimit(latched, { minutes: 5, resetsAt: 10, spent: true })).toBeUndefined()
     expect(summary(turn(latched, 3)).lastTurn).toBeNull()
   })
 })

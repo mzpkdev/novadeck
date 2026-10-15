@@ -2090,9 +2090,29 @@ describe("a usage limit a turn ran into", () => {
     tell({ type: "turn-started", cause: "prompt", startedAt: 75 })
     expect(lastTurn()).toBeNull()
 
+    // A latch picked as the most used gives way to a window then seen used up, within the grace.
+    record.activity = fresh(0)
+    usage(0.9, 100)
+    tell({ type: "turn-started", cause: "prompt", startedAt: 101 })
+    tell({ type: "turn-ended", outcome: "failed", startedAt: 105, limited: true })
+    expect(lastTurn()?.limit).toEqual({ minutes: 300, resetsAt: 900_000 })
+    tell({
+      type: "telemetry-observed",
+      limits: [
+        { minutes: 300, used: 0.9, resetsAt: 900_000 },
+        { minutes: 10_080, used: 1, resetsAt: 990_000 },
+      ],
+      startedAt: 110,
+    })
+    expect(lastTurn()?.limit).toEqual({ minutes: 10_080, resetsAt: 990_000 })
+    usage(1, 120)
+    expect(lastTurn()?.limit).toEqual({ minutes: 10_080, resetsAt: 990_000 })
+
     // A window that fills long after a turn is the person's, not the turn's.
-    tell({ type: "turn-ended", outcome: "failed", startedAt: 80 })
-    usage(1, 80 + limitGraceMs + 1)
+    record.activity = fresh(0)
+    tell({ type: "turn-started", cause: "prompt", startedAt: 200 })
+    tell({ type: "turn-ended", outcome: "failed", startedAt: 205 })
+    usage(1, 205 + limitGraceMs + 1)
     expect(lastTurn()?.limit).toBeUndefined()
   })
 })
