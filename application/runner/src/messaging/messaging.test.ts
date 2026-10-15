@@ -1074,6 +1074,90 @@ describe("change notices", () => {
   })
 })
 
+describe("a stopped thread", () => {
+  const stoppedMessage =
+    "The user stopped your thread with @fox in Novadeck. Don't message @fox about it again unless the user asks."
+
+  it("makes its undelivered messages gone, told to their senders once, and the recipient nothing", () => {
+    const { messaging, send, clock: time } = create()
+    sent(send("A", "fox", "first"))
+    time.now += 1_000
+    sent(send("B", "moth", "reply"))
+    const [thread] = messaging.list("A", "moth").threads
+    messaging.stop(thread!.id)
+    expect(messaging.list("A", "moth").threads[0]).toMatchObject({ stopped: true, held: false })
+    expect(messages(messaging, "A")).toMatchObject([{ state: "gone" }, { state: "gone" }])
+    expect(messaging.goneFrom("A")).toEqual([{ id: expect.any(String), to: "fox", stopped: true }])
+    expect(messaging.goneFrom("A")).toEqual([])
+    expect(messaging.goneFrom("B")).toEqual([{ id: expect.any(String), to: "moth", stopped: true }])
+  })
+
+  it("makes a held message gone too, and leaves a leased one to finish", () => {
+    const { messaging, send, prompt, codex, clock: time } = create()
+    for (let index = 0; index < 13; index++) {
+      time.now += 30_000
+      sent(index % 2 === 0 ? send("A", "fox", `${index}`) : send("B", "moth", `${index}`))
+    }
+    const lease = prompt("B", codex)
+    expect(lease.leaseId).not.toBeNull()
+    const [thread] = messaging.list("A", "moth").threads
+    expect(thread).toMatchObject({ held: true })
+    messaging.stop(thread!.id)
+    const states = messages(messaging, "A").map(({ state }) => state)
+    expect(states).toContain("leased")
+    expect(states).not.toContain("held")
+    expect(states).not.toContain("queued")
+    expect(messaging.list("A", "moth").threads[0]).toMatchObject({ stopped: true, held: false })
+    messaging.acknowledge("B", lease.leaseId!)
+    expect(
+      messages(messaging, "B").filter(({ state }) => state === "delivered").length,
+    ).toBeGreaterThan(0)
+  })
+
+  it("refuses a send that would continue it from either end, without bumping the thread", () => {
+    const { messaging, send, clock: time } = create()
+    sent(send("A", "fox", "first"))
+    const [thread] = messaging.list("A", "moth").threads
+    messaging.stop(thread!.id)
+    time.now += threadMs - 10
+    expect(send("A", "fox", "again")).toEqual({ ok: false, reason: stoppedMessage })
+    expect(send("B", "moth", "reply")).toEqual({
+      ok: false,
+      reason: stoppedMessage.replace("@fox", "@moth").replace("@fox", "@moth"),
+    })
+    // The refusals did not bump `lastAt`: the pair is free once the stop lapses.
+    time.now += 20
+    sent(send("A", "fox", "later"))
+    expect(messaging.list("A", "moth").threads).toHaveLength(2)
+  })
+
+  it("is the same whether stopping it twice or after it lapsed, and NOT_FOUND where unknown", () => {
+    const { messaging, send, clock: time } = create()
+    sent(send("A", "fox", "first"))
+    const [thread] = messaging.list("A", "moth").threads
+    messaging.stop(thread!.id)
+    const stoppedAt = messaging.list("A", "moth").threads[0]
+    time.now += 5_000
+    messaging.stop(thread!.id)
+    expect(messaging.list("A", "moth").threads[0]).toEqual(stoppedAt)
+    expect(() => messaging.stop("t-unknown")).toThrow(
+      expect.objectContaining({ code: "NOT_FOUND" }),
+    )
+  })
+
+  it("tells both terminals, and clears when the person releases it", () => {
+    const { messaging, send, changed } = create()
+    sent(send("A", "fox", "first"))
+    const [thread] = messaging.list("A", "moth").threads
+    changed.length = 0
+    messaging.stop(thread!.id)
+    expect([...new Set(changed)].toSorted()).toEqual(["A", "B"])
+    messaging.release(thread!.id)
+    expect(messaging.list("A", "moth").threads[0]).toMatchObject({ stopped: false })
+    sent(send("A", "fox", "after release"))
+  })
+})
+
 describe("gone messages", () => {
   it("are gone once the recipient's session ends, its sender told once, and wait again if it returns", () => {
     const { messaging, send, follow, codex } = create()
@@ -1781,6 +1865,7 @@ describe("listing", () => {
           hops: 1,
           allowed: 12,
           held: false,
+          stopped: false,
           messages: [
             {
               id: expect.stringMatching(/^m-/),

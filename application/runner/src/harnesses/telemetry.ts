@@ -63,9 +63,17 @@ export const telemetrySummary = ({
 type Window = AgentTelemetry["limits"][number]
 
 /**
+ * How long after a turn ended a record showing a window used up still counts as the turn
+ * running into it. A window that fills later is the person's, not the turn's: it latches
+ * nothing on a terminal idle since.
+ */
+export const limitGraceMs = 60_000
+
+/**
  * The usage-limit window the last turn ran into, or null: the turn was not interrupted and
- * has none yet, and either its harness said it failed on a limit or some window with a
- * reset to come (after the turn ended) is used up. Of the used-up windows the one that
+ * has none yet, and either its harness said it failed on a limit, or some window with a
+ * reset to come (after the turn ended) is used up in a record made (`seenAt`) by the turn's
+ * end or within `limitGraceMs` after it. Of the used-up windows the one that
  * resets last, as nothing runs before it does; a harness's word with no window used up
  * takes the most-used one. Latch it on the turn (`withLimit`): it stays after the window's
  * records move on.
@@ -73,13 +81,14 @@ type Window = AgentTelemetry["limits"][number]
 export const limitOf = (
   lastTurn: LastTurn | null,
   limits: readonly Window[],
+  seenAt: number,
 ): { minutes: number | null; resetsAt: number } | null => {
   if (!lastTurn || lastTurn.outcome === "interrupted" || lastTurn.limit) return null
   const ahead = limits.filter(
     (window): window is Window & { resetsAt: number } =>
       window.resetsAt !== null && window.resetsAt > lastTurn.at,
   )
-  const spent = ahead.filter(({ used }) => used >= 1)
+  const spent = seenAt <= lastTurn.at + limitGraceMs ? ahead.filter(({ used }) => used >= 1) : []
   const pick =
     spent.length > 0
       ? spent.reduce((a, b) => (b.resetsAt > a.resetsAt ? b : a))

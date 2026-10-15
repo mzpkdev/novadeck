@@ -46,6 +46,8 @@ export type Message = {
   readonly state: MessageState
   readonly deliveredAt: number | null
   readonly notified: boolean
+  /** Whether the person stopped its thread before it was delivered, which made it gone. */
+  readonly stopped: boolean
   /**
    * Whether its sender was the recipient terminal's lead when it was sent, which fixes its
    * authority: delivery marks it so, and it never awaits release, whatever the lead does
@@ -73,6 +75,11 @@ export type Thread = {
   readonly allowed: number
   /** When its latest message was sent, in epoch milliseconds. */
   readonly lastAt: number
+  /**
+   * When the person stopped it, in epoch milliseconds; null if they have not, or released
+   * it since. A message that would continue it is refused.
+   */
+  readonly stoppedAt: number | null
 }
 
 /** The most a message's text may hold, in UTF-8 bytes. */

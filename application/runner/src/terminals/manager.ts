@@ -2857,8 +2857,10 @@ export class Terminals {
     this.peers.release(thread)
   }
 
-  /** Stops a thread (A3 fills this in). */
-  stopThread(_thread: string): void {}
+  /** Stops a thread: its messages not yet delivered are gone, and nothing continues it. */
+  stopThread(thread: string): void {
+    this.peers.stop(thread)
+  }
 
   /** The project a session belongs to, or the session itself when that cannot be told. */
   private projectOf(sessionId: string): string {
@@ -4435,7 +4437,7 @@ export class Terminals {
   private latchLimit(record: Record): void {
     const { activity, telemetry } = record
     if (!activity || !telemetry || activity.state !== "idle") return
-    const limit = limitOf(activity.lastTurn, telemetry.limits)
+    const limit = limitOf(activity.lastTurn, telemetry.limits, telemetry.at)
     const next = limit && withLimit(activity, limit)
     if (next) record.activity = next
   }

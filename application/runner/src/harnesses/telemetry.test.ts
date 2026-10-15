@@ -3,7 +3,12 @@ import type { TelemetryObserved } from "@novadeck/harness-core/events"
 import { describe, expect, it } from "../test.js"
 import type { LastTurn } from "./activity.js"
 import type { Binding } from "./bindings.js"
-import { limitOf, observeTelemetry, telemetrySummary } from "./telemetry.js"
+import {
+  limitGraceMs,
+  limitOf as limitIn,
+  observeTelemetry,
+  telemetrySummary,
+} from "./telemetry.js"
 
 const binding: Binding = { agent: "codex", sessionId: "s", instance: null }
 const seen = (fields: Partial<TelemetryObserved>): TelemetryObserved => ({
@@ -85,6 +90,13 @@ describe("observing telemetry", () => {
 })
 
 describe("the limit a turn ran into", () => {
+  // Seen as the turn ended, unless a case says when.
+  const limitOf = (
+    lastTurn: LastTurn | null,
+    limits: Parameters<typeof limitIn>[1],
+    seenAt = 1_000,
+  ) => limitIn(lastTurn, limits, seenAt)
+
   const turn = (fields: Partial<LastTurn> = {}): LastTurn => ({
     outcome: "completed",
     reply: null,
@@ -130,6 +142,21 @@ describe("the limit a turn ran into", () => {
     ).toBeNull()
     expect(limitOf(turn({ limited: true }), [])).toBeNull()
     expect(limitOf(null, [window(300, 1, 5_000)])).toBeNull()
+  })
+
+  it("takes a window used up seen within the grace after the turn, not one that fills later", () => {
+    const full = [window(300, 1, 900_000)]
+    expect(limitOf(turn(), full, 1_000 + limitGraceMs)).toEqual({ minutes: 300, resetsAt: 900_000 })
+    expect(limitOf(turn(), full, 1_000 + limitGraceMs + 1)).toBeNull()
+    expect(limitOf(turn({ outcome: "failed" }), full, 1_000 + limitGraceMs + 1)).toBeNull()
+  })
+
+  it("takes the harness's word on a limit whenever the records come", () => {
+    const full = [window(300, 1, 900_000)]
+    expect(limitOf(turn({ outcome: "failed", limited: true }), full, 99_000_000)).toEqual({
+      minutes: 300,
+      resetsAt: 900_000,
+    })
   })
 
   it("keeps the window it latched whatever the records say after", () => {

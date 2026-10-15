@@ -17,6 +17,7 @@ import {
   started as fresh,
   type Activity,
 } from "../harnesses/activity.js"
+import { limitGraceMs } from "../harnesses/telemetry.js"
 import { describe, expect, it as base } from "../test.js"
 import { command, ptyOptions, ptyTrace } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
@@ -2081,5 +2082,10 @@ describe("a usage limit a turn ran into", () => {
     expect(lastTurn()?.limit).toEqual({ minutes: 300, resetsAt: 900_000 })
     tell({ type: "turn-started", cause: "prompt", startedAt: 70 })
     expect(lastTurn()).toBeNull()
+
+    // A window that fills long after a turn is the person's, not the turn's.
+    tell({ type: "turn-ended", outcome: "completed", startedAt: 80 })
+    usage(1, 80 + limitGraceMs + 1)
+    expect(lastTurn()?.limit).toBeUndefined()
   })
 })
