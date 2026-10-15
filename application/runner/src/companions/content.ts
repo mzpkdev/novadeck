@@ -5,7 +5,7 @@ import { basename, dirname, extname, join, resolve } from "node:path"
 import { StringDecoder } from "node:string_decoder"
 
 import type { PlanSource } from "@novadeck/harness-core/events"
-import type { AgentName, ItemContent, PlanSaveResult } from "@novadeck/protocol"
+import type { AgentName, ItemContent, PlanSaveResult, PlanUnwritable } from "@novadeck/protocol"
 
 import { DomainError } from "../errors.js"
 import { harnesses } from "../harnesses/registry.js"
@@ -495,41 +495,50 @@ type SavedPlan =
   | Extract<PlanSaveResult, { saved: true }>
   | { saved: false; current: Omit<Extract<PlanSaveResult, { saved: false }>["current"], "skill"> }
 
+/** Why a plan can't be written, as `PLAN_UNWRITABLE` carries it. */
+const unwritable = (reason: PlanUnwritable["reason"], message: string) =>
+  new DomainError("PLAN_UNWRITABLE", message, { reason })
+
+/** The error code of a failed file operation, such as `EACCES`. */
+const errnoOf = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined
+
 /**
  * Writes the person's edit to a plan kept in a file, unless the file is no longer as it
  * was at stamp `basedOn`: then nothing is written and `current` is what it holds now. The
  * text goes to a temporary file beside the plan, which replaces it at once, so a reader
- * sees the old plan or the new, never a part. Only the plan's own regular file is written:
- * a plan in an agent's transcript, a file that is gone, past what is shown whole, or no
- * longer a plain file is refused. The rewritten file keeps its permissions.
+ * sees the old plan or the new, never a part. Only the plan's own regular file is written.
+ * What can never succeed is refused as PLAN_UNWRITABLE, saying why: a plan in an agent's
+ * transcript, a file that is gone or no longer a plain file, a text or file past 256 KiB,
+ * a folder the runner may not write to, an item that is no plan. Any other failure, such as
+ * a full disk, is not classified: it may pass, so it is raised as it is. The rewritten file
+ * keeps its permissions, and no temporary file is left behind.
  */
 export const savePlan = async (
   item: Pick<ItemRecord, "path" | "plan">,
   text: string,
   basedOn: string,
 ): Promise<SavedPlan> => {
-  if (item.plan === null || item.path === null)
-    throw new DomainError("INVALID_FILE", "That isn't a plan.")
+  if (item.plan === null || item.path === null) throw unwritable("not-a-plan", "That isn't a plan.")
   if (item.plan.format !== "file")
-    throw new DomainError(
-      "INVALID_FILE",
-      "This plan lives in the agent's messages; it can't be edited.",
-    )
-  if (Buffer.byteLength(text) > maxPlanBytes)
-    throw new DomainError("INVALID_FILE", "That plan is too long to save.")
+    throw unwritable("transcript", "This plan lives in the agent's messages; it can't be edited.")
+  if (text.length > maxPlanBytes || Buffer.byteLength(text) > maxPlanBytes)
+    throw unwritable("too-large", "That plan is too long to save.")
   // The file a link points at is the plan; the link is left in place.
   const path = await realpath(item.path).catch(() => undefined)
   const before = path === undefined ? undefined : await readPlanFile(path)
   if (path === undefined || before === undefined)
-    throw new DomainError("INVALID_FILE", "The plan's file is gone.")
+    throw unwritable("gone", "The plan's file is gone.")
   if (before.truncated)
-    throw new DomainError("INVALID_FILE", "That plan is too long to edit; saving would cut it.")
+    throw unwritable("too-large", "That plan is too long to edit; saving would cut it.")
   if (before.stamp !== basedOn) {
     const { text: now, truncated, stamp } = before
     return { saved: false, current: { stamp, text: now, truncated } }
   }
-  const stats = await lstat(path)
-  if (!stats.isFile()) throw new DomainError("INVALID_FILE", "The plan's file is gone.")
+  const stats = await lstat(path).catch(() => undefined)
+  if (!stats?.isFile()) throw unwritable("gone", "The plan's file is gone.")
   const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${Date.now()}.tmp`)
   const mode = stats.mode & 0o777
   try {
@@ -550,7 +559,7 @@ export const savePlan = async (
     }
     // The agent may have rewritten the plan since it was read: its version stands.
     const now = await readPlanFile(path)
-    if (!now) throw new Error("The plan's file is gone.")
+    if (!now) throw unwritable("gone", "The plan's file is gone.")
     if (now.stamp !== before.stamp) {
       await unlink(temporary).catch(() => {})
       const { text: current, truncated, stamp } = now
@@ -561,10 +570,13 @@ export const savePlan = async (
     return { saved: true, stamp: stampOf(written) }
   } catch (error) {
     await unlink(temporary).catch(() => {})
-    throw new DomainError(
-      "INVALID_FILE",
-      `The plan couldn't be saved: ${error instanceof Error ? error.message : String(error)}`,
-    )
+    if (error instanceof DomainError) throw error
+    const code = errnoOf(error)
+    // The folder or file refuses the runner, or its folder is gone: saving again won't help.
+    if (code === "EACCES" || code === "EPERM" || code === "EROFS")
+      throw unwritable("folder", "The plan's folder can't be written to.")
+    if (code === "ENOENT") throw unwritable("gone", "The plan's file is gone.")
+    throw error
   }
 }
 
