@@ -243,6 +243,9 @@ export const shellInForeground = async (shellPid: number): Promise<boolean | und
 export type Foreground = {
   readonly process: ForegroundProcess | null
   readonly group: number | null
+  // node-pty's own name, kept when another stands in for it (macOS), so the next sample
+  // can tell nothing changed without asking ps again.
+  readonly reported?: string
 }
 
 // macOS names a process from the file it ran, symlinks resolved, so a program installed as
@@ -293,8 +296,12 @@ export const sampleForeground = (
   }
   if (!name) return { process: null, group: null }
   if (process.platform === "darwin" && versionName.test(name)) {
+    // Two ps runs block the loop, so only once per program, not each sample.
+    if (last?.reported === name) return last
     const invoked = invokedName(child.pid)
-    if (invoked) return { process: { name: invoked.name, argv: null }, group: invoked.group }
+    return invoked
+      ? { process: { name: invoked.name, argv: null }, group: invoked.group, reported: name }
+      : { process: { name, argv: null }, group: null, reported: name }
   }
   if (process.platform !== "linux") return { process: { name, argv: null }, group: null }
   try {

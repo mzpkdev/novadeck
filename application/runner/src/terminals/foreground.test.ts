@@ -85,7 +85,10 @@ describe("macOS foreground naming", () => {
       try {
         // The name is the program's only once the spawned process has run exec.
         await vi.waitFor(() => expect(child.process).toBe("2.1.300"))
-        expect(sampleForeground(child, undefined).process?.name).toBe("claude")
+        const first = sampleForeground(child, undefined)
+        expect(first.process?.name).toBe("claude")
+        // ps runs once per program, not again each sample while it holds the foreground.
+        expect(sampleForeground(child, first)).toBe(first)
       } finally {
         child.kill()
         rmSync(dir, { recursive: true, force: true })
