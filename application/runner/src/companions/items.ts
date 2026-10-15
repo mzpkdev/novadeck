@@ -160,6 +160,9 @@ const keyOf = (content: ItemContent): string =>
  * plans mirror each agent session's latest plans on the bar of the terminal they run in,
  * or where the person moved them. Content is read from disk as it loads.
  */
+/** How recent a plan's own timestamp must be for it to count as written live. */
+const LIVE_PLAN_MS = 60_000
+
 export class CompanionItems {
   private readonly records: ItemRecords
   private readonly pollMs: number
@@ -577,6 +580,9 @@ export class CompanionItems {
       ),
       held: false,
     }
+    // Only a plan written just now opens on its own; one read back from an older record
+    // (a restart, a resumed session) is kept quietly.
+    const live = Date.now() - at <= LIVE_PLAN_MS
     const own = this.shown(place, key)
     if (own) {
       // An older observation, as a replay, changes nothing it already has.
@@ -588,6 +594,7 @@ export class CompanionItems {
         ...own,
         ...pointer,
         version: own.version + 1,
+        asked: live,
         shownAt: Date.now(),
         observedAt: at,
       })
@@ -606,7 +613,7 @@ export class CompanionItems {
       by: "agent",
       from: { terminalId: place.terminalId, handle: place.handle },
       version: 1,
-      asked: false,
+      asked: live,
       shownAt: Date.now(),
       observedAt: at,
     })

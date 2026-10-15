@@ -697,6 +697,34 @@ describe("plans beside their terminal", () => {
     )
   })
 
+  it("open only plans observed live, never replays of older ones", async ({ fixture }) => {
+    const path = join(fixture.directory, "live.md")
+    writeFileSync(path, "# Live\n")
+    const moth = fixture.terminal("moth")
+    const plan = { source: { kind: "file", path } as const, path }
+    const now = Date.now()
+    // Read back long after it was written, as on a restart: kept, not asked.
+    await fixture.items.planObserved(moth, slot, plan, now - 3_600_000)
+    expect(fixture.items.bar(moth.terminalId)).toMatchObject([{ version: 1, asked: false }])
+    // Rewritten live: the new version asks to open.
+    await fixture.items.planObserved(moth, slot, plan, now)
+    expect(fixture.items.bar(moth.terminalId)).toMatchObject([{ version: 2, asked: true }])
+    // A replay of that same observation changes nothing.
+    await fixture.items.planObserved(moth, slot, plan, now)
+    expect(fixture.items.bar(moth.terminalId)).toMatchObject([{ version: 2, asked: true }])
+    // A first-seen live plan asks to open as well.
+    const other = join(fixture.directory, "other.md")
+    writeFileSync(other, "# Other\n")
+    const fox = fixture.terminal("fox")
+    await fixture.items.planObserved(
+      fox,
+      slot,
+      { source: { kind: "file", path: other }, path: other },
+      Date.now(),
+    )
+    expect(fixture.items.bar(fox.terminalId)).toMatchObject([{ version: 1, asked: true }])
+  })
+
   it("update a plan where the person moved it", async ({ fixture }) => {
     const path = join(fixture.directory, "p.md")
     writeFileSync(path, "# P\n")
