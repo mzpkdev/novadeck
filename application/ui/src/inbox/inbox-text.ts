@@ -247,9 +247,12 @@ export const splitDetail = (
   return { folder: null, command: detail.replace(/^\$\s+/, "") }
 }
 
-// The agent's words for a limit's window; "usage" where its length is unknown (0).
+// The agent's words for a limit's window: "usage" where its length is unknown (0), and
+// "weekly" and "daily" for the windows of those lengths.
 export const limitWindow = (minutes: number): string => {
   if (minutes <= 0) return "usage"
+  if (minutes === 10_080) return "weekly"
+  if (minutes === 1440) return "daily"
   return minutes % 60 === 0 ? `${minutes / 60}-hour` : `${minutes}-minute`
 }
 

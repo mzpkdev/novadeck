@@ -42,6 +42,8 @@ export const dialogMs = 3000
 export const detailGraceMs = 5000
 export const retryMs = 1000
 const retryCapMs = 10_000
+// How long an answer to trouble may leave its item standing before it can be answered again.
+export const settleMs = 5000
 
 // A request, with when its hook started on the runner's clock.
 export type Asked = { readonly request: ChatRequest; readonly askedAt: number }
@@ -438,12 +440,20 @@ export const createRunnerInbox = (
       ?.history.find((session) => session.id === source.workspaceSessionId)
       ?.state.roster.terminals.find((terminal) => terminal.id === source.terminalId)
 
-  const call = (id: string, work: () => Promise<unknown>): void => {
+  // Runs an answer. With `settles`, an answer that took but left its item standing (a
+  // prompt that started no turn) gives the buttons back after a few seconds.
+  const call = (id: string, work: () => Promise<unknown>, settles = false): void => {
     failed.delete(id)
     submitted.add(id)
     recompute()
     track(work()).then(
-      () => {},
+      () => {
+        if (!settles) return
+        setTimeout(() => {
+          if (!submitted.delete(id)) return
+          recompute()
+        }, settleMs)
+      },
       (error: unknown) => fail(id, reason(error)),
     )
   }
@@ -477,14 +487,18 @@ export const createRunnerInbox = (
     }
     if (item.kind === "trouble" && given.kind === "trouble") {
       const { action } = given
-      if (action.type === "continue") return call(id, () => streams.send(key, "continue"))
-      if (action.type === "stop") return call(id, () => streams.interrupt(key))
+      if (action.type === "continue") return call(id, () => streams.send(key, "continue"), true)
+      if (action.type === "stop") return call(id, () => streams.interrupt(key), true)
       if (action.type === "nudge") {
         const terminal = terminalOf(item.source)
-        return call(id, async () => {
-          if (terminal && agentWorking(terminal)) await streams.interrupt(key)
-          await streams.send(key, action.text)
-        })
+        return call(
+          id,
+          async () => {
+            if (terminal && agentWorking(terminal)) await streams.interrupt(key)
+            await streams.send(key, action.text)
+          },
+          true,
+        )
       }
       // Novadeck resumes no agent in this backend: nothing to turn on or off.
     }

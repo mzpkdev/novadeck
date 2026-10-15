@@ -365,5 +365,7 @@ describe("A limit's window", () => {
     expect(limitWindow(300)).toBe("5-hour")
     expect(limitWindow(45)).toBe("45-minute")
     expect(limitWindow(0)).toBe("usage")
+    expect(limitWindow(10_080)).toBe("weekly")
+    expect(limitWindow(1440)).toBe("daily")
   })
 })

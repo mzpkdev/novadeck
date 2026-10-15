@@ -14,6 +14,7 @@ import {
   dialogMs,
   inboxItems,
   retryMs,
+  settleMs,
   type Asked,
   type InboxStreams,
 } from "./inbox"
@@ -965,6 +966,18 @@ describe("The runner's Inbox", () => {
 
       expect(streams.interrupt).not.toHaveBeenCalled()
       expect(streams.send).toHaveBeenCalledWith(key, "Fix it.")
+    })
+
+    it("gives the buttons back when a continue started no turn", async () => {
+      const { inbox } = setup(limitHit())
+      inbox.answer("limit:01:100", { kind: "trouble", action: { type: "continue" } })
+      await settle()
+      expect(inbox.state.getSnapshot().answering).toEqual({ "limit:01:100": true })
+
+      await vi.advanceTimersByTimeAsync(settleMs)
+
+      expect(inbox.state.getSnapshot().answering).toEqual({})
+      expect(inbox.state.getSnapshot().items.map((item) => item.id)).toEqual(["limit:01:100"])
     })
 
     it("stops an agent by interrupting it", () => {
