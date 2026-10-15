@@ -1,6 +1,7 @@
 import type { ChatAnswer, ChatRequest } from "./conversation"
 import type { AgentName } from "./harnesses"
 import type { Store } from "./store"
+import type { Workspace } from "./types"
 
 // The Inbox: everything across the workspace that an agent, or Novadeck about an agent,
 // puts in front of the person, one item per terminal. The person reads and answers it
@@ -184,8 +185,25 @@ export type InboxState = {
 
 export const emptyInbox: InboxState = { items: [], answering: {}, failed: {} }
 
+// A finish the person has read: the terminal, and the session context
+// (`${projectId}/${workspaceSessionId}`) that holds it.
+export type InboxFinish = { readonly context: string; readonly terminalId: string }
+
+// Where a backend that builds its Inbox from the app's own state gets it: the workspace,
+// the terminals whose agent finished while the person looked elsewhere (by session context,
+// then terminal id, as `Unread` has them), and a way to read finishes.
+export type InboxUnread = Readonly<Record<string, Readonly<Record<string, "done" | "failed">>>>
+export type InboxBinding = {
+  readonly workspace: Store<Workspace>
+  readonly unread: Store<InboxUnread>
+  readonly read: (finishes: readonly InboxFinish[]) => void
+}
+
 export type Inbox = {
   readonly state: Store<InboxState>
+  // Optional. Hands the Inbox the app's state to build its items from, until the returned
+  // function stops it. Absent where the backend has all it needs of its own.
+  readonly bind?: (binding: InboxBinding) => () => void
   // Answers an item. The backend removes it once the answer took, or says why it didn't.
   readonly answer: (id: string, answer: InboxAnswer) => void
   // Marks an item opened.
