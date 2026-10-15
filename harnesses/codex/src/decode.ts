@@ -174,8 +174,8 @@ const asked = (
   input,
 })
 
-// The lines of a patch that name the files it adds, changes or moves to.
-const patchFile = /^\*\*\* (?:Add File|Update File|Move to): (.+)$/gm
+// The lines of a patch that name the files it adds, changes, deletes or moves to.
+const patchFile = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm
 
 // Whether a patch's PostToolUse response does not say it failed. Codex answers a patch it
 // applied "Success. Updated the following files: ..." (seen from the shell's, 0.159.3); a
@@ -189,7 +189,7 @@ const applied = (response: unknown): boolean =>
  * The files a tool call's patch wrote, as Codex's apply_patch names them in its input,
  * from the session's directory; none for any other call.
  */
-const patched = (input: unknown, cwd: string | undefined): readonly string[] => {
+export const patched = (input: unknown, cwd: string | undefined): readonly string[] => {
   if (typeof input !== "object" || input === null) return []
   const texts = Object.values(input).filter((value): value is string => typeof value === "string")
   const paths = texts.flatMap((each) =>
@@ -199,3 +199,10 @@ const patched = (input: unknown, cwd: string | undefined): readonly string[] => 
     isAbsolute(path) ? [path] : cwd !== undefined ? [resolve(cwd, path)] : [],
   )
 }
+
+/** The files a permission request for a Codex patch asks to write, from its directory. */
+export const patchRequested = (
+  tool: string,
+  input: unknown,
+  cwd: string | undefined,
+): readonly string[] => (tool === "apply_patch" ? patched(input, cwd) : [])

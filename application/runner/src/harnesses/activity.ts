@@ -1,5 +1,6 @@
-import { isAbsolute, relative } from "node:path"
+import { resolve } from "node:path"
 
+import { patchRequested } from "@novadeck/harness-codex/decode"
 import type { ActivityEvent, Background, PlanSource } from "@novadeck/harness-core/events"
 import { ref } from "@novadeck/harness-core/harness"
 import type { AgentActivity } from "@novadeck/protocol"
@@ -29,25 +30,22 @@ export type Request = {
   readonly headline?: string
 }
 
-/**
- * Whether a permission request's tool input names `path`, as an absolute path or, from the
- * directory it asked in, a relative one: the request to write that file.
- */
-const quoted = (each: string): string => JSON.stringify(each).slice(1, -1)
-
-const namesFile = (request: Request, path: string): boolean => {
-  if (request.kind !== "permission" || request.input === undefined) return false
-  const text = JSON.stringify(request.input)
-  if (text.includes(quoted(path))) return true
-  if (request.cwd === undefined) return false
-  const inside = relative(request.cwd, path)
-  return (
-    inside !== "" &&
-    !inside.startsWith("..") &&
-    !isAbsolute(inside) &&
-    text.includes(quoted(inside))
-  )
+// A path as a comparison reads it: separators alike, and case folded where it is a Windows
+// drive's.
+const comparable = (path: string): string => {
+  const slashed = path.replace(/\\/g, "/")
+  return /^[A-Za-z]:\//.test(slashed) ? slashed.toLowerCase() : slashed
 }
+
+/**
+ * Whether a permission request is Codex's to apply a patch that writes `path`: the files
+ * its patch names, each from the directory it asked in, whole paths compared.
+ */
+const asksToWrite = (request: Request, path: string): boolean =>
+  request.kind === "permission" &&
+  patchRequested(request.toolName, request.input, request.cwd).some(
+    (file) => comparable(resolve(file)) === comparable(path),
+  )
 
 /** An actor's latest plan, as the hook that named it started. */
 type Plan = { readonly actor: string | null; readonly source: PlanSource; readonly at: number }
@@ -574,13 +572,23 @@ export const apply = (
       }
       // Older than the running turn's start, it is some other turn's.
       if (activity.state !== "working" || event.startedAt < activity.turnAt) return undefined
-      // A write that landed settles the permission asked for it, even where its harness
-      // says so nowhere else: Codex fires no PostToolUse for a patch it ran through its
-      // shell, and its rollout names the file (probed 2026-10-15, 0.159.3). Left pending,
-      // that request would sit ahead of the next, the one on screen.
-      const asked = activity.pending.findIndex(
-        (each) => each.actor === event.actor && namesFile(each, event.path),
-      )
+      // A write that landed settles the permission asked for it where no hook does:
+      // Codex fires no PostToolUse for a patch it ran through its shell, and its rollout
+      // names the file (probed 2026-10-15, 0.159.3). Left pending, that request would sit
+      // ahead of the next, the one on screen. Only a request already asked qualifies, the
+      // latest of them: the write follows the approval just before it.
+      const asked = event.settles
+        ? activity.pending.reduce(
+            (found, each, index) =>
+              each.actor === event.actor &&
+              each.askedAt <= event.startedAt &&
+              asksToWrite(each, event.path) &&
+              (found < 0 || each.askedAt >= activity.pending[found]!.askedAt)
+                ? index
+                : found,
+            -1,
+          )
+        : -1
       const pending = asked < 0 ? activity.pending : activity.pending.toSpliced(asked, 1)
       const files = withFile(activity.files, event.path)
       return files || asked >= 0

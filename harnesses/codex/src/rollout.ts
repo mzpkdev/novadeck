@@ -150,7 +150,17 @@ export const rolloutEvents = (
         return status === "completed" && typeof changes === "object" && changes !== null
           ? Object.keys(changes).flatMap((file) => {
               const path = absolute(file)
-              return path ? [{ type: "file-touched" as const, ...base, actor: null, path }] : []
+              return path
+                ? [
+                    {
+                      type: "file-touched" as const,
+                      ...base,
+                      actor: null,
+                      path,
+                      settles: true as const,
+                    },
+                  ]
+                : []
             })
           : []
       if (kind !== "Plan" || typeof text !== "string" || !text) return []

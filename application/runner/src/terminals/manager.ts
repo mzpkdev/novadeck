@@ -1753,6 +1753,7 @@ export class Terminals {
               ref: requestRef(binding, each),
               actor: each.actor,
               facts: this.factsOf(record, each),
+              askedAt: each.askedAt,
             })),
         }
       },

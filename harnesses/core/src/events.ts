@@ -184,7 +184,16 @@ export type ActivityEvent = {
        */
       readonly reply?: string
     }
-  | { readonly type: "file-touched"; readonly actor: string | null; readonly path: string }
+  | {
+      readonly type: "file-touched"
+      readonly actor: string | null
+      readonly path: string
+      /**
+       * Told by the harness's records alone, with no hook to settle the request that asked
+       * for the write (Codex's rollout for a patch its shell ran): it settles that request.
+       */
+      readonly settles?: true
+    }
   | {
       readonly type: "attention-requested"
       readonly requestId: string

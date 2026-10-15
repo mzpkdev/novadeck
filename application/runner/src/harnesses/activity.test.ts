@@ -1714,8 +1714,16 @@ describe("what a turn wrote and how it failed", () => {
     expect(summary(stop(activity, 5)).lastTurn?.files).toEqual(["/w/a.ts", "/w/b.ts"])
   })
 
-  it("settles the permission asked to write a file once the file is written", () => {
-    const asked = (activity: Activity, requestId: string, path: string) =>
+  describe("a patch's permission, settled by the rollout's word on the file", () => {
+    const patch = (...files: string[]) =>
+      `*** Begin Patch\n${files.map((file) => `*** Add File: ${file}\n+x`).join("\n")}\n*** End Patch`
+    const asked = (
+      activity: Activity,
+      requestId: string,
+      input: unknown,
+      startedAt: number,
+      extra: object = {},
+    ) =>
       on(activity, {
         type: "attention-requested",
         requestId,
@@ -1724,19 +1732,112 @@ describe("what a turn wrote and how it failed", () => {
         kind: "permission",
         subject: null,
         choices: [],
-        input: { command: `*** Begin Patch\n*** Add File: ${path}\n+x\n*** End Patch` },
-        startedAt: 2,
+        input,
+        cwd: "/w",
+        startedAt,
+        ...extra,
       })
-    let activity = turn(started(0), 1)
-    activity = asked(asked(activity, "a", "/w/a.ts"), "b", "/w/b.ts")
-    expect(summary(activity).attention.pending).toBe(2)
-    // Its rollout names the first patch's file; no hook settled it.
-    activity = wrote(activity, "/w/a.ts", 3)
-    expect(summary(activity).attention.pending).toBe(1)
-    expect(activity.pending.map(({ requestId }) => requestId)).toEqual(["b"])
-    // A file nobody asked about settles nothing, and the file is still named.
-    activity = wrote(activity, "/w/c.ts", 4)
-    expect(activity.pending.map(({ requestId }) => requestId)).toEqual(["b"])
+    const patching = (...files: string[]) => ({ command: patch(...files) })
+    const settled = (activity: Activity, path: string, startedAt: number, settles = true) =>
+      on(activity, {
+        type: "file-touched",
+        actor: null,
+        path,
+        startedAt,
+        ...(settles && { settles }),
+      })
+    const waiting = (activity: Activity) => activity.pending.map(({ requestId }) => requestId)
+
+    it("settles the request that asked for the file, and only that one", () => {
+      let activity = turn(started(0), 1)
+      activity = asked(asked(activity, "a", patching("a.ts"), 2), "b", patching("/w/b.ts"), 3)
+      activity = settled(activity, "/w/a.ts", 4)
+      expect(waiting(activity)).toEqual(["b"])
+      // A file nobody asked about settles nothing, and is still named.
+      activity = settled(activity, "/w/c.ts", 5)
+      expect(waiting(activity)).toEqual(["b"])
+      expect(activity.files).toEqual(["/w/a.ts", "/w/c.ts"])
+    })
+
+    it("compares whole paths, never a part of one", () => {
+      let activity = turn(started(0), 1)
+      activity = asked(activity, "a", patching("a.ts"), 2)
+      for (const path of ["/w/data.ts", "/w/a.tsx", "/w/x/a.ts", "/w/..a.ts"])
+        activity = settled(activity, path, 3)
+      expect(waiting(activity)).toEqual(["a"])
+      // A directory named `..foo` is a directory, not a way out of one.
+      const dotted = asked(turn(started(0), 1), "d", patching("..foo/a.ts"), 2)
+      expect(waiting(settled(dotted, "/w/..foo/a.ts", 3))).toEqual([])
+      expect(waiting(settled(dotted, "/foo/a.ts", 3))).toEqual(["d"])
+    })
+
+    it("settles no command's permission, whatever its text holds", () => {
+      const activity = asked(turn(started(0), 1), "c", { command: "cat /w/a.ts" }, 2, {
+        toolName: "Bash",
+      })
+      expect(waiting(settled(activity, "/w/a.ts", 3))).toEqual(["c"])
+    })
+
+    it("settles on a rollout's word alone, never on a hook's", () => {
+      const activity = asked(turn(started(0), 1), "a", patching("a.ts"), 2)
+      expect(
+        apply(
+          activity,
+          binding,
+          fact({ type: "file-touched", actor: null, path: "/w/a.ts", startedAt: 3 } as Fields),
+        )?.pending,
+      ).toEqual(activity.pending)
+    })
+
+    it("settles no request asked after the write", () => {
+      let activity = turn(started(0), 1)
+      activity = asked(activity, "late", patching("a.ts"), 9)
+      expect(waiting(settled(activity, "/w/a.ts", 4))).toEqual(["late"])
+    })
+
+    it("takes every file of a patch, and the latest of two asking for the same one", () => {
+      let activity = turn(started(0), 1)
+      activity = asked(activity, "old", patching("a.ts"), 2)
+      activity = asked(activity, "multi", patching("m.ts", "a.ts"), 3)
+      activity = settled(activity, "/w/a.ts", 4)
+      expect(waiting(activity)).toEqual(["old"])
+      const several = settled(
+        asked(turn(started(0), 1), "m", patching("m.ts", "n.ts"), 2),
+        "/w/n.ts",
+        3,
+      )
+      expect(waiting(several)).toEqual([])
+    })
+
+    it("compares a Windows path across separators and case", () => {
+      const input = { command: patch("C:\\Work\\a.ts") }
+      const activity = asked(turn(started(0), 1), "w", input, 2, { cwd: "C:\\Work" })
+      expect(waiting(settled(activity, "c:/work/A.ts", 3))).toEqual(
+        process.platform === "win32" ? [] : ["w"],
+      )
+    })
+
+    it("leaves a Claude write's PostToolUse to settle only its own request", () => {
+      let activity = turn(started(0), 1)
+      for (const [id, startedAt] of [
+        ["a", 2],
+        ["b", 3],
+      ] as const)
+        activity = asked(activity, id, { file_path: `/w/${id}.ts` }, startedAt, {
+          toolName: "Write",
+        })
+      activity = on(activity, {
+        type: "attention-resolved",
+        requestId: "a",
+        actor: null,
+        toolName: "Write",
+        loose: false,
+        outcome: "allowed",
+        startedAt: 4,
+      })
+      activity = settled(activity, "/w/a.ts", 5, false)
+      expect(waiting(activity)).toEqual(["b"])
+    })
   })
 
   it("keeps at most 16 files and ignores a path too long to show", () => {
