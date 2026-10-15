@@ -869,8 +869,8 @@ forgets it, including one from an earlier runner.
   `unknown` until the next prompt, see `agent-messaging.md`, and the agent's `lastTurn`
   reads `interrupted`; `lastTurn` also tells a failed turn's `error` as its harness said it,
   the usage-limit window the turn ran into as `limit` (`minutes`, `resetsAt`; kept for that
-  end once its harness said the turn failed on a limit, or, for a failed or unknown turn,
-  its records within a minute of its end showed a window used up with a reset to come), and the absolute paths its write and edit tools wrote as
+  end only when its harness said the turn failed on a limit; its records within a minute of
+  the end only tell when it resets, the window used up that resets last, else the most used), and the absolute paths its write and edit tools wrote as
   `files`, at most 16, first written first, each once, root and subagents, those told after
   the turn's Stop included). The harness has the last word: one that had the model's reply
   before it took the key finishes the turn all the same, and the turn's `lastTurn` then

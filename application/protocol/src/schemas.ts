@@ -127,7 +127,7 @@ export const agentActivity = z.strictObject({
       // A failed turn's error as its harness said it; null otherwise or where it gave none.
       error: z.string().min(1).max(2048).nullable(),
       // The usage-limit window this end ran into: its harness said the turn failed on a
-      // limit, or its records showed a window used up (used >= 1) as it ended or since.
+      // limit; its records, within a minute of the end, only tell when it resets.
       // Kept for this end once set. Null where none, or no reset time is known.
       limit: z
         .strictObject({

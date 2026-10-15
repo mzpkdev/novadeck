@@ -2070,21 +2070,28 @@ describe("a usage limit a turn ran into", () => {
       limit: { minutes: 300, resetsAt: 900_000 },
     })
 
-    // It is used up only after the turn ended, and stays latched when the records move on.
+    // Without its harness's word, a window used up is no limit the turn ran into, as when
+    // another model's bucket fills beside it.
     record.activity = fresh(0)
     usage(0.5, 25)
     tell({ type: "turn-started", cause: "prompt", startedAt: 30 })
     tell({ type: "turn-ended", outcome: "failed", startedAt: 40 })
-    expect(lastTurn()?.limit).toBeUndefined()
     usage(1, 50)
+    expect(lastTurn()?.limit).toBeUndefined()
+
+    // With it, the window latches and stays latched when the records move on.
+    record.activity = fresh(0)
+    usage(1, 55)
+    tell({ type: "turn-started", cause: "prompt", startedAt: 60 })
+    tell({ type: "turn-ended", outcome: "failed", startedAt: 65, limited: true })
     expect(lastTurn()?.limit).toEqual({ minutes: 300, resetsAt: 900_000 })
-    usage(0.1, 60)
+    usage(0.1, 70)
     expect(lastTurn()?.limit).toEqual({ minutes: 300, resetsAt: 900_000 })
-    tell({ type: "turn-started", cause: "prompt", startedAt: 70 })
+    tell({ type: "turn-started", cause: "prompt", startedAt: 75 })
     expect(lastTurn()).toBeNull()
 
     // A window that fills long after a turn is the person's, not the turn's.
-    tell({ type: "turn-ended", outcome: "completed", startedAt: 80 })
+    tell({ type: "turn-ended", outcome: "failed", startedAt: 80 })
     usage(1, 80 + limitGraceMs + 1)
     expect(lastTurn()?.limit).toBeUndefined()
   })
