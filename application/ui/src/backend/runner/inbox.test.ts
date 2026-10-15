@@ -130,18 +130,18 @@ describe("The Inbox's items", () => {
       agentTerminal(1, { working: true, attention: { kind: "permission", count: 1 } }),
     )
 
-    it("comes from the oldest request with a dialog, waiting since it was asked", () => {
+    it("comes from the oldest request, waiting since it was asked", () => {
       const items = inboxItems(
         inputs(waiting, {
-          requests: { "01": [asked("r1", 4000, null), asked("r2", 5000), asked("r3", 6000)] },
+          requests: { "01": [asked("r1", 4000), asked("r2", 5000), asked("r3", 6000)] },
           now: 5500,
         }),
       )
 
       expect(items).toHaveLength(1)
       expect(items[0]).toMatchObject({
-        id: "request:r2",
-        at: 5000,
+        id: "request:r1",
+        at: 4000,
         stopped: true,
         seen: false,
         kind: "request",
@@ -155,6 +155,32 @@ describe("The Inbox's items", () => {
           projectName: "App",
         },
       })
+    })
+
+    it("does not fall forward to a newer request while the oldest has no dialog yet", () => {
+      const requests = { "01": [asked("r1", 4000, null), asked("r2", 4500)] }
+
+      expect(inboxItems(inputs(waiting, { requests, now: 5000 }))).toEqual([])
+      expect(inboxItems(inputs(waiting, { requests, now: 4000 + dialogMs }))[0]).toMatchObject({
+        id: "request:r1",
+      })
+    })
+
+    it("takes the terminal over an unread failed turn from before", () => {
+      const both = workspaceOf(
+        agentTerminal(1, {
+          working: false,
+          attention: { kind: "permission", count: 1 },
+          lastTurn: turn({ outcome: "failed", error: "x" }),
+        }),
+      )
+      const items = inboxItems(
+        inputs(both, { unread: failed, requests: { "01": [asked("r1", 9000)] } }),
+      )
+      const pending = inboxItems(inputs(both, { unread: failed, requests: {} }))
+
+      expect(items.map((item) => item.id)).toEqual(["request:r1"])
+      expect(pending).toEqual([])
     })
 
     it("waits for a dialog a moment, then shows without one to be answered in the terminal", () => {
@@ -271,7 +297,7 @@ describe("The Inbox's items", () => {
       )
 
       expect(item).toMatchObject({
-        id: "trouble:01:100",
+        id: "limit:01:100",
         stopped: true,
         trouble: {
           type: "limit",
@@ -304,6 +330,29 @@ describe("The Inbox's items", () => {
       const next = workspaceOf(agentTerminal(1, { working: true }))
 
       expect(inboxItems(inputs(next))).toEqual([])
+    })
+  })
+
+  describe("a file the turn wrote", () => {
+    const wrote = (directory: string, file: string) =>
+      workspaceOf({
+        ...agentTerminal(1, { working: false, lastTurn: turn({ files: [file] }) }),
+        directory,
+      })
+    const withProject = (directory: string, file: string): string[] => {
+      const workspace = wrote(directory, file)
+      workspace.projects[0]!.directory = directory
+      const [item] = inboxItems(inputs(workspace, { unread: done }))
+      return item?.kind === "update" && item.update.type === "finished"
+        ? [...item.update.files]
+        : []
+    }
+
+    it("is relative to the project however its separators fall", () => {
+      expect(withProject("C:/work/app", "C:\\work\\app\\src\\a.ts")).toEqual(["src\\a.ts"])
+      expect(withProject("C:\\work\\app\\", "C:/work/app/src/a.ts")).toEqual(["src/a.ts"])
+      expect(withProject("c:/work/app", "C:/Work/App/a.ts")).toEqual(["a.ts"])
+      expect(withProject("/work/app", "/work/App/a.ts")).toEqual(["/work/App/a.ts"])
     })
   })
 
@@ -395,7 +444,7 @@ describe("The Inbox's items", () => {
       expect(items.map((item) => item.id)).toEqual(["request:r1"])
     })
 
-    it("shows trouble over a held message", () => {
+    it("keeps a held thread beside the terminal's other item", () => {
       const pair = workspaceOf(
         agentTerminal(1, {
           working: false,
@@ -405,10 +454,10 @@ describe("The Inbox's items", () => {
       )
       const items = inboxItems(inputs(pair, { unread: failed, mail: mailOf(thread()) }))
 
-      expect(items.map((item) => item.id)).toEqual(["trouble:01:100"])
+      expect(items.map((item) => item.id)).toEqual(["trouble:01:100", "held:th1"])
     })
 
-    it("shows the one waiting longest among the equally urgent", () => {
+    it("shows every held thread, the longest waiting first", () => {
       const both = workspaceOf(
         agentTerminal(1, { working: false }),
         agentTerminal(2, { working: false }, "codex"),
@@ -427,7 +476,10 @@ describe("The Inbox's items", () => {
         },
       }
 
-      expect(inboxItems(inputs(both, { mail })).map((item) => item.id)).toEqual(["held:older"])
+      expect(inboxItems(inputs(both, { mail })).map((item) => item.id)).toEqual([
+        "held:older",
+        "held:newer",
+      ])
     })
   })
 
@@ -540,8 +592,8 @@ const setup = (workspace: Workspace, unread: InboxUnread = {}, mail: MailState =
     answer: vi.fn<InboxStreams["answer"]>(async () => {}),
     send: vi.fn<InboxStreams["send"]>(async () => {}),
     interrupt: vi.fn<InboxStreams["interrupt"]>(async () => null),
-    release: vi.fn<InboxStreams["release"]>(async () => {}),
-    stop: vi.fn<InboxStreams["stop"]>(async () => {}),
+    release: vi.fn<InboxStreams["release"]>(),
+    stop: vi.fn<InboxStreams["stop"]>(),
   }
   const workspaceStore = createStore(workspace)
   const unreadStore = createStore(unread)
@@ -559,6 +611,14 @@ const setup = (workspace: Workspace, unread: InboxUnread = {}, mail: MailState =
       return next
     }),
   )
+  // The messages track a release or a stop in the mail state, as the runner backend's do.
+  const releasing = (id: string) =>
+    mailStore.update((current) => ({
+      ...current,
+      releasing: { ...current.releasing, [id]: "asked" },
+    }))
+  streams.release.mockImplementation(releasing)
+  streams.stop.mockImplementation(releasing)
   const inbox = createRunnerInbox(streams, mailStore)
   const binding: InboxBinding = { workspace: workspaceStore, unread: unreadStore, read }
   const stop = inbox.bind(binding)
@@ -594,8 +654,7 @@ describe("The runner's Inbox", () => {
       expect(ids()).toEqual(["update:01:100"])
 
       mailStore.update(() => mailOf(thread()))
-      // The held message takes the terminal over the finished turn.
-      expect(ids()).toEqual(["held:th1"])
+      expect(ids()).toEqual(["held:th1", "update:01:100"])
       mailStore.update(() => mailOf(thread({ held: false })))
       expect(ids()).toEqual(["update:01:100"])
     })
@@ -683,6 +742,16 @@ describe("The runner's Inbox", () => {
       await settle()
       await vi.advanceTimersByTimeAsync(retryMs)
       expect(streams.detail).toHaveBeenCalledTimes(3)
+    })
+
+    it("opens nothing once the backend has stopped", async () => {
+      const { inbox, streams, workspaceStore, details } = setup(waiting())
+      inbox.end()
+      workspaceStore.update(() => workspaceOf(agentTerminal(1), agentTerminal(2, attention)))
+      await vi.advanceTimersByTimeAsync(detailGraceMs)
+
+      expect(streams.detail).toHaveBeenCalledTimes(1)
+      expect(details[0]!.returned).toHaveBeenCalled()
     })
 
     it("stops reading once unbound", async () => {
@@ -785,22 +854,27 @@ describe("The runner's Inbox", () => {
       expect(ids()).toEqual([])
       expect(inbox.state.getSnapshot().answering).toEqual({})
 
-      mailStore.update(() => mailOf(thread({ id: "th2" })))
+      mailStore.update(() => ({ ...mailOf(thread({ id: "th2" })), releasing: {} }))
       inbox.answer("held:th2", { kind: "held", action: "stop" })
       expect(streams.stop).toHaveBeenCalledWith("th2")
     })
 
-    it("fails a release the runner refused", async () => {
+    it("says why the messages couldn't release a thread, and answers as the pane's release does", () => {
       const pair = workspaceOf(
         agentTerminal(1, { working: false }),
         agentTerminal(2, { working: false }, "codex"),
       )
-      const { inbox, streams } = setup(pair, {}, mailOf(thread()))
-      streams.release.mockRejectedValueOnce(new Error("Couldn't release it."))
-      inbox.answer("held:th1", { kind: "held", action: "release" })
-      await settle()
+      const { inbox, mailStore } = setup(pair, {}, mailOf(thread()))
+      mailStore.update((current) => ({ ...current, releasing: { th1: "asked" } }))
+      expect(inbox.state.getSnapshot().answering).toEqual({ "held:th1": true })
 
-      expect(inbox.state.getSnapshot().failed).toEqual({ "held:th1": "Couldn't release it." })
+      mailStore.update((current) => ({
+        ...current,
+        releasing: {},
+        failed: { th1: "Couldn't release it: lost" },
+      }))
+      expect(inbox.state.getSnapshot().answering).toEqual({})
+      expect(inbox.state.getSnapshot().failed).toEqual({ "held:th1": "Couldn't release it: lost" })
     })
   })
 
@@ -858,7 +932,7 @@ describe("The runner's Inbox", () => {
 
     it("continues a limit with a plain prompt and no interrupt", () => {
       const { inbox, streams } = setup(limitHit())
-      inbox.answer("trouble:01:100", { kind: "trouble", action: { type: "continue" } })
+      inbox.answer("limit:01:100", { kind: "trouble", action: { type: "continue" } })
 
       expect(streams.send).toHaveBeenCalledWith(key, "continue")
       expect(streams.interrupt).not.toHaveBeenCalled()
@@ -867,13 +941,13 @@ describe("The runner's Inbox", () => {
     it("shows why a continue was refused and keeps the limit", async () => {
       const { inbox, streams, ids } = setup(limitHit())
       streams.send.mockRejectedValueOnce(new Error("There's a draft in its box."))
-      inbox.answer("trouble:01:100", { kind: "trouble", action: { type: "continue" } })
+      inbox.answer("limit:01:100", { kind: "trouble", action: { type: "continue" } })
       await settle()
 
       expect(inbox.state.getSnapshot().failed).toEqual({
-        "trouble:01:100": "There's a draft in its box.",
+        "limit:01:100": "There's a draft in its box.",
       })
-      expect(ids()).toEqual(["trouble:01:100"])
+      expect(ids()).toEqual(["limit:01:100"])
     })
 
     it("nudges an idle agent by sending only", async () => {
@@ -895,14 +969,14 @@ describe("The runner's Inbox", () => {
 
     it("stops an agent by interrupting it", () => {
       const { inbox, streams } = setup(limitHit())
-      inbox.answer("trouble:01:100", { kind: "trouble", action: { type: "stop" } })
+      inbox.answer("limit:01:100", { kind: "trouble", action: { type: "stop" } })
 
       expect(streams.interrupt).toHaveBeenCalledWith(key)
     })
 
     it("has no auto-resume to turn on or off", () => {
       const { inbox, streams } = setup(limitHit())
-      inbox.answer("trouble:01:100", {
+      inbox.answer("limit:01:100", {
         kind: "trouble",
         action: { type: "auto-resume", on: true },
       })

@@ -49,13 +49,6 @@ import {
 } from "./seed"
 import { createRunnerVoice } from "./voice"
 
-// Why a thread couldn't be released or stopped, for the person.
-const threadFailure = (error: unknown, what: string): never => {
-  throw new Error(
-    hasCode(error, "DISCONNECTED", "CLOSED") ? "The runner is offline." : `Couldn't ${what} it.`,
-  )
-}
-
 // The part of the runner client the adapter uses.
 export type RunnerApi = Pick<
   Runner,
@@ -988,6 +981,7 @@ export const runnerBackend = (
       watch: (terminalId) => runner.messages.watch(terminalId),
       pause: (paused) => runner.messages.pause(paused),
       release: (thread) => runner.messages.release(thread),
+      stop: (thread) => runner.messages.stop(thread),
     },
     track,
   )
@@ -1009,10 +1003,8 @@ export const runnerBackend = (
       answer: (key, request, answer) => conversations.answer(key, request, answer),
       send: (key, text) => conversations.send(key, text),
       interrupt: (key) => conversations.interrupt(key),
-      release: (thread) =>
-        runner.messages.release(thread).catch((error: unknown) => threadFailure(error, "release")),
-      stop: (thread) =>
-        runner.messages.stop(thread).catch((error: unknown) => threadFailure(error, "stop")),
+      release: messages.release,
+      stop: messages.stop,
     },
     messages.state,
     { track },
@@ -1294,7 +1286,7 @@ export const runnerBackend = (
       stopQuit?.()
       following = false
       stopItems()
-      messages.stop()
+      messages.end()
       conversations.stop()
       inbox.end()
       voice.stop()

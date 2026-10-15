@@ -26,6 +26,7 @@ import type {
   WorkspaceSession,
 } from "../../model/types"
 import { requestOf } from "./conversations"
+import { currentPlatform } from "./platform"
 
 // The runner's Inbox: what every agent terminal waits on the person for, one item per
 // terminal, built from what the UI already has: the terminals' statuses (a finished turn,
@@ -75,14 +76,17 @@ const sourceOf = ({ project, session, terminal }: Where, agent: AgentName): Inbo
   projectName: project.name,
 })
 
-// A path inside the project's directory, relative to it; any other as it is.
+const slashed = (path: string): string => path.replaceAll("\\", "/")
+
+// A path inside the project's directory, relative to it; any other as it is. Separators
+// match either way, and case does on Windows paths and on macOS.
 const relative = (directory: string, file: string): string => {
-  const base = directory.replace(/[\\/]+$/, "")
+  const base = slashed(directory).replace(/\/+$/, "")
   if (base === "") return file
-  const next = file.charAt(base.length)
-  return file.startsWith(base) && (next === "/" || next === "\\")
-    ? file.slice(base.length + 1)
-    : file
+  const folded = currentPlatform() === "mac" || /^[A-Za-z]:/.test(base)
+  const same = (path: string): string => (folded ? path.toLowerCase() : path)
+  const path = slashed(file)
+  return same(path).startsWith(`${same(base)}/`) ? file.slice(base.length + 1) : file
 }
 
 const heldOf = (
@@ -130,19 +134,24 @@ const candidates = ({ unread, requests, now }: InboxInputs, here: Where): readon
     found.push({ id, source, at, stopped, seen: false, ...content })
   }
 
+  // A request waiting on the person is the terminal's item, whatever it ended on before.
+  // The oldest is the one to answer: until its dialog reads, or it has waited long enough
+  // to be answered in the terminal, the terminal shows nothing.
   if (status.attention) {
-    const ask = (requests[terminal.id] ?? []).find(
-      ({ request, askedAt }) => request.dialog !== null || now - askedAt >= dialogMs,
-    )
-    if (ask)
-      add(`request:${ask.request.id}`, ask.askedAt, true, { kind: "request", request: ask.request })
+    const [oldest] = requests[terminal.id] ?? []
+    if (oldest && (oldest.request.dialog !== null || now - oldest.askedAt >= dialogMs))
+      add(`request:${oldest.request.id}`, oldest.askedAt, true, {
+        kind: "request",
+        request: oldest.request,
+      })
+    return found
   }
 
   const turn = status.lastTurn
   if (turn && !status.working) {
     const mark = unread[`${project.id}/${session.id}`]?.[terminal.id]
     if (turn.limit) {
-      add(`trouble:${terminal.id}:${turn.at}`, turn.at, true, {
+      add(`limit:${terminal.id}:${turn.at}`, turn.at, true, {
         kind: "trouble",
         trouble: {
           type: "limit",
@@ -173,7 +182,7 @@ const candidates = ({ unread, requests, now }: InboxInputs, here: Where): readon
 }
 
 // Every item the Inbox now holds, the longest waiting among the most urgent first: one per
-// terminal, the most urgent of what it has, then the oldest.
+// terminal, the most urgent of what it has, then the oldest; and each thread held for release.
 export const inboxItems = (inputs: InboxInputs): InboxItem[] => {
   const where: Where[] = inputs.workspace.projects.flatMap((project) =>
     project.history.flatMap((session) =>
@@ -192,7 +201,6 @@ export const inboxItems = (inputs: InboxInputs): InboxItem[] => {
       const item = message && heldOf(thread, message, where)
       if (item) threads.set(thread.id, item)
     }
-  all.push(...threads.values())
 
   const best = new Map<string, InboxItem>()
   for (const item of all) {
@@ -204,7 +212,8 @@ export const inboxItems = (inputs: InboxInputs): InboxItem[] => {
     )
       best.set(item.source.terminalId, item)
   }
-  return ordered([...best.values()])
+  // A held thread is its own item, whatever else its terminal has to show.
+  return ordered([...best.values(), ...threads.values()])
 }
 
 // The streams and calls the Inbox needs of the runner.
@@ -213,8 +222,9 @@ export type InboxStreams = {
   readonly answer: (key: ConversationKey, request: string, answer: ChatAnswer) => Promise<void>
   readonly send: (key: ConversationKey, text: string) => Promise<void>
   readonly interrupt: (key: ConversationKey) => Promise<string | null>
-  readonly release: (thread: string) => Promise<void>
-  readonly stop: (thread: string) => Promise<void>
+  // The messages' own, which track their progress in the mail state.
+  readonly release: (thread: string) => void
+  readonly stop: (thread: string) => void
 }
 
 export type RunnerInbox = Inbox & {
@@ -276,6 +286,8 @@ export const createRunnerInbox = (
   const submitted = new Set<string>()
   const failed = new Map<string, string>()
   let due: ReturnType<typeof setTimeout> | undefined
+  // Set once the backend stops: nothing opens or recomputes after it.
+  let ended = false
 
   const close = (id: string): void => {
     const reading = readings.get(id)
@@ -290,6 +302,7 @@ export const createRunnerInbox = (
   }
 
   const connect = (id: string, reading: Reading): void => {
+    if (ended) return
     let stream: AsyncIterableIterator<AgentDetail, undefined>
     try {
       stream = streams.detail(id)
@@ -357,7 +370,7 @@ export const createRunnerInbox = (
   }
 
   const recompute = (): void => {
-    if (!binding) return
+    if (!binding || ended) return
     const workspace = binding.workspace.getSnapshot()
     follow(workspace)
     const requests = Object.fromEntries(
@@ -380,7 +393,15 @@ export const createRunnerInbox = (
       if (submitted.has(item.id) || (item.kind === "request" && item.request.answered))
         answering[item.id] = true
 
-    const rest = Object.fromEntries(failed)
+    // A held thread's release or stop is tracked with the messages, so a pane's counts too.
+    const { releasing, failed: refused } = mail.getSnapshot()
+    const rest: Record<string, string> = Object.fromEntries(failed)
+    for (const item of items)
+      if (item.kind === "held") {
+        const thread = item.held.threadId
+        if (releasing[thread]) answering[item.id] = true
+        if (refused[thread]) rest[item.id] = refused[thread]
+      }
     state.update((current) => {
       const kept = reuse(current.items, items)
       return kept === current.items &&
@@ -438,12 +459,13 @@ export const createRunnerInbox = (
     }
     if (item.kind === "request" && given.kind === "request")
       return call(id, () => streams.answer(key, item.request.id, given.answer))
-    if (item.kind === "held" && given.kind === "held")
-      return call(id, () =>
-        given.action === "release"
-          ? streams.release(item.held.threadId)
-          : streams.stop(item.held.threadId),
-      )
+    if (item.kind === "held" && given.kind === "held") {
+      failed.delete(id)
+      const { threadId } = item.held
+      if (given.action === "release") streams.release(threadId)
+      else streams.stop(threadId)
+      return
+    }
     if (item.kind === "update" && given.kind === "update") {
       failed.delete(id)
       return binding.read([
@@ -508,6 +530,7 @@ export const createRunnerInbox = (
       }
     },
     end: () => {
+      ended = true
       clearTimeout(due)
       for (const id of readings.keys()) close(id)
     },
