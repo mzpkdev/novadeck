@@ -19,7 +19,14 @@ import {
   windowMenu,
 } from "./support/companions"
 import { gridView } from "./support/layouts"
-import { chooseView, expectStaysAbsent, isMac, terminal, terminalTab } from "./support/workspace"
+import {
+  chooseView,
+  expectStaysAbsent,
+  isMac,
+  openWorkspace,
+  terminal,
+  terminalTab,
+} from "./support/workspace"
 
 describe("A terminal's taskbar", () => {
   it("shows its agent's plan, what it showed, and its messages, stacked by kind", async () => {
@@ -177,6 +184,52 @@ describe("A plan", () => {
 
     await expect.poll(() => scroll.scrollTop).toBeGreaterThan(0)
     await expect.element(path).toBeInViewport()
+  })
+})
+
+describe("A plan whose edits can't be saved", () => {
+  // Opens Build Studio's plan with the debug panel's fault in place, and types into it.
+  const typeInto = async (fault: string): Promise<void> => {
+    await openWorkspace(`/projects/studio/sessions/initial/grid?demo=showcase&planFault=${fault}`)
+    await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+    const content = (): HTMLElement | null =>
+      companionPane("Build Studio").element().querySelector<HTMLElement>(".cm-content")
+    await expect.poll(content).not.toBeNull()
+    content()!.focus()
+    await userEvent.keyboard("Draft ")
+    await expect.poll(() => content()!.textContent).toContain("Draft ")
+  }
+
+  it("says why, keeps the edits, and offers to copy them or try again", async () => {
+    await typeInto("folder")
+    const pane = companionPane("Build Studio")
+    await expect
+      .element(
+        pane.getByText(
+          "Novadeck can't write to this plan's folder, so your edits can't be saved. They're still here.",
+        ),
+      )
+      .toBeVisible()
+    await expect.element(pane.getByRole("button", { name: "Copy my edits" })).toBeVisible()
+    await pane.getByRole("button", { name: "Try saving again" }).click()
+    // The folder still can't be written: the same message stays, and the edits with it.
+    await expect.element(pane.getByText(/Novadeck can't write to this plan's folder/)).toBeVisible()
+    expect(pane.element().querySelector(".cm-content")!.textContent).toContain("Draft ")
+  })
+
+  it("keeps saying a plan in its agent's messages is read-only", async () => {
+    await openWorkspace("/projects/studio/sessions/initial/grid?demo=showcase&planFault=transcript")
+    await taskbarIcon("Build Studio", "Plan: A home for Studio").click()
+    await expect
+      .element(companionPane("Build Studio").getByText(/^Read-only: this plan lives in Codex/))
+      .toBeVisible()
+  })
+
+  it("only says a save is being tried again while a failure may pass", async () => {
+    await typeInto("failing")
+    const pane = companionPane("Build Studio")
+    await expect.element(pane.getByText("Not saved yet. Trying again.")).toBeVisible()
+    await expectStaysAbsent(pane.getByRole("button", { name: "Copy my edits" }))
   })
 })
 
