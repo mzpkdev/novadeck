@@ -116,7 +116,7 @@ export const SidebarItem = ({
       )}
       {editor}
       {actions && (
-        <div className="sidebar-item-actions absolute right-2 bottom-[9px] flex h-6 shrink-0 items-center">
+        <div className="sidebar-item-actions absolute top-[31px] right-2 flex h-6 shrink-0 items-center">
           {actions}
         </div>
       )}
