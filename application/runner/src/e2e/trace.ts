@@ -1,8 +1,11 @@
+import { AsyncLocalStorage } from "node:async_hooks"
 import { mkdirSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { readdir, stat } from "node:fs/promises"
+import { basename, dirname, isAbsolute, join, relative } from "node:path"
 
 import { isEmpty, sameText, type BoxProfile, type InputBox } from "@novadeck/harness-core/box"
-import type { Harness } from "@novadeck/harness-core/harness"
+import type { PromptShown } from "@novadeck/harness-core/events"
+import type { Harness, Install } from "@novadeck/harness-core/harness"
 import type { Report } from "@novadeck/harness-core/report"
 import type { ScreenText } from "@novadeck/harness-core/screen"
 
@@ -69,6 +72,7 @@ type Traced = {
 }
 // Whose a binding or a fact is: the session, by its id's start, and the agent's instance.
 type Bound = {
+  readonly agent?: string
   readonly sessionId?: string
   readonly instance?: string | number | null
 }
@@ -80,6 +84,30 @@ type Runner = {
   connected: (agent: string | undefined) => Promise<boolean>
   persisting: (work: () => void) => boolean
   appliedFact: (record: Traced, fact: { readonly type: string }) => boolean
+  messaging: { delivery: (terminalId: string) => { epoch: number; state: string } | undefined }
+  screenTitled: (record: Titled, child: object, title: string) => void
+  harnessIn: (
+    record: Titled,
+    child: object,
+    agent: string,
+  ) => Promise<{ where: Install; group: readonly number[] } | null>
+  promptTrust: (record: Titled, agent: string, where?: Install) => Promise<string>
+  showPrompt: (record: Titled, shown: PromptShown, replaced?: string) => void
+}
+type Titled = Traced & {
+  readonly process: object
+  readonly titles?: number
+  readonly submitted: boolean
+  readonly exitQueued: boolean
+  readonly promptedAt: number | null
+  readonly left?: Bound
+}
+type TitleProbe = {
+  readonly id: number
+  readonly runner: Runner
+  readonly record: Titled
+  readonly child: object
+  readonly binding: Bound | null
 }
 
 // A screen's box as a profile reads it, and the rows around it (all it shows of a screen).
@@ -121,6 +149,65 @@ export const startTrace = (name: string, model: FakeModel) => {
   const handles = new Map<string, string>()
   const named = (terminalId: string) => handles.get(terminalId) ?? terminalId.slice(0, 8)
   const add = (line: string) => lines.push(`${at()} ${line}`)
+  let active = true
+  let titled = 0
+  const titles = new AsyncLocalStorage<TitleProbe>()
+  const titleState = ({ runner, record, child, binding }: TitleProbe) => {
+    const delivery = runner.messaging.delivery(record.summary.id)
+    return brief(
+      {
+        seq: record.titles,
+        epoch: delivery?.epoch,
+        state: delivery?.state,
+        bound: record.binding,
+        sameBinding: record.binding === binding,
+        leftBinding: record.left === binding,
+        sameProcess: record.process === child,
+        exitQueued: record.exitQueued,
+        submitted: record.submitted,
+        promptedAt: record.promptedAt,
+      },
+      600,
+    )
+  }
+  const titleLine = (probe: TitleProbe, line: string) => {
+    if (active) add(`title #${probe.id} ${named(probe.record.summary.id)} ${line}`)
+  }
+  // Inspect only an E2E sandbox's Codex home, and only after recognition failed. Never
+  // delay its answer or read file contents: matching names and times suffice.
+  const locksAfter = async (probe: TitleProbe, where: Install, prefix: string, since: number) => {
+    const home = where.env.CODEX_HOME || join(where.home, ".codex")
+    const inside = relative(where.home, home)
+    if (
+      !/^novadeck[ -]e2e-/.test(basename(dirname(where.home))) ||
+      basename(where.home) !== "home" ||
+      isAbsolute(inside) ||
+      inside.split(/[\\/]/).includes("..")
+    ) {
+      titleLine(probe, "locks: skipped outside an E2E home")
+      return
+    }
+    const locks = join(home, "thread-writer-locks")
+    const names = await readdir(locks).catch(() => undefined)
+    if (!names) {
+      titleLine(probe, "locks: directory unreadable")
+      return
+    }
+    const matching = names.filter((file) => file.startsWith(prefix) && file.endsWith(".lock"))
+    const files = await Promise.all(
+      matching.slice(0, 8).map(async (file) => ({
+        name: file.slice(0, 80),
+        mtimeSince: await stat(join(locks, file)).then(
+          (info) => Math.round(info.mtimeMs - since),
+          () => null,
+        ),
+      })),
+    )
+    titleLine(
+      probe,
+      `locks: ${matching.length} matching, mtime relative to title ${brief(files, 1_000)}`,
+    )
+  }
 
   // The model's calls, as they come, a few milliseconds late at most; and any stretch the
   // process was too busy to run this every 10 ms, as everything else waited too.
@@ -143,6 +230,7 @@ export const startTrace = (name: string, model: FakeModel) => {
   calls.unref()
 
   const decoders = new Map<string, Harness["decode"]>()
+  const restoreTitles: (() => void)[] = []
   for (const agent of agents) {
     const harness = methods(harnesses[agent] as { decode: Harness["decode"] }, agent, ["decode"])
     const { decode } = harness
@@ -163,6 +251,57 @@ export const startTrace = (name: string, model: FakeModel) => {
           )}`,
       )
       return events
+    }
+    const observing = harnesses[agent] as {
+      title?: NonNullable<Harness["title"]>
+      startedSession?: NonNullable<Harness["startedSession"]>
+    }
+    if (observing.title) {
+      const original = observing.title
+      restoreTitles.push(() => {
+        observing.title = original
+      })
+      observing.title = (title, time) => {
+        const shown = original(title, time)
+        const probe = titles.getStore()
+        if (probe)
+          titleLine(
+            probe,
+            `${agent} parsed ${brief(shown, 240)}${
+              shown?.sessionPrefix &&
+              probe.record.binding?.agent === agent &&
+              probe.record.binding?.sessionId?.startsWith(shown.sessionPrefix)
+                ? " (same bound prefix)"
+                : ""
+            }`,
+          )
+        return shown
+      }
+    }
+    if (observing.startedSession) {
+      const original = observing.startedSession
+      restoreTitles.push(() => {
+        observing.startedSession = original
+      })
+      observing.startedSession = async (where, prefix, since, holds) => {
+        const probe = titles.getStore()
+        if (!probe) return original(where, prefix, since, holds)
+        titleLine(probe, `${agent} startedSession asks ${brief(prefix, 80)} since ${at(since)}`)
+        const watched =
+          holds &&
+          (async (path: string) => {
+            const result = await holds(path)
+            titleLine(probe, `holds ${brief(basename(path), 100)}: ${String(result)}`)
+            return result
+          })
+        const result = await original(where, prefix, since, watched)
+        titleLine(probe, `${agent} startedSession: ${result}; current ${titleState(probe)}`)
+        if (active && !result && agent === "codex")
+          void locksAfter(probe, where, prefix, since).catch(() => {
+            titleLine(probe, "locks: inspection failed")
+          })
+        return result
+      }
     }
   }
 
@@ -203,8 +342,61 @@ export const startTrace = (name: string, model: FakeModel) => {
     "connected",
     "persisting",
     "appliedFact",
+    "screenTitled",
+    "harnessIn",
+    "promptTrust",
+    "showPrompt",
   ])
-  const { queue, report: handle, connected, persisting, appliedFact } = runner
+  const {
+    queue,
+    report: handle,
+    connected,
+    persisting,
+    appliedFact,
+    screenTitled,
+    harnessIn,
+    promptTrust,
+    showPrompt,
+  } = runner
+  runner.screenTitled = function (record, child, title) {
+    const probe = { id: ++titled, runner: this, record, child, binding: record.binding }
+    titles.run(probe, () => {
+      titleLine(probe, `raw ${brief(title, 200)}; original ${titleState(probe)}`)
+      screenTitled.call(this, record, child, title)
+      titleLine(probe, `returned; current ${titleState(probe)}`)
+    })
+  }
+  runner.harnessIn = function (record, child, agent) {
+    const reading = harnessIn.call(this, record, child, agent)
+    const probe = titles.getStore()
+    if (!probe) return reading
+    return reading.then((found) => {
+      titleLine(
+        probe,
+        `${agent} harnessIn: ${found ? `found group ${brief(found.group, 100)}` : "null"}; current ${titleState(probe)}`,
+      )
+      return found
+    })
+  }
+  runner.promptTrust = function (record, agent, where) {
+    const reading = promptTrust.call(this, record, agent, where)
+    const probe = titles.getStore()
+    if (!probe) return reading
+    return reading.then((trust) => {
+      titleLine(probe, `${agent} promptTrust: ${trust}; current ${titleState(probe)}`)
+      return trust
+    })
+  }
+  runner.showPrompt = function (record, shown, replaced) {
+    const probe = titles.getStore()
+    if (probe)
+      titleLine(
+        probe,
+        `showPrompt ${brief(shown, 240)}, replaces ${brief(replaced, 80)}; before ${titleState(probe)}`,
+      )
+    showPrompt.call(this, record, shown, replaced)
+    if (probe) titleLine(probe, `showPrompt returned; after ${titleState(probe)}`)
+  }
   // Each fact told the agent's activity, and what it made of it: a turn's end, an Escape,
   // an idle, as clients read the activity. A change between two of them is a new binding's.
   runner.appliedFact = function (record, fact) {
@@ -242,13 +434,16 @@ export const startTrace = (name: string, model: FakeModel) => {
   }
   runner.queue = function <T>(terminalId: string, work: () => Promise<T>, fallback: T) {
     const came = Date.now()
+    const probe = titles.getStore()
+    if (probe) titleLine(probe, `queued; original ${titleState(probe)}`)
     return queue.call(
       this,
       terminalId,
       async () => {
         const began = Date.now()
+        if (probe) titleLine(probe, `queue begins; current ${titleState(probe)}`)
         try {
-          return await work()
+          return await (probe ? titles.run(probe, work) : work())
         } finally {
           add(
             `handled ${named(terminalId)} a report that came at ${at(came)}: began ${at(began)}, took ${Date.now() - began} ms`,
@@ -465,6 +660,8 @@ export const startTrace = (name: string, model: FakeModel) => {
   return {
     /** Puts the runner back as it was. */
     stop: () => {
+      active = false
+      titles.disable()
       clearInterval(calls)
       Object.assign(treeing, { read: readTree, end: endTree })
       Object.assign(closing, { kill })
@@ -477,7 +674,12 @@ export const startTrace = (name: string, model: FakeModel) => {
         connected,
         persisting,
         appliedFact,
+        screenTitled,
+        harnessIn,
+        promptTrust,
+        showPrompt,
       })
+      for (const restore of restoreTitles) restore()
       for (const [agent, decode] of decoders)
         (
           harnesses[agent as keyof typeof harnesses] as {

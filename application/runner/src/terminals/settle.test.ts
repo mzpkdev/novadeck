@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto"
 
 import { hookShellSlackMs } from "@novadeck/harness-core/harness"
+import type { ScreenText } from "@novadeck/harness-core/screen"
 import { screen as screenWith } from "@novadeck/harness-core/testing/screens"
+import type { TerminalEvent } from "@novadeck/protocol"
 import { vi } from "vitest"
 
 import { submitWindowMs } from "../messaging/delivery.js"
 import { describe, expect, it } from "../test.js"
-import { ptyOptions } from "../testing/pty.js"
+import { command, ptyOptions } from "../testing/pty.js"
 import type { Resources } from "../testing/resources.js"
 import { Terminals } from "./manager.js"
 
@@ -140,6 +142,103 @@ describe("settling a draft kept only by doubt", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it("settles a new doubt after the terminal restarts and its delivery epochs begin again", async ({
+    resources,
+  }) => {
+    const manager = fixture(resources).manager({ ...ptyOptions, transcripts: false })
+    const terminal = await manager.create(
+      { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+      "creator",
+    )
+    const inside = manager as unknown as Inside
+    const record = inside.records.get(terminal.id)!
+    const { messaging } = inside
+    const attach = () => {
+      const controller = new AbortController()
+      const stream = manager.attach(
+        { terminalId: terminal.id, mode: "observe" },
+        "observer",
+        controller.signal,
+      )
+      resources.defer(async () => {
+        controller.abort()
+        await stream.return(undefined)
+      })
+      return stream
+    }
+    const until = async (
+      stream: ReturnType<Terminals["attach"]>,
+      matches: (event: TerminalEvent, output: string) => boolean | Promise<boolean>,
+    ) => {
+      let output = ""
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- Leave the attachment open for the next read.
+        const result = await stream.next()
+        if (result.done) throw new Error("The terminal ended before the expected output or exit.")
+        const event = result.value
+        if (event.type === "attached") continue
+        if (event.type === "output" || event.type === "snapshot") output += event.data
+        manager.ack({ terminalId: terminal.id, sequence: event.sequence }, "observer")
+        // eslint-disable-next-line no-await-in-loop -- Each screen check follows its output event.
+        if (await matches(event, output)) return
+      }
+    }
+    const draw = async (stream: ReturnType<Terminals["attach"]>) => {
+      await until(stream, (_event, output) => output.includes("PTY_READY"))
+      // A real empty box on the runner's screen, not a replacement screen reader.
+      const drawing = `\x1b[2J\x1b[H${rule}\r\n> \r\n${rule}\x1b[2;3H`
+      manager.write(
+        { terminalId: terminal.id, data: command({ type: "write", data: drawing }) },
+        "creator",
+      )
+      await until(stream, async (event) => {
+        if (event.type !== "output") return false
+        const screen = (await inside.screenOf(terminal.id)) as ScreenText | undefined
+        return (
+          screen?.rows[0] === rule &&
+          screen.rows[2] === rule &&
+          screen.cursor.row === 1 &&
+          screen.cursor.column === 2
+        )
+      })
+    }
+    const settle = async (sessionId: string, next: string) => {
+      record.binding = { agent: "agy", sessionId, instance: null }
+      messaging.rooted(terminal.id, [root(sessionId)])
+      messaging.keys(terminal.id, ["content", "enter"], false)
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+      try {
+        messaging.rooted(terminal.id, [root(next)])
+        expect(messaging.delivery(terminal.id)).toMatchObject({
+          state: "drafting",
+          epoch: 2,
+          box: { doubted: true },
+        })
+        await vi.advanceTimersByTimeAsync(0)
+        expect(messaging.delivery(terminal.id).state).toBe("drafting")
+        await vi.advanceTimersByTimeAsync(100)
+        expect(messaging.delivery(terminal.id)).toMatchObject({ state: "ready", epoch: 2 })
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+
+    const first = attach()
+    await draw(first)
+    await settle("a", "b")
+    manager.write({ terminalId: terminal.id, data: command({ type: "exit", code: 0 }) }, "creator")
+    await until(first, (event) => event.type === "exited")
+    await first.return(undefined)
+    expect(messaging.delivery(terminal.id)).toBeUndefined()
+
+    await manager.restart({ terminalId: terminal.id, cols: 80, rows: 24 }, "creator")
+    expect(inside.records.get(terminal.id)).toBe(record)
+    expect(messaging.delivery(terminal.id).epoch).toBe(0)
+    const restarted = attach()
+    await draw(restarted)
+    await settle("c", "d")
   })
 
   it("gives up after its window, leaving the draft", async ({ resources }) => {

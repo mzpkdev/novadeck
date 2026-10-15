@@ -2078,6 +2078,8 @@ export class Terminals {
           submitted: started.resumes,
           startupRuns: started.resumes,
           readyEntered: false,
+          // Delivery epochs start over with the new shell's registration.
+          boxDoubtEpoch: undefined,
           prompts: [],
           line: emptyLine,
           lineEntered: started.resumes,

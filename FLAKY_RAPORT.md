@@ -73,14 +73,15 @@ production change is justified by their current evidence.
 
 ### Repair validation
 
-On Linux with Node 26.9.0, after the repair corrections:
+On Linux with Node 26.9.0, after the repair corrections and integration with
+main `014cce84`:
 
-- Runner: **2,809 passed**, 32 deliberately skipped; UI unit/browser/motion:
-  **2,775 passed**, 3 skipped; compiled desktop host: **485 passed**.
+- Runner: **2,957 passed**, 35 deliberately skipped; UI unit/browser/motion:
+  **2,817 passed**, 3 skipped; compiled desktop host: **485 passed**.
 - Targeted live E2E: **9 passed** across pinned Claude Code 2.1.287,
   Codex 0.159.3 and Antigravity 1.2.14. These cover both Escape boundaries and
   the simultaneous race, refused command-like prompts, and held-input isolation.
-- Redaction/Codex-helper checks: **301 passed**; independent structured redaction
+- Pre-integration redaction/Codex-helper checks: **301 passed**; independent structured redaction
   comparison: **4,000 cases, zero output differences** against the sampled redactor.
   The new Unicode cap-boundary regression preserves astral-character handling.
 - Formatting, lint (including relay Rust), typecheck, production build and actionlint
@@ -92,6 +93,38 @@ in the task's `fix-validation/` directory outside the public repository. Earlier
 failed development runs remain there as historical evidence; the validation index
 identifies their successful replacements. These are local acceptance results, not
 30 additional CI rounds or Windows/macOS acceptance.
+
+The first integrated full test run also observed a failure in the older
+single-move Grid undocking case: no window opened. Its helper and core drop path
+are unchanged from main and the pre-integration task. Two instrumented one-move
+trials, a held-pointer control and an injected renderer-delay trial all passed;
+the latter disproves renderer completion alone as the cause. The ordinary full
+suite passed on rerun. The failed run's activation, cancellation and actual drop
+target were not captured, so this observation remains unresolved; no drag repair
+is claimed. It is separate from the fixed-head 30-round sample. Evidence:
+`fix-validation/merge-tests.log`, `merge-tests-after.log` and
+`review-ui/drag-review.md`.
+
+The first integrated CI run passed Quality on Linux, macOS and Windows, but
+Codex Windows quirks observed a separate `/clear` timeout waiting for Ready
+([job 116638795125](https://github.com/novadeck-org/novadeck/actions/runs/38797792155/job/116638795125)).
+The trace ends with Drafting and a fresh empty Codex prompt, without a later
+binding or prompt observation. As with N14, this does not reach N5's late-prompt
+recovery. Test-only tracing now correlates raw titles, decoding, trust and
+session-recognition gates, queued callbacks and replacement application.
+Failure-only diagnostics retain bounded lock names and relative modification
+times inside the E2E sandbox. These diagnostics do not establish or repair the
+cause; production recognition and test deadlines are unchanged.
+
+Review also reproduced a restart regression in the new settling guard: the
+terminal record retained its checked epoch after a real shell exit and restart,
+while messaging restarted its epochs at zero. A later doubt with the same epoch
+was suppressed despite an empty box. Restart now clears that guard. The real PTY
+regression fails without the reset and passes with it, recovering Ready in both
+shell lifetimes. This is independent of the Windows replacement-observation gap.
+After this correction, the full local runner suite passed **2,958 tests** (35
+skipped), alongside runner typecheck, focused lint/format checks, both live Codex
+replacement cases and the nine focused all-harness cases with tracing enabled.
 
 ## Method
 
