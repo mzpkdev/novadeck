@@ -88,7 +88,7 @@ describe.skipIf(process.platform !== "darwin")("macOS foreground naming", () => 
     // An interactive shell runs it as a job of its own, holding the terminal, as at a prompt.
     const child = spawn("/bin/zsh", ["-fic", `"${link}"; :`], { name: "xterm-256color" })
     try {
-      await vi.waitFor(() => expect(child.process).toBe("2.1.300"))
+      await vi.waitFor(() => expect(child.process).toBe("2.1.300"), { timeout: 10_000 })
       const first = sampleForeground(child, undefined)
       expect(first.process?.name).toBe("claude")
       expect(first.group).not.toBe(child.pid)
@@ -103,9 +103,13 @@ describe.skipIf(process.platform !== "darwin")("macOS foreground naming", () => 
     const { dir, link } = versioned()
     const child = spawn(link, [], { name: "xterm-256color" })
     try {
-      // The name is the program's only once the spawned process has run exec.
-      await vi.waitFor(() => expect(child.process).toBe("2.1.300"))
-      expect(sampleForeground(child, undefined).process?.name).toBe("claude")
+      // The name is the program's only once the spawned process has run exec, which macOS
+      // may hold back while it first checks a new binary.
+      await vi.waitFor(() => expect(child.process).toBe("2.1.300"), { timeout: 10_000 })
+      const sample = sampleForeground(child, undefined)
+      expect(sample.process?.name).toBe("claude")
+      // Its group is the shell's pid, as at a prompt, so the name decides instead.
+      expect(sample.group).toBeNull()
     } finally {
       child.kill()
       rmSync(dir, { recursive: true, force: true })

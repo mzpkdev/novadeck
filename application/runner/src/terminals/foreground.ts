@@ -302,12 +302,14 @@ export const sampleForeground = (
     // Two ps runs block the loop, so only once per program, not each sample. A lookup that
     // failed isn't kept, so the next sample tries again; nor is one that found the shell's
     // own group, which is either a program run in the shell's place or, as the program
-    // just exited, the shell back at its prompt.
+    // just exited, the shell back at its prompt. That group can't tell the two apart, so
+    // it's left out, and the name the lookup found does.
     if (last?.reported === name) return last
     const invoked = invokedName(child.pid)
     if (!invoked) return { process: { name, argv: null }, group: null }
-    const found = { process: { name: invoked.name, argv: null }, group: invoked.group }
-    return invoked.group === child.pid ? found : { ...found, reported: name }
+    const found = { name: invoked.name, argv: null }
+    if (invoked.group === child.pid) return { process: found, group: null }
+    return { process: found, group: invoked.group, reported: name }
   }
   if (process.platform !== "linux") return { process: { name, argv: null }, group: null }
   try {
