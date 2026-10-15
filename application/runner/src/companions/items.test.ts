@@ -733,6 +733,25 @@ describe("plans beside their terminal", () => {
     expect(fixture.items.bar(fox.terminalId)).toMatchObject([{ version: 2, asked: false }])
   })
 
+  it("do not reopen a closed plan, nor open a subagent's", async ({ fixture }) => {
+    const path = join(fixture.directory, "closed.md")
+    writeFileSync(path, "# Closed\n")
+    const moth = fixture.terminal("moth")
+    const plan = { source: { kind: "file", path } as const, path }
+    const sub = { ...slot, actor: "sub" } as const
+    await fixture.items.planObserved(moth, sub, plan, Date.now())
+    expect(fixture.items.bar(moth.terminalId)).toMatchObject([{ asked: false }])
+    await fixture.items.planObserved(moth, slot, plan, Date.now())
+    expect(fixture.items.bar(moth.terminalId)).toMatchObject([{ asked: false }, { asked: true }])
+    const [, root] = fixture.items.bar(moth.terminalId)
+    fixture.items.close(root!.id)
+    await fixture.items.planObserved(moth, slot, plan, Date.now() + 1)
+    expect(fixture.items.bar(moth.terminalId).at(-1)).toMatchObject({
+      version: 1,
+      asked: false,
+    })
+  })
+
   it("update a plan where the person moved it", async ({ fixture }) => {
     const path = join(fixture.directory, "p.md")
     writeFileSync(path, "# P\n")
