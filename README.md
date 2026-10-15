@@ -862,7 +862,12 @@ lays out at the frame's own size, so a page scales a desktop-sized frame rather 
 shrinking it; it keeps its address in memory, adding nothing to the framing page's Back
 button; and it takes no focus until the person uses it. Its links then carry plain paths
 the static host doesn't serve, so a link opened in a new tab from the frame finds nothing;
-a click works as anywhere. `?embed` means nothing outside the visitor build.
+a click works as anywhere. Once the app has booted (the backend connected and the
+workspace mounted) it posts `{ type: "novadeck:ready" }` to its parent window, once per
+page load, with target origin `*`: the frame's `load` event fires for an error page too, so
+this is how the page tells a booted app from a failed load. The message carries nothing
+sensitive; the page checks its origin and source. `?embed` means nothing outside the
+visitor build.
 
 ## Repository map
 

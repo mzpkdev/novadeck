@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { page } from "vitest/browser"
 
 import { pressShortcut, terminalCount } from "./support/keyboard"
@@ -137,6 +137,17 @@ describe("the visitor build", () => {
     })
   })
 
+  it("says nothing to a page around it when not framed", async () => {
+    const post = vi.spyOn(window.parent, "postMessage")
+    try {
+      await openVisitor()
+      await framesPass(5)
+      expect(post.mock.calls.filter(([message]) => message?.type === "novadeck:ready")).toEqual([])
+    } finally {
+      post.mockRestore()
+    }
+  })
+
   describe("framed in another page", () => {
     const openEmbedded = async (): Promise<void> => {
       await openWorkspace("/?visitor=on", { embedded: true })
@@ -163,6 +174,21 @@ describe("the visitor build", () => {
       await chooseView("Canvas")
       await expect.element(view("Canvas")).toBeChecked()
       expect(window.history.length).toBe(entries)
+    })
+
+    // The test page sits in a frame of its own, so its parent is the runner's page.
+    it("tells the page around it once it has booted, once", async () => {
+      expect(window.parent).not.toBe(window)
+      const post = vi.spyOn(window.parent, "postMessage")
+      try {
+        await openEmbedded()
+        await framesPass(5)
+        expect(post.mock.calls.filter(([message]) => message?.type === "novadeck:ready")).toEqual([
+          [{ type: "novadeck:ready" }, "*"],
+        ])
+      } finally {
+        post.mockRestore()
+      }
     })
 
     // True of the app anywhere; framed, it leaves the page around it its focus.

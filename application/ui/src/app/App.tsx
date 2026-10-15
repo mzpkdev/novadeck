@@ -19,6 +19,7 @@ import { DictationContext, useDictationController } from "./controller/dictation
 import { useKeyboard } from "./controller/useKeyboard"
 import { useWorkspaceEffects } from "./controller/useWorkspaceEffects"
 import { EmbeddedContext } from "./embedded"
+import { EmbeddedReady } from "./EmbeddedReady"
 import { HeaderSection } from "./HeaderSection"
 import { InboxHost } from "./InboxHost"
 import { currentState, currentTarget, shallowEqual } from "./selectors"
@@ -50,6 +51,7 @@ export const App = ({ createBackend, embedded = false }: AppProps): React.JSX.El
               <BootReporter report={boot} />
               <VisitorCover>
                 <WorkspaceApp />
+                {embedded && <EmbeddedReady />}
               </VisitorCover>
             </WorkspaceProvider>
           </Router>
