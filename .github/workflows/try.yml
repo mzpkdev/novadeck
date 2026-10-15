@@ -1,11 +1,10 @@
 name: Try
 
 # The visitor build (`pnpm build:try`) on GitHub Pages, at try.novadeck.dev: it deploys a
-# release's source, so the demo shows the stable release and not what main is ahead of it
-# with (main is the Early channel). Promote to Stable calls this with the tag it promoted,
-# as promoting with GITHUB_TOKEN starts no workflow of its own; Run workflow deploys a tag
-# by hand. Until the first promotion nothing is deployed. Quality's "Build (try)" builds
-# it on every pull request first.
+# release's source, so the demo shows a published version and never unreleased work. Until
+# launch, Release calls this with each version it publishes, prereleases included; then it
+# moves to Promote to Stable, so the demo shows what Download gives people. Run workflow
+# deploys a tag by hand. Quality's "Build (try)" builds it on every pull request first.
 
 on:
   workflow_call:

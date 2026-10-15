@@ -840,11 +840,11 @@ mode `try` (http://127.0.0.1:5190); `pnpm build:try` writes static files to
 `application/ui/dist-try` (beside `dist/`, which the desktop app packages), with relative
 paths and a hash router, so any static host serves them from any path, and
 `pnpm preview:try` serves them on http://127.0.0.1:5191. The [Try
-workflow](.github/workflows/try.yml) deploys the stable release's build to GitHub Pages at
-https://try.novadeck.dev: Promote to Stable runs it for the version it promotes, and Run
-workflow deploys a tag by hand, so the demo never shows what main is ahead of the release
-with, nor does anything deploy before the first promotion. Quality builds it on every pull
-request.
+workflow](.github/workflows/try.yml) deploys a release's build to GitHub Pages at
+https://try.novadeck.dev, so the demo always shows a published version. Until launch,
+Release runs it for each version it publishes, prereleases included; at launch it moves to
+Promote to Stable, so the demo shows what Download gives people. Run workflow deploys a tag
+by hand. Quality builds it on every pull request.
 
 It runs the agents demo's storefront and its other projects as fixtures, with no debug
 panel, chat view, voice, murmur, agent connections, notices or updates, and no Welcome

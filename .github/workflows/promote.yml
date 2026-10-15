@@ -31,8 +31,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ inputs.version }}
-    outputs:
-      tag: ${{ steps.choose.outputs.tag }}
     steps:
       - name: Choose Release
         id: choose
@@ -122,16 +120,3 @@ jobs:
           set -euo pipefail
           gh release edit "$TAG" --prerelease=false --latest
           echo "Release $TAG is now the stable release." | tee -a "$GITHUB_STEP_SUMMARY"
-
-  # The visitor demo follows the stable release. Changing a release with GITHUB_TOKEN starts
-  # no `release` workflow, so the promotion calls it here.
-  try:
-    name: Visitor Demo
-    needs: promote
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/try.yml
-    with:
-      tag: ${{ needs.promote.outputs.tag }}
