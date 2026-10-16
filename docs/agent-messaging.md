@@ -312,9 +312,9 @@ like them, only inside Novadeck's terminals.
 - **`send(to, text)`** answers with the recipient's handle, the message id and one of:
   - `queued`, with the route it will take: "when its current turn ends", "when its next
     turn starts" (only background work runs after its Stop), "ringing it now" (Settled or
-    Ready), "ringing it once its box reads empty" (Fresh, Drafting or Unknown: the
+    Ready, and the doorbell isn't blocked), "ringing it once its box reads empty" (Fresh, Drafting or Unknown: the
     doorbell is looking at its screen), one of the `waits:` reasons when it looked and
-    can't ring ("waits: there's text in its box, rung once it is empty", "waits: a
+    can't ring, Settled or Ready included ("waits: there's text in its box, rung once it is empty", "waits: a
     dialog or picker is open in its terminal, rung once it closes", "waits: it is
     asking the user a question, rung once answered"), or "when its agent starts: rung
     once Novadeck sees it at its prompt, else at its first turn"
@@ -844,7 +844,8 @@ on the person. The reason is in the answer to `send`'s `route` and in the termin
 line. A ring that
 fails waits the same doubling, from 2 s, before the terminal is rung again; a ring that
 confirms ends the count. The look has bounds: it is made at most once a calm window and never while output streams (each
-change pushes it back); never while the agent's activity says a turn or subagents run,
+change pushes it back; a screen that redraws the same text does not shorten the doubling
+wait, only a key of the person's or a turn event ends it); never while the agent's activity says a turn or subagents run,
 whatever its status line or spinner draws; and the box counts only from the start of the
 calm it rests on, so a key typed while the screen was read, or not yet drawn, makes the
 look stale. A row starting with the box's marker that is a numbered choice (`❯ 1. Yes`)
