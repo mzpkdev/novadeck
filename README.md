@@ -917,13 +917,18 @@ error page too, so this is how the page tells a booted app from a failed load. T
 carries nothing sensitive; the page checks its origin and source. `?embed` means nothing
 outside the visitor build.
 
-A framed app takes no wheel until its page says the visitor engaged it: the wheel is
-taken before any part of the app sees it, so nothing scrolls or zooms, and handed to the
-page as `{ type: "novadeck:wheel", deltaX, deltaY }` in CSS pixels, for it to scroll with
-(a zoom gesture, ctrl or meta with the wheel, is taken and not handed on). When the page
-posts `{ type: "novadeck:engaged" }`, which the app accepts only from its parent window,
-the app has the wheel for the rest of the page load. An app that is not framed has it from
-the start.
+A framed app takes no wheel until the visitor engages it: the wheel is taken before any
+part of the app sees it, so nothing scrolls or zooms, and handed to the page as `{ type:
+"novadeck:wheel", deltaX, deltaY }` in CSS pixels, for it to scroll with (a zoom gesture,
+ctrl or meta with the wheel, is taken and not handed on). The app has the wheel for the rest
+of the page load once the visitor presses in it, or the page posts `{ type:
+"novadeck:engaged" }`, which the app accepts only from its parent window. The first click
+that completes in the app is told to the page once, as `{ type: "novadeck:clicked" }`,
+posted right after the app's own handlers have had it (a tap counts), so the page can
+engage then without the click landing elsewhere; it is not sent once the page has engaged
+the app. An app that is not framed has the wheel from the start and says nothing. The
+posters are captured with reduced motion, which leaves out what goes on at the desk by
+itself.
 
 ## Repository map
 

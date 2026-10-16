@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { holdInputUntilEngaged } from "./embedded"
+import { heldInput, holdInputUntilEngaged } from "./embedded"
 
 // A page and the frame the app runs in: jsdom's window stands for the frame, with a
 // parent that records what the app tells it.
@@ -11,6 +11,7 @@ const framed = () => {
   const parent = { postMessage: vi.fn<Window["postMessage"]>() } as unknown as Window
   Object.defineProperty(app, "parent", { value: parent })
   return {
+    held: heldInput(),
     app,
     parent,
     posted: parent.postMessage as ReturnType<typeof vi.fn>,
@@ -40,10 +41,10 @@ describe("holdInputUntilEngaged", () => {
   afterEach(() => document.body.replaceChildren())
 
   it("hands the wheel to the page around the app and keeps it from the app", () => {
-    const { app, posted } = framed()
+    const { held, app, posted } = framed()
     const reached = vi.fn<() => void>()
     app.document.body.addEventListener("wheel", reached)
-    holdInputUntilEngaged(app)
+    holdInputUntilEngaged(held, app)
     const event = wheel(app, { deltaX: 3, deltaY: 40 })
     expect(event.defaultPrevented).toBe(true)
     expect(reached).not.toHaveBeenCalled()
@@ -51,8 +52,8 @@ describe("holdInputUntilEngaged", () => {
   })
 
   it("passes a wheel in lines or pages on as pixels", () => {
-    const { app, posted } = framed()
-    holdInputUntilEngaged(app)
+    const { held, app, posted } = framed()
+    holdInputUntilEngaged(held, app)
     wheel(app, { deltaY: 3, deltaMode: 1 })
     wheel(app, { deltaY: 1, deltaMode: 2 })
     expect(posted).toHaveBeenNthCalledWith(
@@ -68,27 +69,82 @@ describe("holdInputUntilEngaged", () => {
   })
 
   it("keeps a zoom gesture from the app without handing it up", () => {
-    const { app, posted } = framed()
-    holdInputUntilEngaged(app)
+    const { held, app, posted } = framed()
+    holdInputUntilEngaged(held, app)
     expect(wheel(app, { deltaY: -20, ctrlKey: true }).defaultPrevented).toBe(true)
     expect(wheel(app, { deltaY: -20, metaKey: true }).defaultPrevented).toBe(true)
     expect(posted).not.toHaveBeenCalled()
   })
 
   it("lets the app have the wheel for good once its page engages it", () => {
-    const { app, parent, posted } = framed()
-    holdInputUntilEngaged(app)
+    const { held, app, parent, posted } = framed()
+    holdInputUntilEngaged(held, app)
     engage(app, parent)
     expect(wheel(app, { deltaY: 40 }).defaultPrevented).toBe(false)
     expect(posted).not.toHaveBeenCalled()
     // A later hold, as a reboot makes, finds it engaged.
-    holdInputUntilEngaged(app)
+    holdInputUntilEngaged(held, app)
     expect(wheel(app, { deltaY: 40 }).defaultPrevented).toBe(false)
   })
 
+  it("frees the wheel for good once the visitor presses in the app", () => {
+    const { held, app, posted } = framed()
+    holdInputUntilEngaged(held, app)
+    app.document.body.dispatchEvent(new app.PointerEvent("pointerdown", { bubbles: true }))
+    expect(wheel(app, { deltaY: 40 }).defaultPrevented).toBe(false)
+    holdInputUntilEngaged(held, app)
+    expect(wheel(app, { deltaY: 40 }).defaultPrevented).toBe(false)
+    expect(posted).not.toHaveBeenCalled()
+  })
+
+  describe("telling the page of the first click", () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    const click = (app: Window & typeof globalThis): void => {
+      app.document.body.dispatchEvent(new app.MouseEvent("click", { bubbles: true }))
+    }
+
+    it("does so once, after the app's own handler has had the click", () => {
+      const { held, app, posted } = framed()
+      const order: string[] = []
+      app.document.body.addEventListener("click", () => order.push("app"))
+      posted.mockImplementation(() => order.push("posted"))
+      holdInputUntilEngaged(held, app)
+      click(app)
+      expect(posted).not.toHaveBeenCalled()
+      vi.runAllTimers()
+      click(app)
+      vi.runAllTimers()
+      expect(order).toEqual(["app", "posted", "app"])
+      expect(posted).toHaveBeenCalledWith({ type: "novadeck:clicked" }, "*")
+    })
+
+    it("does not once the page has engaged the app", () => {
+      const { held, app, parent, posted } = framed()
+      holdInputUntilEngaged(held, app)
+      engage(app, parent)
+      click(app)
+      vi.runAllTimers()
+      expect(posted).not.toHaveBeenCalled()
+    })
+
+    it("says nothing again after a reboot", () => {
+      const { held, app, posted } = framed()
+      const lift = holdInputUntilEngaged(held, app)
+      click(app)
+      vi.runAllTimers()
+      lift()
+      holdInputUntilEngaged(held, app)
+      click(app)
+      vi.runAllTimers()
+      expect(posted).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it("ignores an engaged message from any other sender", () => {
-    const { app, posted } = framed()
-    holdInputUntilEngaged(app)
+    const { held, app, posted } = framed()
+    holdInputUntilEngaged(held, app)
     engage(app, app)
     app.dispatchEvent(
       new app.MessageEvent("message", {
@@ -101,14 +157,14 @@ describe("holdInputUntilEngaged", () => {
   })
 
   it("holds nothing where the app is not framed", () => {
-    const stop = holdInputUntilEngaged(window)
+    const stop = holdInputUntilEngaged(heldInput(), window)
     expect(wheel(window, { deltaY: 40 }).defaultPrevented).toBe(false)
     stop()
   })
 
   it("lets go when lifted", () => {
-    const { app, posted } = framed()
-    holdInputUntilEngaged(app)()
+    const { held, app, posted } = framed()
+    holdInputUntilEngaged(held, app)()
     expect(wheel(app, { deltaY: 40 }).defaultPrevented).toBe(false)
     expect(posted).not.toHaveBeenCalled()
   })

@@ -227,6 +227,26 @@ describe("the visitor build", () => {
       }
     })
 
+    it("tells the page of its first click once, and keeps the wheel once pressed in", async () => {
+      const post = vi.spyOn(window.parent, "postMessage")
+      try {
+        await openEmbedded()
+        const target = document.querySelector("[data-terminal-content]")!
+        target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))
+        const event = new WheelEvent("wheel", { deltaY: 60, cancelable: true, bubbles: true })
+        target.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(false)
+        await page.getByRole("button", { name: "Workspace preferences" }).click()
+        await press("{Escape}")
+        await page.getByRole("button", { name: "Workspace preferences" }).click()
+        await expect
+          .poll(() => post.mock.calls.filter(([m]) => m?.type === "novadeck:clicked").length)
+          .toBe(1)
+      } finally {
+        post.mockRestore()
+      }
+    })
+
     // The page around treats focus moving into the frame as the visitor's first click, so
     // nothing the desk does by itself, reading and then asking, may take it.
     it("reads before it asks for its plan, and takes no focus meanwhile", async () => {
