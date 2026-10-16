@@ -527,8 +527,12 @@ describe("workspace footer", () => {
       })
 
       it("says why an install failed, and offers to try again", () => {
-        const page = render(installing({ phase: "installing" }))
+        const page = render(installing({ phase: "idle" }))
         mounted.push(page)
+        act(() =>
+          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
+        )
+        page.rerender(installing({ phase: "installing" }))
         page.rerender(installing({ phase: "failed", reason: "Disk full" }))
         expect(notice(page)!.textContent).toContain("Couldn't install")
         expect(notice(page)!.textContent).toContain("Disk full")
@@ -552,8 +556,12 @@ describe("workspace footer", () => {
       const failed: PortableInstall = { phase: "failed", reason: "Disk full" }
 
       it("shows the idle card for a failure the person dismissed, and a repeat of it again", () => {
-        const page = render(held({ phase: "installing" }, true))
+        const page = render(held({ phase: "idle" }, true))
         mounted.push(page)
+        act(() =>
+          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
+        )
+        page.rerender(held({ phase: "installing" }, true))
         page.rerender(held(failed, true))
         expect(notice(page)!.textContent).toContain("Couldn't install")
         act(() => notice(page)!.querySelector<HTMLButtonElement>("[aria-label=Dismiss]")!.click())
@@ -563,6 +571,9 @@ describe("workspace footer", () => {
         expect(notice(page)!.textContent).toContain("Portable copy")
         expect(notice(page)!.querySelector(".update-card-foot button")!.textContent).toBe("Install")
         // Install again; the same failure comes back and shows.
+        act(() =>
+          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
+        )
         page.rerender(held({ phase: "installing" }, true))
         page.rerender(held(failed, true))
         expect(notice(page)!.textContent).toContain("Couldn't install")
@@ -570,17 +581,37 @@ describe("workspace footer", () => {
       })
 
       it("counts a failed card closed by the parent as dismissed", () => {
-        const page = render(held({ phase: "installing" }, true))
+        const page = render(held({ phase: "idle" }, true))
         mounted.push(page)
+        act(() =>
+          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
+        )
+        page.rerender(held({ phase: "installing" }, true))
         page.rerender(held(failed, true))
         page.rerender(held(failed, false))
         page.rerender(held(failed, true))
         expect(notice(page)!.textContent).toContain("Portable copy")
       })
 
-      it("keeps a failure through the card being blocked or the footer hidden", () => {
-        const page = render(held({ phase: "installing" }, true))
+      it("shows a failure that arrives in the same render as the card folding", () => {
+        const page = render(held({ phase: "idle" }, true))
         mounted.push(page)
+        act(() =>
+          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
+        )
+        page.rerender(held({ phase: "installing" }, true))
+        page.rerender(held(failed, false))
+        page.rerender(held(failed, true))
+        expect(notice(page)!.textContent).toContain("Disk full")
+      })
+
+      it("keeps a failure through the card being blocked or the footer hidden", () => {
+        const page = render(held({ phase: "idle" }, true))
+        mounted.push(page)
+        act(() =>
+          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
+        )
+        page.rerender(held({ phase: "installing" }, true))
         page.rerender(held(failed, true))
         page.rerender(held(failed, true, { blocked: true }))
         expect(notice(page)).toBeNull()
@@ -590,6 +621,54 @@ describe("workspace footer", () => {
         expect(notice(page)).toBeNull()
         page.rerender(held(failed, true, { hidden: false }))
         expect(notice(page)!.textContent).toContain("Disk full")
+      })
+
+      it("leaves a window that never pressed Install to show only the chip when it ends", () => {
+        vi.useFakeTimers()
+        const onOpenChange = vi.fn<(open: boolean) => void>()
+        const other = (install: PortableInstall, open = false) =>
+          createElement(WorkspaceFooter, {
+            ...props("ok"),
+            portable: {
+              ...props("ok").portable,
+              open,
+              onOpenChange,
+              portable: { ...portable, install },
+            },
+          })
+        const page = render(other({ phase: "idle" }))
+        mounted.push(page)
+        page.rerender(other({ phase: "installing" }))
+        expect(chip(page).textContent).toBe("Installing…")
+        page.rerender(other({ phase: "installed" }))
+        expect(chip(page).textContent).toBe("Installed")
+        expect(onOpenChange).not.toHaveBeenCalled()
+        // Opened by the person, it shows the outcome, without lingering to fade by itself.
+        page.rerender(other({ phase: "installed" }, true))
+        expect(notice(page)!.textContent).toContain("Novadeck installed")
+        act(() => vi.advanceTimersByTime(finishedForMs + fadeMs + 100))
+        expect(notice(page)).not.toBeNull()
+      })
+
+      it("shows no alert in a window that never pressed Install when the install fails", () => {
+        const onOpenChange = vi.fn<(open: boolean) => void>()
+        const other = (install: PortableInstall, open: boolean) =>
+          createElement(WorkspaceFooter, {
+            ...props("ok"),
+            portable: {
+              ...props("ok").portable,
+              open,
+              onOpenChange,
+              portable: { ...portable, install },
+            },
+          })
+        const page = render(other({ phase: "installing" }, false))
+        mounted.push(page)
+        page.rerender(other(failed, false))
+        expect(onOpenChange).not.toHaveBeenCalled()
+        page.rerender(other(failed, true))
+        expect(page.container.querySelector("[role=alert]")).toBeNull()
+        expect(notice(page)!.textContent).toContain("Portable copy")
       })
 
       it("shows the idle card for a failure from before the page loaded", () => {

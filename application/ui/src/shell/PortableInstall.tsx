@@ -150,15 +150,22 @@ export const PortableInstall = ({
     // The button pressed goes with the card's words; focus stays in the card.
     if (panel.current?.contains(document.activeElement)) panel.current.focus()
     setForgotten(false)
+    setAsked(true)
+    askedNow.current = true
     portable.onInstall()
   }
-  // An install this card saw run ends: a finished one lingers as the update bar does, and
+  // An install this window asked for ends: a finished one lingers as the update bar does, and
   // the card comes back with the outcome, without taking focus from where the person is.
   const phase = hosted.phase
   const [seen, setSeen] = useState(phase)
   // Whether the host has said yet; a failure it says first happened before this page loaded,
   // so it counts as dismissed. One this page watches happen shows.
   const [known, setKnown] = useState(false)
+  // Whether the person pressed Install in this window: every window shows an install under
+  // way, but only the one that asked has the card come back with its end. `askedNow` is the
+  // same for the effect below.
+  const [asked, setAsked] = useState(false)
+  const askedNow = useRef(false)
   // Whether the card was open, to see a failed one closed. Hiding or blocking it is not that.
   const [wasOpen, setWasOpen] = useState(false)
   if (!known && portable) {
@@ -168,14 +175,18 @@ export const PortableInstall = ({
   } else if (seen !== phase) {
     setSeen(phase)
     setForgotten(false)
-    if (phase === "installed" && (seen === "downloading" || seen === "installing")) {
-      setLingering("finished")
+    if (seen === "downloading" || seen === "installing") {
+      if (phase === "installed" && asked) setLingering("finished")
+      // A failure another window's person met is not this window's to show.
+      if (phase === "failed" && !asked) setForgotten(true)
+      if (phase === "installed" || phase === "newer" || phase === "failed") setAsked(false)
     }
   }
   const open = card?.open ?? false
   if (wasOpen !== open) {
     setWasOpen(open)
-    if (!open && phase === "failed") setForgotten(true)
+    // Only a failure already showing is dismissed by the close; one arriving with it is not.
+    if (!open && seen === "failed" && phase === "failed") setForgotten(true)
   }
   const was = useRef(phase)
   const onOpenChange = card?.onOpenChange
@@ -183,8 +194,11 @@ export const PortableInstall = ({
     const before = was.current
     was.current = phase
     if (before !== "downloading" && before !== "installing") return
-    if (phase === "installed" || phase === "newer" || phase === "failed") onOpenChange?.(true)
-  }, [phase, onOpenChange])
+    if (phase !== "installed" && phase !== "newer" && phase !== "failed") return
+    const raise = askedNow.current
+    askedNow.current = false
+    if (raise) onOpenChange?.(true)
+  }, [phase, onOpenChange, askedNow])
   const { title, line } = cardWords(offer, install)
   const chipText = running ? "Installing…" : done ? "Installed" : word
   return (
