@@ -22,16 +22,18 @@ const kinds = [
 
 /**
  * The package a dependency installs: the name in an alias (`npm:<name>@…`,
- * `workspace:<name>@…`), or else its key.
+ * `workspace:<name>@…`, the version optional), or else its key, as for `workspace:*` or
+ * `workspace:^1.0.0`.
  */
 const installed = (key: string, spec: string): string =>
-  /^(?:npm|workspace):((?:@[^/@]+\/)?[^@]+)@/.exec(spec)?.[1] ?? key
+  /^(?:npm|workspace):(@[^/@]+\/[^@/]+|[a-z][^@/]*)(?:@|$)/.exec(spec)?.[1] ?? key
 
 /**
  * The dependencies the library in `folder` (its name in libraries/) names in its
  * package.json outside its order, each as `kind key`: every one that installs an
  * `@novadeck/` package but the libraries its design depends on, and every one installed
- * from a path (`link:`, `file:`, `portal:`), which may be any folder of the workspace. A
+ * from a path (`link:`, `file:`, `portal:`, `workspace:../…` or a bare `../…`), which may be
+ * any folder of the workspace. A
  * library not in the order may name none.
  */
 export const strayDependencies = (folder: string, manifest: Manifest): readonly string[] => {
@@ -39,7 +41,7 @@ export const strayDependencies = (folder: string, manifest: Manifest): readonly 
   return kinds.flatMap((kind) =>
     Object.entries(manifest[kind] ?? {})
       .filter(([key, spec]) => {
-        if (/^(?:link|file|portal):/.test(spec)) return true
+        if (/^(?:link:|file:|portal:|workspace:[./~]|[./~])/.test(spec)) return true
         const name = installed(key, spec)
         return name.startsWith("@novadeck/") && !allowed.has(name)
       })

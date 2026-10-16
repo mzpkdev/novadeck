@@ -12,7 +12,8 @@ describe("a library's dependencies", () => {
     expect(
       strayDependencies("terminal", {
         name: "@novadeck/terminal",
-        dependencies: { "@novadeck/emulator": "workspace:*", "@xterm/xterm": "6.0.0" },
+        dependencies: { "@novadeck/emulator": "workspace:^0.0.0", "@xterm/xterm": "6.0.0" },
+        devDependencies: { "@novadeck/emulator": "workspace:*" },
       }),
     ).toEqual([])
   })
@@ -42,10 +43,16 @@ describe("a library's dependencies", () => {
           r: "npm:@novadeck/runner@*",
           p: "workspace:@novadeck/protocol@*",
           "@novadeck/emulator": "workspace:@novadeck/wire@*",
+          latest: "npm:@novadeck/ui",
           xterm: "npm:@xterm/xterm@6.0.0",
         },
       }),
-    ).toEqual(["dependencies r", "dependencies p", "dependencies @novadeck/emulator"])
+    ).toEqual([
+      "dependencies r",
+      "dependencies p",
+      "dependencies @novadeck/emulator",
+      "dependencies latest",
+    ])
   })
 
   it("may install nothing from a path", () => {
@@ -53,9 +60,19 @@ describe("a library's dependencies", () => {
       strayDependencies("emulator", {
         name: "@novadeck/emulator",
         dependencies: { u: "link:../../application/ui", h: "file:../../harnesses/core" },
-        devDependencies: { v: "portal:./vendor" },
+        devDependencies: {
+          v: "portal:./vendor",
+          w: "workspace:../../application/runner",
+          b: "../../application/host",
+        },
       }),
-    ).toEqual(["dependencies u", "dependencies h", "devDependencies v"])
+    ).toEqual([
+      "dependencies u",
+      "dependencies h",
+      "devDependencies v",
+      "devDependencies w",
+      "devDependencies b",
+    ])
   })
 
   it("may name no workspace package at all for a library not in the order", () => {
