@@ -394,7 +394,7 @@ export const setupResult = (
     return {
       kind: "failed",
       reason:
-        "Novadeck can't install while a copy of it runs from its install folder. Quit that copy, then try again.",
+        "Novadeck can't install while something from its install folder is still running. Quit Novadeck there, or restart Windows, then try again.",
     }
   return {
     kind: "failed",

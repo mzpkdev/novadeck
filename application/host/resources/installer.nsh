@@ -115,6 +115,18 @@
 
     IntOp $2 $2 + 1
 
+    ${If} $2 > 6
+      # Still there after six rounds of closing it. Probably running with more rights than this setup, or locked by something else.
+      ${If} $4 == 1
+      ${OrIf} ${Silent}
+        SetErrorLevel 3
+        Quit
+      ${EndIf}
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY +2
+      Quit
+      IntOp $2 $6 + 1
+    ${EndIf}
+
     ${If} $4 == 0
     ${AndIf} ${Silent}
       # Nobody to ask, and the running copy may be a portable one the person is using.
@@ -143,17 +155,6 @@
     ${EndIf}
     Sleep 1000
 
-    ${If} $2 > 6
-      # Probably running with more rights than this setup, or locked by something else.
-      ${If} $4 == 1
-      ${OrIf} ${Silent}
-        SetErrorLevel 3
-        Quit
-      ${EndIf}
-      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY +2
-      Quit
-      IntOp $2 $6 + 1
-    ${EndIf}
   ${Loop}
 
   !insertmacro _novadeckClearEnvironment

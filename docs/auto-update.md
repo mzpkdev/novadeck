@@ -370,8 +370,9 @@ keeps the workspace.
   from any other folder (the portable one) is never seen, let alone stopped.
   - The installer's silent run without `--updated`, which is how this copy runs the setup,
     closes nothing: with Novadeck running from the install folder it ends with exit code 3
-    and changes nothing, and the install answers `failed` ("Novadeck can't install while a
-    copy of it runs from its install folder. Quit that copy, then try again."; any other
+    and changes nothing, and the install answers `failed` ("Novadeck can't install while
+    something from its install folder is still running. Quit Novadeck there, or restart
+    Windows, then try again."; any other
     exit with no copy left is the generic "did not finish").
   - A self-update by an installed copy (`--updated`; the app is quitting) and a silent
     uninstaller (an update's run of the old one, or `/S` from a script) wait one round, then
@@ -379,16 +380,21 @@ keeps the workspace.
     Settings, or Preferences' Uninstall, which starts it and quits 250 ms later) waits two
     rounds the same way, then asks (OK/Cancel) before closing; an interactive installer
     asks in round 1. Closing is polite (`CloseMainWindow`) for its first two rounds, then
-    forced (`Stop-Process -Force`). A round is one second plus the closing; at round 7 without
-    success a silent run ends with exit code 3, an interactive one offers Retry. Each
+    forced (`Stop-Process -Force`). A round is one second plus the closing. The check runs again at the start of
+    each round, so round 7 only finds out whether the last forced close worked: if
+    something still runs, every `--updated` run, silent or not, and every silent uninstaller
+    ends with exit code 3, and an interactive run offers Retry (which forces again). Each
     PowerShell call has a 15 s timeout, and a timeout counts as a failed query. The two
     environment variables the queries read are cleared once the check passes.
   - Closing is by PowerShell, only processes whose path starts with `<install folder>\`,
     separator included, never this setup itself, so never by name. Without PowerShell
-    nothing is closed: a silent run ends, an interactive one asks the person to close
-    Novadeck.
+    nothing is closed: a silent installer run ends at once; an interactive run shows the
+    "click OK to close it" box but closes nothing, and offers Retry at round 7 for the
+    person to close Novadeck by hand.
   - `install-windows.test.ts` pins that the builder in use still reaches the hook from the
-    install section, the uninstaller and `CHECK_APP_RUNNING`.
+    install section, the uninstaller and `CHECK_APP_RUNNING`, that `installer.nsh` is still
+    included by name from `directories.buildResources`, and that the install section still
+    runs `customInstall`.
 - **Legacy uninstallers.** The setup first runs the installed copy's own uninstaller
   (`uninstallOldVersion` in `installUtil.nsh`, `/S --updated`). An install made before the
   macro carries builder's old check. With PowerShell passing its two availability tests it
@@ -404,8 +410,11 @@ keeps the workspace.
   starts with <folder>...") and where those two PowerShell tests fail (`powershellUsable`;
   "Novadeck can't install itself while it runs on this PC. Quit Novadeck, then run the
   installer from the Releases page."). This guard is marked LEGACY in code. Delete it once
-  no install without the marker matters. Residual: the old uninstaller still stops anything
-  running from inside the install folder.
+  no install without the marker matters. Residual risks: the old uninstaller still stops
+  anything running from inside the install folder, and it runs its own PowerShell test
+  again when it starts. If that fails, even briefly after the host's check passed, it runs
+  `taskkill /IM novadeck.exe`, which closes the portable copy. The guard narrows this and
+  cannot remove it.
 - **Limits.** Only a real Windows run proves this end to end. Smart App Control blocks an
   unsigned installer and, once signing is in place, SmartScreen may still warn about a fresh
   publisher; see [release-signing.md](release-signing.md). The block happens when the setup is

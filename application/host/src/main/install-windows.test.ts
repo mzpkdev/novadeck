@@ -684,6 +684,18 @@ describe("the installer's running-app check", () => {
     )
   })
 
+  it("is still included by name from the build resources, and its install hook still runs", () => {
+    const target = readFileSync(
+      join(templates, "..", "..", "out/targets/nsis/NsisTarget.js"),
+      "utf8",
+    )
+    expect(target).toContain('getResource(this.options.include, "installer.nsh")')
+    expect(target).toContain("addIncludeDir(packager.info.buildResourcesDir)")
+    const config = readFileSync(join(process.cwd(), "electron-builder.yml"), "utf8")
+    expect(config).toMatch(/directories:[\s\S]*?buildResources: resources\b/u)
+    expect(template("installSection.nsh")).toContain("!insertmacro customInstall")
+  })
+
   it("is still reached by the installer and the uninstaller", () => {
     expect(template("installSection.nsh")).toContain("!insertmacro CHECK_APP_RUNNING")
     expect(template("uninstaller.nsh")).toContain("!insertmacro CHECK_APP_RUNNING")
