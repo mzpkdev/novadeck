@@ -3,8 +3,6 @@ import {
   portableRunPattern,
   runnerPortMessage,
   updateChannels,
-  updateNoteLength,
-  updateNotesLength,
   updateVersionPattern,
   type DesktopBridge,
   type DesktopHost,
@@ -24,6 +22,7 @@ import {
   directoryPickerChannel,
   installAppChannel,
   installProgressChannel,
+  portableStateChannel,
   noticeChannel,
   noticeClickChannel,
   openUpdatePageChannel,
@@ -68,28 +67,18 @@ const unwanted = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u
 
 // The offer when it is one the contract allows, or undefined. The host builds offers
 // that obey it; this holds the page's side to it should the host be wrong or tricked.
-// A note the page may not have is dropped rather than shortened.
 const offerOf = (value: unknown): UpdateOffer | undefined => {
   if (typeof value !== "object" || value === null) return undefined
-  const { kind, version, notes, percent } = value as Record<string, unknown>
-  if (kind !== "downloading" && kind !== "ready" && kind !== "available") return undefined
+  const { kind, version, percent } = value as Record<string, unknown>
+  if (kind !== "downloading" && kind !== "ready" && kind !== "retrying" && kind !== "available")
+    return undefined
   // Only a download has a percent, and it has one always.
   if (kind === "downloading" && !isUpdatePercent(percent)) return undefined
   if (typeof version !== "string" || !updateVersionPattern.test(version)) return undefined
-  const lines = Array.isArray(notes) ? (notes as unknown[]) : []
   return {
     kind,
     version,
     ...(kind === "downloading" && isUpdatePercent(percent) ? { percent } : {}),
-    notes: lines
-      .filter(
-        (line): line is string =>
-          typeof line === "string" &&
-          line !== "" &&
-          Array.from(line).length <= updateNoteLength &&
-          !unwanted.test(line),
-      )
-      .slice(0, updateNotesLength),
   }
 }
 
@@ -289,6 +278,14 @@ const bridge = {
     ipcRenderer.on(installProgressChannel, relay)
     return () => {
       ipcRenderer.removeListener(installProgressChannel, relay)
+    }
+  },
+  // Only a valid state comes back, as `portable()` gives it.
+  onPortableState: (listener) => {
+    const relay = (_event: unknown, value: unknown): void => listener(portableStateOf(value))
+    ipcRenderer.on(portableStateChannel, relay)
+    return () => {
+      ipcRenderer.removeListener(portableStateChannel, relay)
     }
   },
   uninstallPlan: async () => uninstallPlanOf(await ipcRenderer.invoke(uninstallPlanChannel)),

@@ -73,9 +73,6 @@ export type UiState = {
   readonly crashLoop: number
   // The update the desktop app last told of: downloaded, or to fetch from its release page.
   readonly update: UpdateOffer | null
-  // The version of the last update this page saw downloading or downloaded, so one that fails
-  // is not taken for a release to fetch by hand (`offerToFetch`).
-  readonly downloaded: string | null
   // Whether its notice is open, or waits to open once the footer shows.
   readonly updateOpen: boolean
   // Whether the desktop app runs in its security sandbox, as the host said at startup; null
@@ -136,7 +133,6 @@ export const initialUi = ({
   crashLoopDismissed: false,
   crashLoop: 0,
   update: null,
-  downloaded: null,
   updateOpen: false,
   sandbox: null,
   sandboxOpen: false,
@@ -275,7 +271,6 @@ export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => v
     ui.update((current) => ({
       ...current,
       update,
-      downloaded: update.kind === "available" ? current.downloaded : update.version,
       updateOpen: current.updateOpen || raise,
     }))
   }) ?? (() => {})
@@ -292,12 +287,18 @@ const raisedThisRun = (portable: PortableState): boolean =>
 
 // Asks the backend once whether the app is a portable copy, and keeps the answer for the
 // footer. A portable copy raises its card now, offer or not. A host that fails to say is
-// taken as not saying.
+// taken as not saying. A state the host pushes later (this run installed the app) replaces
+// it without raising anything, and wins over an answer that comes after it.
 export const watchPortable = (portable: Backend["portable"], ui: UiStore): (() => void) => {
   let live = true
+  let pushed = false
+  const stop = portable?.onState?.((portableState) => {
+    pushed = true
+    ui.update((state) => ({ ...state, portable: portableState }))
+  })
   void portable?.state().then(
     (portableState) => {
-      if (!live) return
+      if (!live || pushed) return
       const raise = portableState.portable && !raisedThisRun(portableState)
       ui.update((state) => ({
         ...state,
@@ -312,6 +313,7 @@ export const watchPortable = (portable: Backend["portable"], ui: UiStore): (() =
   )
   return () => {
     live = false
+    stop?.()
   }
 }
 

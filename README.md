@@ -843,9 +843,9 @@ App:
 - **Updates:** Download counts the floating progress bar above the footer's right end up in
   steps, shows it ready for a few seconds, then fades it; Download, held stops it at 40% to
   look at. Download failed holds the bar at 40% for a moment, or fails one already running, and
-  drops it with nothing in the footer: a copy that updates itself shows only the bar, as the
-  host tries again by itself. Release to fetch shows that chip alone, which
-  opens the release page (counted, since a browser has none). Ready at
+  drops it with nothing in the footer, as the host tries again by itself (`retrying`). Release
+  to fetch shows the Update available chip alone, which opens the release page (nothing opens
+  in a browser). Ready at
   launch offers an update downloaded before this run, which shows nothing, as at a launch.
   Finish restart reloads the demo, as the app comes back on the new version. Early builds on
   and off set the channel Preferences' Updates switch shows once Preferences is reopened.

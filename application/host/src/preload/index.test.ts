@@ -1,6 +1,6 @@
 import type { EventEmitter } from "node:events"
 
-import { updateNoteLength, updateNotesLength, type DesktopHost } from "@novadeck/protocol/bridge"
+import type { DesktopHost } from "@novadeck/protocol/bridge"
 import { afterEach, beforeEach, vi } from "vitest"
 
 import {
@@ -12,6 +12,7 @@ import {
   noticeClickChannel,
   openUpdatePageChannel,
   portableChannel,
+  portableStateChannel,
   quitAppChannel,
   sandboxChannel,
   saveBeforeQuitChannel,
@@ -177,7 +178,7 @@ describe("a notice about a terminal", () => {
   })
 })
 
-const ready = { kind: "ready", version: "1.2.3", notes: ["Faster.", "Fixes."] }
+const ready = { kind: "ready", version: "1.2.3" }
 
 describe("an update offer", () => {
   it("asks the host for the last one once the page listens", () => {
@@ -230,26 +231,14 @@ describe("an update offer", () => {
     expect(offers).toEqual([])
   })
 
-  it("carries only the notes the contract allows", () => {
-    const offers: (readonly string[])[] = []
-    electron.exposed.onUpdate!((offer) => offers.push(offer.notes))
-    const notes = [
-      "Fine.",
-      3,
-      null,
-      "",
-      "line\nbreak",
-      "bell\u0007",
-      "\u202eflipped",
-      "x".repeat(updateNoteLength + 1),
-      "x".repeat(updateNoteLength),
-      ...Array.from({ length: 30 }, (_, index) => `Note ${index}`),
-    ]
-    electron.renderer.emit(updateOfferChannel, {}, { ...ready, notes })
-    electron.renderer.emit(updateOfferChannel, {}, { ...ready, notes: "not a list" })
-    expect(offers[0]!).toHaveLength(updateNotesLength)
-    expect(offers[0]!.slice(0, 2)).toEqual(["Fine.", "x".repeat(updateNoteLength)])
-    expect(offers[1]!).toEqual([])
+  it("passes on every kind of offer, and drops what the host sent beyond the contract", () => {
+    const offers: unknown[] = []
+    electron.exposed.onUpdate!((offer) => offers.push(offer))
+    for (const kind of ["ready", "retrying", "available"])
+      electron.renderer.emit(updateOfferChannel, {}, { ...ready, kind, notes: ["Gone."] })
+    expect(offers).toEqual(
+      ["ready", "retrying", "available"].map((kind) => ({ kind, version: "1.2.3" })),
+    )
   })
 
   it("has its release page opened by asking the host, naming nothing", () => {
@@ -427,6 +416,19 @@ describe("installing the app from a portable copy", () => {
     stop()
     electron.renderer.emit(installProgressChannel, {}, { phase: "installing" })
     expect(seen).toEqual([{ phase: "downloading", percent: 40 }, { phase: "installing" }])
+  })
+})
+
+describe("the portable state, pushed", () => {
+  it("passes on a valid state until the page stops, and a broken one as not portable", () => {
+    const seen: unknown[] = []
+    const stop = electron.exposed.onPortableState!((state) => seen.push(state))
+    const state = { portable: true, version: "1.2.3", run: "0a1b-2c3d", installed: true }
+    electron.renderer.emit(portableStateChannel, {}, { ...state, extra: 1 })
+    electron.renderer.emit(portableStateChannel, {}, { portable: true, version: "v1" })
+    stop()
+    electron.renderer.emit(portableStateChannel, {}, state)
+    expect(seen).toEqual([state, { portable: false }])
   })
 })
 

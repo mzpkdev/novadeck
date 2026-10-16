@@ -17,7 +17,6 @@ import {
   updateOfferChannel,
   updateRequestChannel,
 } from "../bridge.js"
-import { updateNotesLines } from "./update-notes.js"
 
 /** How long after launch the first check waits, so it never competes with startup. */
 export const firstCheckMs = 10_000
@@ -182,7 +181,6 @@ export const trackOffer = <P extends Page>(pages: () => readonly P[]) => {
     offer: (
       kind: UpdateOfferKind,
       value: unknown,
-      notes: readonly string[],
       { percent }: { readonly percent?: number | undefined } = {},
     ): void => {
       const version = updateVersionOf(value)
@@ -195,7 +193,6 @@ export const trackOffer = <P extends Page>(pages: () => readonly P[]) => {
       last = {
         kind,
         version,
-        notes,
         ...(progress === undefined ? {} : { percent: progress }),
       }
       for (const page of pages()) page.send(updateOfferChannel, last)
@@ -299,11 +296,7 @@ export type Updater = {
   } | null
   on(
     event: "update-available" | "update-downloaded",
-    listener: (info: {
-      readonly version: string
-      readonly releaseName?: unknown
-      readonly releaseNotes?: unknown
-    }) => void,
+    listener: (info: { readonly version: string }) => void,
   ): unknown
   on(
     event: "download-progress",
@@ -360,12 +353,9 @@ export type NativeUpdater = {
  * the version, and `offer` is told the update is only `available`. Installing is when
  * the updater's `install` (quitting) has been called, which this wraps to know, and on
  * macOS also while Squirrel stages the download; any other error, such as a check still
- * in flight failing offline, is only logged. The
- * notes of an offer are the release's, and none unless the update information names
- * that release.
- *
+ * in flight failing offline, is only logged. *
  * In `tell` mode it downloads and installs nothing, and tells `offer` each release newer
- * than this build is `available`, with its notes; the schedule goes on, so a newer
+ * than this build is `available`; the schedule goes on, so a newer
  * release replaces the offer.
  *
  * On macOS, pass Electron's `native` updater: electron-updater reports a download before
@@ -394,12 +384,7 @@ export const checkForUpdates = (
     readonly failedVersion?: string | undefined
     readonly native?: NativeUpdater | undefined
     /** `percent` is given for `downloading` only. */
-    readonly offer: (
-      kind: UpdateOfferKind,
-      version: string,
-      notes: readonly string[],
-      percent?: number,
-    ) => void
+    readonly offer: (kind: UpdateOfferKind, version: string, percent?: number) => void
     readonly installFailed: (version: string) => void
     readonly log: (message: string, error: unknown) => void
   },
@@ -414,13 +399,12 @@ export const checkForUpdates = (
   // Quiet: failures are reported through `log`, and routine progress is not worth a line.
   updater.logger = { info: () => {}, warn: () => {}, error: () => {} }
 
-  let downloaded: { readonly version: string; readonly notes: readonly string[] } | undefined
+  let downloaded: { readonly version: string } | undefined
   // The download under way, the first or a newer release's in place of `downloaded`, with
   // the whole percent last offered for it (-1 before any) and whether it came through.
   let loading:
     | {
         readonly version: string
-        readonly notes: readonly string[]
         percent: number
         readonly done: Promise<boolean>
       }
@@ -448,23 +432,21 @@ export const checkForUpdates = (
     staging = false
     updater.autoInstallOnAppQuit = false
     installFailed(downloaded.version)
-    offer("available", downloaded.version, downloaded.notes)
+    offer("available", downloaded.version)
   })
   updater.on("update-available", (info) => {
-    if (mode === "tell") return offer("available", info.version, updateNotesLines(info))
+    if (mode === "tell") return offer("available", info.version)
     // A release found while a download is under way waits for the next check.
     if (ended || loading !== undefined || info.version === downloaded?.version) return
     if (info.version === failedVersion) {
       // A ready update stays ready rather than give way to the release that failed.
-      if (downloaded === undefined) offer("available", info.version, updateNotesLines(info))
+      if (downloaded === undefined) offer("available", info.version)
       return
     }
     const { version } = info
-    const notes = updateNotesLines(info)
     // A failed download is reported through the error event, which logs it.
     const current = {
       version,
-      notes,
       percent: -1,
       done: updater.downloadUpdate().then(
         () => true,
@@ -473,8 +455,8 @@ export const checkForUpdates = (
           // the download where it is; a failed staging on macOS has been told of already.
           if (downloaded?.version === version) return !failed
           // The waiting file, if any, is likely gone with the failed download, so the
-          // page is told, unless it has heard of neither.
-          if (current.percent >= 0 || downloaded !== undefined) offer("available", version, notes)
+          // page is told it is being retried, unless it has heard of neither.
+          if (current.percent >= 0 || downloaded !== undefined) offer("retrying", version)
           downloaded = undefined
           if (!ended && !retried.has(version)) {
             retried.add(version)
@@ -496,16 +478,15 @@ export const checkForUpdates = (
     const whole = Math.min(100, Math.max(0, Math.floor(percent)))
     if (whole === loading.percent) return
     loading.percent = whole
-    offer("downloading", loading.version, loading.notes, whole)
+    offer("downloading", loading.version, whole)
   })
   updater.on("update-downloaded", (info) => {
     // Squirrel.Mac has the download staged, or soon will, and keeps it.
     if (native) stop()
-    const notes = updateNotesLines(info)
-    downloaded = { version: info.version, notes }
+    downloaded = { version: info.version }
     const ready = (): void => {
       staging = false
-      offer("ready", info.version, notes)
+      offer("ready", info.version)
     }
     // electron-updater reports the download just before it hands the file to Squirrel,
     // so listening now is in time for the native event that follows.

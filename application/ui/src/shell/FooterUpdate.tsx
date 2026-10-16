@@ -110,7 +110,7 @@ export const FooterUpdate = ({
   readonly hidden: boolean
 }): React.JSX.Element => {
   // Where installing from a portable copy stands.
-  const [started, setInstall] = useState<Install | null>(null)
+  const [started, setStarted] = useState<Install | null>(null)
   // How far the install has got, as far as the host tells.
   const [progress, setProgress] = useState<InstallProgress | null>(null)
   // Whether the card is saying an install is done, for a few seconds, before it fades away.
@@ -177,13 +177,13 @@ export const FooterUpdate = ({
     if (!portable || !update || running) return
     // The button pressed goes with the card's words; focus stays in the card.
     if (panel.current?.contains(document.activeElement)) panel.current.focus()
-    setInstall({ phase: "running" })
+    setStarted({ phase: "running" })
     setProgress(null)
     const stop = portable.onProgress?.(setProgress)
     void portable.onInstall().then((result: InstallResult) => {
       stop?.()
       // The card comes back with the answer, without taking focus from where the person is.
-      setInstall(
+      setStarted(
         result.kind === "installed"
           ? { phase: "installed" }
           : result.kind === "newer"
@@ -216,7 +216,7 @@ export const FooterUpdate = ({
           <button
             ref={chip}
             type="button"
-            className={`footer-action footer-update font-bold cursor-pointer`}
+            className="footer-action footer-update font-bold cursor-pointer"
             aria-label={
               running
                 ? "Installing…"
@@ -236,7 +236,7 @@ export const FooterUpdate = ({
               requested.current = true
               opener.current = "chip"
               // Opened again by the person, the card starts over without the last failure.
-              if (install.phase === "failed") setInstall({ phase: "idle" })
+              if (install.phase === "failed") setStarted({ phase: "idle" })
               update.onOpenChange(true)
             }}
           >

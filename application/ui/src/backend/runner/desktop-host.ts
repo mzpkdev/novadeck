@@ -5,8 +5,6 @@ import {
   noticeTitleLength,
   portableRunPattern,
   updateChannels,
-  updateNoteLength,
-  updateNotesLength,
   updateVersionPattern,
   type DesktopHost,
   type UpdateOffer,
@@ -75,25 +73,16 @@ export const desktopNotices = (host: DesktopHost | undefined): Backend["notices"
 }
 
 // An offer as the page takes it, or undefined for one that isn't a release's: a kind it
-// knows, a version that looks like a release's, and the notes cut to what the page
-// shows, without control characters.
+// knows and a version that looks like a release's.
 export const hostOffer = (offer: unknown): UpdateOffer | undefined => {
   if (typeof offer !== "object" || offer === null) return undefined
-  const { kind, version, notes, percent } = offer as Record<string, unknown>
-  if (kind !== "downloading" && kind !== "ready" && kind !== "available") return undefined
+  const { kind, version, percent } = offer as Record<string, unknown>
+  if (kind !== "downloading" && kind !== "ready" && kind !== "retrying" && kind !== "available") {
+    return undefined
+  }
   if (kind === "downloading" && !isUpdatePercent(percent)) return undefined
   if (typeof version !== "string" || !updateVersionPattern.test(version)) return undefined
-  const lines = Array.isArray(notes) ? (notes as unknown[]) : []
-  return {
-    kind,
-    version,
-    ...(kind === "downloading" ? { percent: percent as number } : {}),
-    notes: lines
-      .filter((line): line is string => typeof line === "string")
-      .map((line) => noticeText(line, updateNoteLength))
-      .filter(Boolean)
-      .slice(0, updateNotesLength),
-  }
+  return { kind, version, ...(kind === "downloading" ? { percent: percent as number } : {}) }
 }
 
 // The host's self-updates, where it has them: what crosses the bridge is checked, so the
@@ -209,6 +198,7 @@ export const desktopPortable = (host: DesktopHost | undefined): Backend["portabl
   const ask = host?.portable
   const install = host?.installApp
   const listen = host?.onInstallProgress
+  const listenState = host?.onPortableState
   if (!ask || !install) return undefined
   return {
     state: async () => hostPortable(await ask()),
@@ -219,6 +209,16 @@ export const desktopPortable = (host: DesktopHost | undefined): Backend["portabl
         return hostInstall(undefined)
       }
     },
+    ...(listenState && {
+      onState: (listener: (state: PortableState) => void) =>
+        listenState((state) => {
+          try {
+            listener(hostPortable(state))
+          } catch {
+            /* A state that is none of the host's is not heard. */
+          }
+        }),
+    }),
     ...(listen && {
       onProgress: (listener: (progress: InstallProgress) => void) =>
         listen((progress) => {

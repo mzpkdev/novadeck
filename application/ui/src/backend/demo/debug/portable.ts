@@ -2,7 +2,6 @@ import type { InstallProgress, InstallResult, PortableState } from "../../../mod
 import type { UpdateOffer } from "../../../model/update"
 import type { Backend } from "../../port"
 import type { DemoActionGroup } from "./types"
-import { sampleNotes } from "./updates"
 import type { DemoLaunch } from "./with-debug"
 
 // A portable copy as the demo plays one: the release waiting, if any, and how installing
@@ -36,7 +35,7 @@ export const createDemoPortable = ({
   installed = false,
   answerAfterMs = 0,
 }: DemoPortable): { readonly portable: NonNullable<Backend["portable"]> } => {
-  const state: PortableState = {
+  let state: Extract<PortableState, { portable: true }> = {
     portable: true,
     version: portableVersion,
     run: portableRun,
@@ -44,8 +43,14 @@ export const createDemoPortable = ({
   }
   const listeners = new Set<(progress: InstallProgress) => void>()
   const tell = (heard: InstallProgress): void => listeners.forEach((listener) => listener(heard))
+  const watchers = new Set<(state: PortableState) => void>()
   return {
     portable: {
+      // As the desktop host does, the state is pushed once an install ends as installed or newer.
+      onState: (listener) => {
+        watchers.add(listener)
+        return () => void watchers.delete(listener)
+      },
       onProgress: (listener) => {
         listeners.add(listener)
         return () => void listeners.delete(listener)
@@ -66,7 +71,15 @@ export const createDemoPortable = ({
           setTimeout(() => tell({ phase: "installing" }), (installAfterMs * 2) / 3)
         }
         if (install === "never") return new Promise<InstallResult>(() => {})
-        return new Promise((resolve) => setTimeout(() => resolve(install), installAfterMs))
+        return new Promise((resolve) =>
+          setTimeout(() => {
+            if (install.kind !== "failed") {
+              state = { ...state, installed: true }
+              watchers.forEach((listener) => listener(state))
+            }
+            resolve(install)
+          }, installAfterMs),
+        )
       },
     },
   }
@@ -76,7 +89,6 @@ export const createDemoPortable = ({
 export const releaseOffer = (version: string): UpdateOffer => ({
   kind: "available",
   version,
-  notes: sampleNotes,
 })
 
 // How long the host takes to install, so Installing is there to look at.

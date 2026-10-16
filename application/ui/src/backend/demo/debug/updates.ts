@@ -7,27 +7,22 @@ import type { DemoLaunch } from "./with-debug"
 // for the app coming back on the new version, a reload that forgets the offer, while one
 // waits. `download` offers a version as downloading, its percent climbing until it is
 // offered ready; any later offer, or a failed download, calls a running one off.
-// `openPage` only counts, since a browser has no release page to open.
+// `openPage` does nothing, since a browser has no release page to open.
 // The channel is remembered until the page reloads.
 export const createDemoUpdates = (
   restart: () => void = () => window.location.reload(),
 ): {
   readonly updates: DemoStates["updates"]
   readonly offer: (offer: UpdateOffer) => void
-  readonly download: (version: string, notes: readonly string[]) => void
+  readonly download: (version: string) => void
   readonly finish: () => void
-  // The download in progress, or the install on quit, failed: the update is offered as one
-  // to fetch from its release page.
-  readonly failInstall: () => void
-  // A download fails: the one running, or, with none, one started and held at 40% that
-  // fails shortly after, so the bar and its drop both show.
-  readonly failDownload: (version: string, notes: readonly string[]) => void
+  // A download fails, which the app retries by itself: the one running, or, with none, one
+  // started and held at 40% that fails shortly after, so the bar and its drop both show.
+  readonly failDownload: (version: string) => void
   readonly channel: () => UpdateChannel
-  readonly pagesOpened: () => number
 } => {
   let waiting: UpdateOffer | undefined
   let channel: UpdateChannel = "stable"
-  let pages = 0
   const listeners = new Set<(offer: UpdateOffer) => void>()
   let downloading: ReturnType<typeof setInterval> | undefined
   const stop = (): void => {
@@ -45,7 +40,7 @@ export const createDemoUpdates = (
         if (waiting !== undefined) listener(waiting)
         return () => void listeners.delete(listener)
       },
-      openPage: () => void (pages += 1),
+      openPage: () => {},
       channel: {
         get: () => Promise.resolve(channel),
         set: (next) => void (channel = next),
@@ -55,40 +50,32 @@ export const createDemoUpdates = (
       stop()
       tell(offer)
     },
-    download: (version, notes) => {
+    download: (version) => {
       stop()
       let percent = 0
-      tell({ kind: "downloading", version, notes, percent })
+      tell({ kind: "downloading", version, percent })
       downloading = setInterval(() => {
         percent = Math.min(percent + downloadStep, 100)
-        if (percent < 100) return tell({ kind: "downloading", version, notes, percent })
+        if (percent < 100) return tell({ kind: "downloading", version, percent })
         stop()
-        tell({ kind: "ready", version, notes })
+        tell({ kind: "ready", version })
       }, downloadMs)
     },
     finish: () => {
       if (waiting !== undefined) restart()
     },
-    failInstall: () => {
-      if (waiting === undefined) return
-      stop()
-      const { percent: _, ...offer } = waiting
-      tell({ ...offer, kind: "available" })
-    },
-    failDownload: (version, notes) => {
+    failDownload: (version) => {
       const fail = (): void => {
         if (waiting?.kind !== "downloading") return
         stop()
-        const { percent: _, ...offer } = waiting
-        tell({ ...offer, kind: "available" })
+        tell({ kind: "retrying", version: waiting.version })
       }
       if (waiting?.kind === "downloading") return fail()
       stop()
-      tell({ kind: "downloading", version, notes, percent: 40 })
+      tell({ kind: "downloading", version, percent: 40 })
       setTimeout(fail, failAfterMs)
     },
     channel: () => channel,
-    pagesOpened: () => pages,
   }
 }
 
@@ -97,14 +84,6 @@ export const downloadMs = 300
 export const downloadStep = 10
 // How long a download held for failing stays at 40% first.
 export const failAfterMs = 1500
-
-// Release notes as a release's might read: a handful of lines.
-export const sampleNotes: readonly string[] = [
-  "Terminals keep their place when you switch projects.",
-  "Grid view remembers the tiles you resized.",
-  "Fixed a crash when an agent finished while the window was minimized.",
-  "Faster startup on large workspaces.",
-]
 
 // What the Updates group plays an installed copy's updates with.
 export type DemoUpdates = ReturnType<typeof createDemoUpdates>
@@ -128,33 +107,29 @@ export const updatesGroup = (launch: DemoLaunch, controls: DemoUpdates): DemoAct
       {
         label: "Download",
         hint: "Bar counts up, says ready, then fades",
-        ...installed(({ download }) => download(nextVersion(), sampleNotes)),
+        ...installed(({ download }) => download(nextVersion())),
       },
       {
         label: "Download, held",
         hint: "Bar stays at 40% to look at",
         ...installed(({ offer }) =>
-          offer({ kind: "downloading", version: nextVersion(), notes: sampleNotes, percent: 40 }),
+          offer({ kind: "downloading", version: nextVersion(), percent: 40 }),
         ),
       },
       {
         label: "Download failed",
         hint: "Bar stands at 40% for a moment, then drops and nothing shows; the host retries later",
-        ...installed(({ failDownload }) => failDownload(nextVersion(), sampleNotes)),
+        ...installed(({ failDownload }) => failDownload(nextVersion())),
       },
       {
         label: "Release to fetch",
         hint: "Footer chip, Update available; opens the release page",
-        ...installed(({ offer }) =>
-          offer({ kind: "available", version: nextVersion(), notes: sampleNotes }),
-        ),
+        ...installed(({ offer }) => offer({ kind: "available", version: nextVersion() })),
       },
       {
         label: "Ready at launch",
         hint: "No bar: downloaded before this run",
-        ...installed(({ offer }) =>
-          offer({ kind: "ready", version: nextVersion(), notes: sampleNotes }),
-        ),
+        ...installed(({ offer }) => offer({ kind: "ready", version: nextVersion() })),
       },
       {
         label: "Early builds on",

@@ -1,7 +1,12 @@
 import type { InstallProgress, InstallResult, PortableState } from "@novadeck/protocol/bridge"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
-import { installAppChannel, installProgressChannel, portableChannel } from "../bridge.js"
+import {
+  installAppChannel,
+  installProgressChannel,
+  portableChannel,
+  portableStateChannel,
+} from "../bridge.js"
 import { isNewerVersion } from "./applications-folder.js"
 import {
   currentOrNewerCopy,
@@ -69,6 +74,9 @@ const quitting: InstallResult = {
 export const portableInstaller = (host: PortableHost): PortableInstaller => {
   let under: Promise<InstallResult> | undefined
   let done: InstallResult | undefined
+  // Whether this run installed, or found a newer installed copy: either way there is
+  // nothing more for the page to offer.
+  let settled = false
 
   const run = async (progress: (progress: InstallProgress) => void): Promise<InstallResult> => {
     const copies = await host.find()
@@ -97,7 +105,7 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
   return {
     state: () =>
       host.portable
-        ? { portable: true, version: host.version, run: host.run, installed: done !== undefined }
+        ? { portable: true, version: host.version, run: host.run, installed: settled }
         : { portable: false },
     install: (progress) => {
       if (!host.portable)
@@ -114,6 +122,7 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
         })
         .then((result) => {
           if (result.kind === "installed") done = result
+          if (result.kind !== "failed") settled = true
           return result
         })
         .finally(() => {
@@ -237,8 +246,8 @@ type PortableIpc = {
   handle(channel: string, listener: (event: IpcMainInvokeEvent) => unknown): unknown
 }
 
-/** A page that install progress is sent to. */
-export type ProgressTarget = { send(channel: string, progress: InstallProgress): void }
+/** A page that install progress and the portable state are sent to. */
+export type ProgressTarget = { send(channel: string, value: unknown): void }
 
 /**
  * Answers the app's own pages whether this is a portable copy, and their requests to
@@ -265,9 +274,16 @@ export const registerPortableIpc = <Window>(
   ipc.handle(installAppChannel, (event): Promise<InstallResult> | InstallResult =>
     window(event) === undefined
       ? { kind: "failed", reason: "Installing is not allowed from here." }
-      : installer.install((progress) => {
-          for (const page of pages()) page.send(installProgressChannel, progress)
-        }),
+      : installer
+          .install((progress) => {
+            for (const page of pages()) page.send(installProgressChannel, progress)
+          })
+          .then((result) => {
+            // Every window learns of a settled install, not only the one that asked.
+            if (result.kind !== "failed")
+              for (const page of pages()) page.send(portableStateChannel, installer.state())
+            return result
+          }),
   )
 }
 

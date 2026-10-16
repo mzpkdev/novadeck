@@ -102,6 +102,13 @@ export type DesktopBridge = {
    */
   onInstallProgress?(listener: (progress: InstallProgress) => void): () => void
   /**
+   * Hears the portable state whenever it changes, until the returned function is called:
+   * an install that answered `installed` or `newer` makes `installed` true for the rest of
+   * the run, in every window. Absent from hosts that do not push; the page then asks
+   * `portable` again when it needs to.
+   */
+  onPortableState?(listener: (state: PortableState) => void): () => void
+  /**
    * What uninstalling this copy of the app would do, or why it can't be done from here.
    * Absent from hosts that came before it. See `UninstallPlan`.
    */
@@ -165,7 +172,7 @@ export type PortableState =
       readonly portable: true
       readonly version: string
       readonly run: string
-      /** Whether this run already installed the app, so a window opened again shows it done. */
+      /** Whether this run already installed the app (or found a newer one installed), so a window opened again shows it done. */
       readonly installed: boolean
     }
 
@@ -216,23 +223,21 @@ export const updateChannels: readonly UpdateChannel[] = ["stable", "early"]
 /**
  * An update the host tells the page of. `downloading`: a release the host is downloading,
  * `percent` (a whole number from 0 to 100) along; it turns `ready` once downloaded, or
- * `available` should the download fail. `ready`: downloaded, and installed when
- * the app next quits. `available`: a newer release this build
- * cannot install itself, which the person installs from its release page, as for an
- * unsigned macOS app, an AppImage in a folder it cannot write, a portable copy, or after
- * an install failed. `notes` are the release's notes as plain-text lines, at most
- * `updateNotesLength` of them, each at most `updateNoteLength` long, without control
- * characters; empty when the release has none the host could read.
+ * `retrying` should the download fail. `ready`: downloaded, and installed when the app
+ * next quits. `retrying`: a download failed and the host will try again by itself, so the
+ * person has nothing to do and the page shows nothing for it. `available`: a newer release
+ * the person must fetch themselves, because this build cannot install it: an unsigned
+ * macOS app, an AppImage in a folder it cannot write, a portable copy, or an install that
+ * failed.
  */
 export type UpdateOffer = {
   readonly kind: UpdateOfferKind
   readonly version: string
-  readonly notes: readonly string[]
   /** Set only for `downloading`. */
   readonly percent?: number
 }
 
-export type UpdateOfferKind = "downloading" | "ready" | "available"
+export type UpdateOfferKind = "downloading" | "ready" | "retrying" | "available"
 
 /** Whether `value` is how far along a download is: a whole percent from 0 to 100. */
 export const isUpdatePercent = (value: unknown): value is number =>
@@ -240,11 +245,6 @@ export const isUpdatePercent = (value: unknown): value is number =>
 
 /** What an update's version may be, as the host reports it: a release's semantic version. */
 export const updateVersionPattern = /^\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]{1,64})?$/
-
-/** The most release-note lines an offer carries. */
-export const updateNotesLength = 12
-/** The longest release-note line an offer carries. */
-export const updateNoteLength = 200
 
 /** A desktop notification about one terminal; see `DesktopBridge.showNotice`. */
 export type DesktopNotice = {

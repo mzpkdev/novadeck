@@ -80,11 +80,12 @@ build checks its own signature once at launch with `codesign`. See
   is tracked at a time, and a release found while it is under way waits for the next check.
 - **A failed download** is tried again by a check five minutes later, once per release in a
   run; after that the four-hourly checks try it. Once its progress (or an update it
-  replaces) was offered, it is offered as `available` meanwhile, and the page drops the
+  replaces) was offered, it is offered as `retrying` meanwhile, and the page drops the
   bar at once and shows nothing in its place: no chip either, since a copy that installs itself
   has nothing for the person to do, and the retry tries again. One that failed before any progress, with no
-  update waiting, goes untold, as a failed check does. A failed staging on macOS (an
-  install failure) turns the offer to `available` the same way, quietly.
+  update waiting, goes untold, as a failed check does. A failed staging on macOS is an
+  install failure: the version is marked failed, is not tried again, and the offer turns to
+  `available`, for the person to fetch.
 - **A newer release** found while an update waits replaces it, so one quit lands on the
   latest release rather than one per release missed. No release file carries a
   version in its name (`electron-builder.yml`), so electron-updater downloads the newer one
@@ -93,7 +94,7 @@ build checks its own signature once at launch with `codesign`. See
   `downloading` the newer release as its progress comes in, so the page shows the bar
   again. Should the download fail, electron-updater clears its download
   folder, which likely takes the waiting file too: the newer release is offered as
-  `available` until the retry downloads it. Quitting ends the schedule first,
+  `retrying` until the retry downloads it. Quitting ends the schedule first,
   so no new download starts on the way out; one under way goes on, and a quit after it
   lands installs the newer release. On Windows the newer one costs its changed ranges and
   then the whole file, and its percent starts over once: electron-updater's differential
@@ -104,15 +105,12 @@ build checks its own signature once at launch with `codesign`. See
   waiting file: were the folder emptied while the updater still names the file, quitting
   would delete the running AppImage and install nothing.
 - **Telling** builds download nothing and keep checking, so a newer release replaces the
-  offer. The offer is `available`, and the footer chip is for copies that cannot install
-  themselves: these, and a copy told at launch that its install failed. An installed copy shows a quiet "Update available"
-  chip in the footer (no panel, notes or Later) whose press opens the release page,
+  offer. The offer is `available`: the person must fetch the release themselves. `available`
+  means that and nothing else (a tell-mode build, a portable copy, or an install that failed),
+  and the footer chip is for it; a failed download (`retrying`) shows nothing. An installed
+  copy shows a quiet "Update available" chip in the footer (no panel or Later) whose press opens the release page,
   `https://github.com/<owner>/<repo>/releases/tag/v<version>`, in the browser. A portable
   copy has its install entry instead.
-- **Notes** are shown only when the update information names the offered release (its
-  release name, "Novadeck v<version>", ends in the version). When the promoted tag is not in
-  the releases feed electron-updater falls back to the newest entry, whose notes belong to
-  another version, and the offer carries none.
 - A quit caused by the system shutting down or the session ending installs nothing, as the
   system may kill the installer halfway. On macOS Squirrel.Mac installs a staged update on
   any exit; it swaps the bundle whole, so an interrupted install leaves the old app.
@@ -248,7 +246,7 @@ removes the old one; should the second rename fail, the old copy is put back. A 
 person cannot write to belongs to another account, and nothing is written: "Novadeck in
 Applications belongs to another account on this Mac. Remove it and try again." The portable
 bundle is left where it is, and nothing is renamed for the person. An installed copy newer
-than this one is not replaced: the answer is `newer`. One of the same version, or this very bundle (a translocated copy of the one in Applications), is left alone and the answer is `installed`. On macOS 13 and later, replacing an existing copy in `/Applications` may need the person's consent (App Management) when the copy was installed by another app or the build is unsigned or ad hoc: the swap then fails with EPERM, and the reason says plainly that macOS didn't allow replacing the installed Novadeck. Manual check: install over an older `/Applications/novadeck.app` with an unsigned build, with App Management denied and allowed. An install interrupted by a quit, or a
+than this one is not replaced: the answer is `newer`. One of the same version, or this very bundle, is left alone (a translocated copy of the one in Applications runs from another path, so it is the same-version check that catches it) and the answer is `installed`. On macOS 13 and later, replacing an existing copy in `/Applications` may need the person's consent (App Management) when the copy was installed by another app or the build is unsigned or ad hoc: the swap then fails with EPERM, and the reason says plainly that macOS didn't allow replacing the installed Novadeck. Manual check: install over an older `/Applications/novadeck.app` with an unsigned build, with App Management denied and allowed. An install interrupted by a quit, or a
 rollback that itself failed, can leave the only installed copy renamed aside, or a large
 half-made copy; `recoverBundles` runs before each install and at the launch of a portable
 copy, in both Applications folders: it restores an aside whose copy is missing, and removes
@@ -405,11 +403,10 @@ kill the process tree and wait.
 ## The page's view
 
 `DesktopBridge` in `application/protocol/src/bridge.ts` carries `onUpdate` (an
-`UpdateOffer` with `kind`, `version`, `notes` and, for `downloading`, a whole `percent`), `openUpdatePage`,
-`updateChannel` and `setUpdateChannel`. Release notes arrive from GitHub as HTML; the host
-turns them into plain-text lines (one per list item or paragraph, tags, entities and
-control characters stripped, at most `updateNotesLength` lines of `updateNoteLength`
-characters). The preload checks every offer again before the page sees it. Requests count
+`UpdateOffer` with `kind` (`downloading`, `ready`, `retrying` or `available`), `version` and, for `downloading`, a whole `percent`), `openUpdatePage`,
+`updateChannel` and `setUpdateChannel`. The app shows no release notes. `onPortableState`
+pushes the `PortableState` to every window when it changes: an install answering
+`installed` or `newer` sets `installed` for the rest of the run. The preload checks every offer again before the page sees it. Requests count
 only from the main frame of the app's own page.
 
 ## Release assets

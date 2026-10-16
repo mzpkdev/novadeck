@@ -5,7 +5,7 @@ import { createContentDemo } from "./content"
 import { createDemoPortable, type DemoPortable } from "./debug/portable"
 import { createDemoSandbox, sampleFix } from "./debug/sandbox"
 import { createDemoUninstall, uninstallScenarios } from "./debug/uninstall"
-import { createDemoUpdates, sampleNotes } from "./debug/updates"
+import { createDemoUpdates } from "./debug/updates"
 import { createDemoBackend } from "./index"
 import { visitorDemo } from "./visitor"
 
@@ -37,14 +37,13 @@ const requestedUpdate = (): UpdateOffer | undefined => {
     kind && {
       kind,
       version: "0.0.80",
-      notes: sampleNotes,
     }
   )
 }
 
 const demoWithUpdate = (update: UpdateOffer): ReturnType<typeof createDemoBackend> => {
   const { updates, offer, download } = createDemoUpdates()
-  if (update.kind === "downloading") download(update.version, update.notes)
+  if (update.kind === "downloading") download(update.version)
   else offer(update)
   return { ...createDemoBackend(), updates }
 }

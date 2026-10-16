@@ -3,7 +3,6 @@ import { memo, useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import type { Backend, BackendConnectionState } from "../backend/port"
 import { accountUsage, movedOrder, nextAccountReset } from "../model/account-usage"
 import type { Workspace } from "../model/types"
-import { offerToFetch } from "../model/update"
 import { readSubscriptionOrder, writeSubscriptionOrder } from "../shell/shell-storage"
 import { SubscriptionUsage } from "../shell/SubscriptionUsage"
 import { WorkspaceFooter as Footer, type FooterStatus } from "../shell/WorkspaceFooter"
@@ -32,7 +31,6 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   const connection = useConnection(backend.connection)
   const crashes = useUiState((state) => state.crashLoop)
   const offer = useUiState((state) => state.update)
-  const downloaded = useUiState((state) => state.downloaded)
   const updateOpen = useUiState((state) => state.updateOpen)
   const sandbox = useUiState((state) => state.sandbox)
   const sandboxOpen = useUiState((state) => state.sandboxOpen)
@@ -55,7 +53,6 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   )
   const zen = useUiState((state) => Boolean(state.shell.zen))
   const navigate = useUiState((state) => state.shell.navigate)
-  const fetchable = offerToFetch(offer, downloaded)
   const { count, running } = useWorkspaceState((workspace) => {
     const { terminals } = currentState(workspace).roster
     return {
@@ -107,8 +104,8 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
       progress={updates && !portable ? offer : null}
       noticeOpen={sandboxOpen}
       available={
-        updates && !portable && !portablePending && fetchable
-          ? { version: fetchable.version, onOpenPage: updates.openPage }
+        updates && !portable && !portablePending && offer?.kind === "available"
+          ? { version: offer.version, onOpenPage: updates.openPage }
           : undefined
       }
       update={

@@ -3,7 +3,7 @@ import { describe, expect, it } from "../test"
 import { watchedAfter } from "./UpdateProgress"
 
 const offer = (kind: UpdateOffer["kind"], version = "0.0.80"): UpdateOffer =>
-  kind === "downloading" ? { kind, version, notes: [], percent: 10 } : { kind, version, notes: [] }
+  kind === "downloading" ? { kind, version, percent: 10 } : { kind, version }
 
 describe("watchedAfter", () => {
   it("starts watching a version when it is heard downloading", () => {
@@ -33,6 +33,7 @@ describe("watchedAfter", () => {
 
   it("ends the bar when the download fails, is withdrawn, or another version is ready", () => {
     const watched = { version: "0.0.80", moment: "progress" } as const
+    expect(watchedAfter(watched, offer("retrying"))).toEqual({ ...watched, moment: "gone" })
     expect(watchedAfter(watched, offer("available"))).toEqual({ ...watched, moment: "gone" })
     expect(watchedAfter(watched, null)).toEqual({ ...watched, moment: "gone" })
     expect(watchedAfter(watched, offer("ready", "0.0.81"))).toEqual({ ...watched, moment: "gone" })

@@ -276,8 +276,8 @@ describe("telling pages of an update", () => {
   it("tells every open page the offer", () => {
     const [first, second] = [page(), page()]
     const offers = trackOffer(() => [first, second])
-    offers.offer("ready", "1.2.3", ["Faster."])
-    const offer = { kind: "ready", version: "1.2.3", notes: ["Faster."] }
+    offers.offer("ready", "1.2.3")
+    const offer = { kind: "ready", version: "1.2.3" }
     expect(first.sent).toEqual([[updateOfferChannel, offer]])
     expect(second.sent).toEqual([[updateOfferChannel, offer]])
     expect(offers.current()).toEqual(offer)
@@ -288,19 +288,17 @@ describe("telling pages of an update", () => {
     const offers = trackOffer<ReturnType<typeof page>>(() => [])
     offers.request(late)
     expect(late.sent).toEqual([])
-    offers.offer("available", "1.2.3", [])
+    offers.offer("available", "1.2.3")
     offers.request(late)
-    expect(late.sent).toEqual([
-      [updateOfferChannel, { kind: "available", version: "1.2.3", notes: [] }],
-    ])
+    expect(late.sent).toEqual([[updateOfferChannel, { kind: "available", version: "1.2.3" }]])
   })
 
   it("tells pages of a newer version, but not again of the one they know", () => {
     const open = page()
     const offers = trackOffer(() => [open])
-    offers.offer("available", "1.2.3", [])
-    offers.offer("available", "1.2.3", ["Changed notes."])
-    offers.offer("available", "1.3.0", [])
+    offers.offer("available", "1.2.3")
+    offers.offer("available", "1.2.3")
+    offers.offer("available", "1.3.0")
     expect(open.sent.map(([, offer]) => (offer as { version: string }).version)).toEqual([
       "1.2.3",
       "1.3.0",
@@ -310,23 +308,23 @@ describe("telling pages of an update", () => {
   it("tells pages each percent a download reaches once, and carries it only for a download", () => {
     const open = page()
     const offers = trackOffer(() => [open])
-    offers.offer("downloading", "1.2.3", [], { percent: 0 })
-    offers.offer("downloading", "1.2.3", [], { percent: 0 })
-    offers.offer("downloading", "1.2.3", [], { percent: 7 })
-    offers.offer("downloading", "1.2.3", [], { percent: 7 })
-    offers.offer("ready", "1.2.3", [], { percent: 100 })
+    offers.offer("downloading", "1.2.3", { percent: 0 })
+    offers.offer("downloading", "1.2.3", { percent: 0 })
+    offers.offer("downloading", "1.2.3", { percent: 7 })
+    offers.offer("downloading", "1.2.3", { percent: 7 })
+    offers.offer("ready", "1.2.3", { percent: 100 })
     expect(open.sent.map(([, offer]) => offer)).toEqual([
-      { kind: "downloading", version: "1.2.3", notes: [], percent: 0 },
-      { kind: "downloading", version: "1.2.3", notes: [], percent: 7 },
-      { kind: "ready", version: "1.2.3", notes: [] },
+      { kind: "downloading", version: "1.2.3", percent: 0 },
+      { kind: "downloading", version: "1.2.3", percent: 7 },
+      { kind: "ready", version: "1.2.3" },
     ])
   })
 
   it("tells pages when a ready update could not be installed after all", () => {
     const open = page()
     const offers = trackOffer(() => [open])
-    offers.offer("ready", "1.2.3", [])
-    offers.offer("available", "1.2.3", [])
+    offers.offer("ready", "1.2.3")
+    offers.offer("available", "1.2.3")
     expect(offers.current()?.kind).toBe("available")
     expect(open.sent).toHaveLength(2)
   })
@@ -334,7 +332,7 @@ describe("telling pages of an update", () => {
   it("remembers and tells nothing that is not a version", () => {
     const open = page()
     const offers = trackOffer(() => [open])
-    offers.offer("ready", "latest; rm -rf", [])
+    offers.offer("ready", "latest; rm -rf")
     expect(open.sent).toEqual([])
     expect(offers.current()).toBeUndefined()
   })
@@ -478,7 +476,7 @@ describe("checking for updates", () => {
     } = {},
   ) => {
     const updater = new FakeUpdater()
-    const offered: [string, string, readonly string[], number?][] = []
+    const offered: [string, string, number?][] = []
     const failed: string[] = []
     const logged: string[] = []
     const checks = checkForUpdates(updater as unknown as Updater, {
@@ -486,10 +484,8 @@ describe("checking for updates", () => {
       channel: options.channel ?? "stable",
       failedVersion: options.failedVersion,
       native: options.native,
-      offer: (kind, version, notes, percent) =>
-        void offered.push(
-          percent === undefined ? [kind, version, notes] : [kind, version, notes, percent],
-        ),
+      offer: (kind, version, percent) =>
+        void offered.push(percent === undefined ? [kind, version] : [kind, version, percent]),
       installFailed: (version) => void failed.push(version),
       log: (message) => void logged.push(message),
     })
@@ -539,21 +535,16 @@ describe("checking for updates", () => {
   })
 
   context("in install mode", () => {
-    it("offers the update as ready once downloaded, with its notes as lines", () => {
+    it("offers the update as ready once downloaded", () => {
       const { updater, offered } = checking()
-      const info = {
-        version: "1.2.3",
-        releaseName: "Novadeck v1.2.3",
-        releaseNotes: "<ul><li>Faster &amp; smaller.</li><li>Fixes.</li></ul>",
-      }
+      const info = { version: "1.2.3" }
       updater.emit("update-available", info)
-      const notes = ["Faster & smaller.", "Fixes."]
       updater.emit("download-progress", { percent: 0 })
-      expect(offered).toEqual([["downloading", "1.2.3", notes, 0]])
+      expect(offered).toEqual([["downloading", "1.2.3", 0]])
       updater.emit("update-downloaded", info)
       expect(offered).toEqual([
-        ["downloading", "1.2.3", notes, 0],
-        ["ready", "1.2.3", notes],
+        ["downloading", "1.2.3", 0],
+        ["ready", "1.2.3"],
       ])
     })
 
@@ -562,7 +553,7 @@ describe("checking for updates", () => {
       updater.emit("update-available", { version: "1.2.3" })
       expect(offered).toEqual([])
       updater.emit("update-downloaded", { version: "1.2.3" })
-      expect(offered).toEqual([["ready", "1.2.3", []]])
+      expect(offered).toEqual([["ready", "1.2.3"]])
     })
 
     it("on macOS offers the update as ready only once Squirrel has staged it, downloading until then", () => {
@@ -573,13 +564,13 @@ describe("checking for updates", () => {
       updater.emit("download-progress", { percent: 99.6 })
       updater.emit("update-downloaded", { version: "1.2.3" })
       expect(offered).toEqual([
-        ["downloading", "1.2.3", [], 0],
-        ["downloading", "1.2.3", [], 99],
+        ["downloading", "1.2.3", 0],
+        ["downloading", "1.2.3", 99],
       ])
       updater.emit("download-progress", { percent: 100 })
       expect(offered).toHaveLength(2)
       native.emit("update-downloaded")
-      expect(offered.at(-1)).toEqual(["ready", "1.2.3", []])
+      expect(offered.at(-1)).toEqual(["ready", "1.2.3"])
       native.emit("update-downloaded")
       expect(offered).toHaveLength(3)
     })
@@ -587,17 +578,11 @@ describe("checking for updates", () => {
     context("while it downloads", () => {
       it("offers each whole percent of progress once, as it changes", () => {
         const { updater, offered } = checking()
-        updater.emit("update-available", {
-          version: "1.2.3",
-          releaseName: "Novadeck v1.2.3",
-          releaseNotes: "<p>Faster.</p>",
-        })
+        updater.emit("update-available", { version: "1.2.3" })
         for (const percent of [0.4, 0.9, 1, 1.5, 1.99, 2, 57.3, 100])
           updater.emit("download-progress", { percent })
-        expect(offered.map(([, , , percent]) => percent)).toEqual([0, 1, 2, 57, 100])
-        expect(
-          offered.every(([kind, , notes]) => kind === "downloading" && notes.length === 1),
-        ).toBe(true)
+        expect(offered.map(([, , percent]) => percent)).toEqual([0, 1, 2, 57, 100])
+        expect(offered.every(([kind]) => kind === "downloading")).toBe(true)
       })
 
       it("ignores progress when no download of ours is under way", async () => {
@@ -610,12 +595,12 @@ describe("checking for updates", () => {
         await vi.advanceTimersByTimeAsync(0)
         updater.emit("download-progress", { percent: 50 })
         expect(offered).toEqual([
-          ["downloading", "1.2.3", [], 10],
-          ["ready", "1.2.3", []],
+          ["downloading", "1.2.3", 10],
+          ["ready", "1.2.3"],
         ])
       })
 
-      it("offers it as available when the first download fails partway, which the error event logs", async () => {
+      it("offers it as retrying when the first download fails partway, which the error event logs", async () => {
         const { updater, offered, failed, logged } = checking()
         const download = deferred<unknown>()
         updater.downloadResult = () => download.promise
@@ -625,8 +610,8 @@ describe("checking for updates", () => {
         download.reject(new Error("download failed"))
         await vi.advanceTimersByTimeAsync(0)
         expect(offered).toEqual([
-          ["downloading", "1.2.3", [], 30],
-          ["available", "1.2.3", []],
+          ["downloading", "1.2.3", 30],
+          ["retrying", "1.2.3"],
         ])
         expect(logged).toEqual(["The update check failed."])
         expect(failed).toEqual([])
@@ -694,7 +679,7 @@ describe("checking for updates", () => {
         updater.emit("update-downloaded", { version: "1.2.3" })
         download.reject(new Error("the blockmap could not be copied"))
         await vi.advanceTimersByTimeAsync(0)
-        expect(offered.at(-1)).toEqual(["ready", "1.2.3", []])
+        expect(offered.at(-1)).toEqual(["ready", "1.2.3"])
       })
 
       it("leaves a release found meanwhile to a later check", () => {
@@ -747,17 +732,17 @@ describe("checking for updates", () => {
       it("downloads it in place of the waiting one, showing its progress until it is in, and offers it as ready", async () => {
         const { updater, offered, download } = waiting()
         expect(updater.downloads).toHaveLength(1)
-        expect(offered).toEqual([["ready", "1.2.3", []]])
+        expect(offered).toEqual([["ready", "1.2.3"]])
         updater.emit("download-progress", { percent: 0 })
         updater.emit("download-progress", { percent: 40.2 })
         updater.emit("update-downloaded", { version: "1.3.0" })
         download.resolve(undefined)
         await vi.advanceTimersByTimeAsync(0)
         expect(offered).toEqual([
-          ["ready", "1.2.3", []],
-          ["downloading", "1.3.0", [], 0],
-          ["downloading", "1.3.0", [], 40],
-          ["ready", "1.3.0", []],
+          ["ready", "1.2.3"],
+          ["downloading", "1.3.0", 0],
+          ["downloading", "1.3.0", 40],
+          ["ready", "1.3.0"],
         ])
       })
 
@@ -773,7 +758,7 @@ describe("checking for updates", () => {
         expect(updater.downloads).toHaveLength(1)
       })
 
-      it("offers it as available when its download fails, and downloads it at a later check", async () => {
+      it("offers it as retrying when its download fails, and downloads it at a later check", async () => {
         const { updater, offered, failed, logged, download } = waiting()
         // electron-updater reports the failure through the error event before it rejects.
         updater.emit("error", new Error("download failed"))
@@ -781,8 +766,8 @@ describe("checking for updates", () => {
         await vi.advanceTimersByTimeAsync(0)
         // The ready update is likely gone, so the page hears even without any progress.
         expect(offered).toEqual([
-          ["ready", "1.2.3", []],
-          ["available", "1.3.0", []],
+          ["ready", "1.2.3"],
+          ["retrying", "1.3.0"],
         ])
         expect(logged).toEqual(["The update check failed."])
         expect(failed).toEqual([])
@@ -790,7 +775,7 @@ describe("checking for updates", () => {
         updater.emit("update-available", { version: "1.3.0" })
         expect(updater.downloads).toHaveLength(2)
         updater.emit("update-downloaded", { version: "1.3.0" })
-        expect(offered.at(-1)).toEqual(["ready", "1.3.0", []])
+        expect(offered.at(-1)).toEqual(["ready", "1.3.0"])
       })
     })
 
@@ -806,11 +791,9 @@ describe("checking for updates", () => {
         const { updater, offered } = checking({ failedVersion: "1.2.3" })
         updater.emit("update-available", {
           version: "1.2.3",
-          releaseName: "Novadeck v1.2.3",
-          releaseNotes: "<p>Faster.</p>",
         })
         expect(updater.downloads).toHaveLength(0)
-        expect(offered).toEqual([["available", "1.2.3", ["Faster."]]])
+        expect(offered).toEqual([["available", "1.2.3"]])
       })
 
       it("installs a newer release as usual", () => {
@@ -818,7 +801,7 @@ describe("checking for updates", () => {
         updater.emit("update-available", { version: "1.3.0" })
         expect(updater.downloads).toHaveLength(1)
         updater.emit("update-downloaded", { version: "1.3.0" })
-        expect(offered.at(-1)).toEqual(["ready", "1.3.0", []])
+        expect(offered.at(-1)).toEqual(["ready", "1.3.0"])
         expect(updater.autoInstallOnAppQuit).toBe(true)
       })
 
@@ -826,7 +809,7 @@ describe("checking for updates", () => {
         const { updater, offered } = checking({ failedVersion: "1.2.3" })
         updater.emit("update-downloaded", { version: "1.3.0" })
         updater.emit("update-available", { version: "1.2.3" })
-        expect(offered).toEqual([["ready", "1.3.0", []]])
+        expect(offered).toEqual([["ready", "1.3.0"]])
       })
 
       it("keeps checking, so a newer release is found", async () => {
@@ -841,16 +824,14 @@ describe("checking for updates", () => {
       const { updater, offered, failed, logged } = checking()
       updater.emit("update-downloaded", {
         version: "1.2.3",
-        releaseName: "Novadeck v1.2.3",
-        releaseNotes: "<p>Faster.</p>",
       })
       updater.install()
       updater.emit("error", new Error("the installer failed"))
       expect(failed).toEqual(["1.2.3"])
       expect(updater.autoInstallOnAppQuit).toBe(false)
       expect(offered).toEqual([
-        ["ready", "1.2.3", ["Faster."]],
-        ["available", "1.2.3", ["Faster."]],
+        ["ready", "1.2.3"],
+        ["available", "1.2.3"],
       ])
       expect(logged).toEqual(["Installing the update failed."])
     })
@@ -861,7 +842,7 @@ describe("checking for updates", () => {
       updater.emit("error", new Error("offline"))
       expect(failed).toEqual([])
       expect(updater.autoInstallOnAppQuit).toBe(true)
-      expect(offered).toEqual([["ready", "1.2.3", []]])
+      expect(offered).toEqual([["ready", "1.2.3"]])
       expect(logged).toEqual(["The update check failed."])
     })
 
@@ -884,7 +865,7 @@ describe("checking for updates", () => {
       updater.emit("error", new Error("Squirrel could not stage"))
       expect(failed).toEqual(["1.2.3"])
       expect(logged).toEqual(["Installing the update failed."])
-      expect(offered).toEqual([["available", "1.2.3", []]])
+      expect(offered).toEqual([["available", "1.2.3"]])
     })
 
     it("does not mark a failed check as a failed install", () => {
@@ -901,33 +882,20 @@ describe("checking for updates", () => {
       await vi.advanceTimersByTimeAsync(0)
       expect(updater.downloads).toHaveLength(1)
     })
-
-    it("gives no notes that belong to another release", () => {
-      const { updater, offered } = checking()
-      updater.emit("update-downloaded", {
-        version: "1.2.3",
-        releaseName: "Novadeck v1.2.4",
-        releaseNotes: "<p>Another version's.</p>",
-      })
-      expect(offered).toEqual([["ready", "1.2.3", []]])
-    })
   })
 
   context("in tell mode", () => {
-    it("offers each release newer than the build as available, with its notes", () => {
+    it("offers each release newer than the build as available, ", () => {
       const { updater, offered } = checking({ mode: "tell" })
       updater.emit("update-available", {
         version: "1.2.3",
-        releaseName: "Novadeck v1.2.3",
-        releaseNotes: "<p>Faster.</p>",
       })
       updater.emit("update-available", {
         version: "1.3.0",
-        releaseNotes: null,
       })
       expect(offered).toEqual([
-        ["available", "1.2.3", ["Faster."]],
-        ["available", "1.3.0", []],
+        ["available", "1.2.3"],
+        ["available", "1.3.0"],
       ])
     })
 

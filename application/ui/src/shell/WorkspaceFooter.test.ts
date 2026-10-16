@@ -37,7 +37,7 @@ const props = (status: FooterStatus, update?: UpdateOffer) => ({
   },
 })
 
-const ready: UpdateOffer = { kind: "ready", version: "0.0.80", notes: [] }
+const ready: UpdateOffer = { kind: "ready", version: "0.0.80" }
 const downloading: UpdateOffer = { ...ready, kind: "downloading", percent: 42 }
 
 const announcer = (page: Rendered) =>

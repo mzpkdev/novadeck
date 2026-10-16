@@ -30,9 +30,8 @@ export const watchedAfter = (
 // An update downloading, as a bar floating above the footer's right end: what is happening
 // and how far along, nothing to press. It never takes keys, focus or clicks, so the corner
 // it covers stays usable, and it waits out Zen mode with the footer, and any notice open in
-// the same corner. A finished download
-// says it installs on the next restart and fades; a failed one drops the bar at once, as
-// the host tries again with its next check.
+// the same corner. A finished download says it installs on the next restart and fades; a
+// failed one (`retrying`) drops the bar at once, as the host tries again by itself.
 export const UpdateProgress = ({
   offer,
   hidden,

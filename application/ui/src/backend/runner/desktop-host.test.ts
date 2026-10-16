@@ -145,22 +145,24 @@ describe("desktop version", () => {
 
 describe("desktop updates", () => {
   context("in a host that has them", () => {
-    it("hears offers that look like a release's and no others", () => {
+    it("hears offers that look like a release's, and a download to retry, and no others", () => {
       const { bridge, report } = updater()
       const heard: unknown[] = []
       const stop = desktopUpdates(bridge)!.onOffer((offer) => heard.push(offer))
-      report({ kind: "ready", version: "0.0.80", notes: ["One."] })
-      report({ kind: "available", version: "1.2.3-beta.1", notes: [] })
-      report({ kind: "later", version: "0.0.80", notes: [] })
-      report({ kind: "ready", version: "latest", notes: [] })
-      report({ kind: "ready", version: "0.0.80\n<b>", notes: [] })
+      report({ kind: "ready", version: "0.0.80" })
+      report({ kind: "available", version: "1.2.3-beta.1" })
+      report({ kind: "later", version: "0.0.80" })
+      report({ kind: "retrying", version: "0.0.82" })
+      report({ kind: "ready", version: "latest" })
+      report({ kind: "ready", version: "0.0.80\n<b>" })
       report("0.0.80")
       report(null)
       stop()
-      report({ kind: "ready", version: "0.0.81", notes: [] })
+      report({ kind: "ready", version: "0.0.81" })
       expect(heard).toEqual([
-        { kind: "ready", version: "0.0.80", notes: ["One."] },
-        { kind: "available", version: "1.2.3-beta.1", notes: [] },
+        { kind: "ready", version: "0.0.80" },
+        { kind: "available", version: "1.2.3-beta.1" },
+        { kind: "retrying", version: "0.0.82" },
       ])
     })
 
@@ -168,47 +170,18 @@ describe("desktop updates", () => {
       const { bridge, report } = updater()
       const heard: unknown[] = []
       desktopUpdates(bridge)!.onOffer((offer) => heard.push(offer))
-      report({ kind: "downloading", version: "0.0.80", notes: [], percent: 0 })
-      report({ kind: "downloading", version: "0.0.80", notes: [], percent: 100 })
-      report({ kind: "downloading", version: "0.0.80", notes: [] })
-      report({ kind: "downloading", version: "0.0.80", notes: [], percent: 42.5 })
-      report({ kind: "downloading", version: "0.0.80", notes: [], percent: 101 })
-      report({ kind: "downloading", version: "0.0.80", notes: [], percent: "40" })
-      report({ kind: "ready", version: "0.0.80", notes: [], percent: 40 })
+      report({ kind: "downloading", version: "0.0.80", percent: 0 })
+      report({ kind: "downloading", version: "0.0.80", percent: 100 })
+      report({ kind: "downloading", version: "0.0.80" })
+      report({ kind: "downloading", version: "0.0.80", percent: 42.5 })
+      report({ kind: "downloading", version: "0.0.80", percent: 101 })
+      report({ kind: "downloading", version: "0.0.80", percent: "40" })
+      report({ kind: "ready", version: "0.0.80", percent: 40 })
       expect(heard).toEqual([
-        { kind: "downloading", version: "0.0.80", notes: [], percent: 0 },
-        { kind: "downloading", version: "0.0.80", notes: [], percent: 100 },
-        { kind: "ready", version: "0.0.80", notes: [] },
+        { kind: "downloading", version: "0.0.80", percent: 0 },
+        { kind: "downloading", version: "0.0.80", percent: 100 },
+        { kind: "ready", version: "0.0.80" },
       ])
-    })
-
-    it("keeps the notes to the lines and length the page shows, as plain text", () => {
-      const { bridge, report } = updater()
-      const heard: { notes: readonly string[] }[] = []
-      desktopUpdates(bridge)!.onOffer((offer) => heard.push(offer))
-      report({
-        kind: "ready",
-        version: "0.0.80",
-        notes: [
-          "Fixed\u0007 a thing.",
-          7,
-          "   ",
-          "x".repeat(500),
-          ...Array.from({ length: 20 }, (_, index) => `Note ${index}`),
-        ],
-      })
-      const { notes } = heard[0]!
-      expect(notes[0]).toBe("Fixed a thing.")
-      expect(notes[1]).toHaveLength(200)
-      expect(notes).toHaveLength(12)
-    })
-
-    it("hears no notes from a host that sends none", () => {
-      const { bridge, report } = updater()
-      const heard: { notes: readonly string[] }[] = []
-      desktopUpdates(bridge)!.onOffer((offer) => heard.push(offer))
-      report({ kind: "ready", version: "0.0.80" })
-      expect(heard[0]!.notes).toEqual([])
     })
 
     it("opens the release page through the host", () => {

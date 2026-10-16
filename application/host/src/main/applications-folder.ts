@@ -148,8 +148,9 @@ export const installBundle = async (
   existing ??= restored
   let target: string
   if (existing !== undefined) {
-    // Never replace the bundle this app runs from, as a translocated copy of the one in
-    // Applications is: it names the same version, and there is nothing to install.
+    // Never replace the bundle this app runs from. A translocated copy of the one in
+    // Applications runs from another path, but names the same version, so the version
+    // check is what leaves it alone; there is nothing to install.
     if (existing === host.running || (await host.versionOf(existing)) === host.version)
       return { kind: "installed", image: existing }
     target = existing

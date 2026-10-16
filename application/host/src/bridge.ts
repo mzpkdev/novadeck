@@ -76,6 +76,12 @@ export const installAppChannel = "novadeck:install-app"
 export const installProgressChannel = "novadeck:install-progress"
 
 /**
+ * Main-to-renderer report of the portable state, a `PortableState`, whenever it changes;
+ * see main/portable.ts.
+ */
+export const portableStateChannel = "novadeck:portable-state"
+
+/**
  * Renderer-to-main request for what uninstalling this copy would do; answers an
  * `UninstallPlan`. See main/uninstall.ts.
  */

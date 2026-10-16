@@ -239,11 +239,14 @@ export type Backend = {
   // never updates itself; `install` puts the app that does in place, keeping the workspace,
   // and on `installed` it is in place and takes effect when the person next opens Novadeck;
   // so does a newer one found already installed (`newer`). Nothing restarts by itself.
+  // `onState`, where the host pushes it, hears the portable state change, as when this run
+  // installed the app from another window or before this page was reloaded.
   // `onProgress`, where the host reports it, hears how far an install under way has got.
   // Absent in a browser and in a host that has no portable copy.
   readonly portable?: {
     readonly state: () => Promise<PortableState>
     readonly install: () => Promise<InstallResult>
+    readonly onState?: (listener: (state: PortableState) => void) => () => void
     readonly onProgress?: (listener: (progress: InstallProgress) => void) => () => void
   }
   // Optional. Removing the desktop app from this computer. `plan` says what that would do

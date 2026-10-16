@@ -9,7 +9,12 @@ import type { InstallProgress, InstallResult } from "@novadeck/protocol/bridge"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import { afterEach, beforeEach, vi } from "vitest"
 
-import { installAppChannel, installProgressChannel, portableChannel } from "../bridge.js"
+import {
+  installAppChannel,
+  installProgressChannel,
+  portableChannel,
+  portableStateChannel,
+} from "../bridge.js"
 import { context, describe, expect, it } from "../test"
 import type { InstalledCopy } from "./install-linux"
 import {
@@ -68,6 +73,12 @@ describe("what a portable copy reports", () => {
     const installer = portableInstaller(hosting().host)
     await installer.install(noProgress)
     expect(installer.state()).toMatchObject({ portable: true, installed: true })
+  })
+
+  it("is installed once a newer installed copy was found, as nothing more is left to offer", async () => {
+    const installer = portableInstaller(hosting({ find: async () => [copy("1.1.0")] }).host)
+    expect(await installer.install(noProgress)).toMatchObject({ kind: "newer" })
+    expect(installer.state()).toMatchObject({ installed: true })
   })
 
   it("is not installed after a failed install", async () => {
@@ -450,7 +461,20 @@ describe("answering the app's pages", () => {
   it("sends the install's progress to the app's pages on its own channel", async () => {
     const { ask, sent } = registered(true)
     await (ask(installAppChannel) as Promise<InstallResult>)
-    expect(sent).toEqual([[installProgressChannel, { phase: "installing" }]])
+    expect(sent.filter(([channel]) => channel === installProgressChannel)).toEqual([
+      [installProgressChannel, { phase: "installing" }],
+    ])
+  })
+
+  it("pushes the new state to every page once an install settles, and not after a failure", async () => {
+    const { ask, sent } = registered(true)
+    await (ask(installAppChannel) as Promise<InstallResult>)
+    expect(sent.filter(([channel]) => channel === portableStateChannel)).toEqual([
+      [portableStateChannel, expect.objectContaining({ portable: true, installed: true })],
+    ])
+    const failing = registered(false)
+    await failing.ask(installAppChannel)
+    expect(failing.sent).toEqual([])
   })
 
   it("has no channel to open an installed copy", () => {

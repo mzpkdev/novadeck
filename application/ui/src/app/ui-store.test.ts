@@ -453,7 +453,6 @@ const updateHost = () => {
 const offered = (version: string, kind: UpdateOffer["kind"] = "ready"): UpdateOffer => ({
   kind,
   version,
-  notes: [],
 })
 
 describe("a waiting update", () => {
@@ -470,17 +469,6 @@ describe("a waiting update", () => {
     expect(listening()).toBe(false)
   })
 
-  it("remembers the version it saw downloading, and not one only told of", () => {
-    const { updates, report } = updateHost()
-    const ui = createUiStore(initial())
-    watchUpdates(updates, ui)
-    report(offered("0.0.80", "available"))
-    expect(ui.getSnapshot().downloaded).toBeNull()
-    report({ kind: "downloading", version: "0.0.81", notes: [], percent: 10 })
-    report(offered("0.0.81", "available"))
-    expect(ui.getSnapshot().downloaded).toBe("0.0.81")
-  })
-
   it("raises no notice on a copy that updates itself, whatever it is offered", async () => {
     const { updates, report } = updateHost()
     const ui = createUiStore(initial())
@@ -488,7 +476,7 @@ describe("a waiting update", () => {
     expect(ui.getSnapshot().portable).toBeNull()
     report(offered("0.0.80"))
     report(offered("0.0.81", "available"))
-    report({ kind: "downloading", version: "0.0.82", notes: [], percent: 10 })
+    report({ kind: "downloading", version: "0.0.82", percent: 10 })
     expect(ui.getSnapshot().updateOpen).toBe(false)
     ui.update((state) => ({ ...state, portable: { portable: false } }))
     report(offered("0.0.83"))
@@ -598,6 +586,28 @@ describe("a portable copy", () => {
     const ui = createUiStore(initial())
     watchPortable(host({ ...here, installed: true }), ui)
     await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual({ ...here, installed: true }))
+    expect(ui.getSnapshot().updateOpen).toBe(false)
+  })
+
+  it("takes a state the host pushes, which wins over an answer that comes after it", async () => {
+    const ui = createUiStore(initial())
+    let push: (state: PortableState) => void = () => {}
+    let answer: (state: PortableState) => void = () => {}
+    watchPortable(
+      {
+        ...host(),
+        state: () => new Promise((resolve) => (answer = resolve)),
+        onState: (listener) => {
+          push = listener
+          return () => {}
+        },
+      },
+      ui,
+    )
+    push({ ...here, installed: true })
+    answer(here)
+    await Promise.resolve()
+    expect(ui.getSnapshot().portable).toEqual({ ...here, installed: true })
     expect(ui.getSnapshot().updateOpen).toBe(false)
   })
 

@@ -7,7 +7,6 @@ import { createDemoUpdates, downloadMs, failAfterMs, downloadStep } from "./upda
 const ready = (version: string): UpdateOffer => ({
   kind: "ready",
   version,
-  notes: [],
 })
 
 afterEach(() => {
@@ -31,7 +30,6 @@ describe("demo updates", () => {
     const waiting: UpdateOffer = {
       kind: "available",
       version: "0.0.80",
-      notes: ["One."],
     }
     offer(waiting)
     const heard: UpdateOffer[] = []
@@ -50,44 +48,34 @@ describe("demo updates", () => {
     expect(restarts).toBe(1)
   })
 
-  it("offers the update waiting again as one to download once its install failed", () => {
-    const { updates, offer, failInstall } = createDemoUpdates()
-    const heard: string[] = []
-    updates.onOffer((each) => heard.push(`${each.kind} ${each.version}`))
-    failInstall()
-    offer(ready("0.0.80"))
-    failInstall()
-    expect(heard).toEqual(["ready 0.0.80", "available 0.0.80"])
-  })
-
   it("offers a download climbing by its step until it is ready, and calls it off for a later offer", () => {
     vi.useFakeTimers()
     const { updates, download, offer } = createDemoUpdates()
     const heard: string[] = []
     updates.onOffer((each) => heard.push(`${each.kind} ${each.percent ?? ""}`.trim()))
-    download("0.0.80", [])
+    download("0.0.80")
     vi.advanceTimersByTime(downloadMs * 2)
     expect(heard).toEqual(["downloading 0", "downloading 10", "downloading 20"])
     vi.advanceTimersByTime(downloadMs * (100 / downloadStep - 2))
     expect(heard.slice(-2)).toEqual(["downloading 90", "ready"])
     vi.advanceTimersByTime(downloadMs * 5)
     expect(heard).toHaveLength(11)
-    download("0.0.81", [])
+    download("0.0.81")
     offer(ready("0.0.82"))
     vi.advanceTimersByTime(downloadMs * 20)
     expect(heard.slice(-2)).toEqual(["downloading 0", "ready"])
     expect(heard).toHaveLength(13)
   })
 
-  it("turns a download that fails to the update to fetch by hand, with no percent", () => {
+  it("turns a download that fails to retrying, with no percent", () => {
     vi.useFakeTimers()
-    const { updates, download, failInstall } = createDemoUpdates()
+    const { updates, download, failDownload } = createDemoUpdates()
     const heard: UpdateOffer[] = []
     updates.onOffer((each) => heard.push(each))
-    download("0.0.80", [])
-    failInstall()
+    download("0.0.80")
+    failDownload("0.0.81")
     vi.advanceTimersByTime(downloadMs * 20)
-    expect(heard.at(-1)).toEqual({ kind: "available", version: "0.0.80", notes: [] })
+    expect(heard.at(-1)).toEqual({ kind: "retrying", version: "0.0.80" })
     expect(heard).toHaveLength(2)
   })
 
@@ -98,19 +86,13 @@ describe("demo updates", () => {
     updates.onOffer((each) =>
       heard.push(`${each.kind} ${each.version} ${each.percent ?? ""}`.trim()),
     )
-    failDownload("0.0.80", [])
+    failDownload("0.0.80")
     expect(heard).toEqual(["downloading 0.0.80 40"])
     vi.advanceTimersByTime(failAfterMs)
-    expect(heard).toEqual(["downloading 0.0.80 40", "available 0.0.80"])
-    download("0.0.81", [])
-    failDownload("0.0.82", [])
-    expect(heard.at(-1)).toBe("available 0.0.81")
-  })
-
-  it("counts the release pages it was asked to open", () => {
-    const { updates, pagesOpened } = createDemoUpdates()
-    updates.openPage()
-    expect(pagesOpened()).toBe(1)
+    expect(heard).toEqual(["downloading 0.0.80 40", "retrying 0.0.80"])
+    download("0.0.81")
+    failDownload("0.0.82")
+    expect(heard.at(-1)).toBe("retrying 0.0.81")
   })
 
   it("starts on the stable channel and keeps the one it is switched to", async () => {
