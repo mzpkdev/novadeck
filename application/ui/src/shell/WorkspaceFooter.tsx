@@ -1,8 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react"
 
+import type { UpdateOffer } from "../model/update"
 import { FooterMurmur, type FooterMurmurProps } from "./FooterMurmur"
 import { FooterSandbox, type FooterSandboxProps } from "./FooterSandbox"
-import { FooterUpdate, type FooterUpdateProps } from "./FooterUpdate"
+import { PortableInstall, type PortableInstallProps } from "./PortableInstall"
+import { UpdateAvailable, type FooterAvailable } from "./UpdateAvailable"
+import { UpdateProgress } from "./UpdateProgress"
 
 // How the backend link is doing, most severe first: "ok" shows nothing.
 export type FooterStatus = "restarting" | "unavailable" | "reconnecting" | "ok"
@@ -19,10 +22,12 @@ const shown: Record<Exclude<FooterStatus, "ok">, { readonly tone: Tone; readonly
 // The terminal counts under the workspace. While the backend link is in trouble the
 // whole bar takes the status tone, and says so on the right; after it recovers it
 // turns green with "Reconnected" for a moment. The status is short, bold and set in
-// capitals by CSS, so assistive technology still reads ordinary words. An update waits
-// beside it as a chip, "Update ready" or "Update available", in the bar's own colours;
-// it opens the update's notice (FooterUpdate.tsx). Without the security sandbox, a chip
-// before it says so (FooterSandbox.tsx).
+// capitals by CSS, so assistive technology still reads ordinary words. An update
+// downloading floats a bar above its right end (UpdateProgress.tsx); one it can't install
+// itself is a chip, "Update available", that opens the release page (UpdateAvailable.tsx).
+// A portable copy has a chip there instead, "Install Novadeck" or "Update available", in
+// the bar's own colours, which opens its notice (PortableInstall.tsx). Without the security
+// sandbox, a chip before it says so (FooterSandbox.tsx).
 export const WorkspaceFooter = ({
   hidden,
   count,
@@ -30,7 +35,10 @@ export const WorkspaceFooter = ({
   status,
   navigate = false,
   onRetry,
-  update,
+  portable,
+  progress = null,
+  available,
+  noticeOpen = false,
   sandbox,
   murmur,
   usage,
@@ -43,9 +51,15 @@ export const WorkspaceFooter = ({
   readonly status: FooterStatus
   // Offered while the runner keeps crashing: starts the terminals over.
   readonly onRetry?: (() => void) | undefined
-  // An update waiting, downloaded or to fetch. Quiet: it never tones the bar, and the
-  // link's status keeps its place after it.
-  readonly update?: FooterUpdateProps | undefined
+  // A portable copy's install entry, with the release it is missing. Quiet: it never tones
+  // the bar, and the link's status keeps its place after it.
+  readonly portable?: PortableInstallProps | undefined
+  // The update the app updates itself to, whose download the floating bar follows.
+  readonly progress?: UpdateOffer | null
+  // A release an installed copy can't install itself: a chip that opens its release page.
+  readonly available?: FooterAvailable | undefined
+  // Whether a notice is open above the footer's right end, where the bar would cover it.
+  readonly noticeOpen?: boolean
   // Set while the app runs without its security sandbox: a chip beside the update's
   // opens the notice that says so.
   readonly sandbox?: FooterSandboxProps | undefined
@@ -54,6 +68,8 @@ export const WorkspaceFooter = ({
   // The account's subscriptions, at its end before the status.
   readonly usage?: ReactNode
 }): React.JSX.Element => {
+  // Murmur's sheet, in the place the download's bar would cover.
+  const [murmurSheet, setMurmurSheet] = useState(false)
   const [previous, setPrevious] = useState(status)
   const [recovered, setRecovered] = useState(false)
   if (status !== previous) {
@@ -92,8 +108,10 @@ export const WorkspaceFooter = ({
       <span className="flex items-center gap-4">
         {usage}
         <FooterSandbox sandbox={sandbox} hidden={hidden} />
-        <FooterMurmur murmur={murmur} hidden={hidden} />
-        <FooterUpdate update={update} hidden={hidden} />
+        <FooterMurmur murmur={murmur} hidden={hidden} onSheetChange={setMurmurSheet} />
+        <PortableInstall portable={portable} hidden={hidden} />
+        <UpdateAvailable available={available} />
+        <UpdateProgress offer={progress} hidden={hidden || noticeOpen || murmurSheet} />
         <span className="footer-status flex items-center gap-1.5 font-bold">
           <span role="status" aria-live={current?.tone === "danger" ? "assertive" : "polite"}>
             {current?.text}

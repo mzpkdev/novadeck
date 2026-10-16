@@ -195,6 +195,68 @@ describe("the visitor build", () => {
       }
     })
 
+    // The page around the app is still tilted and not the visitor's yet: its wheel is that
+    // page's, until the page says the visitor engaged the app. Nothing in the app takes it or
+    // scrolls with it, not even a terminal with history above, and nothing cancels it, so
+    // the browser scrolls the page with it.
+    it("leaves the wheel to the page around it until that page engages it", async () => {
+      expect(window.parent).not.toBe(window)
+      await openEmbedded()
+      const target = document.querySelector<HTMLElement>("[data-terminal-content]")!
+      const reached = vi.fn<() => void>()
+      target.addEventListener("wheel", reached)
+      const wheel = (): WheelEvent => {
+        const event = new WheelEvent("wheel", { deltaY: 60, cancelable: true, bubbles: true })
+        target.dispatchEvent(event)
+        return event
+      }
+      expect(wheel().defaultPrevented).toBe(false)
+      expect(reached).not.toHaveBeenCalled()
+      expect(getComputedStyle(target).overflowY).toBe("hidden")
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "novadeck:engaged" },
+          source: window.parent,
+        }),
+      )
+      wheel()
+      expect(reached).toHaveBeenCalled()
+      expect(getComputedStyle(target).overflowY).toBe("auto")
+    })
+
+    it("tells the page of its first click once, and keeps the wheel once pressed in", async () => {
+      const post = vi.spyOn(window.parent, "postMessage")
+      try {
+        await openEmbedded()
+        const target = document.querySelector("[data-terminal-content]")!
+        target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))
+        const event = new WheelEvent("wheel", { deltaY: 60, cancelable: true, bubbles: true })
+        target.dispatchEvent(event)
+        expect(event.defaultPrevented).toBe(false)
+        await page.getByRole("button", { name: "Workspace preferences" }).click()
+        await press("{Escape}")
+        await page.getByRole("button", { name: "Workspace preferences" }).click()
+        await expect
+          .poll(() => post.mock.calls.filter(([m]) => m?.type === "novadeck:clicked").length)
+          .toBe(1)
+      } finally {
+        post.mockRestore()
+      }
+    })
+
+    // The page around treats focus moving into the frame as the visitor's first click, so
+    // nothing the desk does by itself, reading and then asking, may take it.
+    it("reads before it asks for its plan, and takes no focus meanwhile", async () => {
+      await openWorkspace("/?visitor=on&readingMs=1500", { embedded: true })
+      await expect.element(terminalCount(4)).toBeVisible()
+      expect(page.getByText("Claude has written up a plan").query()).toBeNull()
+      await expect
+        .poll(() => tabDescription("Checkout implementation"), { timeout: 4000 })
+        .toBe("Plan ready for review")
+      await framesPass(10)
+      expect(document.activeElement).toBe(document.body)
+    })
+
     // True of the app anywhere; framed, it leaves the page around it its focus.
     it("takes no focus until the person uses it", async () => {
       await openEmbedded()

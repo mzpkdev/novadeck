@@ -1,10 +1,9 @@
-import { useEffect, useId, useRef, useState } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 
 import type { Refusal } from "../model/addon"
 import { MURMUR_NAME, type Murmur, type MurmurState } from "../model/murmur"
 import { Progress } from "../ui-toolkit/Progress"
 import { ProgressRing } from "../ui-toolkit/ProgressRing"
-import { useOverlayOpen } from "./FooterUpdate"
 import {
   doneForMs,
   footerPhase,
@@ -13,33 +12,36 @@ import {
   stepText,
   type FooterPhase,
 } from "./murmur-footer"
-import { KeepFocus } from "./notice-focus"
+import { KeepFocus, useOverlayOpen } from "./notice-focus"
 
 export type FooterMurmurProps = {
   readonly state: MurmurState
   readonly actions: Pick<Murmur, "install" | "cancel">
-  // A dialog, the switcher or a question holds the sheet back until it is answered, as it
-  // holds the update's notice.
+  // A dialog, the switcher, a question or another notice in its place holds the sheet back
+  // until it is answered or closed.
   readonly blocked: boolean
   // Puts typing focus back in the selected terminal, for a sheet that goes with focus in it.
   readonly returnFocus: () => void
 }
 
-// Murmur's install, as a small item beside the update's: a ring and "Murmur 42%" while it
+// Murmur's install, as a small item in the footer's right end: a ring and "Murmur 42%" while it
 // downloads and checks, however it was started (from the one-time offer or from Addons), then
 // "Terminals name themselves now" for a moment. An engine update the app starts by itself shows
-// nothing. It opens a sheet, the footer's own plain panel (as the update's: it waits while the
-// footer is hidden, a dialog or a menu is open), with the step and Cancel. A failure that may
-// pass turns the item to the danger tone and opens the sheet once, with Try again and Not now
-// (which only hides it); a computer that can't run Murmur says so there, and the item leaves
+// nothing. It opens a sheet, a card of the portable install's shape above the footer's right
+// end (it waits while the footer is hidden, a dialog, a menu or another notice in its place
+// is open), with the step and Cancel. A failure that may pass turns the item to the danger
+// tone and opens the sheet once, with Try again and Not now (which only hides it); a computer that can't run Murmur says so there, and the item leaves
 // with it. Its words are announced in one live line that is there before it has words, and a
 // failure is said once, never as a percentage that changes.
 export const FooterMurmur = ({
   murmur,
   hidden,
+  onSheetChange,
 }: {
   readonly murmur: FooterMurmurProps | undefined
   readonly hidden: boolean
+  // Told as the sheet shows and goes, so what shares its place can stand aside.
+  readonly onSheetChange?: (shown: boolean) => void
 }): React.JSX.Element | null => {
   const state = murmur?.state
   const [phase, setPhase] = useState<FooterPhase>("idle")
@@ -95,6 +97,11 @@ export const FooterMurmur = ({
   const wanted = open && !hidden && !murmur?.blocked
   const overlay = useOverlayOpen(wanted)
   const visibleSheet = wanted && !overlay
+  const sheetShown = visibleSheet && phase !== "idle" && murmur !== undefined
+  // Before paint, so the download's bar and the sheet never show together for a frame.
+  useLayoutEffect(() => {
+    onSheetChange?.(sheetShown)
+  }, [sheetShown, onSheetChange])
   useEffect(() => {
     if (!visibleSheet || !asked.current) return undefined
     // A frame on, after the press that asked has been through the workspace's own click handling.
@@ -157,7 +164,9 @@ export const FooterMurmur = ({
           aria-controls={visibleSheet ? panelId : undefined}
           onClick={() => {
             if (visibleSheet) return leave()
-            asked.current = true
+            // Held back by another notice, the sheet shows once that goes, but takes no focus
+            // from whatever the person turned to by then.
+            asked.current = !murmur.blocked
             setOpen(true)
           }}
           onKeyDown={(event) => {
@@ -177,7 +186,7 @@ export const FooterMurmur = ({
           id={panelId}
           data-workspace-notice
           aria-labelledby={titleId}
-          className="floating update-panel footer-murmur-sheet"
+          className="floating update-card footer-murmur-sheet"
           tabIndex={-1}
           // A click anywhere on it leaves focus where it was, in a terminal.
           onMouseDown={(event) => event.preventDefault()}
@@ -191,18 +200,16 @@ export const FooterMurmur = ({
           <KeepFocus lost={lost} selector=".footer-murmur-sheet" />
           {phase === "installing" && (
             <>
-              <p id={titleId} className="update-title">
-                Setting up {MURMUR_NAME}
+              <p className="update-progress-head">
+                <span id={titleId} className="update-progress-title">
+                  Setting up {MURMUR_NAME}
+                </span>
+                {percent !== null && <span className="update-progress-percent">{percent}%</span>}
               </p>
-              <p className="update-text">{stepText(state)}</p>
-              <Progress
-                label={`${MURMUR_NAME} setup`}
-                value={state.installing?.received ?? 0}
-                max={state.installing?.total ?? 1}
-                indeterminate={state.installing === null || state.installing.step === "check"}
-              />
-              <div className="update-actions">
-                <button type="button" className="button min-h-8 px-3" onClick={actions.cancel}>
+              <Progress label={`${MURMUR_NAME} setup`} value={percent} max={100} />
+              <p className="update-progress-note">{stepText(state)}</p>
+              <div className="update-card-foot">
+                <button type="button" className="button min-h-7 px-3" onClick={actions.cancel}>
                   Cancel
                 </button>
               </div>
@@ -210,17 +217,19 @@ export const FooterMurmur = ({
           )}
           {phase === "failed" && (
             <>
-              <p id={titleId} className="update-title">
-                Couldn't turn on {MURMUR_NAME}
+              <p className="update-progress-head">
+                <span id={titleId} className="update-progress-title">
+                  Couldn't turn on {MURMUR_NAME}
+                </span>
               </p>
-              <p className="update-text update-error footer-murmur-error">{why}</p>
-              <div className="update-actions">
-                <button type="button" className="button min-h-8 px-3" onClick={leave}>
+              <p className="update-progress-note update-card-error footer-murmur-error">{why}</p>
+              <div className="update-card-foot">
+                <button type="button" className="button min-h-7 px-3" onClick={leave}>
                   Not now
                 </button>
                 <button
                   type="button"
-                  className="button primary min-h-8 px-3"
+                  className="button primary min-h-7 px-3"
                   onClick={() => {
                     setOpen(false)
                     setHandled(state.refused)
@@ -234,23 +243,27 @@ export const FooterMurmur = ({
           )}
           {phase === "unavailable" && (
             <>
-              <p id={titleId} className="update-title">
-                Not available on this computer
+              <p className="update-progress-head">
+                <span id={titleId} className="update-progress-title">
+                  Not available on this computer
+                </span>
               </p>
-              <details className="update-text">
+              <details className="update-progress-note">
                 <summary className="cursor-pointer select-none">Details</summary>
                 <p className="m-0 mt-1 break-words">{state.unsupported?.reason}</p>
               </details>
-              <div className="update-actions">
-                <button type="button" className="button min-h-8 px-3" onClick={leave}>
+              <div className="update-card-foot">
+                <button type="button" className="button min-h-7 px-3" onClick={leave}>
                   Close
                 </button>
               </div>
             </>
           )}
           {phase === "done" && (
-            <p id={titleId} className="update-title">
-              {text?.label}
+            <p className="update-progress-head">
+              <span id={titleId} className="update-progress-title">
+                {text?.label}
+              </span>
             </p>
           )}
         </section>

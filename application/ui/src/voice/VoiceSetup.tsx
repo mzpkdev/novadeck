@@ -107,9 +107,8 @@ export const VoiceSetupContent = ({
         <span className="dictation-progress" aria-hidden>
           <Progress
             label="Voice input setup"
-            value={installing?.step === "check" ? 0 : (installing?.received ?? 0)}
+            value={indeterminate ? null : (installing?.received ?? 0)}
             max={installing?.total ?? 1}
-            indeterminate={indeterminate}
           />
         </span>
         <Action onPress={cancel}>Cancel</Action>

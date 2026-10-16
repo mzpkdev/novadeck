@@ -15,6 +15,7 @@ import { demoTurns } from "../turns"
 import { createDemo, type DemoVariant } from "../variants"
 import { isDemoVoice } from "../voice"
 import { createDebugPanel } from "./DebugPanel"
+import { doorbellGroups } from "./doorbell"
 import { inboxGroups } from "./inbox"
 import { murmurGroups } from "./murmur"
 import { planGroups } from "./plans"
@@ -23,6 +24,7 @@ import { createDemoSandbox } from "./sandbox"
 import { createDemoStates } from "./states"
 import type { DemoActionContext } from "./types"
 import { createDemoUninstall, type DemoUninstall } from "./uninstall"
+import { updatesGroup, type DemoUpdates } from "./updates"
 import { voiceGroups } from "./voice"
 
 // What one connection to the demo knows of the boot that made it, and how the panel
@@ -44,6 +46,11 @@ export type DemoLaunch = {
   readonly portable: DemoPortable | undefined
   // Boots again as this portable copy (or an installed one).
   readonly setPortable: (portable: DemoPortable | undefined) => void
+  // Boots again as an installed copy, then plays this on its updates: the Updates group's
+  // way out of a portable copy, whose install entry would stand in for them.
+  readonly bootInstalled: (play: (updates: DemoUpdates) => void) => void
+  // What to play on this boot's updates, as `bootInstalled` armed it.
+  readonly play: ((updates: DemoUpdates) => void) | undefined
   // The uninstall the host offers; undefined for a host that offers none.
   readonly uninstall: DemoUninstall | undefined
   // Boots again with the host offering this uninstall (or none).
@@ -82,6 +89,7 @@ export const createDebugDemo = (launch: DemoLaunch): Backend => {
   const turns = demoTurns()
   const states = createDemoStates(turns)
   if (launch.portable?.offer) states.offer(launch.portable.offer)
+  launch.play?.(states.updateControls)
   let sink: BackendSink | undefined
   let latest: Workspace | undefined
   let failed: readonly TerminalKey[] = []
@@ -184,8 +192,10 @@ export const createDebugDemo = (launch: DemoLaunch): Backend => {
         ...states,
         groups: [
           ...states.groups,
+          updatesGroup(launch, states.updateControls),
           ...inboxGroups(isDemoInbox(inner.inbox) ? inner.inbox : undefined),
           ...planGroups(inner.companions),
+          ...doorbellGroups(inner.messages),
           ...murmurGroups(isDemoMurmur(inner.murmur) ? inner.murmur : undefined),
           ...voiceGroups(isDemoVoice(inner.voice) ? inner.voice : undefined),
         ],

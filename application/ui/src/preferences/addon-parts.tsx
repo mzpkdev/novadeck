@@ -74,7 +74,7 @@ export const InstallProgress = ({
         Cancel
       </button>
     </div>
-    <Progress label={label} value={received} max={total} indeterminate={indeterminate} />
+    <Progress label={label} value={indeterminate ? null : received} max={total} />
   </div>
 )
 
