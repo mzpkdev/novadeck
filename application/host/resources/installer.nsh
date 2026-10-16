@@ -13,10 +13,11 @@
 #   - The installer's silent run that is not a self-update (`--updated`) closes nothing: it
 #     ends with exit code 3, leaving the install as it was. A portable copy's install is
 #     that run.
-#   - A self-update, and a silent uninstaller (the app starts it and quits right after),
-#     gives the quitting app a moment, then closes what still runs from $INSTDIR. An
-#     interactive uninstaller waits two rounds the same way, then asks before closing; an
-#     interactive installer asks first. Both then close.
+#   - A self-update, and a silent uninstaller (an update's run of the old one, or `/S`
+#     from a script), gives the quitting app a moment, then closes what still runs from
+#     $INSTDIR. An interactive uninstaller (Windows Settings, or the app's own Uninstall,
+#     which starts it and quits right after) waits two rounds the same way, then asks
+#     before closing; an interactive installer asks first. Both then close.
 #   - Only processes whose path is inside "$INSTDIR\" are closed, by PowerShell, never by
 #     name, and never this setup itself. Without PowerShell nothing is closed: the person
 #     is asked to close Novadeck, or a silent run ends.

@@ -374,9 +374,10 @@ keeps the workspace.
     copy of it runs from its install folder. Quit that copy, then try again."; any other
     exit with no copy left is the generic "did not finish").
   - A self-update by an installed copy (`--updated`; the app is quitting) and a silent
-    uninstaller (the app starts it and quits 250 ms later) wait one round, then close what
-    still runs from the install folder. An interactive uninstaller (Windows Settings) waits
-    two rounds the same way, then asks (OK/Cancel) before closing; an interactive installer
+    uninstaller (an update's run of the old one, or `/S` from a script) wait one round, then
+    close what still runs from the install folder. An interactive uninstaller (Windows
+    Settings, or Preferences' Uninstall, which starts it and quits 250 ms later) waits two
+    rounds the same way, then asks (OK/Cancel) before closing; an interactive installer
     asks in round 1. Closing is polite (`CloseMainWindow`) for its first two rounds, then
     forced (`Stop-Process -Force`). A round is one second plus the closing; at round 7 without
     success a silent run ends with exit code 3, an interactive one offers Retry. Each
