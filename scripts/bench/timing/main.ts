@@ -1,0 +1,77 @@
+import { execFileSync } from "node:child_process"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { cpus, totalmem } from "node:os"
+import { dirname, join, resolve } from "node:path"
+import { parseArgs } from "node:util"
+
+import { drive, scenario } from "./drive.ts"
+import { type Report, type Steady, type Switch, summarize } from "./report.ts"
+import { type Stack, startStack } from "./stack.ts"
+
+// `pnpm bench:timing [--output <file>]`: the timing run. The UI's production build in headless
+// Chromium against a real runner in a sandbox, with fake agents sending real hooks and
+// status-line telemetry (see drive.ts for the scenario). It writes a JSON report, by default
+// to .cache/bench/timing.json, and always exits 0: its numbers are a trend, never a gate, so
+// a run that fails says why in the report's `error`. Linux and macOS; on Linux CI it can run
+// with no network at all: `node scripts/e2e/isolated/main.ts -- pnpm bench:timing`.
+
+const root = join(import.meta.dirname, "..", "..", "..")
+const { values } = parseArgs({ options: { output: { type: "string" } } })
+const output = resolve(values.output ?? join(root, ".cache", "bench", "timing.json"))
+
+const commit = (() => {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
+  } catch {
+    return undefined
+  }
+})()
+
+const startedAt = new Date().toISOString()
+const measured: { agentPhases: (string | null)[]; steady: Steady[]; switches: Switch[] } = {
+  agentPhases: [],
+  steady: [],
+  switches: [],
+}
+const environment: Record<string, string | number> = {
+  platform: process.platform,
+  arch: process.arch,
+  node: process.version,
+  cpus: cpus().length,
+  cpu: cpus()[0]?.model ?? "unknown",
+  memoryGB: Math.round(totalmem() / 1024 ** 3),
+  ci: process.env.CI ? "yes" : "no",
+}
+const problems: string[] = []
+let error: string | undefined
+
+let stack: Stack | undefined
+try {
+  if (process.platform === "win32") throw new Error("the timing run needs Linux or macOS")
+  stack = await startStack()
+  const { chromium } = await drive(stack, measured)
+  environment.chromium = chromium
+} catch (cause) {
+  error = cause instanceof Error ? (cause.stack ?? cause.message) : String(cause)
+} finally {
+  if (stack)
+    problems.push(
+      ...(await stack.stop().catch((cause: unknown) => [`stopping failed: ${String(cause)}`])),
+    )
+}
+
+const report: Report = {
+  version: 1,
+  startedAt,
+  finishedAt: new Date().toISOString(),
+  commit,
+  environment,
+  scenario,
+  summary: summarize(measured),
+  samples: measured,
+  problems,
+  ...(error !== undefined && { error }),
+}
+mkdirSync(dirname(output), { recursive: true })
+writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`)
+console.log(JSON.stringify({ output, summary: report.summary, problems, error }, null, 2))
