@@ -790,7 +790,7 @@ describe("keys while a request waits on the person", () => {
 
 describe("when a message would reach an agent", () => {
   it("says so in send's words for each state", () => {
-    expect(route(bound, false, undefined)).toBe("when its agent's first turn starts")
+    expect(route(bound, false, undefined)).toBe("ringing it once its box reads empty")
     expect(route(transition(unbound, announced), false, undefined)).toBe("ringing it now")
     expect(route(working, false, undefined)).toBe("when its current turn ends")
     // Codex sends nothing when a turn fails.
@@ -800,7 +800,17 @@ describe("when a message would reach an agent", () => {
     )
     expect(route(settled, false, undefined)).toBe("ringing it now")
     for (const state of [drafting, unknown])
-      expect(route(state, false, undefined)).toBe("when the user next submits a prompt there")
+      expect(route(state, false, undefined)).toBe("ringing it once its box reads empty")
+    // What the screen showed of why it can't be rung, in plain words.
+    expect(route(drafting, false, undefined, "draft")).toBe(
+      "waits: there's text in its box, rung once it is empty",
+    )
+    expect(route(unknown, false, undefined, "dialog")).toBe(
+      "waits: a dialog or picker is open in its terminal, rung once it closes",
+    )
+    expect(route(bound, false, undefined, "asking")).toBe(
+      "waits: it is asking the user a question, rung once answered",
+    )
   })
 })
 
@@ -825,7 +835,7 @@ describe("when a lead's message would reach a running turn", () => {
     expect(route(transition(working, background), false, "tool call")).toBe(
       "when its next turn starts",
     )
-    expect(route(drafting, false, "tool call")).toBe("when the user next submits a prompt there")
+    expect(route(drafting, false, "tool call")).toBe("ringing it once its box reads empty")
   })
 })
 
@@ -980,25 +990,25 @@ describe("a new session at its own prompt", () => {
     const empty = { type: "emptied", at: at + 5_000, epoch: doubted.epoch } as const
     expect(transition(doubted, empty)).toMatchObject({ state: "ready", box: { empty: true } })
     expect(transition(doubted, { ...empty, epoch: doubted.epoch - 1 })).toBe(doubted)
-    expect(transition(run(doubted, typing), empty).state).toBe("drafting")
+    // The screen is the authority on the box, whatever kept it a draft: a stale look, from
+    // before a key of the person's, is dropped by messaging (`emptied` there).
+    expect(transition(run(doubted, typing), empty).state).toBe("ready")
     // A key ends the doubt, a neutral one (Left may open a view) and one while asked too.
     expect(transition(doubted, key("neutral", at + 3_000)).box.doubted).toBe(false)
     const answering = transition(doubted, key("content", at + 3_000, true))
     expect(answering.box).toMatchObject({ doubted: false, draftWhileAsked: true })
-    expect(transition(answering, empty).state).toBe("drafting")
+    expect(transition(answering, empty).state).toBe("ready")
     // Escape at the prompt, and Enter or Escape while a request waits, end it as well.
     for (const ending of [key("escape", at + 3_000), key("enter", at + 3_000, true)]) {
       const after = transition(doubted, ending)
       expect(after.box.doubted).toBe(false)
-      expect(transition(after, empty).state).toBe("drafting")
+      expect(transition(after, empty).state).toBe("ready")
     }
-    // A prompt queued or held stays a draft, not a doubt: it starts the next session's turn.
+    // A prompt queued or held is no doubt: it starts the next session's turn. The screen
+    // still decides: the harness shows what it holds (`BoxProfile.queued`), and the doorbell
+    // reads the box empty only with none shown.
     const queued = run(working, typing, enter, late)
     expect(queued).toMatchObject({ state: "drafting", box: { doubted: false } })
-    expect(transition(queued, { ...empty, epoch: queued.epoch })).toBe(queued)
-    // A draft of the person's own is no doubt.
-    const typed = run(unbound, typing, enter, typing, announced)
-    expect(transition(typed, { ...empty, epoch: typed.epoch })).toBe(typed)
     // Their /clear and its Enter, just before the binding: submitted.
     expect(run(settled, typing, enter, { ...announced, at: at + submitWindowMs }).state).toBe(
       "ready",
@@ -1167,5 +1177,105 @@ describe("the person's Enter window", () => {
     const strayed = transition(entered, key("neutral", at + 5_000), 20_000)
     expect(strayed.box.strayed).toBe(true)
     expect(transition(entered, key("neutral", at + 5_000), 0).box.strayed).toBe(false)
+  })
+})
+
+describe("an idle agent whose screen shows its box empty", () => {
+  const emptied = (of: Delivery, change: { at?: number; epoch?: number } = {}) =>
+    transition(of, { type: "emptied", at: at + 9_000, epoch: change.epoch ?? of.epoch })
+
+  it("is Ready whatever doubt held it Drafting, Unknown or Fresh", () => {
+    // Fresh: bound, nothing showed its prompt up.
+    expect(bound.state).toBe("fresh")
+    expect(emptied(bound)).toMatchObject({
+      state: "ready",
+      since: at + 9_000,
+      box: { empty: true },
+    })
+    // Drafting: the person answered a request in its dialog, which leaves a draft by doubt.
+    const answered = run(working, key("content", at, true), { type: "asked-cleared" }, stop)
+    expect(answered.state).toBe("drafting")
+    expect(emptied(answered).state).toBe("ready")
+    // Drafting: a stray key at the prompt, the box left empty.
+    const stray = run(settled, key("content", at + 100))
+    expect(stray.state).toBe("drafting")
+    expect(emptied(stray).state).toBe("ready")
+    // Unknown: an Escape, a denial, a failed turn, a ring that never confirmed.
+    const ringing = transition(settled, { type: "ring", nonce: "k3f9", opening: false })
+    const failed = transition(ringing, { type: "ring-failed", nonce: "k3f9" })
+    expect(failed.state).toBe("unknown")
+    expect(emptied(failed).state).toBe("ready")
+    expect(emptied(run(working, ended)).state).toBe("ready")
+    expect(ringableSince(emptied(failed))).toBe(at + 9_000)
+  })
+
+  it("leaves a turn running, a ring under way, and a prompt queued for the harness alone", () => {
+    expect(emptied(working)).toBe(working)
+    expect(emptied(settled)).toBe(settled)
+    const ringingNow = transition(settled, { type: "ring", nonce: "k3f9", opening: false })
+    expect(emptied(ringingNow)).toBe(ringingNow)
+    const queuedTurn = run(working, typing, enter, stop)
+    expect(queuedTurn.box.queued).toBe(true)
+    expect(emptied(queuedTurn)).toBe(queuedTurn)
+  })
+
+  it("is dropped when a turn or a session came since the look", () => {
+    const answered = run(working, key("content", at, true), { type: "asked-cleared" }, stop)
+    expect(emptied(answered, { epoch: answered.epoch - 1 })).toBe(answered)
+  })
+
+  it("keeps the counts of its last turn, and starts a new one from the doorbell's prompt", () => {
+    const failed = run(working, ended)
+    const ready = emptied(failed)
+    expect(ready).toMatchObject({ epoch: failed.epoch, continued: failed.continued })
+    const rung = transition(transition(ready, { type: "ring", nonce: "k3f9", opening: false }), {
+      type: "prompt",
+      by: "doorbell",
+      nonce: "k3f9",
+      at,
+      startedAt: at,
+    })
+    expect(rung.state).toBe("working")
+  })
+})
+
+describe("the line a failed ring left in the box", () => {
+  const rung = transition(settled, { type: "ring", nonce: "k3f9", opening: false })
+  const failed = transition(rung, { type: "ring-failed", nonce: "k3f9" })
+  const resume = { type: "ring", nonce: "k3f9", opening: false, leftover: true } as const
+
+  it("is Novadeck's own while the person typed nothing since", () => {
+    expect(failed).toMatchObject({ state: "unknown", box: { ours: true, empty: false } })
+    // Rung again under its own nonce, pasting nothing; a repeat fails the same way.
+    const again = transition(failed, resume)
+    expect(again).toMatchObject({ state: "ringing", nonce: "k3f9", touched: false })
+    expect(again.box.ours).toBe(false)
+    expect(transition(again, { type: "ring-failed", nonce: "k3f9" }).box.ours).toBe(true)
+    // Its prompt confirms it as any ring's.
+    expect(
+      transition(again, { type: "prompt", by: "doorbell", nonce: "k3f9", at, startedAt: at }).state,
+    ).toBe("working")
+  })
+
+  it("is the person's draft once they press any key, or a turn starts", () => {
+    for (const kind of ["content", "enter", "neutral", "accept"] as const) {
+      const after = transition(failed, key(kind, at + 10))
+      expect(after.box.ours).toBe(false)
+      expect(transition(after, resume)).toBe(after)
+    }
+    expect(transition(failed, key("content", at + 10, true)).box.ours).toBe(false)
+    expect(transition(failed, prompted(at + 10)).box.ours).toBe(false)
+  })
+
+  it("is the person's draft when they typed during the ring", () => {
+    const touched = transition(rung, key("content", at + 10))
+    expect(touched).toMatchObject({ state: "ringing", touched: true })
+    expect(transition(touched, { type: "ring-failed", nonce: "k3f9" }).box.ours).toBe(false)
+  })
+
+  it("is only resumed from an idle state that left it, never a Settled, Working or other draft", () => {
+    expect(transition(settled, resume)).toMatchObject({ state: "ringing" })
+    expect(transition(working, resume)).toBe(working)
+    expect(transition(drafting, resume)).toBe(drafting)
   })
 })

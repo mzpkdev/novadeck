@@ -82,6 +82,13 @@ export type BoxProfile = {
    */
   readonly interrupted?: (screen: ScreenText) => boolean | undefined
   /**
+   * Whether the screen shows a view, panel or search of the harness beside or over its
+   * conversation whose field or footer looks like its input box, so an empty box read off
+   * it is not the agent's own prompt (probed per harness; see the doorbell's look at an
+   * idle terminal): a line pasted there would go to the view, and its Enter act in it.
+   */
+  readonly overlay: (screen: ScreenText) => boolean
+  /**
    * Whether the screen shows messages the person queued behind the running turn, which
    * the harness holds until the turn ends (or, for Codex, steers the turn with).
    */
@@ -236,6 +243,14 @@ const leads = (row: string | undefined, markers: Markers): boolean =>
  */
 export const agreeing = (box: InputBox | undefined, shell: boolean): InputBox | undefined =>
   box && !(shell && box.mode === "prompt") ? box : undefined
+
+/**
+ * The last `count` rows of a screen that show anything: the box's footer and what a view
+ * draws under it, where a harness says which view it is in (`BoxProfile.overlay`), never
+ * the conversation above.
+ */
+export const footerRows = (screen: ScreenText, count = 4): readonly string[] =>
+  screen.rows.filter((row) => row.trim() !== "").slice(-count)
 
 /** Whether a row is a horizontal rule. */
 export const rule = (row: string | undefined): boolean => /^─{8,}$/.test((row ?? "").trim())

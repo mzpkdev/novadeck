@@ -270,7 +270,7 @@ describe("sending", () => {
     const { messaging, send, prompt, stop, claude, codex } = create()
     expect(sent(send("A", "fox", "one"))).toMatchObject({
       state: "queued",
-      route: "when its agent's first turn starts",
+      route: "ringing it once its box reads empty",
     })
     prompt("B", codex)
     expect(sent(send("A", "fox", "two"))).toMatchObject({
@@ -1902,6 +1902,7 @@ describe("listing", () => {
       terminalId: "B",
       handle: "fox",
       delivery: "fresh",
+      waits: null,
       paused: false,
       threads: [
         {
@@ -2494,8 +2495,113 @@ describe("a new agent session at its own prompt", () => {
     expect(messaging.ringable("N")).toBe(false)
     expect(messaging.ring("N", "n1")).toBe(false)
     expect(sent(send("B", "owl", "again"))).toMatchObject({
-      route: "when the user next submits a prompt there",
+      route: "ringing it once its box reads empty",
     })
+  })
+
+  it("lets the doorbell look at an idle Drafting terminal's screen, and ring it once its box reads empty", () => {
+    const { messaging, send, observe, launched } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    expect(messaging.stalled("N")).toBe(false)
+    sent(send("A", "owl", "hello"))
+    // Ready and ringable: nothing to look at.
+    expect(messaging.stalled("N")).toBe(false)
+    messaging.keys("N", ["content"], false)
+    expect(messaging.ringable("N")).toBe(false)
+    expect(messaging.stalled("N")).toBe(true)
+    // The screen shows text there: why, in send's words and the listing.
+    messaging.blocked("N", "draft")
+    expect(sent(send("B", "owl", "again"))).toMatchObject({
+      route: "waits: there's text in its box, rung once it is empty",
+    })
+    expect(messaging.list("N", "owl")).toMatchObject({ delivery: "drafting", waits: "draft" })
+    // Its box read empty after the key: Ready, ringable.
+    const delivery = messaging.delivery("N")!
+    messaging.emptied("N", delivery.epoch, 1_000_001)
+    expect(messaging.delivery("N")?.state).toBe("ready")
+    expect(messaging.ringable("N")).toBe(true)
+    expect(messaging.stalled("N")).toBe(false)
+    expect(messaging.list("N", "owl").waits).toBeNull()
+  })
+
+  it("lets the doorbell submit the line a failed ring left, until the person types", () => {
+    const { messaging, send, observe, ask, launched } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    sent(send("A", "owl", "hello"))
+    expect(messaging.ours("N")).toBe(false)
+    expect(messaging.ring("N", "n1")).toBe(true)
+    messaging.ringFailed("N", "n1")
+    expect(messaging.delivery("N")?.state).toBe("unknown")
+    expect(messaging.ours("N")).toBe(true)
+    expect(messaging.stalled("N")).toBe(true)
+    // Rung again under the line's own nonce, which its prompt confirms and delivers.
+    expect(messaging.ringLeftover("N", "n1")).toBe(true)
+    expect(messaging.ringing("N")).toBe("n1")
+    expect(
+      ask("N", launched, "UserPromptSubmit", [doorbellStarted(launched, "n1")]).stdout,
+    ).toContain(">hello</message>")
+  })
+
+  it("takes the line a failed ring left as the person's draft once they press a key", () => {
+    const { messaging, send, observe, launched } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    sent(send("A", "owl", "hello"))
+    messaging.ring("N", "n1")
+    messaging.ringFailed("N", "n1")
+    messaging.keys("N", ["content"], false)
+    expect(messaging.ours("N")).toBe(false)
+    expect(messaging.ringLeftover("N", "n1")).toBe(false)
+  })
+
+  it("is Ready by its screen, not a new session's start, once its box read empty", () => {
+    const { messaging, send, observe, launched } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    // A new session at its own prompt: the ring's logo allowance may apply.
+    expect(messaging.ready("N")).toBe(true)
+    sent(send("A", "owl", "hello"))
+    messaging.keys("N", ["content"], false)
+    messaging.emptied("N", messaging.delivery("N")!.epoch, 1_000_001)
+    expect(messaging.delivery("N")?.state).toBe("ready")
+    expect(messaging.ready("N")).toBe(false)
+  })
+
+  it("clears why it waits once the agent is no longer idle, and marks keys and turns in its stamp", () => {
+    const { messaging, send, observe, launched } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    sent(send("A", "owl", "hello"))
+    const first = messaging.stamp("N")
+    messaging.keys("N", ["content"], false)
+    expect(messaging.stamp("N")).not.toBe(first)
+    messaging.blocked("N", "draft")
+    expect(messaging.list("N", "owl").waits).toBe("draft")
+    messaging.emptied("N", messaging.delivery("N")!.epoch, 1_000_001)
+    messaging.blocked("N", "asking")
+    expect(messaging.idleWaiting("N")).toBe(true)
+    expect(messaging.list("N", "owl").waits).toBe("asking")
+    expect(messaging.ring("N", "n1")).toBe(true)
+    expect(messaging.list("N", "owl").waits).toBeNull()
+  })
+
+  it("drops a look at the screen from before the person's latest key", () => {
+    const { messaging, send, observe, launched } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    sent(send("A", "owl", "hello"))
+    const readAt = 1_000_000
+    messaging.keys("N", ["content"], false)
+    messaging.emptied("N", messaging.delivery("N")!.epoch, readAt)
+    expect(messaging.delivery("N")?.state).toBe("drafting")
+  })
+
+  it("looks at no screen for a terminal with a turn running, a prompt queued, or nothing waiting", () => {
+    const { messaging, send, observe, launched } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    messaging.keys("N", ["content"], false)
+    // Nothing waits for it yet.
+    expect(messaging.stalled("N")).toBe(false)
+    sent(send("A", "owl", "hello"))
+    expect(messaging.stalled("N")).toBe(true)
+    messaging.unregister("N")
+    expect(messaging.stalled("N")).toBe(false)
   })
 
   it("keeps what the person typed during a ring as their draft", () => {
@@ -2595,7 +2701,7 @@ describe("an agent's prompt shown before any session binds", () => {
       )
       expect(sent(send("A", "owl", "Review a.ts"))).toMatchObject({
         state: "queued",
-        route: ringable ? "ringing it now" : "when the user next submits a prompt there",
+        route: ringable ? "ringing it now" : "ringing it once its box reads empty",
       })
       expect(messaging.ringable("N")).toBe(ringable)
       expect(messaging.ring("N", "n1")).toBe(ringable)

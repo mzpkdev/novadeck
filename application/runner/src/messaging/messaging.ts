@@ -23,6 +23,8 @@ import {
   pendingEnter,
   type DeliveryEvent,
   type KeyKind,
+  type Waits,
+  waitsIn,
 } from "./delivery.js"
 import { Leases, type Lease } from "./leases.js"
 import {
@@ -102,6 +104,12 @@ type Live = Scope & {
   lapsed: boolean
   /** The prompt that started the current root turn, by its delivery epoch; null before any. */
   prompt: { readonly epoch: number; readonly text: string } | null
+  /** When the person's last key came; the doorbell's screen look before it is stale. */
+  keyedAt: number
+  /** Why the doorbell last found the idle agent unringable, from its screen; null if not. */
+  waits: Waits | null
+  /** Whether it is Ready because its screen showed the box empty, not a session's start. */
+  viaScreen: boolean
 }
 
 /** What `send` answers: where the message is, or why it was refused. */
@@ -350,6 +358,9 @@ export class Messaging {
       escapeTold: null,
       lapsed: false,
       prompt: null,
+      keyedAt: 0,
+      waits: null,
+      viaScreen: false,
     })
   }
 
@@ -781,17 +792,41 @@ export class Messaging {
     const live = this.live.get(terminalId)
     if (!live) return
     const at = this.now()
+    live.keyedAt = at
     for (const key of kinds) this.step(live, { type: "key", key, asked, at })
   }
 
   /**
-   * The terminal's screen shows its agent's box empty, where only a doubt kept its delivery
-   * Drafting (`Box.doubted`) in the `epoch` it was read in: Ready before its first turn,
-   * or Settled after one completed.
+   * The terminal's screen shows its agent's own box empty and calm, read from `readAt` on, in
+   * the `epoch` it was read in, where its delivery is Drafting, Unknown or Fresh: Settled
+   * again where a turn completed (`completedAt`), else Ready.
+   * Not after a key of the person's since the read, whose text it may not have shown.
    */
-  emptied(terminalId: string, epoch: number): void {
+  emptied(terminalId: string, epoch: number, readAt = this.now()): void {
     const live = this.live.get(terminalId)
-    if (live) this.step(live, { type: "emptied", at: this.now(), epoch })
+    if (!live || live.keyedAt >= readAt) return
+    this.step(live, { type: "emptied", at: this.now(), epoch })
+  }
+
+  /**
+   * Whether the terminal's agent is idle but not ringable by its state alone (Fresh,
+   * Drafting or Unknown, no prompt of the person's queued behind a turn), with messages
+   * waiting for it: the doorbell looks at its screen for an empty box.
+   */
+  stalled(terminalId: string): boolean {
+    const live = this.live.get(terminalId)
+    if (!live) return false
+    const { delivery } = live
+    if (!waitsIn(delivery) || delivery.box.queuing || delivery.box.queued) return false
+    return this.waiting(live)
+  }
+
+  /** Why the doorbell can't ring the terminal, as its screen shows; null once it can. */
+  blocked(terminalId: string, waits: Waits | null): void {
+    const live = this.live.get(terminalId)
+    if (!live || live.waits === waits) return
+    live.waits = waits
+    this.changed(terminalId)
   }
 
   /** No request waits on the person any more: what they typed meanwhile counts now. */
@@ -807,8 +842,12 @@ export class Messaging {
    */
   ringable(terminalId: string): boolean {
     const live = this.live.get(terminalId)
-    if (!live || ringableSince(live.delivery) === undefined) return false
-    const { root } = live
+    return live !== undefined && ringableSince(live.delivery) !== undefined && this.waiting(live)
+  }
+
+  /** Whether messages wait for the terminal's root session (or the one about to bind). */
+  private waiting(live: Live): boolean {
+    const { root, terminalId } = live
     for (const message of this.messages.values())
       if (
         message.state === "queued" &&
@@ -842,9 +881,28 @@ export class Messaging {
     return delivery && ringableSince(delivery)
   }
 
-  /** Whether the terminal is Ready: a new session at its own prompt, with no turn yet. */
+  /**
+   * Whether the terminal is Ready at a new session's own prompt, with no turn yet: not one
+   * made Ready by its screen, which has had turns.
+   */
   ready(terminalId: string): boolean {
-    return this.live.get(terminalId)?.delivery.state === "ready"
+    const live = this.live.get(terminalId)
+    return live?.delivery.state === "ready" && !live.viaScreen
+  }
+
+  /**
+   * A mark that changes with each root turn event (a delivery epoch) and each key
+   * of the person's.
+   */
+  stamp(terminalId: string): string {
+    const live = this.live.get(terminalId)
+    return live ? `${live.delivery.epoch}:${live.keyedAt}` : ""
+  }
+
+  /** Whether the terminal is Settled or Ready with messages waiting for its agent. */
+  idleWaiting(terminalId: string): boolean {
+    const live = this.live.get(terminalId)
+    return live !== undefined && ringableSince(live.delivery) !== undefined && this.waiting(live)
   }
 
   /**
@@ -864,6 +922,25 @@ export class Messaging {
     const live = this.live.get(terminalId)
     if (!live || !this.ringable(terminalId)) return false
     this.step(live, { type: "ring", nonce, opening: !live.root })
+    return live.delivery.state === "ringing"
+  }
+
+  /**
+   * Whether the doorbell's own line, left in the box by a ring that failed, is all the
+   * terminal's box may hold: the person typed nothing since (`Box.ours`).
+   */
+  ours(terminalId: string): boolean {
+    return this.live.get(terminalId)?.delivery.box.ours === true
+  }
+
+  /**
+   * The doorbell submits the line a failed ring left in the box, rung again under that
+   * line's own `nonce`: the terminal is Ringing; false when it may not now.
+   */
+  ringLeftover(terminalId: string, nonce: string): boolean {
+    const live = this.live.get(terminalId)
+    if (!live || !this.stalled(terminalId)) return false
+    this.step(live, { type: "ring", nonce, opening: !live.root, leftover: true })
     return live.delivery.state === "ringing"
   }
 
@@ -1224,6 +1301,10 @@ export class Messaging {
       terminalId,
       handle,
       delivery: live?.delivery.state ?? "unbound",
+      waits:
+        live && (waitsIn(live.delivery) || ringableSince(live.delivery) !== undefined)
+          ? live.waits
+          : null,
       paused: this.paused,
       threads: threads.toSorted((a, b) => latest(b) - latest(a)).slice(0, 1000),
     }
@@ -1400,6 +1481,7 @@ export class Messaging {
             isFromLead(message)
               ? midTurnCall(profile.call !== undefined, profile.reinjectPerCall)
               : undefined,
+            recipient.waits ?? undefined,
           )
         : "when its agent starts: rung once Novadeck sees it at its prompt, else at its first turn",
     }
@@ -1677,6 +1759,13 @@ export class Messaging {
     const before = live.delivery
     live.delivery = transition(before, event, this.slackMs)
     if (live.delivery === before) return
+    const { state } = live.delivery
+    live.viaScreen =
+      (event.type === "emptied" && state === "ready") ||
+      (live.viaScreen && state === "ready" && live.delivery.epoch === before.epoch)
+    // The doorbell's last word on why it can't ring is about an idle agent only.
+    if (state === "working" || state === "ringing" || state === "unbound" || live.viaScreen)
+      live.waits = null
     // A turn that ended, or a new one, leaves the last one's delivery behind.
     if ((running(before) && !running(live.delivery)) || live.delivery.epoch !== before.epoch)
       this.leases.forget(live.terminalId)

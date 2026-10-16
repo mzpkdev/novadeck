@@ -7,8 +7,9 @@
  * where the harness starts one only with the first prompt), is rung by the doorbell
  * (`terminals/doorbell.ts`) and is Ringing, with its ring's nonce, until a doorbell
  * prompt with that nonce confirms it or the ring fails; a Fresh (bound, but nothing
- * shows its prompt is up), Drafting (person busy) or Unknown one waits for its next root
- * prompt.
+ * shows its prompt is up), Drafting (person busy) or Unknown one is rung too once its
+ * screen shows the agent's own box empty and calm (the `emptied` event, from the
+ * doorbell's look), and otherwise waits for its next root prompt.
  *
  * Working has three phases: a root `turn` running; `continuing`, after a Stop Novadeck
  * continued, until the continuation's first prompt; and `background`, when only work a
@@ -123,6 +124,13 @@ export type Box = {
    * screen settles it once no turn runs: see `emptied`. Any key ends the doubt.
    */
   readonly doubted: boolean
+  /**
+   * Whether the doorbell's own line, left in the box by a ring that failed, is all that
+   * is there, the person having typed nothing since: Novadeck's, not their draft, so the
+   * doorbell may submit it (see docs/agent-messaging.md, "The doorbell"). Any key of
+   * theirs, or a turn, ends it.
+   */
+  readonly ours: boolean
 }
 
 /** What every state carries. */
@@ -208,6 +216,8 @@ export type KeyKind = "enter" | "queue" | "neutral" | "escape" | "accept" | "con
  *   only a turn an older idle one ended;
  * - `key`: the person's key, while a request waits on them (`asked`) or not;
  * - `asked-cleared`: no request waits on the person any more;
+ * - `emptied`: the screen shows the agent's own box empty, with no turn running: Drafting,
+ *   Unknown or Fresh becomes Ready;
  * - `ring`: the doorbell starts ringing a Settled terminal, with its nonce;
  * - `ring-failed`: that ring's test paste failed, or no doorbell prompt confirmed it.
  * A hook's `bound`, `shown` and `prompt` also tell `firedAt`, when its shell started,
@@ -255,7 +265,13 @@ export type DeliveryEvent =
   | { readonly type: "key"; readonly key: KeyKind; readonly asked: boolean; readonly at: number }
   | { readonly type: "asked-cleared" }
   | { readonly type: "emptied"; readonly at: number; readonly epoch: number }
-  | { readonly type: "ring"; readonly nonce: string; readonly opening: boolean }
+  | {
+      readonly type: "ring"
+      readonly nonce: string
+      readonly opening: boolean
+      /** Submits the line a failed ring left in the box (`Box.ours`), pasting nothing. */
+      readonly leftover?: true
+    }
   | { readonly type: "ring-failed"; readonly nonce: string }
 
 /** A box nothing is known to be in: as a session binds. */
@@ -271,6 +287,7 @@ const emptyBox: Box = {
   queued: false,
   draftWhileAsked: false,
   doubted: false,
+  ours: false,
 }
 
 export const unbound: Delivery = {
@@ -356,6 +373,7 @@ const typed = (box: Box): Box => ({
   typedSinceEnter: true,
   queued: false,
   doubted: false,
+  ours: false,
 })
 
 /**
@@ -444,7 +462,13 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
       !box.queued
     )
       return keyed(delivery, false, event.at)
-    return drafted(delivery, { ...box, empty: false, strayed: true, doubted: false })
+    return drafted(delivery, {
+      ...box,
+      empty: false,
+      strayed: true,
+      doubted: false,
+      ours: false,
+    })
   }
   // The person's Escape may interrupt a root turn, which no hook may tell (Claude Code's
   // before its first reply, which puts the prompt back in its box): Unknown, the box a
@@ -528,7 +552,15 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
           epoch: delivery.epoch + 1,
           continued: 0,
           byPerson: false,
-          box: { ...box, empty, queuing: false, enteredAt: null, typedAt: null, strayed: false },
+          box: {
+            ...box,
+            empty,
+            queuing: false,
+            enteredAt: null,
+            typedAt: null,
+            strayed: false,
+            ours: false,
+          },
         })
       }
       // A later model call of the running turn only moves its fence, as its activity's
@@ -604,7 +636,9 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
         epoch: delivery.epoch + 1,
         continued: 0,
         byPerson: person,
-        box: later ? after : { ...after, queuing: false, escapedAt: null },
+        box: later
+          ? { ...after, ours: false }
+          : { ...after, queuing: false, escapedAt: null, ours: false },
       })
       // The person's Escape after the Enter it answers and after its hook fired may have
       // cancelled the turn before any other hook ran: Unknown, its prompt back in the box.
@@ -666,10 +700,11 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
         : delivery
     case "ring":
       // Its line goes into the box: a draft, until its own prompt confirms it.
-      return ringableSince(delivery) !== undefined
+      return ringableSince(delivery) !== undefined ||
+        (event.leftover && box.ours && waitsIn(delivery))
         ? {
             ...counts(delivery),
-            box: { ...box, empty: false },
+            box: { ...box, empty: false, ours: false },
             state: "ringing",
             nonce: event.nonce,
             touched: false,
@@ -677,8 +712,13 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
           }
         : delivery
     case "ring-failed":
+      // Its line may be in the box, Novadeck's own unless the person's key touched it.
       return delivery.state === "ringing" && delivery.nonce === event.nonce
-        ? { ...counts(delivery), state: "unknown" }
+        ? {
+            ...counts(delivery),
+            box: { ...box, ours: !delivery.touched },
+            state: "unknown",
+          }
         : delivery
     case "key": {
       // While a request waits on the person, no key is a submission, and a bare Enter
@@ -704,16 +744,22 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
       return keyed(delivery, event.key === "enter" || event.key === "queue", event.at)
     }
     case "emptied":
-      // The screen shows the box empty where only a doubt kept it a draft: nothing was left
-      // in it. Not for one the person typed in since, or a session since. A completed
-      // turn is Settled; a session announced before its first turn is Ready.
-      return delivery.state === "drafting" && box.doubted && event.epoch === delivery.epoch
-        ? {
-            ...counts(delivery),
-            box: emptyBox,
-            state: delivery.completedAt === undefined ? "ready" : "settled",
-            since: delivery.completedAt ?? event.at,
-          }
+      // The screen shows the agent's own box empty and calm, where only doubt or an
+      // unconfirmed end holds the terminal back: Drafting, Unknown or Fresh, with no turn
+      // running (the person's queued prompt, which the harness submits next, is no
+      // doubt). Nothing was left in it. Not for a box the person typed in since, or a
+      // session since (`epoch`). A turn that completed (a Drafting delivery's
+      // `completedAt`) is Settled again, since it completed, so its settle window has
+      // passed; any other is Ready.
+      return (delivery.state === "drafting" ||
+        delivery.state === "unknown" ||
+        delivery.state === "fresh") &&
+        event.epoch === delivery.epoch &&
+        !box.queuing &&
+        !box.queued
+        ? delivery.state === "drafting" && delivery.completedAt !== undefined
+          ? { ...counts(delivery), box: emptyBox, state: "settled", since: delivery.completedAt }
+          : { ...counts(delivery), box: emptyBox, state: "ready", since: event.at }
         : delivery
     case "asked-cleared":
       // What the person typed while it waited counts now, as typing outside a request.
@@ -746,7 +792,7 @@ export const pendingEnter = (
 const asked = (delivery: Delivery): Delivery =>
   delivery.box.draftWhileAsked && !delivery.box.doubted
     ? delivery
-    : { ...delivery, box: { ...delivery.box, draftWhileAsked: true, doubted: false } }
+    : { ...delivery, box: { ...delivery.box, draftWhileAsked: true, doubted: false, ours: false } }
 
 /** The delivery with no doubt left of its draft: any key of the person's ends one. */
 const undoubted = (delivery: Delivery): Delivery =>
@@ -772,6 +818,7 @@ const keyed = (delivery: Delivery, submits: boolean, at: number | null): Deliver
         : typed(box)),
     empty: false,
     doubted: false,
+    ours: false,
     // Only while a root turn runs, or may, does the harness queue what the person submits.
     queuing: box.queuing || (mayRun(delivery) && submits),
     queuingSince: box.queuing ? box.queuingSince : mayRun(delivery) && submits ? at : null,
@@ -801,6 +848,26 @@ export const midTurnCall = (
 ): MidTurnCall | undefined =>
   hasToolHook ? "tool call" : reinjectPerCall ? "model call" : undefined
 
+/** Whether the state is one the doorbell looks at the screen of, for an empty box. */
+export const waitsIn = (delivery: Delivery): boolean =>
+  delivery.state === "fresh" || delivery.state === "drafting" || delivery.state === "unknown"
+
+/**
+ * Why the doorbell can't ring a terminal whose agent is idle, from what its screen shows
+ * (see docs/agent-messaging.md, "The doorbell"): text in the agent's box (`draft`), a
+ * dialog, picker or screen that isn't the agent's prompt (`dialog`), or a question it
+ * waits on the person for (`asking`).
+ */
+export type Waits = "draft" | "dialog" | "asking" | "failed"
+
+/** What `send` and the Messages pane say of each, plainly. */
+export const waitReasons: Readonly<Record<Waits, string>> = {
+  draft: "waits: there's text in its box, rung once it is empty",
+  dialog: "waits: a dialog or picker is open in its terminal, rung once it closes",
+  asking: "waits: it is asking the user a question, rung once answered",
+  failed: "waits: its doorbell failed three times, rung again at its next prompt or key",
+}
+
 /**
  * When a message sent now would reach the agent, in the words `send` answers with. A
  * harness that sends nothing when a turn fails, as Codex, may only end its turn with its
@@ -811,10 +878,13 @@ export const route = (
   delivery: Delivery,
   silentOnFailure: boolean,
   midTurn: MidTurnCall | undefined,
+  waits: Waits | undefined = undefined,
 ): string => {
   switch (delivery.state) {
     case "fresh":
-      return "when its agent's first turn starts"
+    case "drafting":
+    case "unknown":
+      return waits ? waitReasons[waits] : "ringing it once its box reads empty"
     case "ready":
     case "settled":
     case "ringing":
@@ -824,6 +894,6 @@ export const route = (
       if (midTurn) return `at its next ${midTurn}`
       return silentOnFailure ? "at its turn's end or its next prompt" : "when its current turn ends"
     default:
-      return "when the user next submits a prompt there"
+      return "when its agent next starts a turn"
   }
 }
