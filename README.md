@@ -871,7 +871,7 @@ minutes.
 The Try workflow also writes four posters into the build before it deploys it, and
 `pnpm poster:try` does the same for a local build: `poster-light-1280.webp`,
 `poster-light-2560.webp`, `poster-dark-1280.webp` and `poster-dark-2560.webp`. Each is a
-screenshot of `?embed` at rest, once the app has booted and Claude Code has asked about its plan, in a 1280 × 640 window, captured
+screenshot of `?embed&still` (the desk held at its first frames, Claude Code just begun reading, so the live app picks up where the poster is and the plan arriving is the first thing to move), once the app has booted, in a 1280 × 640 window, captured
 at its own pixel density (1280 × 640 and 2560 × 1280 pixels) rather than scaled down, from
 `application/ui/scripts/poster.ts`. It needs Playwright's Chromium (`pnpm --filter
 @novadeck/ui exec playwright install chromium`). novadeck.dev's hero shows the one that
@@ -926,9 +926,8 @@ of the page load once the visitor presses in it, or the page posts `{ type:
 that completes in the app is told to the page once, as `{ type: "novadeck:clicked" }`,
 posted right after the app's own handlers have had it (a tap counts), so the page can
 engage then without the click landing elsewhere; it is not sent once the page has engaged
-the app. An app that is not framed has the wheel from the start and says nothing. The
-posters are captured with reduced motion, which leaves out what goes on at the desk by
-itself.
+the app. An app that is not framed has the wheel from the start and says nothing. `?still`
+holds the desk at its first frames: nothing moves on its own and the plan never comes.
 
 ## Repository map
 

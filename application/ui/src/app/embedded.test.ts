@@ -97,6 +97,16 @@ describe("holdInputUntilEngaged", () => {
     expect(posted).not.toHaveBeenCalled()
   })
 
+  it("keeps the wheel from the app through a press of any other button", () => {
+    const { held, app } = framed()
+    holdInputUntilEngaged(held, app)
+    for (const button of [1, 2])
+      app.document.body.dispatchEvent(
+        new app.PointerEvent("pointerdown", { bubbles: true, button }),
+      )
+    expect(wheel(app, { deltaY: 40 }).defaultPrevented).toBe(true)
+  })
+
   describe("telling the page of the first click", () => {
     beforeEach(() => vi.useFakeTimers())
     afterEach(() => vi.useRealTimers())

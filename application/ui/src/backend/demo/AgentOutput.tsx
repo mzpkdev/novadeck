@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 
-import { lessMotion } from "./motion"
+import { lessMotion, stillRequested } from "./motion"
 import type { DemoAgent } from "./samples"
 
 // When Claude Code, still reading as its terminal opens, has opened the file and has read
@@ -14,7 +14,10 @@ const readEndsMs = 3500
 // 2 once read. Reading from `since`, so that a screen remounted midway resumes. Not
 // reading, or where motion is reduced, it has read already.
 const readingStep = (since: number | undefined): 0 | 1 | 2 => {
-  if (since === undefined || lessMotion()) return 2
+  if (since === undefined) return 2
+  // Held still, it has not begun to read; with less motion, it has read already.
+  if (stillRequested()) return 0
+  if (lessMotion()) return 2
   const elapsed = Date.now() - since
   return elapsed >= readEndsMs ? 2 : elapsed >= readOpensMs ? 1 : 0
 }

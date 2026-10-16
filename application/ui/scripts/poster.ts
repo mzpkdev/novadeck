@@ -7,7 +7,8 @@ import { chromium, type Browser } from "playwright"
 
 // `pnpm poster:try [dir]`: writes `poster-<scheme>-<width>.webp` into a built visitor demo
 // (`dist-try` unless a directory is given), for light and dark and for 1280 and 2560
-// pixels wide: screenshots of the demo at rest, with Claude Code asking about its plan. Each width is captured at its own pixel
+// pixels wide: screenshots of the demo held at its first frames (`?embed&still`: Claude Code just begun reading),
+// where the live app picks up. Each width is captured at its own pixel
 // density rather than scaled down, so the text is drawn for that size. The website shows
 // them while the live demo loads, so the Try workflow makes them from the very build it
 // deploys. Needs the build and Playwright's Chromium (`playwright install chromium`).
@@ -112,16 +113,15 @@ const capture = async (
   colorScheme: (typeof schemes)[number],
   scale: (typeof scales)[number],
 ): Promise<void> => {
-  // Reduced motion keeps what goes on at the desk by itself out of the picture, and has
-  // Claude Code's plan asked from the start, so the capture is the same on a slow machine.
   const context = await browser.newContext({
     viewport,
     deviceScaleFactor: scale,
     colorScheme,
-    reducedMotion: "reduce",
   })
   const page = await context.newPage()
-  await page.goto(`${origin}/?embed`)
+  // `still` holds the desk at its first frames, where the live app begins, so the swap
+  // to it shows no jump and the plan arriving is the first thing to move.
+  await page.goto(`${origin}/?embed&still`)
   // Booted means the splash came and has left the page, and the header's view choice shows.
   const splash = page.locator(".boot-splash")
   await splash.waitFor({ state: "attached", timeout: bootTimeoutMs })
@@ -130,12 +130,8 @@ const capture = async (
     .getByRole("radiogroup", { name: "Workspace layout" })
     .first()
     .waitFor({ state: "visible", timeout: bootTimeoutMs })
-  // At rest is with the plan asked; reduced motion has it asked from the start.
   await page
-    .getByRole("radio", { name: "Notifications, 1 waiting" })
-    .waitFor({ state: "visible", timeout: bootTimeoutMs })
-  await page
-    .getByText("Claude has written up a plan")
+    .getByText("I’ll read the checkout layout")
     .waitFor({ state: "visible", timeout: bootTimeoutMs })
   await page.evaluate(settle)
   const png = await page.screenshot({ type: "png" })

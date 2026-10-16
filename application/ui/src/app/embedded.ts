@@ -62,7 +62,9 @@ export const holdInputUntilEngaged = (held: HeldInput, frame: Window = window): 
     frame.removeEventListener("wheel", onWheel, { capture: true })
     frame.removeEventListener("pointerdown", onPointerDown, { capture: true })
   }
-  const onPointerDown = (): void => {
+  const onPointerDown = (event: PointerEvent): void => {
+    // Only a primary press makes a click, which tells the page; any other leaves it be.
+    if (event.button !== 0) return
     held.wheel = false
     dropWheel()
   }

@@ -184,7 +184,8 @@ export const visitorStory = (
         sink = next
         const stop = backend.start?.(next)
         const unwatch = turns.watch(heard)
-        if (readingMs > 0 && step === "plan") planTimer = setTimeout(plan, readingMs)
+        if (readingMs > 0 && Number.isFinite(readingMs) && step === "plan")
+          planTimer = setTimeout(plan, readingMs)
         // Stopped while Codex was about to ask: it asks once started again.
         if (step === "nudge") wait()
         return () => {

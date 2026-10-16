@@ -1,7 +1,7 @@
 import type { Backend } from "../../port"
 import { createDemoEngine } from "../engine"
 import { demoBackend, withConversations } from "../index"
-import { lessMotion } from "../motion"
+import { lessMotion, stillRequested } from "../motion"
 import { agentTranscripts } from "../transcripts"
 import { demoTurns } from "../turns"
 import { visitorAmbient } from "./ambient"
@@ -34,18 +34,20 @@ export const visitorDemo = ({
   const now = Date.now()
   const turns = demoTurns(turnMs)
   // Asked for less motion, Claude Code has no reading to watch: its plan waits from the start.
-  const reading = lessMotion() ? 0 : readingMs
+  // Held still (`?still`), it reads for ever and nothing else moves.
+  const still = stillRequested()
+  const reading = still ? Number.POSITIVE_INFINITY : lessMotion() ? 0 : readingMs
   const story = visitorStory(agentTranscripts(now), turns, nudgeMs, reading)
   const life = visitorAmbient(turns)
   const base = demoBackend(
     createDemoEngine(),
     false,
-    ambient ? life.introOf : undefined,
+    ambient && !still ? life.introOf : undefined,
     undefined,
     visitorSeed(now, reading > 0),
   )
   const storied = story.wrap(withConversations(base, story.transcripts, turns))
-  const backend = ambient ? life.wrap(storied) : storied
+  const backend = ambient && !still ? life.wrap(storied) : storied
   return {
     seed: backend.seed,
     newTerminal: backend.newTerminal,
