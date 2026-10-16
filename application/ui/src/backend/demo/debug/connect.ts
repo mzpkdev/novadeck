@@ -31,9 +31,9 @@ export const connectDemo = (rehearsals: BootRehearsals): ConnectBackend => {
     await rehearsals.beforeConnect(signal, unavailable)
     progress("loading")
     // Each demo boot stands for a launch of the app, retries and variant switches too (the
-    // desktop app's retries are not launches): a stale release's notice, shown once per
+    // desktop app's retries are not launches): a portable copy's card, raised once per
     // launch, is not held back as already shown by the boot before.
-    if (portable?.offer) clearUpdateRaised()
+    if (portable) clearUpdateRaised()
     // An abandoned attempt leaves the arming for the next.
     const slow = slowAttach && !signal.aborted
     if (slow) slowAttach = false

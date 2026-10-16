@@ -9,51 +9,40 @@ afterEach(() => {
   localStorage.clear()
 })
 
-describe("the offer raised in this run", () => {
+describe("the run the card was raised in", () => {
   it("is read back as written, and gone once cleared", () => {
-    expect(readUpdateRaised("run-1")).toBeNull()
-    writeUpdateRaised("run-1", "available:0.0.80")
-    expect(readUpdateRaised("run-1")).toBe("available:0.0.80")
+    expect(readUpdateRaised("run-1")).toBe(false)
+    writeUpdateRaised("run-1")
+    expect(readUpdateRaised("run-1")).toBe(true)
     clearUpdateRaised()
-    expect(readUpdateRaised("run-1")).toBeNull()
+    expect(readUpdateRaised("run-1")).toBe(false)
   })
 
   it("is read back by a window opened again within the run, but not by another launch", () => {
-    writeUpdateRaised("run-1", "available:0.0.80")
+    writeUpdateRaised("run-1")
     // A window opened again has its own session storage and an empty page, not another run.
     sessionStorage.clear()
-    expect(readUpdateRaised("run-1")).toBe("available:0.0.80")
-    expect(readUpdateRaised("run-2")).toBeNull()
+    expect(readUpdateRaised("run-1")).toBe(true)
+    expect(readUpdateRaised("run-2")).toBe(false)
   })
 
-  it("is replaced by the notice of the next launch", () => {
-    writeUpdateRaised("run-1", "available:0.0.80")
-    writeUpdateRaised("run-2", "available:0.0.81")
-    expect(readUpdateRaised("run-1")).toBeNull()
-    expect(readUpdateRaised("run-2")).toBe("available:0.0.81")
-  })
-
-  it("is nothing where the stored text is damaged", () => {
-    for (const text of ["", "{", "null", '"a"', '{"run":"run-1"}', '{"run":1,"key":"a"}']) {
-      localStorage.setItem("novadeck.update-raised", text)
-      expect(readUpdateRaised("run-1")).toBeNull()
-    }
+  it("is replaced by the card of the next launch", () => {
+    writeUpdateRaised("run-1")
+    writeUpdateRaised("run-2")
+    expect(readUpdateRaised("run-1")).toBe(false)
+    expect(readUpdateRaised("run-2")).toBe(true)
   })
 
   it("is kept in memory where local storage throws", () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("blocked")
-    })
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("blocked")
-    })
-    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
-      throw new Error("blocked")
-    })
-    writeUpdateRaised("run-1", "available:0.0.81")
-    expect(readUpdateRaised("run-1")).toBe("available:0.0.81")
-    expect(readUpdateRaised("run-2")).toBeNull()
+    for (const method of ["setItem", "getItem", "removeItem"] as const) {
+      vi.spyOn(Storage.prototype, method).mockImplementation(() => {
+        throw new Error("blocked")
+      })
+    }
+    writeUpdateRaised("run-1")
+    expect(readUpdateRaised("run-1")).toBe(true)
+    expect(readUpdateRaised("run-2")).toBe(false)
     clearUpdateRaised()
-    expect(readUpdateRaised("run-1")).toBeNull()
+    expect(readUpdateRaised("run-1")).toBe(false)
   })
 })

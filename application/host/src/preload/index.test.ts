@@ -7,9 +7,9 @@ import {
   apiUrlArgumentPrefix,
   appearanceChannel,
   installAppChannel,
+  installProgressChannel,
   noticeChannel,
   noticeClickChannel,
-  openInstalledChannel,
   openUpdatePageChannel,
   portableChannel,
   quitAppChannel,
@@ -230,15 +230,6 @@ describe("an update offer", () => {
     expect(offers).toEqual([])
   })
 
-  it("carries the date the copy fell behind when it is an ISO date-time, and drops any other", () => {
-    const offers: unknown[] = []
-    electron.exposed.onUpdate!((offer) => offers.push(offer))
-    const outdatedSince = "2026-10-01T09:30:00.000Z"
-    for (const value of [outdatedSince, "yesterday", "2026-10-01", 20261001, undefined])
-      electron.renderer.emit(updateOfferChannel, {}, { ...ready, outdatedSince: value })
-    expect(offers).toEqual([{ ...ready, outdatedSince }, ready, ready, ready, ready])
-  })
-
   it("carries only the notes the contract allows", () => {
     const offers: (readonly string[])[] = []
     electron.exposed.onUpdate!((offer) => offers.push(offer.notes))
@@ -344,13 +335,25 @@ describe("the sandbox", () => {
 
 describe("whether this copy is portable", () => {
   it("is what the host answers when it is a portable copy of a release version", async () => {
-    electron.answer = { portable: true, version: "1.2.3", run: "0a1b-2c3d", extra: "dropped" }
+    electron.answer = {
+      portable: true,
+      version: "1.2.3",
+      run: "0a1b-2c3d",
+      installed: true,
+      extra: "dropped",
+    }
     expect(await electron.exposed.portable!()).toEqual({
       portable: true,
       version: "1.2.3",
       run: "0a1b-2c3d",
+      installed: true,
     })
     expect(electron.sent).toEqual([portableChannel])
+  })
+
+  it("is not installed unless the host says exactly so", async () => {
+    electron.answer = { portable: true, version: "1.2.3", run: "0a1b-2c3d", installed: "yes" }
+    expect(await electron.exposed.portable!()).toMatchObject({ installed: false })
   })
 
   it("is not portable when the host answers anything else", async () => {
@@ -375,7 +378,7 @@ describe("whether this copy is portable", () => {
 describe("installing the app from a portable copy", () => {
   it("asks the host, naming nothing, and passes on what the contract allows", async () => {
     const answers = [
-      { kind: "installing" },
+      { kind: "installed" },
       { kind: "newer", version: "1.2.4" },
       { kind: "failed", reason: "There is no space left on the disk." },
     ]
@@ -391,7 +394,8 @@ describe("installing the app from a portable copy", () => {
     const failed = { kind: "failed", reason: "Something went wrong." }
     const answers = [
       undefined,
-      "installing",
+      "installed",
+      { kind: "installing" },
       { kind: "done" },
       { kind: "newer", version: "latest" },
       { kind: "failed" },
@@ -405,10 +409,24 @@ describe("installing the app from a portable copy", () => {
     expect(await Promise.all(results)).toEqual(answers.map(() => failed))
   })
 
-  it("opens the installed copy by asking the host, naming nothing", () => {
-    electron.exposed.openInstalled!()
-    expect(electron.sent).toEqual([openInstalledChannel])
-    expect(electron.messages).toEqual([])
+  it("passes on whole-percent progress and the install phase, until the page stops", () => {
+    const seen: unknown[] = []
+    const stop = electron.exposed.onInstallProgress!((progress) => seen.push(progress))
+    electron.renderer.emit(installProgressChannel, {}, { phase: "downloading", percent: 40, x: 1 })
+    electron.renderer.emit(installProgressChannel, {}, { phase: "installing" })
+    for (const bad of [
+      undefined,
+      "installing",
+      { phase: "downloading" },
+      { phase: "downloading", percent: 40.5 },
+      { phase: "downloading", percent: 101 },
+      { phase: "downloading", percent: -1 },
+      { phase: "done" },
+    ])
+      electron.renderer.emit(installProgressChannel, {}, bad)
+    stop()
+    electron.renderer.emit(installProgressChannel, {}, { phase: "installing" })
+    expect(seen).toEqual([{ phase: "downloading", percent: 40 }, { phase: "installing" }])
   })
 })
 

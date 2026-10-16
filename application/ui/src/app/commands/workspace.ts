@@ -96,13 +96,12 @@ export type WorkspaceCommands = ShellCommands &
     // next crash loop.
     readonly retryAfterCrashLoop: () => void
     readonly dismissCrashLoop: () => void
-    // Opens or closes the update's notice, which the footer's chip reopens after Later.
+    // Opens or closes the portable copy's card, which the footer's chip reopens once dismissed.
     readonly setUpdateOpen: (open: boolean) => void
     // Opens or closes the sandbox notice; opening it closes the update's, which shares its place.
     readonly setSandboxOpen: (open: boolean) => void
-    // Notes that the notice came up for this offer (`updateKey`), so a relaunch
-    // doesn't raise it again.
-    readonly updateShown: (key: string) => void
+    // Notes that the card came up in this run, so it isn't raised by itself again.
+    readonly updateShown: () => void
   }
 
 // The terminal created last stays highlighted this long.
@@ -510,9 +509,6 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
           ? state
           : { ...state, sandboxOpen, updateOpen: sandboxOpen ? false : state.updateOpen },
       ),
-    updateShown: (updateSeen) => {
-      noteUpdateShown(ui.getSnapshot().portable, updateSeen)
-      ui.update((state) => (state.updateSeen === updateSeen ? state : { ...state, updateSeen }))
-    },
+    updateShown: () => noteUpdateShown(ui.getSnapshot().portable),
   }
 }

@@ -24,7 +24,6 @@ import {
   developerIdSigned,
   firstCheckMs,
   retryCheckMs,
-  installFallbackMs,
   installOnlyOnOrderlyQuit,
   portableOf,
   quitWithoutInstalling,
@@ -92,7 +91,6 @@ describe("how a build updates", () => {
       expect(updatePlan(build(appImage))).toEqual({
         kind: "appimage",
         mode: "install",
-        portable: false,
       })
     })
 
@@ -100,7 +98,6 @@ describe("how a build updates", () => {
       expect(updatePlan(build({ ...appImage, appImageWritable: false }))).toEqual({
         kind: "appimage",
         mode: "tell",
-        portable: false,
       })
     })
 
@@ -108,7 +105,6 @@ describe("how a build updates", () => {
       expect(updatePlan(build({ ...appImage, appImageInstalled: false }))).toEqual({
         kind: "appimage",
         mode: "tell",
-        portable: true,
       })
     })
 
@@ -134,13 +130,12 @@ describe("how a build updates", () => {
       expect(updatePlan(build({ platform: "win32" }))).toEqual({
         kind: "nsis",
         mode: "install",
-        portable: false,
       })
     })
 
     it("only tells for a copy the installer did not make, and never installs", () => {
       const zip = build({ platform: "win32", windowsInstalled: false })
-      expect(updatePlan(zip)).toEqual({ kind: "nsis", mode: "tell", portable: true })
+      expect(updatePlan(zip)).toEqual({ kind: "nsis", mode: "tell" })
       expect(updatePlan({ ...zip, signed: true })?.mode).toBe("tell")
     })
 
@@ -148,7 +143,6 @@ describe("how a build updates", () => {
       expect(updatePlan(build({ platform: "win32", windowsInstalled: true }))).toEqual({
         kind: "nsis",
         mode: "install",
-        portable: false,
       })
     })
 
@@ -166,7 +160,6 @@ describe("how a build updates", () => {
         {
           kind: "mac",
           mode: "install",
-          portable: false,
         },
       )
     })
@@ -175,7 +168,6 @@ describe("how a build updates", () => {
       expect(updatePlan(build({ platform: "darwin", inApplications: true }))).toEqual({
         kind: "mac",
         mode: "tell",
-        portable: false,
       })
     })
 
@@ -184,7 +176,6 @@ describe("how a build updates", () => {
         expect(updatePlan(build({ platform: "darwin", signed, inApplications: false }))).toEqual({
           kind: "mac",
           mode: "tell",
-          portable: true,
         })
     })
   })
@@ -290,37 +281,6 @@ describe("telling pages of an update", () => {
     expect(first.sent).toEqual([[updateOfferChannel, offer]])
     expect(second.sent).toEqual([[updateOfferChannel, offer]])
     expect(offers.current()).toEqual(offer)
-  })
-
-  it("carries when the copy fell behind, asking only for an offer that is new", () => {
-    const open = page()
-    const offers = trackOffer(() => [open])
-    const asked: string[] = []
-    const since = (): string => {
-      asked.push("asked")
-      return "2026-10-01T09:30:00.000Z"
-    }
-    offers.offer("available", "1.2.3", [], { outdatedSince: since })
-    offers.offer("available", "1.2.3", [], { outdatedSince: since })
-    offers.offer("available", "1.2.4", [])
-    expect(asked).toHaveLength(1)
-    expect(open.sent.map(([, offer]) => offer)).toEqual([
-      {
-        kind: "available",
-        version: "1.2.3",
-        notes: [],
-        outdatedSince: "2026-10-01T09:30:00.000Z",
-      },
-      { kind: "available", version: "1.2.4", notes: [] },
-    ])
-  })
-
-  it("goes without the date when the copy cannot say", () => {
-    const open = page()
-    trackOffer(() => [open]).offer("available", "1.2.3", [], { outdatedSince: () => undefined })
-    expect(open.sent).toEqual([
-      [updateOfferChannel, { kind: "available", version: "1.2.3", notes: [] }],
-    ])
   })
 
   it("tells a page that asks later, and nothing before there is an offer", () => {
@@ -450,13 +410,6 @@ const deferred = <T>() => {
   }
 }
 
-describe("the wait for a restart into an installed copy", () => {
-  it("is longer on macOS, where the move can be slow", () => {
-    expect(installFallbackMs("darwin")).toBeGreaterThan(installFallbackMs("linux"))
-    expect(installFallbackMs("win32")).toBe(installFallbackMs("linux"))
-  })
-})
-
 describe("quitting as the system ends the session", () => {
   it("leaves an update uninstalled, then quits", () => {
     const steps: string[] = []
@@ -521,7 +474,6 @@ describe("checking for updates", () => {
       mode?: UpdateMode
       channel?: UpdateChannel
       native?: EventEmitter
-      upToDate?: () => void
       failedVersion?: string
     } = {},
   ) => {
@@ -534,7 +486,6 @@ describe("checking for updates", () => {
       channel: options.channel ?? "stable",
       failedVersion: options.failedVersion,
       native: options.native,
-      upToDate: options.upToDate,
       offer: (kind, version, notes, percent) =>
         void offered.push(
           percent === undefined ? [kind, version, notes] : [kind, version, notes, percent],
@@ -544,15 +495,6 @@ describe("checking for updates", () => {
     })
     return { updater, offered, failed, logged, ...checks }
   }
-
-  it("tells when a check finds no newer release", () => {
-    let told = 0
-    const { updater } = checking({ mode: "tell", upToDate: () => void (told += 1) })
-    updater.emit("update-not-available", { version: "1.0.0" })
-    expect(told).toBe(1)
-    // Not every build asks.
-    expect(() => checking().updater.emit("update-not-available", {})).not.toThrow()
-  })
 
   it("installs on quitting in install mode, and asks for each download itself", () => {
     const { updater } = checking()

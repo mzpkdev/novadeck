@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { accessSync, existsSync, readFileSync, realpathSync } from "node:fs"
+import { accessSync, existsSync, realpathSync, statSync, writeFileSync } from "node:fs"
 import {
   access,
   constants,
@@ -9,6 +9,7 @@ import {
   readFile,
   readlink,
   realpath,
+  rename,
   rm,
   rmdir,
 } from "node:fs/promises"
@@ -16,7 +17,7 @@ import { homedir } from "node:os"
 import { basename, dirname, join, win32 } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
-import type { UpdateChannel } from "@novadeck/protocol/bridge"
+import type { InstallProgress, UpdateChannel } from "@novadeck/protocol/bridge"
 import { startHttpServer, type HttpServer } from "@novadeck/runner/http"
 import {
   app,
@@ -46,11 +47,10 @@ import {
 } from "../bridge.js"
 import { keepAppearance, registerAppearanceIpc } from "./appearance.js"
 import {
-  bundleVersionOf,
   findInstalledApps,
-  moveToApplications,
+  installBundle,
+  recoverBundles,
   relaunchIntoCopy,
-  renamedMoveReason,
 } from "./applications-folder.js"
 import { dataFolderName } from "./data-folder.js"
 import {
@@ -63,10 +63,14 @@ import { isInstalledImage } from "./install-location.js"
 import {
   findInstalledWindows,
   hashBody,
+  insideInstallFolder,
+  installedAtLeast,
   installedByInstaller,
+  powershellUsable,
   prepareSetup,
   readInstallRecord,
-  setupArguments,
+  reportPercents,
+  runSetup,
   setupName,
   startDetached,
   type InstallRecord,
@@ -98,7 +102,6 @@ import {
   bundleOf,
   checkForUpdates,
   developerIdSigned,
-  installFallbackMs,
   installOnlyOnOrderlyQuit,
   portableOf,
   quitWithoutInstalling,
@@ -147,7 +150,7 @@ let stopping = false
 // Names this run of the app; see `PortableHost.run`.
 const run = randomUUID()
 // Whether the quit under way began the orderly way: closing the last window, or
-// restarting into an installed copy. On Linux Electron turns SIGTERM, SIGINT and SIGHUP into an
+// the menu's Quit. On Linux Electron turns SIGTERM, SIGINT and SIGHUP into an
 // ordinary quit, which must not install an update; see ./updater.ts.
 let orderlyQuit = false
 // The auto-updater of a build that looks for updates, once it has loaded, and what keeps
@@ -423,26 +426,6 @@ const updateBuild = (): Promise<UpdateBuild> =>
     return { ...rest, signed: checksSignature() && rest.inApplications && (await bundleSigned()) }
   })())
 
-// When this copy first learned that a newer release exists, kept for the running version;
-// undefined if it cannot be kept, which leaves the offer without one.
-const outdatedSince = (): string | undefined => {
-  try {
-    return updateState.outdatedSince(app.getVersion(), new Date())
-  } catch (error) {
-    console.warn("The date this copy fell behind was not kept.", error)
-    return undefined
-  }
-}
-
-// Forgets when this copy fell behind, as a check found it current.
-const clearOutdated = (): void => {
-  try {
-    updateState.clearOutdated()
-  } catch (error) {
-    console.warn("The date this copy fell behind was not cleared.", error)
-  }
-}
-
 // Starts checking for updates in a build that looks for them; see ./updater.ts.
 const startUpdates = async (): Promise<void> => {
   const state = updateState.read()
@@ -455,13 +438,7 @@ const startUpdates = async (): Promise<void> => {
     failedVersion: state.installFailedOn,
     // Squirrel.Mac stages macOS updates; the others install from electron-updater's file.
     native: process.platform === "darwin" ? nativeUpdater : undefined,
-    offer: (kind, version, notes, percent) =>
-      offers.offer(kind, version, notes, {
-        percent,
-        outdatedSince: plan.portable ? outdatedSince : undefined,
-      }),
-    // A portable that is current again starts a fresh clock when a release comes after.
-    upToDate: plan.portable ? clearOutdated : undefined,
+    offer: (kind, version, notes, percent) => offers.offer(kind, version, notes, { percent }),
     // Synchronous: a failed install on quit is reported as the app exits.
     installFailed: (version) => {
       try {
@@ -545,10 +522,6 @@ const createWindow = (origin: string): BrowserWindow => {
   return window
 }
 
-// The copy of this app in /Applications that Electron's move writes: named as the running
-// bundle is, which Finder may have renamed.
-const applicationsCopy = (): string => join("/Applications", basename(bundleOf(app.getPath("exe"))))
-
 // The bundle names an installed copy may have: the running one's, and the packaged name,
 // which is the executable's (`executableName` in electron-builder.yml) and survives a
 // rename of the bundle.
@@ -557,40 +530,50 @@ const installedNames = (): string[] => [
   `${basename(app.getPath("exe"))}.app`,
 ]
 
-// The version of the copy of this app already in Applications, if its Info.plist can be read.
-const installedVersion = (): string | undefined => {
-  try {
-    return bundleVersionOf(readFileSync(join(applicationsCopy(), "Contents", "Info.plist"), "utf8"))
-  } catch {
-    return undefined
-  }
-}
+// Runs a system tool, rejecting with its error, including what it wrote to stderr.
+const runTool = (file: string, args: readonly string[]): Promise<void> =>
+  new Promise((resolve, reject) => {
+    execFile(file, [...args], { timeout: 300_000 }, (error, _stdout, stderr) =>
+      error ? reject(new Error(stderr.trim() || error.message)) : resolve(),
+    )
+  })
 
-// The macOS install: Electron moves the app to Applications, which quits it and starts the
-// moved copy; see `moveToApplications`.
-const moveApp = (): PortableInstall => {
-  const running = basename(bundleOf(app.getPath("exe")))
-  const [, packaged] = installedNames()
-  const refused = renamedMoveReason({
-    running,
-    packaged: packaged ?? running,
-    installed: packaged !== undefined && existsSync(join("/Applications", packaged)),
+// Whether the person can write to `path`.
+const canWrite = (path: string): Promise<boolean> =>
+  access(path, constants.W_OK).then(
+    () => true,
+    () => false,
+  )
+
+// The macOS install: this bundle copied into Applications while the app keeps running; see
+// `installBundle`.
+const bundleMachine = () => ({
+  packaged: `${basename(app.getPath("exe"))}.app`,
+  applications: "/Applications",
+  userApplications: join(homedir(), "Applications"),
+  exists: (path: string) =>
+    access(path).then(
+      () => true,
+      () => false,
+    ),
+  rename,
+  remove: (path: string) => rm(path, { recursive: true, force: true }),
+  log: (message: string, error: unknown) => console.warn(message, error),
+})
+
+const installMacBundle = async (
+  target: string | undefined,
+  progress: (progress: InstallProgress) => void,
+): Promise<PortableInstall> => {
+  progress({ phase: "installing" })
+  return installBundle(target, {
+    ...bundleMachine(),
+    running: bundleOf(app.getPath("exe")),
+    writable: canWrite,
+    mkdir: async (folder) => void (await mkdir(folder, { recursive: true })),
+    ditto: (source, destination) => runTool("/usr/bin/ditto", [source, destination]),
+    unquarantine: (path) => runTool("/usr/bin/xattr", ["-dr", "com.apple.quarantine", path]),
   })
-  if (refused !== undefined) return { kind: "failed", reason: refused }
-  const outcome = moveToApplications({
-    move: (conflictHandler) => app.moveToApplicationsFolder({ conflictHandler }),
-    existingVersion: installedVersion,
-    runningVersion: app.getVersion(),
-    log: (message, error) => console.warn(message, error),
-  })
-  switch (outcome.kind) {
-    case "moved":
-      return { kind: "leaving" }
-    case "newer":
-      return { kind: "newer", image: applicationsCopy(), version: outcome.version }
-    case "failed":
-      return outcome
-  }
 }
 
 // Starts the macOS app bundle `image` in place of this one; see `relaunchIntoCopy`. Nothing
@@ -628,6 +611,7 @@ const startInstalled = (image: string): Promise<boolean> =>
       }
     },
     releaseLock: () => app.releaseSingleInstanceLock(),
+    reclaimLock: () => app.requestSingleInstanceLock(),
     exit: () => app.exit(0),
     log: (message, error) => console.warn(message, error),
   })
@@ -640,6 +624,7 @@ const startWindowsCopy = (image: string): Promise<boolean> =>
     spawn,
     exists: existsSync,
     releaseLock: () => app.releaseSingleInstanceLock(),
+    reclaimLock: () => app.requestSingleInstanceLock(),
     exit: () => app.exit(0),
     log: (message, error) => console.warn(message, error),
   })
@@ -688,6 +673,8 @@ const downloadStallMs = 60_000
 const downloadSetup = async (
   url: string,
   maxBytes: number,
+  size: number | undefined,
+  progress: (percent: number) => void,
 ): Promise<{ file: string; sha512: string }> => {
   const folder = setupFolder()
   await rm(folder, { recursive: true, force: true })
@@ -706,6 +693,9 @@ const downloadSetup = async (
   const handle = await open(file, "w")
   try {
     const response = await net.fetch(url, { signal: controller.signal })
+    // The release's size for the file; else what the server says it is sending.
+    const length = Number(response.headers.get("content-length"))
+    const report = reportPercents(size ?? (length > 0 ? length : undefined), progress)
     const sha512 = await hashBody(
       response as unknown as Parameters<typeof hashBody>[0],
       (chunk) => {
@@ -713,6 +703,7 @@ const downloadSetup = async (
         return handle.write(chunk).then(() => undefined)
       },
       maxBytes,
+      report,
     )
     await handle.close()
     return { file, sha512 }
@@ -725,10 +716,48 @@ const downloadSetup = async (
   }
 }
 
-// The Windows install: the latest release's setup is downloaded and checked while the app
-// runs, and run once the app has shut down; see `prepareSetup` and the ordering notes in
-// docs/auto-update.md.
-const stageWindowsSetup = async (): Promise<PortableInstall> => {
+// Whether PowerShell can do what the installer's running-app check asks of it, as the
+// installer would run it: its stub is 32-bit, so the 32-bit PowerShell is the one it finds.
+const installerPowerShell = (): Promise<boolean> => {
+  const system = process.env.SystemRoot ?? "C:\\Windows"
+  const wow = win32.join(system, "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe")
+  const file = existsSync(wow)
+    ? wow
+    : win32.join(system, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+  return powershellUsable(
+    (command) =>
+      new Promise((resolve) => {
+        execFile(file, ["-C", command], { timeout: 30_000, windowsHide: true }, (error) =>
+          resolve(!error),
+        )
+      }),
+  )
+}
+
+// How long the setup is waited for before the install is judged by what it left.
+const setupWaitMs = 5 * 60_000
+
+// The Windows install: the latest release's setup is downloaded and checked, then run
+// silently while this copy keeps running, and the install is vouched for by the copy it
+// leaves; see `prepareSetup` and docs/auto-update.md. The setup starts nothing.
+const installWindowsSetup = async (
+  progress: (progress: InstallProgress) => void,
+): Promise<PortableInstall> => {
+  // The setup replaces what is in the install folder, and stops what runs from there.
+  const record = await installRecord().catch(() => undefined)
+  const inside = insideInstallFolder(process.execPath, [record?.location, defaultInstallFolder()])
+  if (inside !== undefined)
+    return {
+      kind: "failed",
+      reason: `Novadeck can't install while this copy runs from a folder whose name starts with ${inside}. Move this copy somewhere else, like Downloads, and try again.`,
+    }
+  // Without PowerShell the setup stops every novadeck.exe by name, this copy among them.
+  if (!(await installerPowerShell()))
+    return {
+      kind: "failed",
+      reason:
+        "Novadeck can't install itself while it runs on this PC. Quit Novadeck, then run the installer from the Releases page.",
+    }
   const repository = await releaseRepository()
   const outcome = await prepareSetup({
     downloads: {
@@ -739,33 +768,33 @@ const stageWindowsSetup = async (): Promise<PortableInstall> => {
     text: fetchText,
     download: downloadSetup,
     remove: (file) => rm(file, { force: true }),
+    progress: (percent) => progress({ phase: "downloading", percent }),
     log: (message, error) => console.warn(message, error),
   })
   if (outcome.kind === "failed") return outcome
-  return {
-    kind: "staged",
-    // The setup runs silently and starts the installed app when it is done. It is not
-    // given `--updated`, which marks an update made from the running app; this is a fresh
-    // install made after the app has gone. The setup's check for a running app only looks
-    // for novadeck.exe, and this process exits as the setup starts.
-    start: () =>
-      startDetached({
-        file: outcome.setup,
-        args: setupArguments,
-        spawn,
-        exists: existsSync,
-        releaseLock: () => app.releaseSingleInstanceLock(),
-        exit: () => app.exit(0),
-        log: (message, error) => console.warn(message, error),
-      }),
-    alert: async () => {
-      await dialog.showMessageBox({
-        type: "error",
-        message: "Novadeck could not be installed.",
-        detail: `Windows did not run the installer. Your workspace is saved. Run ${outcome.setup} yourself, or download Novadeck again from its Releases page.`,
-      })
-    },
-  }
+  progress({ phase: "installing" })
+  // Not given `--updated`, which marks an update made from the running app; this is a
+  // fresh install, and `/S` alone starts nothing afterwards.
+  const ran = await runSetup({
+    file: outcome.setup,
+    spawn,
+    exists: existsSync,
+    timeoutMs: setupWaitMs,
+    log: (message, error) => console.warn(message, error),
+  })
+  const installed =
+    ran === "failed"
+      ? undefined
+      : installedAtLeast(await installedCopies().catch(() => []), outcome.version)
+  await rm(setupFolder(), { recursive: true, force: true }).catch(() => {})
+  if (ran === "failed")
+    return {
+      kind: "failed",
+      reason: "Windows did not run the installer. Download Novadeck again from its Releases page.",
+    }
+  if (installed === undefined)
+    return { kind: "failed", reason: "The installer did not finish installing Novadeck." }
+  return { kind: "installed", image: installed.image }
 }
 
 // Reads the versions of installed AppImages with the environment they are started with.
@@ -800,38 +829,55 @@ const installedCopies = () =>
 
 // Installs the AppImage that is running, over the installed copy `target` or at the
 // installer's path.
-const installAppImageOver = (target: string | undefined): Promise<PortableInstall> =>
-  installAppImage(
+const installAppImageOver = (
+  target: string | undefined,
+  progress: (progress: InstallProgress) => void,
+): Promise<PortableInstall> => {
+  progress({ phase: "installing" })
+  return installAppImage(
     process.env.APPIMAGE ?? "",
     installLayout({ env: process.env, home: homedir() }),
     installedExtract(),
     target,
   )
+}
+
+// Where a launch notes that it redirected to the installed copy, and how long that holds.
+const redirectMarker = (): string => join(app.getPath("userData"), "redirected-at")
+const redirectWindowMs = 30_000
 
 const launch = async (): Promise<void> => {
   // The signature is not asked here: it takes a moment, and a portable copy is told
   // without it.
   const portable = portableOf({ ...(await baseBuild()), signed: false })
-  // A portable copy older than the installed one must not open the data the installed
-  // one may have upgraded; nothing has started yet, so there is nothing to shut down.
+  // An install interrupted on macOS may have left the only installed copy renamed aside,
+  // and a half-made one; tidy before looking for installed copies.
+  if (portable && process.platform === "darwin")
+    await recoverBundles({ ...bundleMachine(), names: installedNames() }).catch(() => undefined)
+  // A portable copy gives way to an installed copy of the same version or a newer one,
+  // which may have upgraded the data this copy cannot open; nothing has started yet, so
+  // there is nothing to shut down.
   if (
     await leaveForNewerInstalled({
       portable,
       version: app.getVersion(),
       find: installedCopies,
-      ask: async (version) => {
-        const { response } = await dialog.showMessageBox({
-          type: "info",
-          message: "A newer Novadeck is installed.",
-          detail: `This copy is version ${app.getVersion()} and the installed one is ${version}, which may have upgraded your workspace in a way this copy cannot open. Open the installed Novadeck instead.`,
-          buttons: ["Open Novadeck", "Quit"],
-          defaultId: 0,
-          cancelId: 1,
-        })
-        return response === 0
-      },
       start: startInstalledCopy,
       alert: alertNotStarted,
+      recentRedirect: () => {
+        try {
+          return Date.now() - statSync(redirectMarker()).mtimeMs < redirectWindowMs
+        } catch {
+          return false
+        }
+      },
+      markRedirect: () => {
+        try {
+          writeFileSync(redirectMarker(), "")
+        } catch (error) {
+          console.warn("The redirect was not noted.", error)
+        }
+      },
       quit: () => app.exit(0),
       log: (message, error) => console.warn(message, error),
     })
@@ -910,10 +956,11 @@ const launch = async (): Promise<void> => {
       }
     },
   })
-  // The page learns whether this is a portable copy and may install the app from it, or
-  // open an installed copy found newer.
+  // The page learns whether this is a portable copy and may install the app from it,
+  // while this copy keeps running, and is told how the install goes.
   registerPortableIpc(ipcMain, {
     window: (event) => appWindow(event)?.webContents,
+    pages: () => appPages(BrowserWindow.getAllWindows()),
     installer: portableInstaller({
       portable,
       version: app.getVersion(),
@@ -925,23 +972,13 @@ const launch = async (): Promise<void> => {
             ? "Open the installed Novadeck from the Start menu, or uninstall it in Windows Settings and try again."
             : "Try again, or reinstall Novadeck with install.sh.",
       find: installedCopies,
-      install: (target) =>
+      install: (target, progress) =>
         process.platform === "darwin"
-          ? Promise.resolve(moveApp())
+          ? installMacBundle(target, progress)
           : process.platform === "win32"
-            ? stageWindowsSetup()
-            : installAppImageOver(target),
-      shutdown: () => {
-        stopping = true
-        orderlyQuit = true
-        updates?.stop()
-        return shutDown()
-      },
-      start: startInstalledCopy,
-      alert: alertNotStarted,
+            ? installWindowsSetup(progress)
+            : installAppImageOver(target, progress),
       stopping: () => stopping,
-      fallbackMs: installFallbackMs(process.platform),
-      quit: () => app.quit(),
       log: (message, error) => console.warn(message, error),
     }),
   })
@@ -976,6 +1013,7 @@ const launch = async (): Promise<void> => {
           spawn,
           exists: existsSync,
           releaseLock: () => {},
+          reclaimLock: () => true,
           exit: () => {},
           log: (message, error) => console.warn(message, error),
         }),

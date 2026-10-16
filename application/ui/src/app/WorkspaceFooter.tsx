@@ -34,7 +34,8 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   const updateOpen = useUiState((state) => state.updateOpen)
   const sandbox = useUiState((state) => state.sandbox)
   const sandboxOpen = useUiState((state) => state.sandboxOpen)
-  const portable = useUiState((state) => state.portable?.portable === true)
+  const portableState = useUiState((state) => state.portable)
+  const portable = portableState?.portable === true
   // A host that can say it is portable has not yet: the sandbox chip waits, so it does not
   // flash on a copy whose install entry replaces it.
   const portablePending = useUiState((state) => state.portable === null) && !!portableHost
@@ -115,13 +116,13 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
                 // The install entry covers the sandbox notice a portable copy would show.
                 unsandboxed: sandbox !== null && !sandbox.sandboxed,
                 onInstall: portableHost.install,
-                onOpenInstalled: portableHost.openInstalled,
+                installed: portableState?.portable === true && portableState.installed,
+                ...(portableHost.onProgress && { onProgress: portableHost.onProgress }),
               },
               open: updateOpen,
               blocked: asking || welcome || sandboxOpen,
               onOpenChange: commands.setUpdateOpen,
               onShown: commands.updateShown,
-              onOpenPage: updates?.openPage ?? (() => {}),
               returnFocus: () => {
                 const { selected, view } = currentState(store.getSnapshot())
                 if (!selected) return false

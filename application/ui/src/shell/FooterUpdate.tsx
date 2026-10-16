@@ -1,15 +1,12 @@
+import { X } from "lucide-react"
 import { useEffect, useId, useRef, useState } from "react"
 
 import { blockingOverlayOpen } from "../interaction/dom"
-import type { InstallResult } from "../model/portable"
-import { updateKey, type UpdateOffer } from "../model/update"
+import type { InstallProgress, InstallResult } from "../model/portable"
+import type { UpdateOffer } from "../model/update"
+import { Progress } from "../ui-toolkit/Progress"
 import { KeepFocus, useRecoverFocus } from "./notice-focus"
-
-// The release-note lines the notice shows; the release page has the rest.
-export const shownNotes = 5
-
-// What the notice says of an offer.
-const headline = ({ version }: UpdateOffer): string => `Novadeck ${version} is available`
+import { fadeMs, finishedForMs } from "./UpdateProgress"
 
 // A portable copy, which never updates itself and is the way to install the app that does.
 export type FooterPortable = {
@@ -18,39 +15,36 @@ export type FooterPortable = {
   readonly unsandboxed: boolean
   // Installs the app, keeping the workspace.
   readonly onInstall: () => Promise<InstallResult>
-  // Restarts into the installed copy that is newer than this one.
-  readonly onOpenInstalled: () => void
+  // Whether this run installed the app already, as when a window is opened again.
+  readonly installed: boolean
+  // Hears how far an install under way has got, where the host reports it.
+  readonly onProgress?: (listener: (progress: InstallProgress) => void) => () => void
 }
 
-// Where installing from a portable copy stands. `running` and `installing` are the wait
-// for the host's answer and for the restart it announced.
+// Where installing from a portable copy stands. `running` is the wait for the host's answer.
+// `installed` is the answer that the installed copy is in place; this copy keeps running.
 type Install =
-  | { readonly phase: "idle" | "running" | "installing" }
+  | { readonly phase: "idle" | "running" | "installed" }
   | { readonly phase: "newer"; readonly version: string }
   | { readonly phase: "failed"; readonly reason: string }
 
 // A portable copy's install entry. A copy that updates itself has none: its downloads show
 // as a floating bar (UpdateProgress.tsx).
 export type FooterUpdateProps = {
-  // The release this copy is missing; absent while there is none, when only the quiet
-  // "Install Novadeck" chip shows.
+  // The release this copy is missing; absent while there is none, when the chip only
+  // offers to install.
   readonly offer?: UpdateOffer | undefined
   readonly portable: FooterPortable
-  // Whether the notice is raised: it shows only while the footer does, and while nothing
+  // Whether the card is raised: it shows only while the footer does, and while nothing
   // else asks for the person's attention (`blocked`).
   readonly open: boolean
   readonly blocked: boolean
   readonly onOpenChange: (open: boolean) => void
-  // Called with the offer's `updateKey` when the notice comes up.
-  readonly onShown: (key: string) => void
-  // Opens the update's release page.
-  readonly onOpenPage: () => void
+  // Called when the card comes up.
+  readonly onShown: () => void
   // Puts typing focus back in the selected terminal; false when there is none.
   readonly returnFocus: () => boolean
 }
-
-// Where focus goes when a notice closes with focus inside it.
-type Return = "origin" | "terminal"
 
 // Whether a dialog, menu or popover is open, looked at while `active`: they come and go
 // in portals, so there is nothing to subscribe to. Looked at as `active` begins, so an
@@ -70,125 +64,44 @@ export const useOverlayOpen = (active: boolean): boolean => {
   return active && open
 }
 
-// The release's notes, as many as fit, and how many more there are.
-const UpdateNotes = ({ notes }: { readonly notes: readonly string[] }): React.JSX.Element => {
-  const more = notes.length - shownNotes
-  return (
-    <>
-      {notes.length > 0 && (
-        <ul className="update-notes">
-          {notes.slice(0, shownNotes).map((note, index) => (
-            // oxlint-disable-next-line react/no-array-index-key -- Lines may repeat; the list never reorders.
-            <li key={index} title={note}>
-              <span>{note}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {more > 0 && <p className="update-more">and {more} more</p>}
-    </>
-  )
-}
-
-// What the notice of a portable copy says and offers: to install Novadeck, which is also
-// how it gets the update waiting, or, once the host found one installed that is newer, to
-// open that. A failed install says why above the same actions, to try again.
-const PortableCard = ({
-  offer,
-  install,
-  unsandboxed,
-  titleId,
-  onClose,
-  onInstall,
-  onOpenInstalled,
-  onOpenPage,
-}: {
-  readonly offer: UpdateOffer | undefined
-  readonly install: Install
-  readonly unsandboxed: boolean
-  readonly titleId: string
-  readonly onClose: (to: Return) => void
-  readonly onInstall: () => void
-  readonly onOpenInstalled: () => void
-  readonly onOpenPage: () => void
-}): React.JSX.Element => {
-  if (install.phase === "newer") {
-    return (
-      <>
-        <p id={titleId} className="update-title">
-          Novadeck {install.version} is already installed
-        </p>
-        <p className="update-text">
-          It is newer than this copy. Open it to carry on where you left off.
-        </p>
-        <div className="update-actions">
-          <button type="button" className="button min-h-8 px-3" onClick={() => onClose("origin")}>
-            Later
-          </button>
-          <button
-            type="button"
-            className="button primary min-h-8 px-3"
-            onClick={() => {
-              onClose("terminal")
-              onOpenInstalled()
-            }}
-          >
-            Open Novadeck
-          </button>
-        </div>
-      </>
-    )
+// What the card says of where installing stands, as its title and its one line.
+const cardWords = (
+  offer: UpdateOffer | undefined,
+  install: Install,
+  progress: InstallProgress | null,
+): { readonly title: string; readonly line: string } => {
+  switch (install.phase) {
+    case "running":
+      return {
+        title: "Installing Novadeck",
+        line: progress?.phase === "downloading" ? "Downloading…" : "Keeps your workspace",
+      }
+    case "installed":
+      return { title: "Novadeck installed", line: "Takes effect after you restart Novadeck" }
+    case "newer":
+      return {
+        title: `Novadeck ${install.version} is already installed`,
+        line: "Takes effect after you restart Novadeck",
+      }
+    case "failed":
+      return { title: "Couldn't install", line: install.reason }
+    case "idle":
+      return offer
+        ? { title: `Novadeck ${offer.version} is out`, line: "This copy can't update itself." }
+        : { title: "Portable copy", line: "Updates need an installed Novadeck." }
   }
-  return (
-    <>
-      <p id={titleId} className="update-title">
-        {offer ? headline(offer) : "Install Novadeck"}
-      </p>
-      <p className="update-text">
-        {offer
-          ? "This copy can't update itself. Installing keeps your workspace."
-          : "This copy runs without installing and can't update itself. Installing keeps your workspace."}
-      </p>
-      {unsandboxed && (
-        <p className="update-text">It also lets you turn on the sandbox this copy runs without.</p>
-      )}
-      {offer && <UpdateNotes notes={offer.notes} />}
-      {offer && (
-        <button type="button" className="button link update-link" onClick={onOpenPage}>
-          Release notes
-        </button>
-      )}
-      {install.phase === "failed" && (
-        <p role="alert" className="update-text update-error">
-          Could not install Novadeck: {install.reason}
-        </p>
-      )}
-      <div className="update-actions">
-        <button type="button" className="button min-h-8 px-3" onClick={() => onClose("origin")}>
-          Later
-        </button>
-        <button
-          type="button"
-          className="button primary min-h-8 px-3"
-          onClick={() => {
-            onClose("terminal")
-            onInstall()
-          }}
-        >
-          Install Novadeck
-        </button>
-      </div>
-    </>
-  )
 }
 
 // A portable copy's install entry beside the footer's status: a chip, "Install Novadeck"
-// or, with a release this copy is missing, "Update available", and the notice above it.
-// The notice is a plain panel, not a dialog or a layer: nothing about it intercepts keys,
-// focus or clicks elsewhere, so typing in a terminal goes on. Raised once per offer, it waits while the footer is hidden or any
-// dialog, menu or popover is open, and never takes focus by itself. The chip opens it as
-// the person's own request, with focus moving to the panel, so Escape there closes it and
-// returns to the chip.
+// or, with a release this copy is missing, "Update available", and the card above it, the
+// same size and place as the update bar but with buttons. The card is a plain panel, not a
+// dialog or a layer: nothing about it intercepts keys, focus or clicks elsewhere, so typing
+// in a terminal goes on. It is raised once per launch, which the host of the app sees to;
+// it waits while the footer is hidden or any dialog, menu or popover is open, and never
+// takes focus by itself. The chip opens it as the person's own request, with focus moving
+// to the card, so Escape there folds it back into the chip and returns to it.
+// A finished install says so for a few seconds, as the update bar does, then fades and
+// leaves "Installed" on the chip. Novadeck never restarts itself.
 export const FooterUpdate = ({
   update,
   hidden,
@@ -197,31 +110,36 @@ export const FooterUpdate = ({
   readonly hidden: boolean
 }): React.JSX.Element => {
   // Where installing from a portable copy stands.
-  const [install, setInstall] = useState<Install>({ phase: "idle" })
+  const [started, setInstall] = useState<Install | null>(null)
+  // How far the install has got, as far as the host tells.
+  const [progress, setProgress] = useState<InstallProgress | null>(null)
+  // Whether the card is saying an install is done, for a few seconds, before it fades away.
+  const [lingering, setLingering] = useState<"shown" | "fading" | null>(null)
   const panel = useRef<HTMLElement>(null)
   const chip = useRef<HTMLButtonElement>(null)
-  // Whether the person opened the notice from the chip: focus moves into it once it
+  // Whether the person opened the card from the chip: focus moves into it once it
   // shows (`requested`), and closing it sends focus back to the chip (`opener`).
   const requested = useRef(false)
   const opener = useRef<"chip" | "auto">("auto")
   const titleId = useId()
   const panelId = useId()
   const offer = update?.offer
-  const key = offer && updateKey(offer)
   const portable = update?.portable
-  const installing = install.phase === "running" || install.phase === "installing"
+  // A window opened again in a run that installed the app finds it done.
+  const install: Install = started ?? { phase: portable?.installed ? "installed" : "idle" }
+  const running = install.phase === "running"
   const wanted = (update?.open ?? false) && !hidden && !update?.blocked
   const overlay = useOverlayOpen(wanted)
   const blocked = (update?.blocked ?? false) || overlay
-  const visible = (update?.open ?? false) && !hidden && !blocked && !installing
+  const visible = (update?.open ?? false) && !hidden && !blocked
   const onShown = update?.onShown
   useEffect(() => {
-    if (visible && key !== undefined) onShown?.(key)
-  }, [visible, key, onShown])
+    if (visible) onShown?.()
+  }, [visible, onShown])
   useEffect(() => {
     if (!visible || !requested.current) return
     // A frame on, after the click that asked has been through the workspace's own click
-    // handling, which would hand focus back to the terminal from a panel focused too soon.
+    // handling, which would hand focus back to the terminal from a card focused too soon.
     const frame = requestAnimationFrame(() => {
       requested.current = false
       panel.current?.focus()
@@ -229,73 +147,104 @@ export const FooterUpdate = ({
     return () => cancelAnimationFrame(frame)
   }, [visible])
   const lost = useRecoverFocus(blocked || hidden, chip)
-  const word = offer ? "Update available" : "Install Novadeck"
-  const narrow = offer ? "Update" : "Install"
-  const startInstall = (): void => {
-    if (!portable || !update || installing) return
-    setInstall({ phase: "running" })
-    void portable.onInstall().then((result) => {
-      if (result.kind === "installing") return setInstall({ phase: "installing" })
-      // The panel comes back with the answer, without taking focus from where the person is.
-      setInstall(
-        result.kind === "newer"
-          ? { phase: "newer", version: result.version }
-          : { phase: "failed", reason: result.reason },
-      )
-      update.onOpenChange(true)
-    })
-  }
-  const finish = (to: Return): void => {
+  const finish = (): void => {
     if (!update) return
     const inside = panel.current?.contains(document.activeElement) === true
-    const back = to === "origin" && opener.current === "chip"
+    const back = opener.current === "chip"
     requested.current = false
     opener.current = "auto"
+    setLingering(null)
     update.onOpenChange(false)
     if (!inside) return
     if (back || !update.returnFocus()) chip.current?.focus()
   }
+  useEffect(() => {
+    if (!visible || lingering === null) return undefined
+    const timer = setTimeout(
+      () => (lingering === "shown" ? setLingering("fading") : finish()),
+      lingering === "shown" ? finishedForMs : fadeMs,
+    )
+    return () => clearTimeout(timer)
+    // `finish` only reads what the effect already depends on.
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [visible, lingering])
+  const word = offer ? "Update available" : "Install Novadeck"
+  const narrow = offer ? "Update" : "Install"
+  const installed = install.phase === "installed"
+  // Nothing is left to install: the chip says so, for a newer copy found as for ours.
+  const done = installed || install.phase === "newer"
+  const startInstall = (): void => {
+    if (!portable || !update || running) return
+    // The button pressed goes with the card's words; focus stays in the card.
+    if (panel.current?.contains(document.activeElement)) panel.current.focus()
+    setInstall({ phase: "running" })
+    setProgress(null)
+    const stop = portable.onProgress?.(setProgress)
+    void portable.onInstall().then((result: InstallResult) => {
+      stop?.()
+      // The card comes back with the answer, without taking focus from where the person is.
+      setInstall(
+        result.kind === "installed"
+          ? { phase: "installed" }
+          : result.kind === "newer"
+            ? { phase: "newer", version: result.version }
+            : { phase: "failed", reason: result.reason },
+      )
+      if (result.kind === "installed") setLingering("shown")
+      update.onOpenChange(true)
+    })
+  }
+  const { title, line } = cardWords(offer, install, progress)
+  const chipText = running ? "Installing…" : done ? "Installed" : word
   return (
     <>
       {/* Always mounted, so filling it announces the arrival; out of the layout, and kept
           for assistive technology where the visible words are dropped to fit. */}
       <span role="status" aria-live="polite" className="sr-only">
-        {installing
+        {running
           ? "Installing Novadeck"
-          : install.phase === "newer"
-            ? `Novadeck ${install.version} is already installed`
-            : offer
-              ? word
-              : ""}
+          : installed
+            ? `Novadeck installed. ${line}`
+            : install.phase === "newer"
+              ? `${title}. ${line}`
+              : offer
+                ? word
+                : ""}
       </span>
       {update && portable && (
         <>
           <button
             ref={chip}
             type="button"
-            className={`footer-action footer-update font-bold ${installing ? "" : "cursor-pointer"}`}
+            className={`footer-action footer-update font-bold cursor-pointer`}
             aria-label={
-              installing ? "Installing…" : offer ? `${word}: Novadeck ${offer.version}` : word
+              running
+                ? "Installing…"
+                : done
+                  ? `Installed: ${line}`
+                  : offer
+                    ? `${word}: Novadeck ${offer.version}`
+                    : word
             }
             aria-expanded={visible}
             aria-controls={visible ? panelId : undefined}
-            // Not `disabled`, which would drop the focus a press left on the chip.
-            aria-disabled={installing || undefined}
             onClick={() => {
-              if (installing) return
               if (visible) {
-                finish("origin")
+                finish()
                 return
               }
               requested.current = true
               opener.current = "chip"
-              // Opened again by the person, the panel starts over without the last failure.
+              // Opened again by the person, the card starts over without the last failure.
               if (install.phase === "failed") setInstall({ phase: "idle" })
               update.onOpenChange(true)
             }}
           >
-            {installing ? (
-              "Installing…"
+            {offer && install.phase === "idle" && (
+              <span className="footer-update-dot" aria-hidden="true" />
+            )}
+            {running || done ? (
+              chipText
             ) : (
               <>
                 <span className="max-[701px]:hidden">{word}</span>
@@ -309,30 +258,69 @@ export const FooterUpdate = ({
               id={panelId}
               data-workspace-notice
               aria-labelledby={titleId}
-              className="floating update-panel"
+              className="floating update-card"
+              data-state={lingering === "fading" ? "closed" : "open"}
               tabIndex={-1}
               // A click anywhere on it leaves focus where it was, in a terminal.
               onMouseDown={(event) => event.preventDefault()}
-              // Plain Escape closes it; with Shift it goes on to the workspace, which
-              // starts navigating.
+              // Plain Escape folds it into the chip, an install under way too; with
+              // Shift it goes on to the workspace, which starts navigating.
               onKeyDown={(event) => {
                 if (event.key !== "Escape" || event.shiftKey) return
                 event.preventDefault()
                 event.stopPropagation()
-                finish("origin")
+                finish()
               }}
             >
-              <KeepFocus lost={lost} selector=".update-panel" />
-              <PortableCard
-                offer={offer}
-                install={install}
-                unsandboxed={portable.unsandboxed}
-                titleId={titleId}
-                onClose={finish}
-                onInstall={startInstall}
-                onOpenInstalled={portable.onOpenInstalled}
-                onOpenPage={update.onOpenPage}
-              />
+              <KeepFocus lost={lost} selector=".update-card" />
+              <p className="update-progress-head">
+                <span id={titleId} className="update-progress-title">
+                  {title}
+                </span>
+                {progress?.phase === "downloading" && running && (
+                  <span className="update-progress-percent">{progress.percent}%</span>
+                )}
+                <button
+                  type="button"
+                  className="icon-button small update-card-close"
+                  aria-label="Dismiss"
+                  onClick={finish}
+                >
+                  <X size={14} />
+                </button>
+              </p>
+              {(running || installed) && (
+                <Progress
+                  label={title}
+                  value={
+                    installed ? 100 : progress?.phase === "downloading" ? progress.percent : null
+                  }
+                  max={100}
+                />
+              )}
+              <p
+                role={install.phase === "failed" ? "alert" : undefined}
+                className={`update-progress-note ${install.phase === "failed" ? "update-card-error" : ""}`}
+              >
+                {line}
+              </p>
+              {portable.unsandboxed && install.phase === "idle" && (
+                <p className="update-progress-note">
+                  Installing also lets you turn on the sandbox.
+                </p>
+              )}
+              {(install.phase === "idle" || install.phase === "failed") && (
+                <div className="update-card-foot">
+                  {install.phase === "idle" && <span>Keeps your workspace</span>}
+                  <button
+                    type="button"
+                    className="button primary min-h-7 px-3"
+                    onClick={startInstall}
+                  >
+                    {install.phase === "failed" ? "Try again" : "Install"}
+                  </button>
+                </div>
+              )}
             </section>
           )}
         </>

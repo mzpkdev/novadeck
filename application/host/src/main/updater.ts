@@ -58,14 +58,12 @@ export type UpdaterKind = "nsis" | "mac" | "appimage"
 export type UpdateMode = "install" | "tell"
 
 /**
- * How a build updates. A `portable` build runs from wherever it was put and is never
- * installed: it does not install updates itself, though it still looks for them, so the
- * page can offer to install the app that does.
+ * How a build updates: which updater, and whether it installs or only tells. A portable
+ * build only tells; see `portableOf`.
  */
 export type UpdatePlan = {
   readonly kind: UpdaterKind
   readonly mode: UpdateMode
-  readonly portable: boolean
 }
 
 // Whether `file` lies inside the folder `directory`, both absolute POSIX paths.
@@ -147,7 +145,6 @@ export const updatePlan = (build: UpdateBuild): UpdatePlan | undefined => {
   return {
     kind,
     mode: installable && !portable ? "install" : "tell",
-    portable,
   }
 }
 
@@ -176,8 +173,7 @@ type Page = { send(channel: string, offer: UpdateOffer): void }
  * `downloading` offer, so each whole percent a download reaches is told once; any other
  * replaces the last, a newer version and a `ready` update the host then could not install
  * alike. `pages` lists the windows showing the app's own UI. Only a `downloading` offer
- * carries a `percent`. A portable copy passes `outdatedSince`, which gives when this copy
- * first learned a newer release exists; it is asked only for an offer that is new.
+ * carries a `percent`.
  */
 export const trackOffer = <P extends Page>(pages: () => readonly P[]) => {
   let last: UpdateOffer | undefined
@@ -187,13 +183,7 @@ export const trackOffer = <P extends Page>(pages: () => readonly P[]) => {
       kind: UpdateOfferKind,
       value: unknown,
       notes: readonly string[],
-      {
-        percent,
-        outdatedSince,
-      }: {
-        readonly percent?: number | undefined
-        readonly outdatedSince?: (() => string | undefined) | undefined
-      } = {},
+      { percent }: { readonly percent?: number | undefined } = {},
     ): void => {
       const version = updateVersionOf(value)
       const progress = kind === "downloading" ? percent : undefined
@@ -202,13 +192,11 @@ export const trackOffer = <P extends Page>(pages: () => readonly P[]) => {
         (last?.kind === kind && last.version === version && last.percent === progress)
       )
         return
-      const since = outdatedSince?.()
       last = {
         kind,
         version,
         notes,
         ...(progress === undefined ? {} : { percent: progress }),
-        ...(since === undefined ? {} : { outdatedSince: since }),
       }
       for (const page of pages()) page.send(updateOfferChannel, last)
     },
@@ -270,14 +258,6 @@ export const registerUpdateIpc = <Window>(
 }
 
 /**
- * How long a restart into an installed copy waits for the new process to end this app
- * before quitting it. Installing can fail without a word, and a macOS move may be slow, so
- * macOS gets longer.
- */
-export const installFallbackMs = (platform: NodeJS.Platform): number =>
-  platform === "darwin" ? 30_000 : 10_000
-
-/**
  * A quit that leaves an update waiting uninstalled: for the system ending the session,
  * which may kill a silent installer or an AppImage swap halfway. Ordinary quits install.
  * On macOS Squirrel.Mac installs a staged update on any exit, which this cannot stop; it
@@ -296,9 +276,9 @@ export const quitWithoutInstalling =
  * Electron turns SIGTERM, SIGINT and SIGHUP into an ordinary quit with exit code 0, which
  * electron-updater installs on. A desktop logout or `kill` would then swap the AppImage in
  * the middle of ending the session, and the system may kill the swap halfway. The
- * orderly quits are closing the last window and restarting into an installed copy,
- * and both are marked before the quit begins; any other, a signal or the menu's Quit, finds the
- * mark missing. Switching off is one way: nothing switches it on again.
+ * orderly quits are closing the last window and the menu's Quit,
+ * and both are marked before the quit begins; any other, a signal, finds the mark
+ * missing. Switching off is one way: nothing switches it on again.
  */
 export const installOnlyOnOrderlyQuit =
   (updater: () => Pick<Updater, "autoInstallOnAppQuit"> | undefined, orderly: () => boolean) =>
@@ -405,7 +385,6 @@ export const checkForUpdates = (
     failedVersion,
     native,
     offer,
-    upToDate,
     installFailed,
     log,
   }: {
@@ -421,8 +400,6 @@ export const checkForUpdates = (
       notes: readonly string[],
       percent?: number,
     ) => void
-    /** Told whenever a check finds no newer release. */
-    readonly upToDate?: (() => void) | undefined
     readonly installFailed: (version: string) => void
     readonly log: (message: string, error: unknown) => void
   },
@@ -473,7 +450,6 @@ export const checkForUpdates = (
     installFailed(downloaded.version)
     offer("available", downloaded.version, downloaded.notes)
   })
-  updater.on("update-not-available", () => upToDate?.())
   updater.on("update-available", (info) => {
     if (mode === "tell") return offer("available", info.version, updateNotesLines(info))
     // A release found while a download is under way waits for the next check.

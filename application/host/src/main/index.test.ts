@@ -143,31 +143,34 @@ describe("compiled desktop host", () => {
       expect(main).toContain("registerPortableIpc(")
       expect(preload).toContain("novadeck:portable")
       expect(preload).toContain("novadeck:install-app")
-      expect(preload).toContain("novadeck:open-installed")
+      expect(preload).toContain("novadeck:install-progress")
+      expect(preload).not.toContain("novadeck:open-installed")
     })
 
-    it("moves to Applications only when the page asks to install, and opens release pages only from app-update.yml", async () => {
+    it("copies to Applications only when the page asks to install, never quitting or relaunching for it, and opens release pages only from app-update.yml", async () => {
       const main = await read("main/index.js")
 
       // Linux's Ctrl+Q and Quit item mark the quit as the person's before quitting.
       expect(main).toContain("linuxMenu(")
       expect(main).toContain("Menu.setApplicationMenu")
-      expect(main).toContain("moveToApplicationsFolder")
+      // Electron's move always quits and relaunches, which a portable copy must not do.
+      expect(main).not.toContain("moveToApplicationsFolder")
       expect(main).toContain("isInApplicationsFolder")
-      // No launch-time modal asks; the move is the install of a portable copy.
+      // No launch-time modal asks; the copy is the install of a portable copy.
       expect(main).not.toContain("Move Novadeck to your Applications folder?")
-      expect(main).not.toContain("await moveToApplications()")
-      expect(main).toMatch(/process\.platform === "darwin" \? Promise\.resolve\(moveApp\(\)\)/u)
+      expect(main).toMatch(/process\.platform === "darwin"\s*\? installMacBundle\(/u)
+      expect(main).toContain("/usr/bin/ditto")
+      expect(main).toContain("com.apple.quarantine")
       expect(main).toContain('"app-update.yml"')
       expect(main).not.toContain("novadeck-org/novadeck/releases/tag")
     })
 
-    it("installs on Windows from a setup staged while the app runs, started detached and never through the shell", async () => {
+    it("installs on Windows from a setup run while the app keeps running, detached and never through the shell", async () => {
       const main = await read("main/index.js")
 
-      expect(main).toContain("stageWindowsSetup()")
+      expect(main).toContain("installWindowsSetup(")
       expect(main).toContain("releaseLatestUrl(")
-      expect(main).toContain("setupArguments")
+      expect(main).toContain("runSetup(")
       // Only a copy the installer did not make is portable, which the launch checks.
       expect(main).toContain("windowsInstalled")
       // The setup is never opened through the shell, which would apply SmartScreen.

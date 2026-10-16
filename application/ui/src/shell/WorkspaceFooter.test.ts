@@ -1,6 +1,7 @@
 import { act, createElement } from "react"
 import { afterEach, vi } from "vitest"
 
+import type { InstallProgress, InstallResult } from "../model/portable"
 import type { UpdateOffer } from "../model/update"
 import { context, describe, expect, it } from "../test"
 import { render, type Rendered } from "../test/render"
@@ -15,8 +16,8 @@ afterEach(() => {
 
 const portable = {
   unsandboxed: false,
-  onInstall: () => Promise.resolve({ kind: "installing" as const }),
-  onOpenInstalled: () => {},
+  onInstall: () => Promise.resolve({ kind: "installed" as const }),
+  installed: false,
 }
 
 // A portable copy's install entry; a copy that updates itself has none.
@@ -33,7 +34,6 @@ const props = (status: FooterStatus, update?: UpdateOffer) => ({
     returnFocus: () => false,
     onOpenChange: () => {},
     onShown: () => {},
-    onOpenPage: () => {},
   },
 })
 
@@ -64,7 +64,7 @@ const added = (html: string): Element => {
   return holder
 }
 
-const notice = (page: Rendered) => page.container.querySelector("section.update-panel")
+const notice = (page: Rendered) => page.container.querySelector("section.update-card")
 
 const chip = (page: Rendered) => page.container.querySelector<HTMLButtonElement>(".footer-update")!
 
@@ -375,37 +375,36 @@ describe("workspace footer", () => {
     context("whose notice is raised", () => {
       const raised = (
         { hidden = false, blocked = false } = {},
-        onShown = (_key: string) => {},
-        offer: UpdateOffer = ready,
+        onShown = () => {},
+        offer: UpdateOffer | null = ready,
       ) =>
         createElement(WorkspaceFooter, {
           ...props("ok"),
           hidden,
           update: {
-            offer,
+            offer: offer ?? undefined,
             portable,
             open: true,
             blocked,
             returnFocus: () => false,
             onOpenChange: () => {},
             onShown,
-            onOpenPage: () => {},
           },
         })
 
       it("is not shown while the footer is hidden, and is with the footer", () => {
-        const onShown = vi.fn<(key: string) => void>()
+        const onShown = vi.fn<() => void>()
         const page = render(raised({ hidden: true }, onShown))
         mounted.push(page)
         expect(notice(page)).toBeNull()
         expect(onShown).not.toHaveBeenCalled()
         page.rerender(raised({}, onShown))
         expect(notice(page)).not.toBeNull()
-        expect(onShown).toHaveBeenCalledExactlyOnceWith("ready:0.0.80")
+        expect(onShown).toHaveBeenCalledOnce()
       })
 
       it("is not shown, nor marked shown, while a dialog is open", () => {
-        const onShown = vi.fn<(key: string) => void>()
+        const onShown = vi.fn<() => void>()
         const page = render(raised({ blocked: true }, onShown))
         mounted.push(page)
         expect(notice(page)).toBeNull()
@@ -421,33 +420,131 @@ describe("workspace footer", () => {
         const region = notice(page)!
         expect(region.getAttribute("role")).toBeNull()
         expect(document.getElementById(region.getAttribute("aria-labelledby")!)?.textContent).toBe(
-          "Novadeck 0.0.80 is available",
+          "Novadeck 0.0.80 is out",
         )
         expect(region.closest("footer")).not.toBeNull()
         expect(region.contains(document.activeElement)).toBe(false)
       })
 
-      it("offers Later and Install Novadeck, and Release notes for a release", () => {
+      it("says what an offered release means, with a dismiss and Install", () => {
         const page = render(raised())
         mounted.push(page)
-        const buttons = [...notice(page)!.querySelectorAll("button")].map((b) => b.textContent)
-        expect(buttons).toEqual(["Release notes", "Later", "Install Novadeck"])
+        const region = notice(page)!
+        expect(region.textContent).toContain("This copy can't update itself.")
+        expect(region.textContent).toContain("Keeps your workspace")
+        const buttons = [...region.querySelectorAll("button")].map(
+          (b) => b.getAttribute("aria-label") ?? b.textContent,
+        )
+        expect(buttons).toEqual(["Dismiss", "Install"])
+        expect(region.textContent).not.toContain("Release notes")
       })
 
-      it("shows five notes and says how many more there are, outside the list", () => {
-        const notes = Array.from({ length: 8 }, (_, index) => `Note ${index + 1}`)
-        const page = render(raised({}, undefined, { ...ready, notes }))
+      it("shows a determinate bar and the percent while the host reports a download", async () => {
+        let tell: (progress: InstallProgress) => void = () => {}
+        const page = render(
+          createElement(WorkspaceFooter, {
+            ...props("ok"),
+            update: {
+              ...props("ok").update,
+              open: true,
+              portable: {
+                ...portable,
+                onProgress: (listener: (progress: InstallProgress) => void) => {
+                  tell = listener
+                  return () => {}
+                },
+                onInstall: () => new Promise<InstallResult>(() => {}),
+              },
+            },
+          }),
+        )
         mounted.push(page)
-        expect(page.container.querySelectorAll(".update-notes li")).toHaveLength(5)
-        expect(page.container.querySelector(".update-more")?.textContent).toBe("and 3 more")
-        expect(page.container.querySelector(".update-more")?.closest("li")).toBeNull()
+        act(() =>
+          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
+        )
+        expect(notice(page)!.textContent).toContain("Installing Novadeck")
+        act(() => tell({ phase: "downloading", percent: 42 }))
+        expect(notice(page)!.textContent).toContain("Installing Novadeck")
+        expect(notice(page)!.textContent).toContain("Downloading…")
+        expect(notice(page)!.textContent).toContain("42%")
+        expect(notice(page)!.querySelector("[data-state=indeterminate]")).toBeNull()
+        act(() => tell({ phase: "installing" }))
+        expect(notice(page)!.textContent).toContain("Keeps your workspace")
+        expect(notice(page)!.querySelector("[data-state=indeterminate]")).not.toBeNull()
+      })
+
+      it("finds the install done in a window opened again after it", () => {
+        const page = render(
+          createElement(WorkspaceFooter, {
+            ...props("ok"),
+            update: { ...props("ok").update, portable: { ...portable, installed: true } },
+          }),
+        )
+        mounted.push(page)
+        expect(chip(page).textContent).toBe("Installed")
+        expect(notice(page)).toBeNull()
+      })
+
+      it("says a portable copy needs an installed Novadeck when no release is known", () => {
+        const page = render(raised({}, undefined, null))
+        mounted.push(page)
+        const region = notice(page)!
+        expect(document.getElementById(region.getAttribute("aria-labelledby")!)?.textContent).toBe(
+          "Portable copy",
+        )
+        expect(region.textContent).toContain("Updates need an installed Novadeck.")
+      })
+
+      it("adds a line about the sandbox for a copy running without it", () => {
+        const page = render(
+          createElement(WorkspaceFooter, {
+            ...props("ok"),
+            update: {
+              ...props("ok").update,
+              open: true,
+              portable: { ...portable, unsandboxed: true },
+            },
+          }),
+        )
+        mounted.push(page)
+        expect(notice(page)!.textContent).toContain("Installing also lets you turn on the sandbox.")
+      })
+
+      it("shows an indeterminate bar while installing, which can still be folded away", async () => {
+        let finish: (result: { kind: "installed" }) => void = () => {}
+        const page = render(
+          createElement(WorkspaceFooter, {
+            ...props("ok"),
+            update: {
+              ...props("ok").update,
+              open: true,
+              portable: {
+                ...portable,
+                onInstall: () =>
+                  new Promise<InstallResult>((resolve) => (finish = resolve as typeof finish)),
+              },
+            },
+          }),
+        )
+        mounted.push(page)
+        act(() =>
+          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
+        )
+        const region = notice(page)!
+        expect(region.textContent).toContain("Installing Novadeck")
+        expect(region.querySelector("[data-state=indeterminate]")).not.toBeNull()
+        expect(region.querySelector("[aria-label=Dismiss]")).not.toBeNull()
+        expect(chip(page).getAttribute("aria-label")).toBe("Installing…")
+        await act(async () => finish({ kind: "installed" }))
+        expect(notice(page)!.textContent).toContain("Takes effect after you restart Novadeck")
+        expect(chip(page).textContent).toBe("Installed")
       })
 
       context("with a menu or a hover card already in the page", () => {
         it("does not show, nor count as shown, until the menu is gone", () => {
           vi.useFakeTimers()
           const menu = added('<div role="menu"></div>')
-          const onShown = vi.fn<(key: string) => void>()
+          const onShown = vi.fn<() => void>()
           const page = render(raised({}, onShown))
           mounted.push(page)
           expect(notice(page)).toBeNull()
@@ -470,11 +567,9 @@ describe("workspace footer", () => {
       it("puts focus on the chip when closed from the keyboard with no terminal to return to", () => {
         const page = render(raised())
         mounted.push(page)
-        const later = [...page.container.querySelectorAll("section button")].find(
-          (button) => button.textContent === "Later",
-        ) as HTMLButtonElement
-        later.focus()
-        act(() => later.click())
+        const dismiss = page.container.querySelector<HTMLButtonElement>("[aria-label=Dismiss]")!
+        dismiss.focus()
+        act(() => dismiss.click())
         expect(document.activeElement).toBe(chip(page))
       })
     })
@@ -550,7 +645,7 @@ describe("the footer without the security sandbox", () => {
 
   it("is not marked as the update's notice, whose focus handling keys on its class", () => {
     const page = mount({ open: true })
-    expect(page.container.querySelector(".update-panel")).toBeNull()
+    expect(page.container.querySelector(".update-card")).toBeNull()
   })
 
   it("says it was started without, blocking nothing, and has no command or button without a fix", () => {

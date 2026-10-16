@@ -12,7 +12,12 @@ import {
   type UpdateOffer,
 } from "@novadeck/protocol/bridge"
 
-import { maxReasonLength, type InstallResult, type PortableState } from "../../model/portable"
+import {
+  maxReasonLength,
+  type InstallProgress,
+  type InstallResult,
+  type PortableState,
+} from "../../model/portable"
 import { maxFixLength, type SandboxState } from "../../model/sandbox"
 import {
   maxUninstallPath,
@@ -69,16 +74,12 @@ export const desktopNotices = (host: DesktopHost | undefined): Backend["notices"
   }
 }
 
-// The longest outdated-since date the page takes, an ISO 8601 date-time.
-const maxDateLength = 40
-const dated = (text: string): boolean => Number.isFinite(Date.parse(text))
-
 // An offer as the page takes it, or undefined for one that isn't a release's: a kind it
 // knows, a version that looks like a release's, and the notes cut to what the page
 // shows, without control characters.
 export const hostOffer = (offer: unknown): UpdateOffer | undefined => {
   if (typeof offer !== "object" || offer === null) return undefined
-  const { kind, version, notes, percent, outdatedSince } = offer as Record<string, unknown>
+  const { kind, version, notes, percent } = offer as Record<string, unknown>
   if (kind !== "downloading" && kind !== "ready" && kind !== "available") return undefined
   if (kind === "downloading" && !isUpdatePercent(percent)) return undefined
   if (typeof version !== "string" || !updateVersionPattern.test(version)) return undefined
@@ -92,11 +93,6 @@ export const hostOffer = (offer: unknown): UpdateOffer | undefined => {
       .map((line) => noticeText(line, updateNoteLength))
       .filter(Boolean)
       .slice(0, updateNotesLength),
-    ...(typeof outdatedSince === "string" &&
-    outdatedSince.length <= maxDateLength &&
-    dated(outdatedSince)
-      ? { outdatedSince }
-      : {}),
   }
 }
 
@@ -164,21 +160,23 @@ export const desktopSandbox = (host: DesktopHost | undefined): Backend["sandbox"
 }
 
 // The host's account of whether it is a portable copy, as the page takes it: a boolean,
-// and for a portable one the build's version, as a release's and the name of the run.
+// and for a portable one the build's version, as a release's, the name of the run and
+// whether this run installed the app already.
 export const hostPortable = (state: unknown): PortableState => {
   if (typeof state !== "object" || state === null) throw new Error("Unknown portable state")
-  const { portable, version, run } = state as Record<string, unknown>
+  const { portable, version, run, installed } = state as Record<string, unknown>
   if (portable === false) return { portable: false }
   if (
     portable !== true ||
     typeof version !== "string" ||
     !updateVersionPattern.test(version) ||
     typeof run !== "string" ||
-    !portableRunPattern.test(run)
+    !portableRunPattern.test(run) ||
+    typeof installed !== "boolean"
   ) {
     throw new Error("Unknown portable state")
   }
-  return { portable: true, version, run }
+  return { portable: true, version, run, installed }
 }
 
 // How an install went, as the page takes it. An answer that is none of the three is a
@@ -187,7 +185,7 @@ export const hostInstall = (result: unknown): InstallResult => {
   const unknown: InstallResult = { kind: "failed", reason: "Something went wrong." }
   if (typeof result !== "object" || result === null) return unknown
   const { kind, version, reason } = result as Record<string, unknown>
-  if (kind === "installing") return { kind }
+  if (kind === "installed") return { kind }
   if (kind === "newer" && typeof version === "string" && updateVersionPattern.test(version)) {
     return { kind, version }
   }
@@ -196,13 +194,22 @@ export const hostInstall = (result: unknown): InstallResult => {
   return text ? { kind, reason: text } : unknown
 }
 
-// The host's portable copy, where it has one: asked whether this is one, to install the
-// app from it, and to open an installed copy that is newer.
+// How far an install has got, as the page takes it, or undefined for anything else.
+export const hostInstallProgress = (progress: unknown): InstallProgress | undefined => {
+  if (typeof progress !== "object" || progress === null) return undefined
+  const { phase, percent } = progress as Record<string, unknown>
+  if (phase === "installing") return { phase }
+  if (phase === "downloading" && isUpdatePercent(percent)) return { phase, percent }
+  return undefined
+}
+
+// The host's portable copy, where it has one: asked whether this is one and to install the
+// app from it, and, where it reports, how far the install has got.
 export const desktopPortable = (host: DesktopHost | undefined): Backend["portable"] => {
   const ask = host?.portable
   const install = host?.installApp
-  const open = host?.openInstalled
-  if (!ask || !install || !open) return undefined
+  const listen = host?.onInstallProgress
+  if (!ask || !install) return undefined
   return {
     state: async () => hostPortable(await ask()),
     install: async () => {
@@ -212,7 +219,13 @@ export const desktopPortable = (host: DesktopHost | undefined): Backend["portabl
         return hostInstall(undefined)
       }
     },
-    openInstalled: () => open(),
+    ...(listen && {
+      onProgress: (listener: (progress: InstallProgress) => void) =>
+        listen((progress) => {
+          const heard = hostInstallProgress(progress)
+          if (heard) listener(heard)
+        }),
+    }),
   }
 }
 
