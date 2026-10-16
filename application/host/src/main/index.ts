@@ -17,7 +17,7 @@ import { homedir } from "node:os"
 import { basename, dirname, join, win32 } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
-import type { InstallProgress, UpdateChannel } from "@novadeck/protocol/bridge"
+import type { UpdateChannel } from "@novadeck/protocol/bridge"
 import { startHttpServer, type HttpServer } from "@novadeck/runner/http"
 import {
   app,
@@ -42,6 +42,7 @@ import {
   apiUrlArgumentPrefix,
   directoryPickerChannel,
   noticeClickChannel,
+  portableStateChannel,
   runnerPortChannel,
   versionChannel,
 } from "../bridge.js"
@@ -68,6 +69,8 @@ import {
   insideInstallFolder,
   installedAtLeast,
   installedByInstaller,
+  legacyPrefixFolder,
+  readLegacyUninstaller,
   powershellUsable,
   prepareSetup,
   readInstallRecord,
@@ -89,7 +92,8 @@ import {
   portableInstaller,
   redirectMarker,
   registerPortableIpc,
-  type PortableInstall,
+  type InstallStep,
+  type PlatformInstall,
   startAppImage,
 } from "./portable.js"
 import { quitOnShutdown, saveBeforeClose, saveOnSessionEnd, savePages } from "./quit.js"
@@ -443,7 +447,7 @@ const startUpdates = async (): Promise<void> => {
     failedVersion: state.installFailedOn,
     // Squirrel.Mac stages macOS updates; the others install from electron-updater's file.
     native: process.platform === "darwin" ? nativeUpdater : undefined,
-    offer: (kind, version, percent) => offers.offer(kind, version, { percent }),
+    offer: (offer) => offers.offer(offer),
     // Synchronous: a failed install on quit is reported as the app exits.
     installFailed: (version) => {
       try {
@@ -568,8 +572,8 @@ const bundleMachine = () => ({
 
 const installMacBundle = async (
   target: string | undefined,
-  progress: (progress: InstallProgress) => void,
-): Promise<PortableInstall> => {
+  progress: (step: InstallStep) => void,
+): Promise<PlatformInstall> => {
   progress({ phase: "installing" })
   return installBundle(target, {
     ...bundleMachine(),
@@ -732,9 +736,9 @@ const downloadSetup = async (
   }
 }
 
-// Whether PowerShell can do what the installer's running-app check asks of it, as the
-// installer would run it: its stub is 32-bit, so the 32-bit PowerShell is the one it finds.
-const installerPowerShell = (): Promise<boolean> => {
+// LEGACY. Whether PowerShell passes the two tests of the old uninstaller's running-app check,
+// as it would run them: its stub is 32-bit, so the 32-bit PowerShell is the one it finds.
+const legacyInstallerPowerShell = (): Promise<boolean> => {
   const system = process.env.SystemRoot ?? "C:\\Windows"
   const wow = win32.join(system, "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe")
   const file = existsSync(wow)
@@ -757,23 +761,36 @@ const setupWaitMs = 5 * 60_000
 // silently while this copy keeps running, and the install is vouched for by the copy it
 // leaves; see `prepareSetup` and docs/auto-update.md. The setup starts nothing.
 const installWindowsSetup = async (
-  progress: (progress: InstallProgress) => void,
-): Promise<PortableInstall> => {
-  // The setup replaces what is in the install folder, and stops what runs from there.
+  progress: (step: InstallStep) => void,
+): Promise<PlatformInstall> => {
+  // The setup refuses to run while Novadeck runs from the install folder; say so up front
+  // to a copy unpacked there.
   const record = await installRecord().catch(() => undefined)
-  const inside = insideInstallFolder(process.execPath, [record?.location, defaultInstallFolder()])
-  if (inside !== undefined)
-    return {
-      kind: "failed",
-      reason: `Novadeck can't install while this copy runs from a folder whose name starts with ${inside}. Move this copy somewhere else, like Downloads, and try again.`,
-    }
-  // Without PowerShell the setup stops every novadeck.exe by name, this copy among them.
-  if (!(await installerPowerShell()))
+  const folders = [record?.location, defaultInstallFolder()]
+  if (insideInstallFolder(process.execPath, folders) !== undefined)
     return {
       kind: "failed",
       reason:
-        "Novadeck can't install itself while it runs on this PC. Quit Novadeck, then run the installer from the Releases page.",
+        "Novadeck can't install while this copy runs from its install folder. Move this copy somewhere else, like Downloads, and try again.",
     }
+  // LEGACY: an installed copy from before `resources/installer.nsh` has an uninstaller the
+  // new setup runs first, which stops by a plain path prefix, or every novadeck.exe by name
+  // without PowerShell, either of which can close this copy. Told by the registry, not by
+  // version: the new installer leaves `RunningCheck` beside the install record.
+  if (await readLegacyUninstaller(appId, queryRegistry)) {
+    const inside = legacyPrefixFolder(process.execPath, folders)
+    if (inside !== undefined)
+      return {
+        kind: "failed",
+        reason: `Novadeck can't install while this copy runs from a folder whose name starts with ${inside}. Move this copy somewhere else, like Downloads, and try again.`,
+      }
+    if (!(await legacyInstallerPowerShell()))
+      return {
+        kind: "failed",
+        reason:
+          "Novadeck can't install itself while it runs on this PC. Quit Novadeck, then run the installer from the Releases page.",
+      }
+  }
   const repository = await releaseRepository()
   const outcome = await prepareSetup({
     downloads: {
@@ -841,8 +858,8 @@ const installedCopies = () =>
 // installer's path.
 const installAppImageOver = (
   target: string | undefined,
-  progress: (progress: InstallProgress) => void,
-): Promise<PortableInstall> => {
+  progress: (step: InstallStep) => void,
+): Promise<PlatformInstall> => {
   progress({ phase: "installing" })
   return installAppImage(
     process.env.APPIMAGE ?? "",
@@ -978,7 +995,7 @@ const launch = async (): Promise<void> => {
   // while this copy keeps running, and is told how the install goes.
   registerPortableIpc(ipcMain, {
     window: (event) => appWindow(event)?.webContents,
-    pages: () => appPages(BrowserWindow.getAllWindows()),
+    log: (message, error) => console.warn(message, error),
     installer: portableInstaller({
       portable,
       version: app.getVersion(),
@@ -996,6 +1013,15 @@ const launch = async (): Promise<void> => {
           : process.platform === "win32"
             ? installWindowsSetup(progress)
             : installAppImageOver(target, progress),
+      changed: (state) => {
+        for (const page of appPages(BrowserWindow.getAllWindows())) {
+          try {
+            page.send(portableStateChannel, state)
+          } catch (error) {
+            console.warn("The portable state was not sent to a window.", error)
+          }
+        }
+      },
       stopping: () => stopping,
       log: (message, error) => console.warn(message, error),
     }),
