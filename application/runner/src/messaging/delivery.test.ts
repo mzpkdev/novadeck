@@ -1215,14 +1215,21 @@ describe("an idle agent whose screen shows its box empty", () => {
     expect(ringableSince(emptied(failed))).toBe(at + 9_000)
   })
 
-  it("leaves a turn running, a ring under way, and a prompt queued for the harness alone", () => {
+  it("leaves a turn running and a ring under way alone", () => {
     expect(emptied(working)).toBe(working)
     expect(emptied(settled)).toBe(settled)
     const ringingNow = transition(settled, { type: "ring", nonce: "k3f9", opening: false })
     expect(emptied(ringingNow)).toBe(ringingNow)
+  })
+
+  it("takes a prompt thought queued as no bar: an Enter that answered a dialog before its request was heard looks the same", () => {
+    // Windows' hooks are slow: the person's arrow and Enter in a question's dialog come before
+    // its request is heard (`asked` false), so the Enter reads as a prompt queued behind the turn.
     const queuedTurn = run(working, typing, enter, stop)
-    expect(queuedTurn.box.queued).toBe(true)
-    expect(emptied(queuedTurn)).toBe(queuedTurn)
+    expect(queuedTurn).toMatchObject({ state: "drafting", box: { queued: true } })
+    // The harness shows what it really holds, and the doorbell's reading asks it first: with
+    // nothing queued on screen and the box empty, the screen decides.
+    expect(emptied(queuedTurn).state).toBe("ready")
   })
 
   it("is dropped when a turn or a session came since the look", () => {

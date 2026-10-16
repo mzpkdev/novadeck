@@ -207,7 +207,16 @@ const terminal = (
   }
 }
 
-const fast = { calmMs: 30, pollMs: 5, pasteMs: 100, confirmMs: 100, watchMs: 10 }
+// Pinned to one platform, so the suite behaves alike on every host (the Windows paths have
+// tests of their own, which say so).
+const fast = {
+  calmMs: 30,
+  pollMs: 5,
+  pasteMs: 100,
+  confirmMs: 100,
+  watchMs: 10,
+  platform: "linux",
+} as const
 const enters = (written: readonly string[]) => written.filter((data) => data === "\r").length
 
 describe("a ring's wait for its doorbell prompt", () => {
@@ -495,7 +504,8 @@ describe("the doorbell on an idle terminal its state keeps from ringing", () => 
     // at once.
     await vi.waitFor(() => expect(failed.length).toBeGreaterThanOrEqual(2), { timeout: 2_000 })
     expect(emptied).toHaveLength(1)
-    expect(emptiedAt[0]! - failedAt).toBeGreaterThanOrEqual(30)
+    // The wait is 40 ms; Windows' timers run in 15.6 ms ticks, so a little less may pass.
+    expect(emptiedAt[0]! - failedAt).toBeGreaterThanOrEqual(20)
     expect(enters(written)).toBe(0)
     doorbell.close()
   })

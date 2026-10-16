@@ -8,6 +8,12 @@ import { coalesced } from "./coalesce.js"
 import type { InputEntry, InputQueue } from "./input-queue.js"
 import { bracketedPaste, calmMs, changedRows, checkPaste, freshNonce, gate } from "./ring.js"
 
+/**
+ * Where the doorbell tells what it decided, line by line, for the e2e trace to show (see
+ * `e2e/trace.ts`); nothing listens in the app.
+ */
+export const tracer: { sink?: (terminalId: string, line: string) => void } = {}
+
 /** What the doorbell needs of the terminal manager and messaging, by terminal. */
 export type DoorbellHost = {
   /**
@@ -274,6 +280,9 @@ export class Doorbell {
         return
       }
       await this.queue.run(terminalId, (entry) => this.ring(entry, terminalId))
+    } catch (error) {
+      this.note(terminalId, `check threw: ${String(error)}`)
+      throw error
     } finally {
       this.checking.delete(terminalId)
     }
@@ -284,6 +293,10 @@ export class Doorbell {
    * settle window has passed, and the screen has been still for a while, takes a bracketed
    * paste and is the foreground's. Otherwise undefined, with a later look where one is due.
    */
+  private note(terminalId: string, line: string): void {
+    tracer.sink?.(terminalId, line)
+  }
+
   private async open(terminalId: string, again = false): Promise<number | undefined> {
     this.leftovers.delete(terminalId)
     // Any harness's screen changes for a while after a turn, or a start: no ring before it
@@ -291,11 +304,14 @@ export class Doorbell {
     const since = this.host.settledSince(terminalId)
     const settling = since === undefined ? 0 : since + this.settleMs - this.now()
     if (settling > 0) {
+      this.note(terminalId, `settling for ${Math.round(settling)} ms`)
       this.later(terminalId, settling)
       return undefined
     }
     const ringable = this.host.ringable(terminalId)
     const stalled = !ringable && this.host.stalled(terminalId)
+    if (ringable || stalled)
+      this.note(terminalId, `look: ringable ${ringable}, stalled ${stalled}, again ${again}`)
     if (!ringable && !stalled) {
       this.backoff.delete(terminalId)
       return undefined
@@ -317,6 +333,7 @@ export class Doorbell {
       )
       const wait = quiet - this.now()
       if (wait > 0) {
+        this.note(terminalId, `look put off for ${Math.round(wait)} ms`)
         this.later(terminalId, wait)
         return undefined
       }
@@ -335,6 +352,7 @@ export class Doorbell {
     // A resize ends the calm too: the TUI may not have redrawn for it yet.
     const calm = now - Math.max(still.since, this.host.resizedAt(terminalId))
     if (calm < this.calmMs) {
+      this.note(terminalId, `screen not calm: ${Math.round(calm)} of ${this.calmMs} ms`)
       // A stalled terminal whose screen keeps changing is looked at less and less often.
       if (stalled) {
         const wait = Math.max(this.calmMs - calm, this.nextWait(terminalId))
@@ -358,6 +376,10 @@ export class Doorbell {
         ...(inputBox !== undefined && { inputBox }),
       },
       this.calmMs,
+    )
+    this.note(
+      terminalId,
+      `gate ${verdict} (foreground ${String(foreground)}, input box ${String(inputBox)}, bracketed paste ${screen.bracketedPaste})`,
     )
     if (verdict === "open") {
       this.backoff.delete(terminalId)
@@ -440,6 +462,10 @@ export class Doorbell {
       retryAt: this.now() + wait,
       stamp: this.host.stamp(terminalId),
     })
+    this.note(
+      terminalId,
+      `ring ${nonce} failed (counted ${counted}, ours ${ours}); count ${count}, next try in ${wait} ms`,
+    )
     this.host.ringFailed(terminalId, nonce, ours)
     // Unknown and idle, it is looked at again once the wait is over.
     this.later(terminalId, wait)
@@ -455,6 +481,7 @@ export class Doorbell {
   private async recover(terminalId: string, screen: ScreenText, calmSince: number): Promise<void> {
     const now = this.now()
     const reading = this.host.reading(terminalId, screen)
+    this.note(terminalId, `reading ${reading}`)
     // A question open on the person is theirs first, whatever the box shows.
     if (reading === "asking") {
       this.host.blocked(terminalId, "asking")
@@ -490,6 +517,7 @@ export class Doorbell {
       }
       this.host.blocked(terminalId, null)
       this.backoff.delete(terminalId)
+      this.note(terminalId, "box read empty: Ready")
       this.host.emptied(terminalId, calmSince)
       // Ready now: looked at again once this look is done, for the ring itself.
       this.later(terminalId, 0)
@@ -526,6 +554,7 @@ export class Doorbell {
     if (ticking === undefined) return this.later(terminalId, this.calmMs)
     const nonce = freshNonce()
     const line = doorbellLine(nonce)
+    this.note(terminalId, `ring ${nonce} begins (ticking rows ${[...ticking].join(",") || "none"})`)
     // Only a Ready terminal may lose a block of text as the line lands, as Codex's logo.
     const vanish = this.host.ready(terminalId)
     if (this.host.resizedAt(terminalId) > calmSince) return this.later(terminalId, this.calmMs)
@@ -553,10 +582,14 @@ export class Doorbell {
           const after = await this.host.screen(terminalId)
           if (!after) break
           const text = after.rows.join("\n")
-          const accepted = checkPaste(before.rows, after.rows, line, { vanish, ticking }).accepted
+          const checked = checkPaste(before.rows, after.rows, line, { vanish, ticking })
+          const accepted = checked.accepted
+          if (!accepted && this.now() >= until)
+            this.note(terminalId, `ring ${nonce}: paste not accepted: ${checked.reason}`)
           // Accepted twice running on the same screen, so it isn't caught mid-draw.
           if (accepted && landed === text) {
             acceptedTwice = true
+            this.note(terminalId, `ring ${nonce}: paste accepted, Enter`)
             pressed =
               hold.holding() &&
               this.host.ringing(terminalId) === nonce &&
@@ -643,6 +676,7 @@ export class Doorbell {
 
   /** The ring's Enter is pressed: its prompt confirms it, or it fails after `confirmMs`. */
   private confirming(terminalId: string, nonce: string, settle: () => void): void {
+    this.note(terminalId, `ring ${nonce} pressed; confirmation due in ${this.confirmMs} ms`)
     // The app's resizes wait on until its prompt confirms the ring, or it fails, as one
     // landing as the turn starts crashed Codex (0.159.3).
     this.pressed.set(terminalId, { nonce, settle })

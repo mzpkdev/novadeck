@@ -785,8 +785,11 @@ facts above, so the prompt's emptiness is known before any message arrives:
   only ever a doubt about the box, and the screen is the authority on what is in it, so a
   stray key, an answer typed in a dialog, or a replacing session announced past the
   submission window (a slow `/clear`) no longer keep an idle agent from its messages.
-  A prompt the person queued behind a turn, which the harness submits next, stays
-  Drafting: its own hook delivers.
+  A prompt Novadeck took the person to have queued behind a turn is no bar: an Enter
+  that answered a dialog before its request was heard (Windows' hooks are slow) reads
+  the same. The screen decides, as the harness shows what it really holds queued
+  (`BoxProfile.queued`), which keeps the box from reading empty; a prompt it submits next
+  starts its own turn, whose hook delivers.
 - **Unknown**: the last turn ended without a normal Stop (Esc, a denial, `StopFailure`,
   Claude Code's transcript recording an interrupt, Antigravity's status line saying idle
   with no root Stop since the turn began), or a ring failed after its paste. The

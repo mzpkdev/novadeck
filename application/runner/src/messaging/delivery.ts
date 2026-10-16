@@ -751,17 +751,17 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
     case "emptied":
       // The screen shows the agent's own box empty and calm, where only doubt or an
       // unconfirmed end holds the terminal back: Drafting, Unknown or Fresh, with no turn
-      // running (the person's queued prompt, which the harness submits next, is no
-      // doubt). Nothing was left in it. Not for a box the person typed in since, or a
+      // running. A prompt Novadeck took the person to have queued is no bar: an Enter that
+      // answered a dialog before its request was heard looks the same, and the harness shows
+      // what it really holds (`BoxProfile.queued`), which the doorbell's reading checks.
+      // Nothing was left in it. Not for a box the person typed in since, or a
       // session since (`epoch`). A turn that completed (a Drafting delivery's
       // `completedAt`) is Settled again, since it completed, so its settle window has
       // passed; any other is Ready.
       return (delivery.state === "drafting" ||
         delivery.state === "unknown" ||
         delivery.state === "fresh") &&
-        event.epoch === delivery.epoch &&
-        !box.queuing &&
-        !box.queued
+        event.epoch === delivery.epoch
         ? delivery.state === "drafting" && delivery.completedAt !== undefined
           ? { ...counts(delivery), box: emptyBox, state: "settled", since: delivery.completedAt }
           : { ...counts(delivery), box: emptyBox, state: "ready", since: event.at }

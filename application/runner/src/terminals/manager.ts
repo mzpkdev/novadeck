@@ -123,7 +123,7 @@ import {
 import { coalesced } from "./coalesce.js"
 import { expectedAgent, promptIn } from "./commands.js"
 import { Dialogs, type DialogsHost, type DialogsOptions } from "./dialogs.js"
-import { Doorbell, type DoorbellHost, type DoorbellOptions } from "./doorbell.js"
+import { Doorbell, tracer, type DoorbellHost, type DoorbellOptions } from "./doorbell.js"
 import {
   foregroundProcess,
   foregroundRuns,
@@ -1941,7 +1941,15 @@ export class Terminals {
       // for a Settled or Ready one only to say a request waits on the person.
       stalled: (terminalId) => {
         const record = live(terminalId)
-        if (!record || this.working(terminalId, record.activity)) return false
+        if (!record) return false
+        if (this.working(terminalId, record.activity)) {
+          if (this.messaging.stalled(terminalId) || this.messaging.idleWaiting(terminalId))
+            tracer.sink?.(
+              terminalId,
+              `not looked at: activity ${record.activity?.state}, ${record.activity?.subagents.length ?? 0} subagents, background ${JSON.stringify(record.activity?.background)}`,
+            )
+          return false
+        }
         return (
           this.messaging.stalled(terminalId) ||
           ((record.activity?.pending.length ?? 0) > 0 && this.messaging.idleWaiting(terminalId))

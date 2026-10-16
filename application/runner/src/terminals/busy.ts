@@ -6,7 +6,7 @@ export const busy = (
   activity:
     | {
         readonly state: string
-        readonly subagents: readonly unknown[]
+        readonly subagents?: readonly unknown[]
         readonly background: { readonly agents: number; readonly tasks: number } | null
       }
     | null
@@ -15,5 +15,5 @@ export const busy = (
   activity !== null &&
   activity !== undefined &&
   (activity.state === "working" ||
-    activity.subagents.length > 0 ||
+    (activity.subagents?.length ?? 0) > 0 ||
     (activity.background?.agents ?? 0) > 0)

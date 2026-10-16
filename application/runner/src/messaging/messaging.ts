@@ -810,14 +810,14 @@ export class Messaging {
 
   /**
    * Whether the terminal's agent is idle but not ringable by its state alone (Fresh,
-   * Drafting or Unknown, no prompt of the person's queued behind a turn), with messages
-   * waiting for it: the doorbell looks at its screen for an empty box.
+   * Drafting or Unknown), with messages waiting for it: the doorbell looks at its screen
+   * for an empty box, and for a prompt the harness shows queued.
    */
   stalled(terminalId: string): boolean {
     const live = this.live.get(terminalId)
     if (!live) return false
     const { delivery } = live
-    if (!waitsIn(delivery) || delivery.box.queuing || delivery.box.queued) return false
+    if (!waitsIn(delivery)) return false
     return this.waiting(live)
   }
 
