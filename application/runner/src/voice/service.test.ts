@@ -465,6 +465,26 @@ describe("installing voice input", () => {
     expect(await readdir(`${directory}/models`)).toHaveLength(2)
   })
 
+  it("does not let the check of an old file vouch for a new one that fails", async ({
+    resources,
+  }) => {
+    const first = await installed(resources)
+    expect(first.voice.state().check).not.toBeNull()
+
+    const again = await setup(resources, {
+      store: first.store,
+      directory: first.directory,
+      ...(first.manifest && { engine: first.manifest }),
+      catalog: await modelCatalog(resources, { small: "small mute" }),
+    })
+    await again.voice.install()
+    await again.voice.settled()
+    await again.voice.set({ enabled: true })
+
+    expect(again.voice.state().failure).toContain("heard nothing")
+    expect(again.voice.state()).toMatchObject({ check: null, enabled: false })
+  })
+
   it("keeps turbo, and blames the engine, when neither model starts", async ({ resources }) => {
     const { voice, directory } = await setup(resources, {
       catalog: await modelCatalog(resources, { turbo: "turbo badload", small: "small badload" }),

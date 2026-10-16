@@ -693,7 +693,9 @@ export class Voice {
     for (const { artifact, path } of parts) {
       // One file after the other, so the bytes received add up.
       // eslint-disable-next-line no-await-in-loop -- Sequential on purpose.
-      if (!(await exists(path)))
+      if (!(await exists(path))) {
+        // A file fetched again is not the one that passed the check on record.
+        if (this.settings.voiceCheck()?.model === model) this.settings.saveVoiceCheck(null)
         // eslint-disable-next-line no-await-in-loop -- Sequential on purpose.
         await download({
           from: artifact.url,
@@ -704,6 +706,7 @@ export class Voice {
           progress: (received) =>
             this.progress({ model, step: "model", received: done + received, total }),
         })
+      }
       done += artifact.size
     }
   }
