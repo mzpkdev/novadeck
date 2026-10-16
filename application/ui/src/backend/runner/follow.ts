@@ -215,6 +215,8 @@ export const followTerminal = (
       })
       if (!attachment) return
       cut = true
+      // Nothing draws it from now on, though the stream ends a moment later.
+      screen.live(false)
       void attachment.detach()
     },
     unpark: () => {

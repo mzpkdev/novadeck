@@ -1097,8 +1097,6 @@ describe("typing into a terminal's screen", () => {
     const { screens, written, ready, park } = running("$ ")
     await ready()
     park()
-    // The stream winds down as its detach lands.
-    await new Promise((resolve) => setTimeout(resolve, 10))
     expect(screens.typeInto(key, "run the tests")).toBe(false)
     expect(written).toEqual([])
   })
@@ -1108,6 +1106,8 @@ describe("typing into a terminal's screen", () => {
     await ready()
     park()
     showAgain()
+    // Shown, but its screen isn't there yet.
+    expect(screens.typeInto(key, "too soon")).toBe(false)
     await vi.waitFor(() => expect(attachments).toHaveLength(2))
     await vi.waitFor(() => expect(screens.typeInto(key, "run the tests")).toBe(true))
     expect(written).toEqual(["run the tests"])
