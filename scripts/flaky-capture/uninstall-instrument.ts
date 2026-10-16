@@ -53,7 +53,7 @@ const boundaries = [
   },
 ] as const
 
-export const instrumentUninstall = (source: string, id: string, events: string) => {
+export const instrumentUninstall = (source: string, id: string, events: string, setup?: string) => {
   const path = id.split("?")[0]!.replaceAll("\\", "/")
   const boundary = boundaries.find((item) => path.endsWith(`/${item.file}`))
   if (!boundary) return undefined
@@ -73,6 +73,6 @@ export const instrumentUninstall = (source: string, id: string, events: string) 
   return {
     name: boundary.name,
     file: boundary.file,
-    code: `import { ${imports} } from ${JSON.stringify(events)}\n${code}`,
+    code: `${boundary.name === "spec" && setup ? `import ${JSON.stringify(setup)}\n` : ""}import { ${imports} } from ${JSON.stringify(events)}\n${code}`,
   }
 }

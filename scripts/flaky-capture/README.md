@@ -111,15 +111,15 @@ Use the same Node 26, locked dependency, protocol and Chromium setup as Grid, on
 node scripts/flaky-capture/uninstall.ts --output /path/to/uninstall-capture --attempts 3
 ```
 
-Each attempt starts a fresh Vitest process and runs all 11 original uninstall cases,
+The manual isolated mode starts a fresh Vitest process per attempt and runs all 11 original uninstall cases,
 including the predecessors of the target assertion. The original 1,500 ms fixture
 delay, 6,000 ms target poll and 30-second case deadlines stay unchanged. The collector
 adds passive observations and tracing, with no forced delay or replay of a failed case.
 It stops on the first nonzero process; at most three processes run.
 
 The per-process watchdog is five minutes and the total collector budget is 15 minutes.
-The workflow allows 17 minutes for capture within a 25-minute job so setup and artifact
-upload have headroom. Watchdog or incomplete collection results are infrastructure
+The original isolated mode uses the limits above; the dedicated broad Quality job described
+below replaces its workflow invocation. Watchdog or incomplete collection results are infrastructure
 evidence, not a reproduced uninstall assertion.
 
 Retained files include checkout/tool/browser identity, process outcomes and logs,
@@ -134,6 +134,52 @@ Native events, DOM busy/error state and long tasks are observed passively. Each 
 records both its originating case and the case active when it was observed, so late
 callbacks remain attributable. Normal UI, spec and fixture files stay unchanged; the
 transforms and their hashes are retained under each attempt's `transforms/` directory.
+
+### macOS uninstall under broad Quality load
+
+The dedicated macOS job now runs one broad capture instead of repeating isolated controls:
+
+```sh
+node scripts/flaky-capture/uninstall.ts --scope quality --attempts 1 --output /path/to/uninstall-quality
+```
+
+Use ordinary macOS Quality setup: Node 26, locked dependencies, Rust/toolchain cache,
+and Chromium. The launcher starts exactly `npm run test` from the repository root,
+including repository tests and the original Turbo build/test graph with concurrency 1.
+It does not prebuild the protocol or select files/projects. All three original UI
+projects, setup, includes/excludes, browser settings and default file scheduling remain.
+The 1,500 ms timer, 6,000 ms target poll and 30-second browser case ceiling stay unchanged.
+An 18-minute process watchdog, 19-minute capture step and 25-minute job bound infrastructure;
+there is one process and no scenario retry. Other Quality tests still run normally.
+
+Only `uninstall.spec.tsx` receives the observer hooks, through a guarded opt-in import.
+The shared fixture/component observations remain passive. Two explicit hashed Turbo
+environment variables select capture and its new external output path; ordinary Quality
+has neither. Fresh Vitest module-start observations establish actual execution of unit,
+behaviour (including non-uninstall files) and motion projects. Replayed cache logs or a
+loaded config alone cannot satisfy the capture validator. Whole-suite Playwright tracing
+stays off to avoid its added scheduling load; normal failure screenshots remain enabled.
+
+Alongside `identity.json` and `summary.json`, `attempt-01/` retains:
+
+- `process.log` and `process.json`: root output (first 16 MiB, with explicit overflow),
+  native exit/signal and watchdog outcome. Truncation cannot yield a successful capture.
+- `tests.json`, `ui-config.json`, `ui-execution.json`: full UI results, original project
+  selection/deadlines and bounded actual module execution (1,000 records, with overflow).
+- `behaviour/uninstall/case-NN.json`, `source-events.json`, `browser.json`: the eleven
+  original case timelines, final source flush, browser version and viewport. Case/source
+  rings remain bounded at 1,000 events, and any overflow fails completeness.
+- `transforms/{fixture,component,spec}.json` and `attachments/`: exact incoming/instrumented
+  hashes and ordinary failure screenshots. No browser profile, environment dump or cache
+  is uploaded.
+
+The launcher reads available finalized results even when root tests fail. It distinguishes
+an observed target assertion failure, another Quality failure, incomplete evidence and
+infrastructure timeout/interruption. A failure remains nonzero; successful collection
+requires the full root command to pass, the original eleven-case target evidence and
+actual execution of all three UI projects. A passing broad run is another control, not
+a product repair. Observation/reporting can affect scheduling, and cleanup of a killed
+process group is best effort; the ephemeral job provides an outer lifetime bound.
 
 ### Linux staged Stop experiment
 

@@ -8,6 +8,8 @@ on:
       - scripts/flaky-capture/uninstall*
       - scripts/flaky-capture/agy*
       - scripts/flaky-capture/README.md
+      - application/ui/vitest.config.ts
+      - turbo.json
       - application/runner/src/e2e/probes/agy-stop-boundary.e2e.ts
       - application/runner/src/e2e/probes/agy-approval-capture.ts
       - application/runner/vitest.agy-capture.config.ts
@@ -20,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  uninstall:
-    name: Uninstall capture (macOS)
+  uninstall-quality:
+    name: Uninstall broad Quality capture (macOS)
     runs-on: macos-latest
     timeout-minutes: 25
     defaults:
@@ -68,8 +70,19 @@ jobs:
           node --version > "$RUNNER_TEMP/flaky-capture/node.txt"
           pnpm --version > "$RUNNER_TEMP/flaky-capture/pnpm.txt"
 
-      - name: Build UI Protocol Dependency
-        run: pnpm --filter @novadeck/protocol build
+      # Match ordinary macOS Quality setup; root test supplies its original build/test graph.
+      - name: Set Up Rust
+        working-directory: application/relay
+        run: rustup toolchain install
+
+      - name: Cache Rust Builds
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            application/relay/target
+          key: relay-${{ runner.os }}-${{ hashFiles('application/relay/Cargo.lock', 'application/relay/rust-toolchain.toml') }}
 
       - name: Locate Test Browser
         id: playwright
@@ -88,15 +101,15 @@ jobs:
         if: steps.browser-cache.outputs.cache-hit != 'true'
         run: pnpm --filter @novadeck/ui exec playwright install --with-deps chromium
 
-      - name: Capture Up To Three Uninstall Processes
-        timeout-minutes: 17
-        run: node scripts/flaky-capture/uninstall.ts --output "$RUNNER_TEMP/flaky-capture/uninstall" --attempts 3
+      - name: Capture One Broad Quality Process
+        timeout-minutes: 19
+        run: node scripts/flaky-capture/uninstall.ts --scope quality --attempts 1 --output "$RUNNER_TEMP/flaky-capture/uninstall-quality"
 
       - name: Upload Uninstall Capture And Controls
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: uninstall-capture-macOS-${{ github.run_attempt }}
+          name: uninstall-quality-macOS-${{ github.run_attempt }}
           path: ${{ runner.temp }}/flaky-capture/
           if-no-files-found: warn
           include-hidden-files: false

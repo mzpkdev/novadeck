@@ -36,6 +36,25 @@ describe("opt-in uninstall source boundaries", () => {
     )
   })
 
+  it("injects the observer setup only into the opt-in uninstall spec", () => {
+    const spec = "application/ui/src/specs/uninstall.spec.tsx"
+    const code = readFileSync(new URL(`../../${spec}`, import.meta.url), "utf8")
+    const quality = instrumentUninstall(code, `/${spec}`, "/events.mjs", "/setup.mjs")!.code
+    expect(quality.match(/import "\/setup.mjs"/g)).toHaveLength(1)
+    expect(instrumentUninstall(code, `/${spec}`, "/events.mjs")!.code).not.toContain("setup.mjs")
+    expect(
+      instrumentUninstall(source, `/${file}`, "/events.mjs", "/setup.mjs")!.code,
+    ).not.toContain("setup.mjs")
+    expect(
+      instrumentUninstall(
+        code,
+        "/application/ui/src/specs/other.spec.tsx",
+        "/events.mjs",
+        "/setup.mjs",
+      ),
+    ).toBeUndefined()
+  })
+
   it("leaves every other module untouched", () => {
     expect(
       instrumentUninstall(source, "/application/ui/src/app/App.tsx", "/events.mjs"),
