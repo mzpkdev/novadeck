@@ -6,15 +6,19 @@
 # running this setup silently while it keeps running. See docs/auto-update.md.
 #
 # One rule, in terms of the install folder alone:
-#   - Novadeck is running from $INSTDIR when its executable there cannot be opened for
-#     writing. Nothing else counts, so a copy running from any other folder never does.
-#   - A silent run that is not a self-update (`--updated`) closes nothing: it ends with
-#     exit code 2, leaving the install as it was. A portable copy's install is that run.
-#   - A self-update gives the quitting app a moment, then closes what still runs from
-#     $INSTDIR. An interactive run asks first, then does the same.
-#   - Only processes whose path is inside "$INSTDIR\" are closed, by PowerShell, never
-#     by name, and never this setup itself. Without PowerShell nothing is closed: the
-#     person is asked to close Novadeck, or a silent run ends.
+#   - Novadeck runs from it when any process other than this setup has a path inside
+#     "$INSTDIR\" (PowerShell, which also catches helpers such as ConPTY's OpenConsole.exe
+#     that outlive novadeck.exe). Without PowerShell, when novadeck.exe there cannot be
+#     opened for writing. A copy running from any other folder never counts.
+#   - The installer's silent run that is not a self-update (`--updated`) closes nothing: it
+#     ends with exit code 3, leaving the install as it was. A portable copy's install is
+#     that run.
+#   - A self-update, and the uninstaller in any mode (the app starts it and quits right
+#     after), gives the quitting app a moment, then closes what still runs from $INSTDIR.
+#     An interactive installer asks first, then does the same.
+#   - Only processes whose path is inside "$INSTDIR\" are closed, by PowerShell, never by
+#     name, and never this setup itself. Without PowerShell nothing is closed: the person
+#     is asked to close Novadeck, or a silent run ends.
 #
 # Everything is inline: the uninstaller uses this macro too, where a plain Function
 # could not be called.
@@ -24,17 +28,45 @@
   Push $1
   Push $2
   Push $3
+  Push $4
+  Push $5
 
-  # What the PowerShell command below reads, instead of quoting a path into it.
+  # What the PowerShell commands below read, instead of quoting a path into them.
   System::Call 'kernel32::GetCurrentProcessId() i .r0'
   System::Call 'kernel32::SetEnvironmentVariable(t "NOVADECK_SETUP_PID", t "$0")'
   System::Call 'kernel32::SetEnvironmentVariable(t "NOVADECK_INSTALL_DIR", t "$INSTDIR")'
 
+  # $4 = 1 when the app may be closed without a person to ask: a self-update, or the
+  # uninstaller, which the app starts and then quits for.
+  !ifdef BUILD_UNINSTALLER
+    StrCpy $4 1
+  !else
+    ${If} ${isUpdated}
+      StrCpy $4 1
+    ${Else}
+      StrCpy $4 0
+    ${EndIf}
+  !endif
+
   StrCpy $2 0 # rounds waited for the app to go
   ${Do}
-    # $1 = 1 while the installed executable is in use.
+    # $1 = 1 while something runs from the install folder; $5 = 1 when PowerShell answered.
     StrCpy $1 0
-    ${If} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+    StrCpy $5 0
+    ${If} ${FileExists} "$PowerShellPath"
+      # Exit 10: found, 11: none, 12: the query itself failed.
+      nsExec::Exec `"$PowerShellPath" -NoProfile -NonInteractive -C "try { $$d = $$env:NOVADECK_INSTALL_DIR.TrimEnd('\') + '\'; $$n = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop | Where-Object { $$_.ExecutablePath -and $$_.ProcessId -ne [int]$$env:NOVADECK_SETUP_PID -and $$_.ExecutablePath.StartsWith($$d, [System.StringComparison]::OrdinalIgnoreCase) }).Count; if ($$n -gt 0) { exit 10 } else { exit 11 } } catch { exit 12 }"`
+      Pop $0
+      ${If} $0 == 10
+        StrCpy $1 1
+        StrCpy $5 1
+      ${ElseIf} $0 == 11
+        StrCpy $5 1
+      ${EndIf}
+    ${EndIf}
+    ${If} $5 == 0
+    ${AndIf} ${FileExists} "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+      # No PowerShell: the installed executable cannot be opened for writing while it runs.
       ClearErrors
       FileOpen $0 "$INSTDIR\${APP_EXECUTABLE_FILENAME}" a
       ${If} ${Errors}
@@ -49,41 +81,40 @@
 
     IntOp $2 $2 + 1
 
-    ${If} ${isUpdated}
-      # The app that started this update is quitting; give it time before closing.
+    ${If} $4 == 1
+      # The app is quitting; give it time before closing.
       Sleep 1000
     ${ElseIf} ${Silent}
       # Nobody to ask, and the running copy may be a portable one the person is using.
-      SetErrorLevel 2
+      SetErrorLevel 3
       Quit
-    ${Else}
-      ${If} $2 == 1
-        MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK +2
-        Quit
-        DetailPrint "$(appClosing)"
-      ${EndIf}
+    ${ElseIf} $2 == 1
+      MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK +2
+      Quit
+      DetailPrint "$(appClosing)"
     ${EndIf}
 
-    ${If} $2 > 1
-    ${OrIfNot} ${isUpdated}
-      # Politely on the first round, by force after that.
-      ${If} $2 > 2
-        StrCpy $3 "Stop-Process -Id $$_.ProcessId -Force"
-      ${Else}
-        StrCpy $3 "(Get-Process -Id $$_.ProcessId -ErrorAction SilentlyContinue).CloseMainWindow()"
-      ${EndIf}
-      ${If} ${FileExists} "$PowerShellPath"
+    # Round 1 only waits when the app is quitting; every other round closes, politely
+    # first, by force from round 3.
+    ${If} $5 == 1
+      ${If} $4 == 0
+      ${OrIf} $2 > 1
+        ${If} $2 > 2
+          StrCpy $3 "Stop-Process -Id $$_.ProcessId -Force"
+        ${Else}
+          StrCpy $3 "(Get-Process -Id $$_.ProcessId -ErrorAction SilentlyContinue).CloseMainWindow()"
+        ${EndIf}
         nsExec::Exec `"$PowerShellPath" -NoProfile -NonInteractive -C "$$d = $$env:NOVADECK_INSTALL_DIR.TrimEnd('\') + '\'; Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ProcessId -ne [int]$$env:NOVADECK_SETUP_PID -and $$_.ExecutablePath.StartsWith($$d, [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { $3 }"`
         Pop $0
+        Sleep 1000
       ${EndIf}
-      Sleep 1000
     ${EndIf}
 
     ${If} $2 > 6
       # Probably running with more rights than this setup, or locked by something else.
-      ${If} ${isUpdated}
+      ${If} $4 == 1
       ${OrIf} ${Silent}
-        SetErrorLevel 2
+        SetErrorLevel 3
         Quit
       ${EndIf}
       MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY +2
@@ -92,6 +123,8 @@
     ${EndIf}
   ${Loop}
 
+  Pop $5
+  Pop $4
   Pop $3
   Pop $2
   Pop $1

@@ -1,23 +1,31 @@
 import { createHash } from "node:crypto"
 import { EventEmitter } from "node:events"
-import { existsSync, readdirSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { readFileSync } from "node:fs"
+import { createRequire } from "node:module"
+import { dirname, join } from "node:path"
 
 import { describe, expect, it } from "../test"
 import { newerCopy } from "./install-linux"
 import {
   findInstalledWindows,
+  hasLegacyUninstaller,
   hashBody,
+  insideInstallFolder,
   installedAtLeast,
   installedByInstaller,
   installerGuid,
+  lastVersionWithLegacyUninstaller,
   latestVersionOf,
+  legacyPrefixFolder,
+  powershellChecks,
+  powershellUsable,
   prepareSetup,
   readInstallRecord,
   registryValue,
   reportPercents,
   runSetup,
   setupArguments,
+  setupInUseExitCode,
   SetupBusyError,
   setupResult,
   setupRunningReason,
@@ -508,7 +516,7 @@ describe("the setup's arguments", () => {
 
 describe("running the setup", () => {
   const running = (
-    event: "exit" | "none" | "error" | "throw",
+    event: "exit" | "in-use" | "none" | "error" | "throw",
     options: { present?: boolean; timeoutMs?: number } = {},
   ) => {
     const calls: string[] = []
@@ -524,6 +532,7 @@ describe("running the setup", () => {
           if (event === "error") return void child.emit("error", new Error("blocked"))
           child.emit("spawn")
           if (event === "exit") child.emit("exit", 0)
+          if (event === "in-use") child.emit("exit", setupInUseExitCode)
         })
         return child
       },
@@ -541,6 +550,10 @@ describe("running the setup", () => {
     expect(spawned).toEqual([
       { args: ["/S"], options: { detached: true, stdio: "ignore", windowsHide: true } },
     ])
+  })
+
+  it("tells a setup that found Novadeck running from the install folder by its exit code", async () => {
+    expect(await running("in-use").result).toBe("in-use")
   })
 
   it("resolves at the timeout without killing a setup that still runs", async () => {
@@ -641,26 +654,90 @@ describe("download progress", () => {
 describe("the installer's running-app check", () => {
   // electron-builder only uses `customCheckAppRunning` where its template says so, and
   // otherwise stops every novadeck.exe by name, a portable copy included. Pinned so an
-  // upgrade that drops the hook is noticed.
+  // upgrade that drops the hook, or stops reaching it, is noticed. The templates are those
+  // of the app-builder-lib that electron-builder itself resolves.
+  const templates = join(
+    dirname(
+      createRequire(
+        createRequire(import.meta.url).resolve("electron-builder/package.json"),
+      ).resolve("app-builder-lib/package.json"),
+    ),
+    "templates",
+    "nsis",
+  )
+  const template = (file: string): string => readFileSync(join(templates, file), "utf8")
+
   it("is replaced by our macro, which never stops a process by name", () => {
-    const store = join(process.cwd(), "..", "..", "node_modules", ".pnpm")
-    const found = existsSync(store)
-      ? readdirSync(store).find((name) => name.startsWith("app-builder-lib@"))
-      : undefined
-    // A missing template fails: the pin is worth nothing if it silently stops running.
-    if (found === undefined) throw new Error(`app-builder-lib is not installed under ${store}`)
-    const template = readFileSync(
-      join(
-        store,
-        found,
-        "node_modules/app-builder-lib/templates/nsis/include/allowOnlyOneInstallerInstance.nsh",
-      ),
-      "utf8",
+    expect(template("include/allowOnlyOneInstallerInstance.nsh")).toMatch(
+      /!macro CHECK_APP_RUNNING[\s\S]*!ifmacrodef customCheckAppRunning\s+!insertmacro customCheckAppRunning/u,
     )
-    expect(template).toContain("!insertmacro customCheckAppRunning")
     const macro = readFileSync(join(process.cwd(), "resources", "installer.nsh"), "utf8")
     expect(macro).toContain("!macro customCheckAppRunning")
     expect(macro).not.toMatch(/^[^#\n]*(taskkill|\/IM\b|KILL_PROCESS)/mu)
+  })
+
+  it("is still reached by the installer and the uninstaller", () => {
+    expect(template("installSection.nsh")).toContain("!insertmacro CHECK_APP_RUNNING")
+    expect(template("uninstaller.nsh")).toContain("!insertmacro CHECK_APP_RUNNING")
+  })
+})
+
+describe("a copy running inside the install folder", () => {
+  const install = "C:\\Users\\me\\AppData\\Local\\Programs\\novadeck"
+  const folders = [install, undefined]
+  const exe = (folder: string): string => `${folder}\\novadeck.exe`
+
+  it("is inside in the folder or under it, whatever the case or trailing separator", () => {
+    expect(insideInstallFolder(exe(install.toUpperCase()), folders)).toBe(install)
+    expect(insideInstallFolder(exe(`${install}\\resources`), folders)).toBe(install)
+    expect(insideInstallFolder(exe(install), [`${install}\\`])).toBe(`${install}\\`)
+  })
+
+  it("is not inside for a sibling that merely starts with the same letters, or elsewhere", () => {
+    expect(insideInstallFolder(exe(`${install}-portable`), folders)).toBeUndefined()
+    expect(insideInstallFolder(exe("D:\\Downloads\\novadeck"), folders)).toBeUndefined()
+    expect(insideInstallFolder(exe("D:\\Downloads"), [undefined, ""])).toBeUndefined()
+  })
+})
+
+describe("the guard for installed copies with the old uninstaller", () => {
+  const install = "C:\\Users\\me\\AppData\\Local\\Programs\\novadeck"
+  const copy = (version: string | undefined) => ({
+    image: `${install}\\novadeck.exe`,
+    version,
+    unchecked: version === undefined,
+  })
+
+  it("applies to a copy at or below the last version without the macro, or of unknown version", () => {
+    expect(hasLegacyUninstaller([copy(lastVersionWithLegacyUninstaller)])).toBe(true)
+    expect(hasLegacyUninstaller([copy("0.0.1")])).toBe(true)
+    expect(hasLegacyUninstaller([copy(undefined)])).toBe(true)
+  })
+
+  it("does not apply to a newer copy, or to none", () => {
+    expect(hasLegacyUninstaller([copy("0.0.999")])).toBe(false)
+    expect(hasLegacyUninstaller([])).toBe(false)
+  })
+
+  it("refuses a sibling folder by plain prefix, as the old uninstaller would stop it", () => {
+    const exe = `${install}-portable\\novadeck.exe`
+    expect(legacyPrefixFolder(exe, [install])).toBe(install)
+    expect(legacyPrefixFolder("D:\\Downloads\\novadeck.exe", [install, undefined])).toBeUndefined()
+  })
+
+  it("needs both PowerShell tests to pass, asking each in turn", async () => {
+    const asked: string[] = []
+    const answering = (answers: boolean[]) => async (command: string) => {
+      asked.push(command)
+      return answers[asked.length - 1] ?? false
+    }
+    expect(await powershellUsable(answering([true, true]))).toBe(true)
+    expect(asked).toEqual([...powershellChecks])
+    asked.length = 0
+    expect(await powershellUsable(answering([true, false]))).toBe(false)
+    asked.length = 0
+    expect(await powershellUsable(answering([false]))).toBe(false)
+    expect(asked).toHaveLength(1)
   })
 })
 
@@ -680,10 +757,16 @@ describe("what the install answers once the setup has run", () => {
     expect(setupRunningReason).toContain("still running")
   })
 
+  it("says Novadeck runs from the install folder when the setup found it so", () => {
+    expect(setupResult("in-use", undefined)).toMatchObject({
+      kind: "failed",
+      reason: expect.stringContaining("install folder"),
+    })
+  })
+
   it("says it did not finish when it exited with no copy, and that it did not run when it never started", () => {
     expect(setupResult("exited", undefined)).toMatchObject({
-      reason:
-        "The installer did not finish installing Novadeck. It stops when a copy of Novadeck runs from its install folder; quit that copy and try again.",
+      reason: "The installer did not finish installing Novadeck.",
     })
     expect(setupResult("failed", found)).toMatchObject({ kind: "failed" })
     expect((setupResult("failed", found) as { reason: string }).reason).toContain("did not run")

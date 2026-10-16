@@ -91,6 +91,79 @@ const folderKey = (folder: string): string =>
     .toLowerCase()
 
 /**
+ * The folder of `folders` that the executable `execPath` is in or under, whole path
+ * segments only, or undefined if none. The setup replaces everything in the install
+ * folder and its running-app check refuses to run while Novadeck runs from there, so a
+ * copy unpacked into it can't install.
+ */
+export const insideInstallFolder = (
+  execPath: string,
+  folders: readonly (string | undefined)[],
+): string | undefined => {
+  const here = win32.normalize(execPath).toLowerCase()
+  return folders.find((folder): folder is string => {
+    if (folder === undefined || folder === "") return false
+    const key = folderKey(folder)
+    return here.startsWith(`${key}\\`)
+  })
+}
+
+/**
+ * The last release whose installer and uninstaller still carry electron-builder's own
+ * running-app check, not `resources/installer.nsh`. Releases are tagged by version, and
+ * this is the newest tag before the macro; remove everything marked LEGACY with it once
+ * no installed copy that old can be updated from here.
+ */
+export const lastVersionWithLegacyUninstaller = "0.0.135"
+
+/**
+ * LEGACY. Whether an installed copy may carry the old uninstaller, which a new setup runs
+ * first (`uninstallOldVersion` in electron-builder's `installUtil.nsh`, with `/S
+ * --updated`): a version at or below `lastVersionWithLegacyUninstaller`, or one that is
+ * not known.
+ */
+export const hasLegacyUninstaller = (copies: readonly InstalledCopy[]): boolean =>
+  copies.some(
+    ({ version }) =>
+      version === undefined || !isNewerVersion(version, lastVersionWithLegacyUninstaller),
+  )
+
+/**
+ * LEGACY. The folder of `folders` whose name `execPath` merely starts with, a sibling such
+ * as `novadeck-portable` included. The old uninstaller's PowerShell path stops every
+ * process with `StartsWith($INSTDIR, CurrentCultureIgnoreCase)`, with no separator after it.
+ */
+export const legacyPrefixFolder = (
+  execPath: string,
+  folders: readonly (string | undefined)[],
+): string | undefined => {
+  const here = win32.normalize(execPath).toLowerCase()
+  return folders.find(
+    (folder): folder is string =>
+      folder !== undefined && folder !== "" && here.startsWith(folderKey(folder)),
+  )
+}
+
+/**
+ * LEGACY. The two PowerShell commands electron-builder's `IS_POWERSHELL_AVAILABLE` runs
+ * (see `allowOnlyOneInstallerInstance.nsh`), each answering by exit code 0 for yes. The old
+ * uninstaller stops only processes inside the install folder where both say yes, and
+ * otherwise every process named `novadeck.exe`, which would stop a portable copy.
+ */
+export const powershellChecks = [
+  "if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }",
+  "if ((Get-ExecutionPolicy -Scope Process) -eq 'Restricted') { exit 1 } else { exit 0 }",
+] as const
+
+/** LEGACY. Whether both `powershellChecks` pass, each asked by `run` as `powershell.exe -C <command>`. */
+export const powershellUsable = async (
+  run: (command: string) => Promise<boolean>,
+): Promise<boolean> => {
+  for (const command of powershellChecks) if (!(await run(command))) return false
+  return true
+}
+
+/**
  * Whether the running executable is a copy the installer made, as opposed to the unpacked
  * ZIP, which carries nothing of the installer. The NSIS installer writes
  * `Uninstall <executable name>.exe` beside the executable (`UNINSTALL_FILENAME` in
@@ -306,10 +379,15 @@ export const setupResult = (
     }
   if (installed !== undefined) return { kind: "installed", image: installed.image }
   if (ran === "timeout") return { kind: "failed", reason: setupRunningReason }
+  if (ran === "in-use")
+    return {
+      kind: "failed",
+      reason:
+        "Novadeck can't install while a copy of it runs from its install folder. Quit that copy, then try again.",
+    }
   return {
     kind: "failed",
-    reason:
-      "The installer did not finish installing Novadeck. It stops when a copy of Novadeck runs from its install folder; quit that copy and try again.",
+    reason: "The installer did not finish installing Novadeck.",
   }
 }
 
@@ -522,13 +600,16 @@ export const startDetached = ({
  */
 export const setupArguments = ["/S"] as const
 
-/** How running the setup ended: it exited, it was still running at `timeoutMs`, or never started. */
-export type SetupRun = "exited" | "timeout" | "failed"
+/** How running the setup ended: it exited (or, with `setupInUseExitCode`, found Novadeck running from the install folder), it was still running at `timeoutMs`, or never started. */
+export type SetupRun = "exited" | "in-use" | "timeout" | "failed"
+
+/** The exit code `resources/installer.nsh` ends the setup with when Novadeck runs from the install folder. */
+export const setupInUseExitCode = 3
 
 /** The part of a child process that waiting for the setup uses. */
 export type SetupProcess = {
   once(event: "spawn", listener: () => void): unknown
-  once(event: "exit", listener: () => void): unknown
+  once(event: "exit", listener: (code: number | null) => void): unknown
   once(event: "error", listener: (error: Error) => void): unknown
   unref(): void
 }
@@ -584,7 +665,7 @@ export const runSetup = ({
           end("timeout")
         }, timeoutMs)
       })
-      child.once("exit", () => end("exited"))
+      child.once("exit", (code) => end(code === setupInUseExitCode ? "in-use" : "exited"))
     } catch (error) {
       log("The setup did not start.", error)
       end("failed")
