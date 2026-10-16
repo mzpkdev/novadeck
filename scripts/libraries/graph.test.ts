@@ -34,6 +34,30 @@ describe("a library's dependencies", () => {
     ])
   })
 
+  it("may reach no app package or other library through an alias", () => {
+    expect(
+      strayDependencies("terminal", {
+        name: "@novadeck/terminal",
+        dependencies: {
+          r: "npm:@novadeck/runner@*",
+          p: "workspace:@novadeck/protocol@*",
+          "@novadeck/emulator": "workspace:@novadeck/wire@*",
+          xterm: "npm:@xterm/xterm@6.0.0",
+        },
+      }),
+    ).toEqual(["dependencies r", "dependencies p", "dependencies @novadeck/emulator"])
+  })
+
+  it("may install nothing from a path", () => {
+    expect(
+      strayDependencies("emulator", {
+        name: "@novadeck/emulator",
+        dependencies: { u: "link:../../application/ui", h: "file:../../harnesses/core" },
+        devDependencies: { v: "portal:./vendor" },
+      }),
+    ).toEqual(["dependencies u", "dependencies h", "devDependencies v"])
+  })
+
   it("may name no workspace package at all for a library not in the order", () => {
     expect(
       strayDependencies("unlisted", {

@@ -39,10 +39,12 @@ the build rules and the test sandbox. The app keeps the product.
   each library's override repeats the bans they all share as plain lists, and
   `scripts/libraries/fence.test.ts` lints probe files with the real config to check what each
   file ends up refusing.
-- **The package graph** (`scripts/libraries/graph.test.ts`): a library's package.json names no
-  workspace package but the libraries its design depends on, in any kind of dependency. pnpm's
-  isolated linker fails an import a package doesn't declare, so this holds for what the lint
-  can't see.
+- **The package graph** (`scripts/libraries/graph.test.ts`): a library's package.json installs no
+  workspace package but the libraries its design depends on, in any kind of dependency, under
+  its own name or an alias, and nothing from a path. pnpm links no workspace package at the
+  root, so a library imports only the workspace packages it declares. What the root installs
+  (its dev tools, and the hoisted `electron`) still resolves from a library without being
+  declared: nothing checks that a library declares those.
 - **The typecheck's `rootDir`**: a relative import that leaves the library's `src`, as
   `../../wire/src` into a sibling, names no folder the lint knows, and fails `tsc` instead, tests
   included.
