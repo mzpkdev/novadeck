@@ -13,10 +13,11 @@ export const formatSize = (bytes: number): string =>
     : `${bytes <= 0 ? 0 : Math.max(1, Math.round(bytes / megabyte))} MB`
 
 // What an install downloads: the model it aims for (turbo, or small where the computer is
-// known not to suit turbo), and the engine too until one is there. A turbo that later turns
+// known not to suit turbo) unless it is on disk already, and the engine unless that is. A turbo that later turns
 // out too slow for this computer costs small's download after, which isn't counted.
 export const installSize = (state: VoiceState): number =>
-  state.sizes[state.aim] + (state.installed.length ? 0 : state.sizes.engine)
+  (state.installed.includes(state.aim) ? 0 : state.sizes[state.aim]) +
+  (state.engineInstalled ? 0 : state.sizes.engine)
 
 export const stepLabels = {
   engine: "Downloading engine",

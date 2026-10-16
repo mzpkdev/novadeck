@@ -170,20 +170,14 @@
   opacity: var(--choice-card-tile-disabled-opacity, 0.7);
 }
 
-/* `.addon-action`: a quiet action under an addon's note, as Check again. It reads as a link,
-   in the ink colour with an underline, and sits flush with the text above it. */
-.addon-action {
+/* `.addon-action`: a quiet action under an addon's note, as Check again, on the link button
+   (`.button.link`): ink, not muted, underlined, flush with the text above it. Its colour is the
+   link button's token, `--button-link-fg`, set here to the ink. */
+.button.link.addon-action {
+  --button-link-fg: var(--color-ink);
   display: block;
   margin: 4px 0 0;
   padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-ink);
-  font: inherit;
+  min-height: 0;
   text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.addon-action:hover {
-  color: var(--color-strong);
 }

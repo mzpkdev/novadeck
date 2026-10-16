@@ -18,6 +18,7 @@ export const demoVoiceState: VoiceState = {
   wanted: true,
   model: "turbo",
   aim: "turbo",
+  engineInstalled: false,
   language: "auto",
   sizes: { engine: 28 * megabyte, turbo: 574 * megabyte, small: 190 * megabyte },
   installing: null,
@@ -28,6 +29,7 @@ export const demoVoiceState: VoiceState = {
 const installedState: VoiceState = {
   ...demoVoiceState,
   installed: ["turbo"],
+  engineInstalled: true,
   enabled: true,
   check: { model: "turbo", milliseconds: 2300, gpu: true, recommended: "turbo" },
 }
@@ -111,6 +113,7 @@ export const createDemoVoice = (
       ...current,
       installing: null,
       installed: [model],
+      engineInstalled: true,
       aim: model,
       enabled: choice !== false,
       wanted: choice !== false,
@@ -134,7 +137,7 @@ export const createDemoVoice = (
     const { installed, aim } = state.getSnapshot()
     // The engine stays once downloaded, so another install skips it.
     const steps: { model: VoiceModel; step: "engine" | "model" | "check" }[] = [
-      ...(installed.length ? [] : [{ model: aim, step: "engine" as const }]),
+      ...(state.getSnapshot().engineInstalled ? [] : [{ model: aim, step: "engine" as const }]),
       { model: aim, step: "model" },
       { model: aim, step: "check" },
       ...(aim === "turbo" && slowTurbo

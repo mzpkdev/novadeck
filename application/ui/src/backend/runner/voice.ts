@@ -33,6 +33,7 @@ export const noVoice: VoiceState = {
   wanted: false,
   model: "turbo",
   aim: "turbo",
+  engineInstalled: false,
   language: "auto",
   sizes: { engine: 0, turbo: 0, small: 0 },
   installing: null,

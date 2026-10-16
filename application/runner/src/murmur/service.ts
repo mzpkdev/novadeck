@@ -45,9 +45,10 @@ export type MurmurSettingsStore = {
   /** The last install's check, which outlives a restart; `null` when none passed. */
   murmurCheck(): MurmurCheck | null
   saveMurmurCheck(check: MurmurCheck | null): void
-  /** Why an install found this computer can't run murmur; `null` when it never did. */
+  /** In how many sessions of the app the one-time offer was shown. */
   murmurOffers(): number
   saveMurmurOffers(offers: number): void
+  /** Why an install found this computer can't run murmur; `null` when it never did. */
   murmurUnsupported(): MurmurVerdict | null
   saveMurmurUnsupported(verdict: MurmurVerdict | null): void
 }
@@ -201,10 +202,11 @@ type Made = { title: Description; headline: Headline; gist: Gist }
 const priority: Record<Task, number> = { headline: 0, gist: 1, title: 2 }
 const parsers = { title: parseDescription, headline: parseHeadline, gist: parseGist } as const
 
-// What the install check takes for a working GPU: a reply that is a JSON object with a
-// title of at least two letters in a row (a broken backend writes junk the grammar still closes). The check asks whether the engine runs the model and writes its reply in the
-// format, not whether the title is one murmur would show (those rules change with the
-// prompt, and a check that shared them failed on every machine when they did).
+// What the install check takes for a working device: a reply that is a JSON object with a
+// title of at least two letters in a row, since a broken backend writes junk the grammar still
+// closes. The check asks whether the engine runs the model and writes its reply in the format,
+// not whether the title is one murmur would show: those rules change with the prompt, and a
+// check that shared them failed on every machine when they did.
 const parseCheck = (raw: string): Description | undefined => {
   try {
     const title = (JSON.parse(raw) as { title?: unknown } | null)?.title
@@ -237,10 +239,6 @@ const readVmStat = (signal: AbortSignal | undefined): Promise<number> =>
       (_error, stdout) => resolve(parseVmStat(stdout) ?? Number.POSITIVE_INFINITY),
     )
   })
-
-// Shown, beside the card's Try again, when murmur is installed but no check passed: a check that was
-// cancelled, or a runner that restarted after one failed.
-const unchecked = "Murmur is installed but has not passed its check on this computer yet."
 
 // How long the model stays loaded once nothing needs it.
 const defaultIdleMs = 2 * 60 * 1000
@@ -404,12 +402,8 @@ export class Murmur implements Describer {
       unsupported: this.unsupported()?.reason ?? null,
       offers: this.settings.murmurOffers(),
       recheck: this.unsupported()?.recheck ?? false,
-      failure:
-        this.failure ??
-        this.runtimeFailure ??
-        (installed && check === null && !this.installing && this.unsupported() === null
-          ? unchecked
-          : null),
+      unchecked: installed && check === null && !this.installing && this.unsupported() === null,
+      failure: this.failure ?? this.runtimeFailure,
     }
   }
 
@@ -581,6 +575,9 @@ export class Murmur implements Describer {
       this.changed()
       // The program is in use until it has exited, which Windows will not delete.
       await this.server.stop()
+      // A look at the disk meanwhile (a watch's refresh) must not bring back what is going.
+      this.replacing = true
+      this.swaps += 1
       try {
         await removeContents(this.directory)
       } catch (error) {
@@ -589,6 +586,8 @@ export class Murmur implements Describer {
           `Murmur could not be removed: ${error instanceof Error ? error.message : String(error)}. Close anything using the files in ${this.directory} and try again.`,
         )
       } finally {
+        this.replacing = false
+        this.swaps += 1
         await this.refresh()
       }
       this.settings.saveMurmurCheck(null)
@@ -728,10 +727,16 @@ export class Murmur implements Describer {
     })
     this.settings.saveMurmurCheck(null)
     this.failure = null
+    // A look at the disk meanwhile (a watch's refresh) must not bring back what is going.
+    this.replacing = true
+    this.swaps += 1
     try {
       await removeContents(this.directory)
     } catch {
       // Left behind, it only takes room; the verdict stands.
+    } finally {
+      this.replacing = false
+      this.swaps += 1
     }
   }
 

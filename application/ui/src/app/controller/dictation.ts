@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } f
 
 import type { TerminalKey } from "../../backend/port"
 import { currentPlatform, matchesShortcut, shortcutBindings } from "../../interaction/shortcuts"
+import type { WorkspaceStore } from "../../model/store"
 import type { TerminalMetadata, Workspace } from "../../model/types"
 import { chatDraftOf, chatShown, setChatDraft } from "../../terminals/chat/mode-state"
 import type { DictationControls } from "../../terminals/WindowShell"
@@ -52,6 +53,42 @@ export const dictateInto =
 const placeOf = (snapshot: Workspace): string =>
   `${currentContext(snapshot)}/${currentState(snapshot).selected}`
 
+// Ends an offer that is ignored: once the person types into the terminal, or goes to another
+// one. Keys aimed at voice input's own strip or pill (Tab, Enter or Space on its buttons) are
+// the person answering it, and Tab alone only moves toward it. Returns what stops watching.
+export const watchOfferDismissal = (
+  controller: Pick<DictationController, "setup" | "setupActions">,
+  workspace: Pick<WorkspaceStore, "getSnapshot" | "subscribe">,
+  target: Pick<Window, "addEventListener" | "removeEventListener"> = window,
+): (() => void) => {
+  const typed = (event: KeyboardEvent): void => {
+    const modifier = ["Control", "Shift", "Alt", "Meta", "AltGraph", "Tab"].includes(event.key)
+    // The shortcut itself, pressed again, turns voice input on.
+    const chord = matchesShortcut(event, shortcutBindings(currentPlatform()).voice)
+    const within =
+      event.target instanceof Element &&
+      event.target.closest(".dictation-strip, .dictation-overlay")
+    if (!modifier && !chord && !within) controller.setupActions.dismiss()
+  }
+  let place = placeOf(workspace.getSnapshot())
+  const stopWorkspace = workspace.subscribe(() => {
+    const next = placeOf(workspace.getSnapshot())
+    if (next === place) return
+    place = next
+    // Going to the terminal the offer was made on, as clicking its mic selects it, is
+    // not leaving it.
+    const offer = controller.setup.getSnapshot()?.target
+    if (offer && next === `${offer.projectId}/${offer.workspaceSessionId}/${offer.terminalId}`)
+      return
+    controller.setupActions.dismiss()
+  })
+  target.addEventListener("keydown", typed as EventListener, true)
+  return () => {
+    target.removeEventListener("keydown", typed as EventListener, true)
+    stopWorkspace()
+  }
+}
+
 // Dictation for this App, once, where its backend transcribes and can type into a
 // terminal; undefined where it can't. A hold in progress ends with the App.
 export const useDictationController = ({
@@ -87,36 +124,10 @@ export const useDictationController = ({
   )
   useEffect(() => () => controller?.dictation.cancel(), [controller])
   useEffect(() => controller?.start(), [controller])
-  // An offer that is ignored goes: once the person types, or goes to another terminal.
-  useEffect(() => {
-    if (!controller) return undefined
-    const typed = (event: KeyboardEvent): void => {
-      const modifier = ["Control", "Shift", "Alt", "Meta", "AltGraph"].includes(event.key)
-      // The shortcut itself, pressed again, turns voice input on.
-      const chord = matchesShortcut(event, shortcutBindings(currentPlatform()).voice)
-      if (!modifier && !chord) controller.setupActions.dismiss()
-    }
-    let place = placeOf(workspace.getSnapshot())
-    const stopWorkspace = workspace.subscribe(() => {
-      const next = placeOf(workspace.getSnapshot())
-      if (next === place) return
-      place = next
-      // Going to the terminal the offer was made on, as clicking its mic selects it, is
-      // not leaving it.
-      const target = controller.setup.getSnapshot()?.target
-      if (
-        target &&
-        next === `${target.projectId}/${target.workspaceSessionId}/${target.terminalId}`
-      )
-        return
-      controller.setupActions.dismiss()
-    })
-    window.addEventListener("keydown", typed, true)
-    return () => {
-      window.removeEventListener("keydown", typed, true)
-      stopWorkspace()
-    }
-  }, [controller, workspace])
+  useEffect(
+    () => (controller ? watchOfferDismissal(controller, workspace) : undefined),
+    [controller, workspace],
+  )
   return controller
 }
 

@@ -12,6 +12,7 @@ const idle: MurmurState = {
   check: null,
   unsupported: null,
   recheck: false,
+  unchecked: false,
   offers: 1,
   failure: null,
 }
@@ -50,7 +51,11 @@ describe("Murmur's footer item", () => {
     )
   })
 
-  it("leaves when an install is cancelled", () => {
+  it("leaves when an install is cancelled, as the runner leaves it: files, a check owed, no failure", () => {
+    // Cancelled in the check, once the model is down.
+    const cancelled: MurmurState = { ...idle, installed: true, unchecked: true }
+    expect(footerPhase("installing", cancelled, null)).toBe("idle")
+    // Cancelled while downloading.
     expect(footerPhase("installing", idle, null)).toBe("idle")
   })
 
@@ -83,9 +88,13 @@ describe("Murmur's footer item", () => {
     // item, and no failure of it opens a sheet by itself.
     const dropped = { ...checked, check: null, installing: engine }
     expect(footerPhase("idle", dropped, null)).toBe("idle")
-    expect(footerPhase("idle", { ...checked, check: null, failure: "Engine failed." }, null)).toBe(
-      "failed",
-    )
+    // What the runner says of itself from rest is Addons': a device that went away, a failed
+    // engine update (the check dropped, or the interface moved on and nothing is installed).
+    for (const state of [
+      { ...checked, check: null, unchecked: true, failure: "The graphics device went away." },
+      { ...idle, failure: "The download stopped: the connection dropped." },
+    ])
+      expect(footerPhase("idle", state, null)).toBe("idle")
     // Ended, still no "done": it was never shown.
     expect(footerPhase("idle", checked, null)).toBe("idle")
   })

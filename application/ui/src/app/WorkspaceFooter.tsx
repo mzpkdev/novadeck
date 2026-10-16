@@ -131,7 +131,11 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
       }
       murmur={
         backend.murmur && murmurState
-          ? { state: murmurState, actions: backend.murmur, blocked: asking || welcome }
+          ? {
+              state: murmurState,
+              actions: backend.murmur,
+              blocked: asking || welcome || sandboxOpen || updateOpen,
+            }
           : undefined
       }
       sandbox={

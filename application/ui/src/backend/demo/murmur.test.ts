@@ -81,9 +81,11 @@ describe("the demo's murmur", () => {
   })
 
   context("for the debug panel", () => {
-    it("shows a network failure that is no decline, and a held install", () => {
+    it("shows a network failure that is no decline, after an install that was running, and a held install", async () => {
       const murmur = createDemoMurmur()
       murmur.show("network-failure")
+      expect(murmur.state.getSnapshot().installing).toMatchObject({ step: "model" })
+      await vi.advanceTimersByTimeAsync(2000)
       expect(murmur.state.getSnapshot()).toMatchObject({
         installed: false,
         wanted: true,
@@ -159,6 +161,21 @@ describe("the demo's murmur", () => {
       murmur.install()
       await vi.advanceTimersByTimeAsync(400)
       expect(murmur.state.getSnapshot()).toMatchObject({ installed: true, unsupported: null })
+    })
+  })
+
+  it("leaves the files and a check owed, no failure, when the check is cancelled", async () => {
+    const murmur = createDemoMurmur({ step: 100, device: "GPU" }, "uninstalled")
+    murmur.install()
+    await vi.advanceTimersByTimeAsync(250)
+    expect(murmur.state.getSnapshot().installing?.step).toBe("check")
+    murmur.cancel()
+    expect(murmur.state.getSnapshot()).toMatchObject({
+      installing: null,
+      installed: true,
+      check: null,
+      unchecked: true,
+      failure: null,
     })
   })
 

@@ -24,7 +24,7 @@ export const murmurGroups = (murmur: DemoMurmur | undefined): readonly DemoActio
             },
             {
               label: "Offer the chip now",
-              hint: "Not installed; the chip sits beside the selected terminal's title (icon alone in a narrow Grid tile or window); click it for the popover with No thanks and Turn on",
+              hint: "Not installed; the chip sits beside the selected terminal's title, which must be a running agent still under its plain name (icon alone in a narrow Grid tile or window); click it for the popover with No thanks and Turn on",
               run: () => murmur.show("offer"),
             },
             {

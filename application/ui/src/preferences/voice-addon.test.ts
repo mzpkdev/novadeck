@@ -11,6 +11,7 @@ const state: VoiceState = {
   wanted: true,
   model: "turbo",
   aim: "turbo",
+  engineInstalled: false,
   language: "auto",
   sizes: { engine: 28 * megabyte, turbo: 1600 * megabyte, small: 190 * megabyte },
   installing: null,
@@ -41,12 +42,19 @@ describe("voice input sizes", () => {
     expect(formatSize(0)).toBe("0 MB")
   })
 
-  it("count the engine in an install only until it is there", () => {
+  it("count only what an install will download: not a model on disk, not an engine there", () => {
     expect(installSize(state)).toBe(1628 * megabyte)
-    expect(installSize({ ...state, installed: ["small"] })).toBe(1600 * megabyte)
+    // The engine counts by itself, whatever models are there.
+    expect(installSize({ ...state, installed: ["small"] })).toBe(1628 * megabyte)
+    expect(installSize({ ...state, engineInstalled: true })).toBe(1600 * megabyte)
+    expect(installSize({ ...state, engineInstalled: true, installed: ["turbo"] })).toBe(0)
+    expect(installSize({ ...state, installed: ["turbo"] })).toBe(28 * megabyte)
   })
 
-  it("count the engine and every installed model in what an uninstall frees", () => {
-    expect(installedSize({ ...state, installed: ["turbo", "small"] })).toBe(1818 * megabyte)
+  it("count the engine, where it is, and every installed model in what an uninstall frees", () => {
+    expect(installedSize({ ...state, engineInstalled: true, installed: ["turbo", "small"] })).toBe(
+      1818 * megabyte,
+    )
+    expect(installedSize({ ...state, installed: ["small"] })).toBe(190 * megabyte)
   })
 })

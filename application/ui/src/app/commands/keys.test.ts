@@ -573,10 +573,10 @@ describe("key commands for voice input", () => {
       expect(dictation.calls).toEqual([])
     })
 
-    it("still keeps the key from the terminal where voice input is absent", () => {
+    it("leaves the chord to the terminal where the backend has no voice input", () => {
       const app = openKeys()
       expect(app.keydown({ ...chord, target: { editing: true, terminalInput: true } })).toBe(
-        "handled",
+        "passed",
       )
     })
   })

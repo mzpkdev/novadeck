@@ -98,7 +98,7 @@ export const AddonDetails = ({
     <summary className="cursor-pointer select-none">Details</summary>
     <p className="m-0 mt-1 break-words">{children}</p>
     {action && (
-      <button type="button" className="addon-action" onClick={action.onClick}>
+      <button type="button" className="button link addon-action" onClick={action.onClick}>
         {action.label}
       </button>
     )}

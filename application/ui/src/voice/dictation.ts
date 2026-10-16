@@ -39,16 +39,9 @@ const readiness = (state: VoiceState): Readiness =>
     ? { ready: true }
     : offered(state)
       ? { ready: false, offer: true }
-      : {
-          ready: false,
-          hint: !state.available
-            ? "Voice input isn't available on this machine. See Preferences → Addons."
-            : state.installing
-              ? "Voice input is still installing."
-              : !state.wanted
-                ? "Voice input is off. Turn it on in Preferences → Addons."
-                : "Voice input isn't ready yet. See Preferences → Addons.",
-        }
+      : // Only an install under way is left: where it is off or absent the shortcut and the mic are
+        // not voice input's, and nothing else asks.
+        { ready: false, hint: "Voice input is still installing." }
 
 // Whether the shortcut and the microphone are the app's: voice input exists here and the
 // person hasn't turned it off or said no thanks to it.

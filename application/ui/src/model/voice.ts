@@ -24,6 +24,8 @@ export type VoiceState = {
   // its shortcut.
   readonly wanted: boolean
   readonly model: VoiceModel
+  // Whether the engine is on disk, with or without a model.
+  readonly engineInstalled: boolean
   // The model an install fetches first; small where the computer is known not to suit turbo.
   readonly aim: VoiceModel
   // `auto`, or a language code such as "en" or "pl".

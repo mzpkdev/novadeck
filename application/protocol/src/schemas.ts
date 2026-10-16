@@ -718,6 +718,8 @@ export const voiceState = z.strictObject({
   // app offers it, as a microphone that leads to its install.
   wanted: z.boolean(),
   model: voiceModel,
+  // Whether the engine for this build is on disk, which an install skips and an uninstall frees.
+  engineInstalled: z.boolean(),
   // The model an install fetches first: turbo, or small where this computer is known not
   // to suit turbo. The person does not choose it.
   aim: voiceModel,
@@ -771,8 +773,10 @@ export const murmurState = z.strictObject({
   check: murmurCheck.nullable(),
   // Why this computer can't run murmur, technical and for a details view, once it is known:
   // the host saw only software rendering, or an install found no graphics device that runs
-  // the model (the downloads are then removed). Null while nothing says it can't. Nothing
-  // installs while it is set, and it is no failure to try again.
+  // the model, or the engine could not load a library it needs (the downloads are then
+  // removed). Null while nothing says it can't. It is no failure to try again, and an install
+  // is refused while the host's word holds; an install's own verdict is cleared by installing
+  // again (`recheck`).
   unsupported: z.string().max(1024).nullable(),
   // In how many sessions of the app the one-time offer was shown; the app stops offering after
   // three, whether or not they answered.
@@ -781,6 +785,10 @@ export const murmurState = z.strictObject({
   // it and checks anew); the host's word about software rendering is not, it is read at
   // each start. An engine of another build forgets an install's verdict by itself.
   recheck: z.boolean(),
+  // Installed, with no check passed and no install running: a check that was cancelled, or
+  // dropped because its device went away. Not a failure, so `failure` stays null; installing
+  // again runs just the check.
+  unchecked: z.boolean(),
   // Why murmur is not working, in words for the person: the last install or engine update
   // that failed (network, disk), until the next install, update or removal; the device it was
   // checked on being gone (the check is then null, and Try again installs just the check); a

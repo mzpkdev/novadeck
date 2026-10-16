@@ -29,7 +29,8 @@ const promptBuild = async (murmur: string, { away = false } = {}): Promise<void>
 const chip = (): Locator => page.getByRole("button", { name: "Name it for me" })
 const popover = (): Locator =>
   page.getByRole("dialog", { name: "Name terminals from what they do" })
-const footerItem = (): Locator => page.getByRole("button", { name: /Setting up Murmur/ })
+// Named by what it shows: Murmur, and how far along.
+const footerItem = (): Locator => page.getByRole("button", { name: /^Murmur( \d+%)?$/ })
 const doneItem = (): Locator => page.getByRole("button", { name: "Terminals name themselves now" })
 
 // How long past the end of a turn a chip that is going to come up has come up: the turn, and
@@ -68,7 +69,9 @@ describe("Murmur's one-time offer", () => {
         .toBeVisible()
       await expect.element(popover().getByText(/Preferences → Addons/)).toBeVisible()
       // Not on No thanks, where a reflexive Enter would turn Murmur down for good.
-      expect(popover().element().contains(document.activeElement)).toBe(true)
+      await expect
+        .poll(() => document.activeElement?.textContent)
+        .toBe("Name terminals from what they do")
       expect(document.activeElement?.tagName).not.toBe("BUTTON")
 
       await userEvent.keyboard("{Escape}")
@@ -76,7 +79,10 @@ describe("Murmur's one-time offer", () => {
       // A dismiss, not a decline: the chip stays and Murmur is still wanted. Focus is back in
       // the terminal, not left on the chip.
       await expect.element(chip()).toBeVisible()
-      await expect.poll(() => document.activeElement === chip().element()).toBe(false)
+      await expect
+        .poll(() => terminal("Build").element().contains(document.activeElement))
+        .toBe(true)
+      expect(document.activeElement).not.toBe(chip().element())
       const card = await preferencesMurmur()
       await expect
         .element(card.getByRole("switch", { name: "Enabled" }))

@@ -12,6 +12,7 @@ const base: VoiceState = {
   wanted: true,
   model: "small",
   aim: "turbo",
+  engineInstalled: false,
   language: "auto",
   sizes: { engine: 28, turbo: 574, small: 190 },
   installing: null,
@@ -42,8 +43,19 @@ describe("voice input's card in Addons", () => {
   it("offers Install, not a bare switch, for a model a cancel left on disk unchecked", () => {
     const view = render(card({ ...base, installed: ["small"] }))
     expect(labels(view.container)).toContain("Install")
-    expect(labels(view.container)).not.toContain("Uninstall")
+    // What is on disk can still be reclaimed.
+    expect(labels(view.container)).toContain("Uninstall")
+    expect(view.container.textContent).toContain("Frees")
     view.unmount()
+  })
+
+  it("offers Uninstall for an engine alone, and nothing to remove for an empty disk", () => {
+    const engine = render(card({ ...base, engineInstalled: true }))
+    expect(labels(engine.container)).toContain("Uninstall")
+    engine.unmount()
+    const none = render(card(base))
+    expect(labels(none.container)).not.toContain("Uninstall")
+    none.unmount()
   })
 
   it("offers Uninstall once the model passed its check", () => {

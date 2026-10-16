@@ -46,6 +46,9 @@ export type MurmurState = {
   // Whether that came from an install and "Check again" (an install) asks anew; the host's
   // word is not, and an engine of another build forgets an install's by itself.
   readonly recheck: boolean
+  // Installed, with no check passed and no install running: a check that was cancelled, or
+  // dropped because its device went away. Not a failure; installing again runs the check.
+  readonly unchecked: boolean
   // In how many sessions of the app the one-time offer was shown; it stops after three.
   readonly offers: number
 }
@@ -57,6 +60,11 @@ export const changeNames = {
   uninstall: "uninstall",
   set: "change the setting",
 } as const
+
+// Whether a failure in the state is the refusal of the install call itself, as the runner
+// turned it away.
+export const isRefusedInstall = (failure: string): boolean =>
+  failure.startsWith(`Couldn't ${changeNames.install}`)
 
 // Whether a failure in the state is an install's, or the refusal of another call.
 export const isInstallFailure = (failure: string): boolean =>

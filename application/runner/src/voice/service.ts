@@ -113,7 +113,6 @@ export class Voice {
   // It lets an install that follows a failed one go to the model that suits.
   private gpu: boolean | undefined
   private failure: string | null = null
-  // The model whose install the failure is of; none for an engine update's.
   private running:
     | { readonly done: Promise<void>; readonly controller: AbortController }
     | undefined
@@ -199,6 +198,7 @@ export class Voice {
       model: settings.model,
       language: settings.language,
       aim: this.aim(),
+      engineInstalled: this.engineReady,
       sizes: {
         engine: this.manifest?.size ?? 0,
         turbo: this.catalog.models.turbo.size + this.catalog.vad.size,
@@ -262,7 +262,21 @@ export class Voice {
    * it, from the host's verdict, a check that found no GPU, or a turbo that was rejected
    * before (small is then the model chosen).
    */
+  /** The model in use that passed its check, if it is still on disk. */
+  private keptModel(): VoiceModel | undefined {
+    const check = this.settings.voiceCheck()
+    return check !== null &&
+      check.model === this.settings.voiceSettings().model &&
+      this.installed.includes(check.model)
+      ? check.model
+      : undefined
+  }
+
   private aim(): VoiceModel {
+    // A model that passed its check stays the aim: a retry checks it again, but one slow or
+    // GPU-less result, or the host's verdict on this launch, never demotes it.
+    const kept = this.keptModel()
+    if (kept !== undefined) return kept
     return this.options.softwareGraphics ||
       this.gpu === false ||
       this.settings.voiceCheck()?.gpu === false ||
@@ -550,6 +564,8 @@ export class Voice {
     // Whether small has been chosen for this computer, which only a turbo rejected for its
     // own sake, or small passing where turbo would not start, settles.
     let committed = false
+    // Whether the aim already passed its check: it is checked again, never replaced.
+    const keep = this.keptModel() === aim
     try {
       const folder = engineFolder(this.directory, manifest.sha256)
       if (!(await exists(join(folder, engineProgram)))) {
@@ -577,12 +593,14 @@ export class Voice {
       let check: VoiceCheck | undefined
       let startFailure: StartFailure | undefined
       try {
-        check = await this.fetchAndCheck(model, manifest, signal, model === "turbo")
+        check = await this.fetchAndCheck(model, manifest, signal, model === "turbo" && !keep)
       } catch (error) {
-        if (model !== "turbo" || !(error instanceof StartFailure) || signal.aborted) throw error
+        if (keep || model !== "turbo" || !(error instanceof StartFailure) || signal.aborted)
+          throw error
         startFailure = error
       }
       if (
+        !keep &&
         startFailure === undefined &&
         (check === undefined || (model === "turbo" && check.recommended === "small"))
       ) {

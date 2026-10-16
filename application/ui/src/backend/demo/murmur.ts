@@ -22,6 +22,7 @@ export const demoMurmurState: MurmurState = {
   check: null,
   unsupported: null,
   recheck: false,
+  unchecked: false,
   offers: 0,
   failure: null,
 }
@@ -38,7 +39,7 @@ const installedState: MurmurState = {
 const softwareSample =
   "This computer reports only software rendering; no graphics hardware answered."
 
-export const unsupportedSample =
+const unsupportedSample =
   "No graphics device answered. On Linux, check that a Vulkan driver is installed."
 
 // Where the demo starts: installed (the try demo's), not installed (the offer and the
@@ -211,6 +212,7 @@ export const createDemoMurmur = (
       // Installing again asks the computer anew.
       unsupported: null,
       recheck: false,
+      unchecked: false,
       failure: null,
       check: null,
       wanted: choice !== false,
@@ -256,12 +258,18 @@ export const createDemoMurmur = (
           keepOffers(state, { ...demoMurmurState, unsupported: unsupportedSample, recheck: true }),
         1800,
       )
-    } else if (scenario === "network-failure")
-      keepOffers(state, {
-        ...demoMurmurState,
-        failure: "The download stopped: the connection dropped.",
-      })
-    else if (scenario === "offer") {
+    } else if (scenario === "network-failure") {
+      // An install that fails on the network, as the footer's item sees it: running, then not.
+      keepOffers(state, installingAt("model", downloadSizes.model / 2))
+      later(
+        () =>
+          keepOffers(state, {
+            ...demoMurmurState,
+            failure: "The download stopped: the connection dropped.",
+          }),
+        1500,
+      )
+    } else if (scenario === "offer") {
       // Not installed, and the app asked to offer it on the selected terminal.
       keepOffers(state, demoMurmurState)
       offer.update((count) => count + 1)
@@ -279,7 +287,13 @@ export const createDemoMurmur = (
     install,
     cancel: () => {
       stop()
-      state.update((current) => ({ ...current, installing: null }))
+      // As the runner's: once the model is down, a cancel in the check leaves the files with the
+      // check owed, no failure.
+      state.update((current) =>
+        current.installing?.step === "check"
+          ? { ...current, installing: null, installed: true, unchecked: true }
+          : { ...current, installing: null },
+      )
     },
     uninstall: () => {
       stop()

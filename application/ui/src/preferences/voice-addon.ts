@@ -33,10 +33,15 @@ export const languages = [
 export const voiceSetUp = (state: VoiceState): boolean =>
   state.installed.includes(state.model) && (state.check !== null || state.enabled)
 
-// What an uninstall frees: the engine and every model on disk, with the shared
-// speech-detection model counted once per model for the same reason.
+// What an uninstall frees: the engine, where it is on disk, and every model there (each
+// size with the speech-detection model, which a second model counts once more).
 export const installedSize = (state: VoiceState): number =>
-  state.sizes.engine + state.installed.reduce((sum, model) => sum + state.sizes[model], 0)
+  (state.engineInstalled ? state.sizes.engine : 0) +
+  state.installed.reduce((sum, model) => sum + state.sizes[model], 0)
+
+// Whether anything of voice input is on disk, which an uninstall frees whatever its check said.
+export const voiceOnDisk = (state: VoiceState): boolean =>
+  state.engineInstalled || state.installed.length > 0
 
 export const checkText = ({ milliseconds }: NonNullable<VoiceState["check"]>): string =>
   `Checked: a test clip took ${(milliseconds / 1000).toFixed(1)} s.`

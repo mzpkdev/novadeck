@@ -11,7 +11,13 @@ import {
   addonRowClasses,
   InstallProgress,
 } from "./addon-parts"
-import { deviceText, murmurDownloadNote, murmurInstallSize, murmurStepTitles } from "./murmur-addon"
+import {
+  deviceText,
+  murmurDownloadNote,
+  murmurInstallSize,
+  murmurStepTitles,
+  murmurUncheckedText,
+} from "./murmur-addon"
 import { settingsCardClasses } from "./settings"
 import { formatSize } from "./voice-addon"
 
@@ -44,7 +50,7 @@ export const MurmurAddon = ({
     setRemoving(null)
   if (!murmur) return <Note>{`${MURMUR_NAME} isn't available here.`}</Note>
   const { state, actions } = murmur
-  const { failure, installing, installed, check, unsupported, recheck } = state
+  const { failure, installing, installed, check, unsupported, recheck, unchecked } = state
   if (!state.available)
     return <Note>{`This build has no ${MURMUR_NAME} engine for this platform.`}</Note>
   // Known not to run here, by the host or by an install: nothing to install, and why behind Details.
@@ -150,19 +156,25 @@ export const MurmurAddon = ({
             {busy ? "Removing…" : "Uninstall"}
           </button>
         </AddonRow>
-        {failure && (
-          // Installed with no check that passed, murmur can't run yet: the failure says so,
-          // and another install runs the check again.
+        {(failure || (unchecked && !blocked)) && (
+          // Installed with no check that passed, murmur can't run yet: another install runs
+          // the check again, unless the host's word holds, where nothing can run it.
           <div className="flex items-center justify-between gap-6">
-            <AddonFailure>{failure}</AddonFailure>
-            <button
-              type="button"
-              className="button mr-4 min-h-8 shrink-0 px-3 text-control"
-              disabled={busy}
-              onClick={actions.install}
-            >
-              Try again
-            </button>
+            {failure ? (
+              <AddonFailure>{failure}</AddonFailure>
+            ) : (
+              <p className={`${addonNoteClasses} m-0 px-4 py-3`}>{murmurUncheckedText}</p>
+            )}
+            {!blocked && (
+              <button
+                type="button"
+                className="button mr-4 min-h-8 shrink-0 px-3 text-control"
+                disabled={busy}
+                onClick={actions.install}
+              >
+                Try again
+              </button>
+            )}
           </div>
         )}
       </div>

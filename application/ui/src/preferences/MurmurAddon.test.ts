@@ -16,8 +16,9 @@ const unchecked: MurmurState = {
   check: null,
   unsupported: null,
   recheck: false,
+  unchecked: true,
   offers: 0,
-  failure: "Murmur is installed but has not passed its check on this computer yet.",
+  failure: null,
 }
 
 const actions = () => ({
@@ -34,7 +35,9 @@ describe("murmur's card when it is installed but has not passed its check", () =
       createElement(MurmurAddon, { murmur: { state: unchecked, actions: calls } }),
     )
     expect(container.querySelector("[role=switch]")?.getAttribute("aria-checked")).toBe("false")
-    expect(container.querySelector("[role=alert]")?.textContent).toMatch(/has not passed its check/)
+    // Not a failure: a quiet note that the check is owed.
+    expect(container.querySelector("[role=alert]")).toBeNull()
+    expect(container.textContent).toMatch(/has not passed its check/)
     expect(container.textContent).not.toMatch(/Runs on/)
     const retry = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Try again",

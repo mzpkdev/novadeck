@@ -293,6 +293,11 @@
 }
 /* The selection bar is one size in every view, centred on the header whatever its
    height; Canvas scales it with the rest of the header chrome. */
+/* The heading is a container, so what sits in its header (Murmur's chip, name-chip.css) may
+   give way to the width the window has, not the page's. */
+.terminal-heading {
+  container: terminal-heading / inline-size;
+}
 .terminal-heading::before {
   content: "";
   @apply absolute left-0 top-1/2 z-1 h-6 w-0.5 -translate-y-1/2;

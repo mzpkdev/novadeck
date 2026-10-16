@@ -309,8 +309,26 @@ describe("installing murmur", () => {
     expect(murmur.state()).toMatchObject({
       installed: true,
       unsupported: expect.any(String),
+      unchecked: false,
       failure: null,
     })
+  })
+
+  it("is not undone by a look at the disk that races the removal after a verdict", async ({
+    resources,
+  }) => {
+    const { murmur } = await setup(resources, { devices: [processor] })
+    // A watch's refresh at every turn of the event loop while the install ends and removes.
+    const looking = setInterval(() => void murmur.refresh().catch(() => {}), 1)
+    try {
+      await murmur.install()
+      await murmur.settled()
+    } finally {
+      clearInterval(looking)
+    }
+    await murmur.refresh()
+
+    expect(murmur.state()).toMatchObject({ installed: false, unsupported: expect.any(String) })
   })
 
   it("keeps Not available across a restart, and checks anew when installed again", async ({
@@ -474,25 +492,49 @@ describe("installed murmur that never passed its check", () => {
 
     const { murmur } = await setup(resources, { store, directory, engine: manifest })
 
-    // No failure of its own was kept, yet the card must offer Try again.
-    expect(murmur.state()).toMatchObject({ installed: true, check: null })
-    expect(murmur.state().failure).toMatch(/not passed its check/)
-    expect(murmur.state().failure).not.toMatch(/GPU/)
+    // Not a failure, yet the card must offer Try again: it says the check is owed.
+    expect(murmur.state()).toMatchObject({
+      installed: true,
+      check: null,
+      unchecked: true,
+      failure: null,
+    })
     await murmur.install()
     await murmur.settled()
     expect(murmur.state()).toMatchObject({ failure: null, check: { integrated: true } })
+  })
+
+  it("is no failure when the person cancels the check, only a check owed", async ({
+    resources,
+  }) => {
+    const { murmur } = await setup(resources, { behaviour: "slow" })
+    await murmur.install()
+    // The check is under way once the model is down.
+    await expect
+      .poll(() => murmur.state().installing?.step, { timeout: 10_000, interval: 5 })
+      .toBe("check")
+
+    await murmur.cancel()
+
+    expect(murmur.state()).toMatchObject({
+      installed: true,
+      installing: null,
+      check: null,
+      unchecked: true,
+      failure: null,
+    })
   })
 
   it("does not say so while an install runs, or before anything is installed", async ({
     resources,
   }) => {
     const { murmur } = await setup(resources)
-    expect(murmur.state().failure).toBeNull()
+    expect(murmur.state()).toMatchObject({ failure: null, unchecked: false })
 
     await murmur.install()
-    expect(murmur.state().failure).toBeNull()
+    expect(murmur.state()).toMatchObject({ failure: null, unchecked: false })
     await murmur.settled()
-    expect(murmur.state().failure).toBeNull()
+    expect(murmur.state()).toMatchObject({ failure: null, unchecked: false })
   })
 })
 

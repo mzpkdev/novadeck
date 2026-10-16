@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react"
 
-import type { Murmur, MurmurState } from "../model/murmur"
+import { MURMUR_NAME, type Murmur, type MurmurState } from "../model/murmur"
 import { Progress } from "../ui-toolkit/Progress"
 import { ProgressRing } from "../ui-toolkit/ProgressRing"
 import { useOverlayOpen } from "./FooterUpdate"
@@ -107,7 +107,8 @@ export const FooterMurmur = ({
           type="button"
           className="footer-action footer-update footer-murmur cursor-pointer gap-1.5 font-bold"
           data-tone={tone}
-          aria-label={phase === "installing" ? "Setting up Murmur" : text.label}
+          // Named by its visible words, so what is read is what is seen (the live line says
+          // it once in full).
           aria-expanded={visibleSheet}
           aria-controls={visibleSheet ? panelId : undefined}
           onClick={() => {
@@ -146,11 +147,11 @@ export const FooterMurmur = ({
           {phase === "installing" && (
             <>
               <p id={titleId} className="update-title">
-                Setting up Murmur
+                Setting up {MURMUR_NAME}
               </p>
               <p className="update-text">{stepText(state)}</p>
               <Progress
-                label="Murmur setup"
+                label={`${MURMUR_NAME} setup`}
                 value={state.installing?.received ?? 0}
                 max={state.installing?.total ?? 1}
                 indeterminate={state.installing === null || state.installing.step === "check"}
@@ -165,7 +166,7 @@ export const FooterMurmur = ({
           {phase === "failed" && (
             <>
               <p id={titleId} className="update-title">
-                Couldn't turn on Murmur
+                Couldn't turn on {MURMUR_NAME}
               </p>
               <p className="update-text update-error footer-murmur-error">{state.failure}</p>
               <div className="update-actions">

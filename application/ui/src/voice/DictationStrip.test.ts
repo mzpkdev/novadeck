@@ -24,6 +24,7 @@ const voiceState: VoiceState = {
   wanted: true,
   model: "turbo",
   aim: "turbo",
+  engineInstalled: false,
   language: "auto",
   sizes: { engine: 28 * 1024 * 1024, turbo: 574 * 1024 * 1024, small: 190 * 1024 * 1024 },
   installing: null,

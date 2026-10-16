@@ -1128,17 +1128,47 @@ describe("dictation", () => {
       const note = (event: KeyboardEvent): void => {
         if (event.key === "Escape") prevented.push(event.defaultPrevented)
       }
-      document.addEventListener("keydown", note)
+      // A window listener added last, so it runs after the app's own and sees what they did.
+      window.addEventListener("keydown", note)
       try {
         await press("{Escape}")
       } finally {
-        document.removeEventListener("keydown", note)
+        window.removeEventListener("keydown", note)
       }
       expect(prevented).toEqual([false])
 
       // The offer is only ignored, never answered by Esc.
       await press(`${dictateKeys}${releaseKeys}`)
       await expect.element(offer()).toBeVisible()
+    })
+
+    it("lets the keyboard reach the offer's buttons, and answers with Enter", async () => {
+      await openWithoutVoice()
+      await commandInput("Checkout implementation").click()
+      await press(`${dictateKeys}${releaseKeys}`)
+      await expect.element(offer()).toBeVisible()
+
+      for (let tabs = 0; tabs < 30; tabs += 1) {
+        if (document.activeElement?.textContent === "No thanks") break
+        // eslint-disable-next-line no-await-in-loop -- Each Tab depends on where the last went.
+        await press("{Tab}")
+      }
+      expect(document.activeElement?.textContent).toBe("No thanks")
+      // Tabbing there did not dismiss the offer.
+      await expect.element(offer()).toBeVisible()
+
+      await press("{Enter}")
+
+      await expect.element(offer()).not.toBeInTheDocument()
+      await pressShortcut("preferences")
+      await preferencesDialog().getByRole("tab", { name: "Addons" }).click()
+      await expect
+        .element(
+          preferencesDialog()
+            .getByRole("region", { name: "Voice input" })
+            .getByRole("switch", { name: "Enabled" }),
+        )
+        .toHaveAttribute("aria-checked", "false")
     })
 
     it("turns on when the shortcut is pressed again on a layout where M is elsewhere", async () => {
@@ -1202,16 +1232,19 @@ describe("dictation", () => {
       expect(overflow()).toBe(0)
     })
 
-    it("keeps its offer when the mic of another terminal is clicked in Grid, which selects it", async () => {
+    it("keeps its offer on the terminal whose mic is clicked in Grid, though the click selects it", async () => {
       await openWithoutVoice("/?demo=agents&voice=uninstalled")
       await chooseView("Grid")
       await terminal("Tests")
         .getByRole("button", { name: labelled("Set up voice input for ", "Tests") })
         .click()
 
-      await expect.element(offer()).toBeVisible()
+      const inTests = terminal("Tests")
+        .getByRole("status")
+        .filter({ hasText: "Talk to your agents" })
+      await expect.element(inTests).toBeVisible()
       await wait(600)
-      await expect.element(offer()).toBeVisible()
+      await expect.element(inTests).toBeVisible()
     })
 
     it("installs on Turn on, shows it in the strip, and does not start recording", async () => {

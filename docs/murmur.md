@@ -180,31 +180,47 @@ silicon the check records `integrated: false`.
 The install check runs a fixed test description on each candidate in that order and keeps
 the first that returns a valid one. The result (`device` name, `integrated`, `milliseconds`)
 is saved. Launches find that device again by name, as indexes differ between boots. The devices
-are listed before the model is downloaded: with no candidate the computer can't run murmur,
-and the 1.28 GB download never happens. When candidates all fail the check, the verdict keeps
-the last device's own words. If the engine can't list devices at all, it keeps what it printed
-last.
+are listed before the model is downloaded, so a computer with no candidate never downloads the
+1.28 GB.
 
-Those verdicts are not failures to retry. The runner removes the engine and the model, saves
-the reason (`murmur.unsupported` in the settings table) and shows `unsupported` in the state:
-Preferences then says "Not available on this computer" with the reason behind Details, and the
-offer never comes up. Network, disk and cancelled installs stay ordinary failures with Try
-again. The host also tells the runner at start (`--novadeck-murmur-graphics=software`) when
-Electron's `app.getGPUInfo("basic")` lists only software adapters (SwiftShader, llvmpipe, WARP),
-so the same state shows before any download; that verdict is not saved, and an unsure answer
-counts as capable. Apple silicon always does.
+Only a real incompatibility becomes a verdict, and only three things are one:
+
+- `--list-devices` ran and listed no candidate device;
+- every device the check tried answered with no usable title (a reply that is no JSON title);
+- the engine could not load a library it needs (`error while loading shared libraries`,
+  `cannot open shared object file`, or Windows' missing-DLL exit).
+
+Everything else stays an ordinary failure with Try again, and keeps the downloaded model: a
+timeout (`startMs`, the request time, `checkMs`, the 30 s of `--list-devices`), an
+out-of-memory or load failure (another program may hold the video memory), a crash, a failed
+start of any other kind, a spawn error, an error answer, an answer cut off, and a mixed result
+(one device unusable, another timed out). On a verdict the runner removes the engine and the
+model, saves the reason with the sha of the engine build that ran, and shows `unsupported` in
+the state (and `recheck: true`). Preferences then says "Not available on this computer" with the
+reason behind Details, and the offer never comes up. An app update with another engine sha
+forgets the verdict by itself; Check again, inside Details, installs again, which clears the
+verdict and checks anew. The host also tells the runner at start
+(`--novadeck-murmur-graphics=software`) when Electron's `app.getGPUInfo("basic")` lists only
+software adapters (SwiftShader, llvmpipe, WARP), so the same state shows before any download;
+that verdict is the host's word, is not saved, offers no Check again (`recheck: false`), and an
+unsure answer counts as capable. Apple silicon always does. It gates offering and installing
+only: an installed and checked murmur keeps working.
 
 If a later launch finds the engine doesn't list the checked device (it may list none), the check
-is dropped and the card shows "The graphics device murmur was checked on isn't there now. Try again."
+is dropped and `failure` says "The graphics device murmur was checked on isn't there now.". The
+state then reads `unchecked: true`, which Try again (an install) answers by running just the check.
 
 ## The card's state
 
-Installed with no passed check (a cancelled check, or a restart after a failed one) is shown as
-`installed: true, check: null` with `failure` set to a message ending in "Try again." Install
-again runs just the check. `failure` is also set for a failed install or engine update, and
-clears on the next one. While murmur runs it is set when the worker thread won't start or after
-three engine failures in a row (a crash or no answer in time), and clears on the next job that
-succeeds or when murmur is turned on. The check is kept in those cases.
+Installed with no passed check (a check the person cancelled, a restart after a failed one, or
+a check dropped because its device went away) is `installed: true, check: null, unchecked: true`
+and no `failure`: a cancel is no failure. Install again runs just the check. `failure` is set
+for a failed install or engine update, and clears on the next one. While murmur runs it is set
+when the worker thread won't start or after three engine failures in a row (a crash or no answer
+in time), and clears on the next job that succeeds or when murmur is turned on. The check is
+kept in those cases. `installing.engineOnly` says the job running is the app's own engine update,
+not an install the person asked for. `offers` counts the sessions of the app the one-time offer
+was shown in (the app reports one with `set({ offered: true })`), and it stops after three.
 
 ## Being polite
 

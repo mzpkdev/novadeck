@@ -1,14 +1,11 @@
 /* Murmur's footer item (FooterMurmur.tsx), the update chip's sibling: it reuses `.footer-update`
-   and `.update-panel`, adds its tones, and clamps a long failure in its sheet. Hooks: on the
+   and `.update-panel`, adds its tones (after the update chip's pressed look, which only holds
+   a class's specificity), and clamps a long failure in its sheet. Hooks: on the
    chip, data-tone="danger" while the install failed, "success" as it is done. */
-/* As specific as the update chip's own pressed look (region.css), which comes first and would
-   otherwise paint its ink over the tone while the sheet is open. */
-.footer-murmur[data-tone="danger"],
-.app-footer:not([data-tone]) .footer-murmur[data-tone="danger"][aria-expanded] {
+.footer-murmur[data-tone="danger"] {
   color: var(--color-danger-fg);
 }
-.footer-murmur[data-tone="success"],
-.app-footer:not([data-tone]) .footer-murmur[data-tone="success"][aria-expanded] {
+.footer-murmur[data-tone="success"] {
   color: var(--color-success-fg, var(--color-ink));
 }
 /* Its sheet stands left of the update's, which holds the footer's right end, so the two never

@@ -485,6 +485,63 @@ describe("installing voice input", () => {
     expect(again.voice.state()).toMatchObject({ check: null, enabled: false })
   })
 
+  it("keeps a turbo that passed its check through a retry where the host now says software rendering", async ({
+    resources,
+  }) => {
+    const first = await setup(resources, {
+      catalog: await modelCatalog(resources, { turbo: "turbo gpu" }),
+    })
+    await first.voice.install()
+    await first.voice.settled()
+    expect(first.voice.state()).toMatchObject({ model: "turbo", installed: ["turbo"] })
+
+    const again = await setup(resources, {
+      catalog: await modelCatalog(resources, { turbo: "turbo gpu" }),
+      store: first.store,
+      directory: first.directory,
+      ...(first.manifest && { engine: first.manifest }),
+      softwareGraphics: true,
+    })
+    expect(again.voice.state().aim).toBe("turbo")
+    await again.voice.install()
+    await again.voice.settled()
+
+    expect(again.voice.state()).toMatchObject({
+      model: "turbo",
+      installed: ["turbo"],
+      enabled: true,
+      failure: null,
+    })
+  })
+
+  it("keeps a turbo that passed through a retry whose check is slow, for one bad result is no verdict", async ({
+    resources,
+  }) => {
+    const catalog = await modelCatalog(resources, { turbo: "turbo gpu slow" })
+    const first = await setup(resources, { catalog, checkMs: 5000 })
+    await first.voice.install()
+    await first.voice.settled()
+    expect(first.voice.state()).toMatchObject({ model: "turbo", enabled: true })
+
+    const again = await setup(resources, {
+      catalog,
+      store: first.store,
+      directory: first.directory,
+      ...(first.manifest && { engine: first.manifest }),
+      checkMs: 100,
+    })
+    await again.voice.install()
+    await again.voice.settled()
+
+    expect(again.voice.state().failure).toContain("did not transcribe")
+    expect(again.voice.state()).toMatchObject({
+      model: "turbo",
+      installed: ["turbo"],
+      enabled: true,
+    })
+    expect(again.store.voiceCheck()).toMatchObject({ model: "turbo" })
+  })
+
   it("keeps turbo, and blames the engine, when neither model starts", async ({ resources }) => {
     const { voice, directory } = await setup(resources, {
       catalog: await modelCatalog(resources, { turbo: "turbo badload", small: "small badload" }),

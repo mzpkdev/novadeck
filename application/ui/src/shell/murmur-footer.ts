@@ -1,4 +1,10 @@
-import { isInstallFailure, murmurStepTitles, type MurmurState } from "../model/murmur"
+import {
+  isInstallFailure,
+  isRefusedInstall,
+  MURMUR_NAME,
+  murmurStepTitles,
+  type MurmurState,
+} from "../model/murmur"
 import { formatSize } from "../model/voice-format"
 
 // What Murmur's footer item shows, as a plain function of the addon's state: an install's
@@ -19,7 +25,8 @@ export const isSnapshot = (state: MurmurState): boolean => state.sizes.model > 0
 // runner's first snapshot showed (a past run's), which is not an install's; before that
 // snapshot (`undefined`) nothing is judged. The engine's own update, which the runner says it
 // is running, shows nothing, and the refusal of another call (a decline that did not save, an
-// uninstall or a cancel) is not an install's failure.
+// uninstall or a cancel) is not an install's failure. A cancel is no failure at all: the runner
+// leaves the files with the check owed (`unchecked`) and no failure.
 export const footerPhase = (
   phase: FooterPhase,
   state: MurmurState,
@@ -36,10 +43,10 @@ export const footerPhase = (
     return state.installed && state.check !== null ? "done" : "idle"
   }
   if (phase === "idle")
-    // A call that failed before an install began, as a refused install, is shown too.
-    return failure !== null && failure !== baseline && (!state.installed || state.check === null)
-      ? "failed"
-      : "idle"
+    // Only an install this app asked for shows from rest: one the runner turned away. What
+    // the runner reports of itself (a device that went away, an engine update that failed) is
+    // Addons'.
+    return failure !== null && isRefusedInstall(failure) && failure !== baseline ? "failed" : "idle"
   if (phase === "failed" && failure === null) return "idle"
   return phase
 }
@@ -65,15 +72,18 @@ export const footerText = (
     return { label: "Terminals name themselves now", summary: "Terminals name themselves now" }
   if (phase === "failed")
     return {
-      label: "Murmur \u00b7 failed",
-      summary: `Murmur couldn't turn on${state.failure ? `. ${state.failure}` : ""}`,
+      label: `${MURMUR_NAME} \u00b7 failed`,
+      summary: `${MURMUR_NAME} couldn't turn on${state.failure ? `. ${state.failure}` : ""}`,
     }
   if (phase === "unavailable")
-    return { label: "Murmur isn't available", summary: "Murmur isn't available on this computer" }
+    return {
+      label: `${MURMUR_NAME} isn't available`,
+      summary: `${MURMUR_NAME} isn't available on this computer`,
+    }
   const percent = installPercent(state)
   return {
-    label: percent === null ? "Murmur" : `Murmur ${percent}%`,
-    summary: "Setting up Murmur",
+    label: percent === null ? MURMUR_NAME : `${MURMUR_NAME} ${percent}%`,
+    summary: `Setting up ${MURMUR_NAME}`,
   }
 }
 

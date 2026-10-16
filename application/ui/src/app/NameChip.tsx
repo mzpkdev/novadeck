@@ -38,13 +38,31 @@ export const NameChip = ({
     target?.id === terminalId &&
     target.context === context &&
     offerable(murmurState)
-  // Counted once it is drawn, not when it was meant to be: the run's mark keeps voice input's
-  // offer from coming up too, and the runner counts the session.
+  // The chip's own button, once it is drawn.
+  const [button, setButton] = useState<HTMLButtonElement | null>(null)
+  // Counted once it is seen, not when it was meant to be: a window panned out of the Canvas's
+  // view draws it unseen. The run's mark keeps voice input's offer from coming up too, and the
+  // runner counts the session.
   useEffect(() => {
-    if (!drawn || ui.getSnapshot().addonOfferShown) return
-    commands.markAddonOfferShown()
-    murmur?.set({ offered: true })
-  }, [drawn, ui, commands, murmur])
+    if (!drawn || !button || ui.getSnapshot().addonOfferShown) return undefined
+    const count = (): void => {
+      if (ui.getSnapshot().addonOfferShown) return
+      commands.markAddonOfferShown()
+      murmur?.set({ offered: true })
+    }
+    // Where nothing can say what is in view, it is counted as drawn.
+    if (typeof IntersectionObserver === "undefined") {
+      count()
+      return undefined
+    }
+    const watching = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      watching.disconnect()
+      count()
+    })
+    watching.observe(button)
+    return () => watching.disconnect()
+  }, [drawn, button, ui, commands, murmur])
   if (!drawn || !murmur || !murmurState) return null
   // The terminal gets typing focus back once the popover is gone by an answer or Esc; one
   // that closed by a press elsewhere leaves focus where the person put it.
@@ -74,6 +92,7 @@ export const NameChip = ({
       }}
       trigger={
         <button
+          ref={setButton}
           type="button"
           className="name-chip nodrag nopan"
           aria-label={offerText.chip}
@@ -84,7 +103,7 @@ export const NameChip = ({
         </button>
       }
     >
-      <p id={titleId} tabIndex={-1} className="name-popover-title">
+      <p id={titleId} tabIndex={-1} className="update-title">
         {offerText.title}
       </p>
       <p>{offerText.body(murmurState)}</p>

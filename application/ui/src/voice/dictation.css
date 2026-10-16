@@ -1,11 +1,13 @@
 @reference "../styles.css";
 
-/* The recipe for voice input's status line: a small pill above the window's foot while a
-   clip records or transcribes, and for a moment after a hint or a failure. It takes no
-   pointer and no focus.
+/* The recipe for voice input's status line, and for the setup of voice input that shares it:
+   a small pill above the window's foot while a clip records or transcribes, and for a
+   moment after a hint or a failure. It takes no focus. It takes no pointer either, apart
+   from the buttons of voice input's setup and the Addons button, which do.
 
-   Hooks: data-phase="idle" | "recording" | "transcribing" and, in idle, data-tone="hint" |
-   "error" on `.dictation-overlay`. Parts: `.dictation-icon`, `.dictation-hint`,
+   Hooks: data-phase="idle" | "recording" | "transcribing" | "setup" and, in idle,
+   data-tone="hint" | "error" on `.dictation-overlay`; in setup, data-setup="offer" |
+   "installing" | "ready" | "failed". Parts: `.dictation-icon`, `.dictation-hint`,
    `.dictation-meter` (its `i` is the level, from the `--dictation-level` property, 0 to
    1), `.dictation-elapsed`; the mic button's recording state is `.dictation-active` on a
    header action.
@@ -23,9 +25,17 @@
    "bottom". Parts: `.dictation-dot` (recording), `.dictation-wave` (its `i` bars, each
    from `--dictation-bar`, 0 to 1), `.dictation-text`, `.dictation-shimmer`,
    `.dictation-setup` (the Addons button), and the overlay's icon, hint and elapsed time,
-   whose `data-ending` marks a clip's last seconds.
+   whose `data-ending` marks a clip's last seconds. While a clip records or transcribes the
+   strip floats over the terminal's foot; in setup (data-phase="setup") it is a row of its
+   own and the terminal above it shrinks.
+   Setup's parts: `.dictation-link` (a quiet button), `.dictation-button` (the primary one),
+   `.dictation-muted` (the muted rest of a line), `.dictation-fixed` (a part that never
+   shrinks), `.dictation-long` and `.dictation-short` (the words, and their short form in
+   a narrow container), `.dictation-progress` (the inline bar), `.dictation-clamp` (an error
+   kept to its line).
    --dictation-strip-bg (the window header's bg), --dictation-strip-border-color (line):
-   the strip. --dictation-error-bg (danger-fg at 9% over the strip): a failure's strip. */
+   the strip. --dictation-error-bg (danger-fg at 9% over the strip; at 18% in a failed
+   setup): a failure's strip. */
 
 @layer components {
   .dictation-overlay {
@@ -257,7 +267,10 @@
     order: -1;
   }
   .dictation-strip[data-setup="failed"] {
-    background-color: color-mix(in srgb, var(--color-danger-fg) 18%, var(--_bg));
+    background-color: var(
+      --dictation-error-bg,
+      color-mix(in srgb, var(--color-danger-fg) 18%, var(--_bg))
+    );
     border-color: color-mix(in srgb, var(--color-danger-fg) 50%, var(--color-line));
   }
   .dictation-overlay[data-setup="failed"] {

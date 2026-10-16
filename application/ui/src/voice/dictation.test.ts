@@ -29,6 +29,7 @@ const installed: VoiceState = {
   wanted: true,
   model: "turbo",
   aim: "turbo",
+  engineInstalled: false,
   language: "auto",
   sizes: { engine: 1, turbo: 2, small: 1 },
   installing: null,
@@ -348,11 +349,16 @@ describe("dictation", () => {
   })
 
   context("when dictation is not set up", () => {
-    it("starts nothing and points to Preferences", () => {
-      const app = setup({ ...installed, enabled: false, wanted: false })
+    const busy: VoiceState = {
+      ...installed,
+      enabled: false,
+      installing: { model: "turbo", step: "model", received: 1, total: 2 },
+    }
+    it("starts nothing and says voice input is still installing", () => {
+      const app = setup(busy)
       app.controller.dictation.press(target, "KeyM")
       expect(app.clips).toHaveLength(0)
-      expect(app.controller.view.getSnapshot().notice?.text).toContain("Preferences → Addons")
+      expect(app.controller.view.getSnapshot().notice?.text).toContain("still installing")
     })
 
     it("asks for a terminal when there is none to type into", () => {
@@ -363,7 +369,7 @@ describe("dictation", () => {
     })
 
     it("lets the hint fade after a few seconds", () => {
-      const app = setup({ ...installed, enabled: false, wanted: false })
+      const app = setup(busy)
       app.controller.dictation.press(target, "KeyM")
       app.advance(4000)
       expect(app.controller.view.getSnapshot().notice).toBeNull()
@@ -458,7 +464,7 @@ describe("dictation", () => {
       expect(kind(app)).toBe("offer")
     })
 
-    it("dismisses the offer as typing or another terminal asks, not a decline", () => {
+    it("dismisses the offer without installing or declining anything", () => {
       const app = setup(notInstalled)
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.dismiss()

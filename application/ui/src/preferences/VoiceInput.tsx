@@ -15,6 +15,7 @@ import {
   installSize,
   languages,
   stepLabels,
+  voiceOnDisk,
   voiceSetUp,
 } from "./voice-addon"
 
@@ -42,6 +43,7 @@ const Installing = ({
       label={label}
       received={step === "check" ? 0 : received}
       total={total}
+      indeterminate={step === "check"}
       onCancel={onCancel}
     />
   )
@@ -65,7 +67,7 @@ export const VoiceInput = ({
   // has no field for a removal under way, so the card waits for the engine to be gone or a
   // new failure to turn up.
   const [removing, setRemoving] = useState<{ readonly failure: string | null } | null>(null)
-  if (removing && voice && (!voiceSetUp(voice.state) || voice.state.failure !== removing.failure))
+  if (removing && voice && (!voiceOnDisk(voice.state) || voice.state.failure !== removing.failure))
     setRemoving(null)
   if (!voice)
     return (
@@ -94,42 +96,82 @@ export const VoiceInput = ({
         <Installing installing={installing} onCancel={actions.cancel} />
       </div>
     )
-  if (!voiceSetUp(state))
-    return (
-      <div className={settingsCardClasses}>
-        {/* Wanted until turned off or declined: the app shows a microphone in agent terminals
-            that offers the install, and holds the shortcut. Off, both go until it is on again. */}
-        <div className={rowClasses}>
-          <span className="flex min-w-0 flex-col gap-1">
-            <span id="voice-enabled">Enabled</span>
-            <span id="voice-enabled-description" className={noteClasses}>
-              Shows a microphone in agent terminals. It offers to install voice input when used.
-            </span>
-          </span>
-          <Switch
-            checked={state.wanted}
-            onChange={(enabled) => actions.set({ enabled })}
-            labelledBy="voice-enabled"
-            describedBy="voice-enabled-description"
-          />
-        </div>
-        <div className={rowClasses}>
-          <span className={noteClasses}>
-            {`Downloads ${formatSize(installSize(state))} once, then works offline.`}
-          </span>
-          <button
-            type="button"
-            className="button primary min-h-8 shrink-0 px-3 text-control"
-            onClick={actions.install}
-          >
-            Install
-          </button>
-        </div>
-        {failed}
-      </div>
-    )
   const busy = removing !== null
   const keys = dictationKeys()
+  // What an uninstall frees, offered whenever anything of voice input is on disk, whatever its
+  // check said: a model a cancel left behind, or an engine that never started, is reclaimed here.
+  const uninstallRow = voiceOnDisk(state) && (
+    <div className={rowClasses}>
+      <span className="flex min-w-0 flex-col gap-1">
+        <span>Uninstall</span>
+        <span className={noteClasses}>{`Frees ${formatSize(installedSize(state))}.`}</span>
+      </span>
+      <button
+        type="button"
+        className="button min-h-8 shrink-0 px-3 text-control"
+        disabled={busy}
+        onClick={() => setConfirming(true)}
+      >
+        {busy ? "Removing…" : "Uninstall"}
+      </button>
+    </div>
+  )
+  const confirmDialog = (
+    <ConfirmDialog
+      subject={confirming ? state : null}
+      title={() => "Uninstall voice input?"}
+      description={(shown) =>
+        `The speech engine and its models are removed from this computer, freeing ${formatSize(installedSize(shown))}. You can install them again.`
+      }
+      confirmLabel="Uninstall"
+      cancelLabel="Cancel"
+      onConfirm={() => {
+        setConfirming(false)
+        setRemoving({ failure })
+        actions.uninstall()
+      }}
+      onCancel={() => setConfirming(false)}
+      widthClassName="w-[min(380px,calc(100vw-32px))]"
+    />
+  )
+  if (!voiceSetUp(state))
+    return (
+      <>
+        <div className={settingsCardClasses}>
+          {/* Wanted until turned off or declined: the app shows a microphone in agent terminals
+            that offers the install, and holds the shortcut. Off, both go until it is on again. */}
+          <div className={rowClasses}>
+            <span className="flex min-w-0 flex-col gap-1">
+              <span id="voice-enabled">Enabled</span>
+              <span id="voice-enabled-description" className={noteClasses}>
+                Shows a microphone in agent terminals. It offers to install voice input when used.
+              </span>
+            </span>
+            <Switch
+              checked={state.wanted}
+              onChange={(enabled) => actions.set({ enabled })}
+              labelledBy="voice-enabled"
+              describedBy="voice-enabled-description"
+            />
+          </div>
+          <div className={rowClasses}>
+            <span className={noteClasses}>
+              {`Downloads ${formatSize(installSize(state))} once, then works offline.`}
+            </span>
+            <button
+              type="button"
+              className="button primary min-h-8 shrink-0 px-3 text-control"
+              onClick={actions.install}
+            >
+              Install
+            </button>
+          </div>
+          {uninstallRow}
+          {failed}
+        </div>
+        {confirmDialog}
+      </>
+    )
   return (
     <>
       <div className={settingsCardClasses}>
@@ -172,20 +214,7 @@ export const VoiceInput = ({
             </span>
           </div>
         )}
-        <div className={rowClasses}>
-          <span className="flex min-w-0 flex-col gap-1">
-            <span>Uninstall</span>
-            <span className={noteClasses}>{`Frees ${formatSize(installedSize(state))}.`}</span>
-          </span>
-          <button
-            type="button"
-            className="button min-h-8 shrink-0 px-3 text-control"
-            disabled={busy}
-            onClick={() => setConfirming(true)}
-          >
-            {busy ? "Removing…" : "Uninstall"}
-          </button>
-        </div>
+        {uninstallRow}
         {failure && (
           <div className="flex items-center justify-between gap-6">
             {failed}
@@ -200,22 +229,7 @@ export const VoiceInput = ({
           </div>
         )}
       </div>
-      <ConfirmDialog
-        subject={confirming ? state : null}
-        title={() => "Uninstall voice input?"}
-        description={(shown) =>
-          `The speech engine and its models are removed from this computer, freeing ${formatSize(installedSize(shown))}. You can install them again.`
-        }
-        confirmLabel="Uninstall"
-        cancelLabel="Cancel"
-        onConfirm={() => {
-          setConfirming(false)
-          setRemoving({ failure })
-          actions.uninstall()
-        }}
-        onCancel={() => setConfirming(false)}
-        widthClassName="w-[min(380px,calc(100vw-32px))]"
-      />
+      {confirmDialog}
     </>
   )
 }
