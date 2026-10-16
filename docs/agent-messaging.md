@@ -445,7 +445,11 @@ or starts a new session; it keeps the original agent attribution.
 The runner's `asks` table keeps these lifetimes and their Messages history. Every
 letter is bound to the terminal, project, workspace session and exact agent session.
 An ask clears when answered, withdrawn or its agent session ends. A runner restart
-keeps pending asks for the resumed session. A different session cannot receive their
+keeps pending asks for the resumed session; one whose terminal has had no agent bound for
+two minutes after the runner starts (or after it lost its agent) ends as `gone`, and one
+whose terminal binds another session ends at once. The records are written best effort:
+a store failure is logged and the Inbox carries on from memory, except an answer, which
+is saved with the person's reply or refused. A different session cannot receive their
 answers. Each terminal may create ten asks or tells a minute, with withdrawal always
 available. It keeps up to fifty asks from its current session and fifty unread tells
 independently. A guessed root excludes other-session asks from its cap while keeping

@@ -38,6 +38,9 @@ const setup = (
     readonly now?: () => number
     readonly sweepMs?: number
     readonly mailbox?: MailboxRecords
+    /** Whether the terminal's agent session binds at once (default), as it does not after a restart. */
+    readonly bound?: boolean
+    readonly resumeGraceMs?: number
   } = {},
 ) => {
   let kept = true
@@ -63,7 +66,7 @@ const setup = (
         ready: true,
       },
     ])
-  bind(identity.sessionId)
+  if (options.bound !== false) bind(identity.sessionId)
   const asks = new Asks(
     {
       owner: (id) => messaging.inboxOwner(id),
@@ -76,7 +79,10 @@ const setup = (
     },
     records,
     options.now ?? (() => 123),
-    { sweepMs: options.sweepMs ?? 0 },
+    {
+      sweepMs: options.sweepMs ?? 0,
+      ...(options.resumeGraceMs !== undefined && { resumeGraceMs: options.resumeGraceMs }),
+    },
   )
   const create = (request: unknown = letter) => {
     const result = asks.call(identity.terminalId, "ask", request)
@@ -1307,5 +1313,114 @@ describe("person response delivery budgets", () => {
     }
     expect(reason).toBe("That reply is too long. Shorten it and try again.")
     expect(run.asks.list().some((each) => each.id === expanded)).toBe(true)
+  })
+})
+
+describe("Inbox asks over a record failure", () => {
+  it("ends every open ask of a forgotten terminal although the records refuse each write", ({
+    resources,
+  }) => {
+    const failing: AskRecords = {
+      ...memoryAsks(),
+      saveLetter: () => {
+        throw new Error("disk full")
+      },
+      removeLetters: () => {
+        throw new Error("disk full")
+      },
+    }
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    resources.defer(() => logged.mockRestore())
+    const run = setup(failing)
+    resources.defer(run.stop)
+    run.create()
+    run.create()
+    expect(run.asks.list()).toHaveLength(2)
+    expect(() => run.forget()).not.toThrow()
+    expect(run.asks.list()).toEqual([])
+    const history = run.asks.history(
+      identity.terminalId,
+      run.messaging.list(identity.terminalId, identity.handle),
+    )
+    expect(
+      history.threads.flatMap((thread) => thread.messages.map((each) => each.inboxState)),
+    ).toEqual(["gone", "gone"])
+    expect(logged).toHaveBeenCalledWith("Novadeck could not save its Inbox:", expect.any(Error))
+  })
+
+  it("keeps a new ask in memory when the records refuse it", ({ resources }) => {
+    const failing: AskRecords = {
+      ...memoryAsks(),
+      saveLetter: () => {
+        throw new Error("disk full")
+      },
+    }
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+    resources.defer(() => logged.mockRestore())
+    const run = setup(failing)
+    resources.defer(run.stop)
+    const id = run.create()
+    expect(run.asks.list().map((each) => each.id)).toEqual([id])
+  })
+})
+
+describe("Inbox asks whose session does not come back after a restart", () => {
+  const restart = (records: AskRecords, clock: ReturnType<typeof inboxClock>) => {
+    const first = setup(records, undefined, clock)
+    const id = first.create()
+    first.stop()
+    return { id, next: setup(records, undefined, { ...clock, bound: false, resumeGraceMs: 1_000 }) }
+  }
+  const state = (run: ReturnType<typeof setup>, id: string) =>
+    run.asks
+      .history(identity.terminalId, run.messaging.list(identity.terminalId, identity.handle))
+      .threads.flatMap((thread) => thread.messages)
+      .find((message) => message.id === `m-${id.replaceAll("-", "")}`)?.inboxState
+
+  it("ends them as session-gone once the terminal has had no agent for the grace period", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const records = memoryAsks()
+    const { id, next } = restart(records, clock)
+    resources.defer(next.stop)
+    expect(state(next, id)).toBe("open")
+    clock.advance(999)
+    next.asks.prune()
+    expect(state(next, id)).toBe("open")
+    clock.advance(2)
+    next.asks.prune()
+    expect(state(next, id)).toBe("gone")
+    expect(records.letters()[0]?.state).toBe("gone")
+  })
+
+  it("keeps them answerable when the same session binds within the grace period", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const { id, next } = restart(memoryAsks(), clock)
+    resources.defer(next.stop)
+    clock.advance(900)
+    next.asks.prune()
+    next.bind(identity.sessionId)
+    next.asks.reconcile(identity.terminalId)
+    clock.advance(10_000)
+    next.asks.prune()
+    expect(next.asks.list().map((each) => each.id)).toEqual([id])
+    expect(state(next, id)).toBe("open")
+  })
+
+  it("restarts the grace for a terminal that lost its agent again", ({ resources }) => {
+    const clock = inboxClock()
+    const { id, next } = restart(memoryAsks(), clock)
+    resources.defer(next.stop)
+    clock.advance(900)
+    next.asks.prune()
+    next.bind(identity.sessionId)
+    next.asks.prune()
+    next.messaging.unregister(identity.terminalId)
+    clock.advance(900)
+    next.asks.prune()
+    expect(state(next, id)).toBe("open")
   })
 })
