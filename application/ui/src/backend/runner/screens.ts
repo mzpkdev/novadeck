@@ -113,6 +113,9 @@ type Entry = {
   dispose?: () => void
   users: number
   timer?: ReturnType<typeof setTimeout> | undefined
+  parking?: ReturnType<typeof setTimeout> | undefined
+  // Parked: its screen follows no stream until a surface shows it again.
+  parked?: boolean
 }
 
 // How often a screen nobody shows checks whether to go: often enough for the next view
@@ -121,6 +124,10 @@ const releaseCheckMs = 1000
 // How long a screen stays once its session leaves the screen, so going back to a session or
 // a project within a working break finds its output in place instead of a screen to reopen.
 const retainMs = 30 * 60 * 1000
+// How long a screen nobody shows keeps following its terminal's output before it parks:
+// long enough for the next view to take it as it is, short enough that a dozen busy agents
+// out of sight cost nothing to draw. Shown again, it takes the runner's screen as it is then.
+const parkMs = 5_000
 
 const id = ({ projectId, workspaceSessionId, terminalId }: TerminalKey): string =>
   `${projectId}\u0000${workspaceSessionId}\u0000${terminalId}`
@@ -353,6 +360,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
 
   const close = (key: TerminalKey, entry: Entry): void => {
     entries.delete(id(key))
+    clearTimeout(entry.parking)
     entry.dispose?.()
   }
   // A screen nobody shows goes once its terminal closes, or once its session has been off
@@ -380,24 +388,37 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       entry.users += 1
       if (entry.timer !== undefined) clearTimeout(entry.timer)
       entry.timer = undefined
+      clearTimeout(entry.parking)
+      entry.parking = undefined
+      entry.parked = false
       entry.screen ??= open(key, entry, options)
+      entry.screen.followed.unpark()
       return entry.screen
     },
     release: (key: TerminalKey): void => {
       const entry = entries.get(id(key))
       if (!entry) return
       entry.users -= 1
-      if (entry.users === 0 && entry.timer === undefined) settle(key, entry)
+      if (entry.users > 0) return
+      if (entry.timer === undefined) settle(key, entry)
+      clearTimeout(entry.parking)
+      entry.parking = setTimeout(() => {
+        entry.parking = undefined
+        if (entry.users > 0 || !entry.screen) return
+        entry.parked = true
+        entry.screen.followed.park()
+      }, parkMs)
     },
     // Pastes text into the terminal's screen as the person's own paste: bracketed when its
     // program asked for that, and never followed by Enter. Dictation targets a terminal the
-    // person is looking at, so a terminal with no open screen has nothing to type into and
-    // gets nothing: opening a second attachment to write behind a screen that is not there,
+    // person is looking at, so a terminal with no open screen, or one parked out of sight,
+    // has nothing to type into and gets nothing: opening a second attachment to write behind a screen that is not there,
     // for a paste with no brackets, would run the text as typed commands. Says whether it
     // pasted. Line breaks and other control characters become spaces first: outside
     // bracketed paste xterm turns a newline into Enter, which would submit what was said.
     typeInto: (key: TerminalKey, text: string): boolean => {
-      const screen = entries.get(id(key))?.screen
+      const entry = entries.get(id(key))
+      const screen = entry?.parked ? undefined : entry?.screen
       if (!screen) return false
       // oxlint-disable-next-line no-control-regex -- Control characters are what this removes.
       const plain = text.replaceAll(/[\u0000-\u001f\u007f-\u009f]+/g, " ").trim()

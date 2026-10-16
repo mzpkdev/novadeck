@@ -1040,7 +1040,7 @@ describe("typing into a terminal's screen", () => {
       return: async () => ({ value: undefined, done: true as const }),
       write: async (text) => void written.push(text),
       resize: async () => {},
-      detach: async () => {},
+      detach: vi.fn<AttachedTerminal["detach"]>(async () => {}),
     }
     const live = {
       ...runtime,
@@ -1067,8 +1067,26 @@ describe("typing into a terminal's screen", () => {
     )
     mounted.push(page)
     const ready = () => vi.waitFor(() => expect(page.container.textContent).toContain("$"))
-    return { screens, written, ready }
+    return { screens, written, ready, page, attachment }
   }
+
+  it("types nothing into a terminal out of sight long enough to stop following it", async () => {
+    const { screens, written, ready, page, attachment } = running("$ ")
+    await ready()
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      mounted.splice(mounted.indexOf(page), 1)
+      page.unmount()
+      vi.advanceTimersByTime(4_000)
+      expect(attachment.detach).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1_000)
+      expect(attachment.detach).toHaveBeenCalled()
+      expect(screens.typeInto(key, "run the tests")).toBe(false)
+      expect(written).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it("pastes plain text as typed, without Enter", async () => {
     const { screens, written, ready } = running("$ ")
