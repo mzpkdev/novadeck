@@ -36,35 +36,20 @@ export const offerStale = ({ outdatedSince }: UpdateOffer, now: number): boolean
 export const portableNagged = (offer: UpdateOffer, now: number): boolean =>
   offer.kind === "available" && offerStale(offer, now)
 
-// Whether an offer's notice comes up as the offer is heard. A download never raises it:
-// the notice comes when it turns `ready`. Nor does a download that failed, which turns
-// `available` after `previous`, the offer heard before, was its `downloading`: the host
-// tries it again, soon the first time and then with its checks, or, should Squirrel.Mac
-// have failed to stage it, tells of it at the next launch; the chip shows it meanwhile. Otherwise it does once per version and
-// kind (`seen` is what was shown last). A portable copy, which can't update itself, is
-// asked again at every launch once its release is stale: `shownThisRun` is whether this
-// run has shown the offer's notice already, so a repeated offer does not bring it back
-// after Later.
+// Whether a portable copy's notice comes up as an offer is heard: once per version and
+// kind (`seen` is what was shown last), and, for a release this copy has been missing a
+// long while, at every launch (`portableNagged`). `shownThisRun` is whether this run has
+// shown the offer's notice already, so a repeated offer does not bring it back after Later.
+// A copy that updates itself has no notice.
 export const noticeRaised = (
   offer: UpdateOffer,
   {
-    previous,
     seen,
-    portable,
     shownThisRun,
     now,
   }: {
-    readonly previous: UpdateOffer | null
     readonly seen: string | null
-    readonly portable: boolean
     readonly shownThisRun: boolean
     readonly now: number
   },
-): boolean =>
-  offer.kind !== "downloading" &&
-  !(
-    offer.kind === "available" &&
-    previous?.kind === "downloading" &&
-    previous.version === offer.version
-  ) &&
-  (updateKey(offer) !== seen || (portable && !shownThisRun && portableNagged(offer, now)))
+): boolean => updateKey(offer) !== seen || (!shownThisRun && portableNagged(offer, now))

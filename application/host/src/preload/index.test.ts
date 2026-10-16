@@ -7,7 +7,6 @@ import {
   apiUrlArgumentPrefix,
   appearanceChannel,
   installAppChannel,
-  installUpdateChannel,
   noticeChannel,
   noticeClickChannel,
   openInstalledChannel,
@@ -260,11 +259,6 @@ describe("an update offer", () => {
     expect(offers[0]!).toHaveLength(updateNotesLength)
     expect(offers[0]!.slice(0, 2)).toEqual(["Fine.", "x".repeat(updateNoteLength)])
     expect(offers[1]!).toEqual([])
-  })
-
-  it("is installed by asking the host", () => {
-    electron.exposed.installUpdate!()
-    expect(electron.sent).toEqual([installUpdateChannel])
   })
 
   it("has its release page opened by asking the host, naming nothing", () => {

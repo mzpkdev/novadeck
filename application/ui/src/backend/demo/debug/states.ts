@@ -35,7 +35,7 @@ import {
   withUsage,
 } from "./terminals"
 import type { DemoAction, DemoActionContext, DemoActionGroup, DemoStates } from "./types"
-import { createDemoUpdates, longestNotes, sampleNotes } from "./updates"
+import { createDemoUpdates, sampleNotes } from "./updates"
 
 // How long an agent works before its turn ends, so the person can look elsewhere.
 const turnMs = 3000
@@ -573,40 +573,30 @@ export const createDemoStates = (verbs: DemoAgentVerbs): DemoStates => {
       title: "Updates",
       actions: [
         {
-          label: "Ready",
-          hint: "4 notes, Restart now, Later",
-          run: () => offer({ kind: "ready", version: nextVersion(), notes: sampleNotes }),
-        },
-        {
-          label: "Ready, no notes",
-          hint: "Same notice, no notes",
-          run: () => offer({ kind: "ready", version: nextVersion(), notes: [] }),
-        },
-        {
-          label: "Available",
-          hint: "4 notes, Download, Later",
-          run: () => offer({ kind: "available", version: nextVersion(), notes: sampleNotes }),
-        },
-        {
-          label: "Long notes",
-          hint: "12 long notes; list scrolls, “and 7 more”",
-          run: () => offer({ kind: "ready", version: nextVersion(), notes: longestNotes }),
-        },
-        {
-          label: "Downloading",
-          hint: "Chip counts up, its card has Later only; then the Ready notice comes up",
+          label: "Download",
+          hint: "Bar counts up, says ready, then fades",
           run: () => download(nextVersion(), sampleNotes),
         },
         {
-          label: "Newer update",
-          hint: "Replaces the open or dismissed one",
+          label: "Download, held",
+          hint: "Bar stays at 40% to look at",
           run: () =>
-            offer({ kind: "ready", version: nextVersion(), notes: sampleNotes.slice(0, 2) }),
+            offer({ kind: "downloading", version: nextVersion(), notes: sampleNotes, percent: 40 }),
         },
         {
-          label: "Install failed",
-          hint: "Ready turns to Available, with Download; a download, quietly",
+          label: "Download failed",
+          hint: "Bar drops, the Update available chip shows; the host retries later",
           run: failInstall,
+        },
+        {
+          label: "Release to fetch",
+          hint: "Footer chip, Update available; opens the release page",
+          run: () => offer({ kind: "available", version: nextVersion(), notes: sampleNotes }),
+        },
+        {
+          label: "Ready at launch",
+          hint: "No bar: downloaded before this run",
+          run: () => offer({ kind: "ready", version: nextVersion(), notes: sampleNotes }),
         },
         {
           label: "Early builds on",

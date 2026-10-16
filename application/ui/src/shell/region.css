@@ -1,7 +1,8 @@
 /* The region recipe: the app's chrome. The header (`.app-header`, with the `.brand`
    link home), the footer (`.app-footer`, its `.footer-running` count, the
    `.footer-navigate` note while the person navigates the workspace, `.footer-status`
-   and `.footer-action`, the update chip `.footer-update` with its `.update-panel`, and
+   and `.footer-action`, a portable copy's install chip `.footer-update` with its `.update-panel`,
+   the floating `.update-progress` bar of an update downloading, and
    the account's subscriptions, `.footer-usage`, a pill each with its `.usage-popover`), the rail of sidebar toggles (`.sidebar-tools`) and the sidebar
    (`.sidebar`), which on narrow screens opens as a `.sidebar-drawer`. Each region is a
    ground with an edge toward the workspace.
@@ -355,4 +356,60 @@
   background-color: var(--region-sidebar-bg, var(--color-shell));
   color: var(--region-sidebar-fg, var(--color-ink));
   box-shadow: var(--region-sidebar-shadow, var(--shadow-panel));
+}
+
+/* An update downloading (UpdateProgress.tsx), a `.floating` surface above the footer's right
+   end, where the update's notice was: a title and the percent, the bar, and a line of what
+   is fetched. Information only, so it lets clicks through to what it covers. It rises in
+   as it appears and fades out once a finished download has said so. */
+.update-progress {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 16rem;
+  max-width: calc(100vw - 24px);
+  padding: 10px 12px 12px;
+  color: var(--color-muted);
+  font-size: var(--text-control);
+  line-height: var(--text-control--line-height);
+  letter-spacing: normal;
+  text-transform: none;
+  font-weight: 400;
+  pointer-events: none;
+  animation: update-progress-in var(--motion-state) var(--ease-interface);
+  transition: opacity var(--motion-state) var(--ease-interface);
+}
+.update-progress[data-state="closed"] {
+  opacity: 0;
+}
+.update-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+.update-progress-title {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+.update-progress-percent {
+  font-variant-numeric: tabular-nums;
+}
+.update-progress-note {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes update-progress-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }

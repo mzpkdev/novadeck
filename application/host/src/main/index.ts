@@ -100,7 +100,6 @@ import {
   developerIdSigned,
   installFallbackMs,
   installOnlyOnOrderlyQuit,
-  installUpdate,
   portableOf,
   quitWithoutInstalling,
   registerUpdateIpc,
@@ -148,12 +147,12 @@ let stopping = false
 // Names this run of the app; see `PortableHost.run`.
 const run = randomUUID()
 // Whether the quit under way began the orderly way: closing the last window, or
-// restarting into the update. On Linux Electron turns SIGTERM, SIGINT and SIGHUP into an
+// restarting into an installed copy. On Linux Electron turns SIGTERM, SIGINT and SIGHUP into an
 // ordinary quit, which must not install an update; see ./updater.ts.
 let orderlyQuit = false
 // The auto-updater of a build that looks for updates, once it has loaded, and what keeps
 // its schedule.
-let updater: (Updater & { quitAndInstall(silent: boolean, relaunch: boolean): void }) | undefined
+let updater: Updater | undefined
 let updates: ReturnType<typeof checkForUpdates> | undefined
 // The releases this build follows; read from the data folder at launch.
 let channel: UpdateChannel = "stable"
@@ -887,38 +886,11 @@ const launch = async (): Promise<void> => {
       },
     }),
   })
-  // The page learns of an update, can restart into a downloaded one or open the page of
-  // one it must install itself, and chooses the releases the build follows.
+  // The page learns of an update, can open the page of one it must install itself, and
+  // chooses the releases the build follows.
   registerUpdateIpc(ipcMain, {
     window: (event) => appWindow(event)?.webContents,
     request: offers.request,
-    install: () =>
-      installUpdate({
-        downloaded: () => offers.current()?.kind === "ready" && updater !== undefined,
-        settled: () => updates?.settled() ?? Promise.resolve(false),
-        stopping: () => stopping,
-        stop: () => {
-          stopping = true
-          orderlyQuit = true
-          updates?.stop()
-        },
-        shutdown: shutDown,
-        install: () => {
-          // On Linux electron-updater starts the new AppImage before it quits this process,
-          // which still holds the lock; a new process refused it would exit at once. It
-          // emits "before-quit-for-update" on Electron's autoUpdater only once the install
-          // went ahead, just before quitting, so let go then: after a quiet failure the lock
-          // stays with this process, which carries on until the fallback quits it. The new
-          // process needs far longer than a tick to ask for the lock. The install on quitting
-          // runs the new image with APPIMAGE_EXIT_AFTER_INSTALL and launches nothing, and the
-          // Windows installer and Squirrel.Mac wait for this process to end first.
-          if (process.platform === "linux")
-            nativeUpdater.once("before-quit-for-update", () => app.releaseSingleInstanceLock())
-          updater?.quitAndInstall(true, true)
-        },
-        quit: () => app.quit(),
-        fallbackMs: installFallbackMs(process.platform),
-      }),
     openPage: () => {
       void updatePage()
         .then((url) => {

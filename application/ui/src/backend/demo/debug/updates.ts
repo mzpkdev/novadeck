@@ -2,11 +2,10 @@ import type { UpdateChannel, UpdateOffer } from "../../../model/update"
 import type { DemoStates } from "./types"
 
 // The browser's stand-in for the desktop app's self-updates: `offer` has an update, which
-// listeners hear at once if they come later and again for each newer one. `install` does
-// nothing more, so the footer's Restarting… stays for as long as anyone wants to look at
-// it; `finish` ends the restart as the app comes back, a reload that forgets the offer,
-// while one waits. `download` offers a version as downloading, its percent climbing until
-// it is offered ready; any later offer, or a failed install, calls a running one off.
+// listeners hear at once if they come later and again for each newer one. `finish` stands
+// for the app coming back on the new version, a reload that forgets the offer, while one
+// waits. `download` offers a version as downloading, its percent climbing until it is
+// offered ready; any later offer, or a failed download, calls a running one off.
 // `openPage` only counts, since a browser has no release page to open.
 // The channel is remembered until the page reloads.
 export const createDemoUpdates = (
@@ -16,8 +15,8 @@ export const createDemoUpdates = (
   readonly offer: (offer: UpdateOffer) => void
   readonly download: (version: string, notes: readonly string[]) => void
   readonly finish: () => void
-  // The install, or the download in progress, failed: the update waiting is offered again,
-  // to fetch by hand.
+  // The download in progress, or the install on quit, failed: the update is offered as one
+  // to fetch from its release page.
   readonly failInstall: () => void
   readonly channel: () => UpdateChannel
   readonly pagesOpened: () => number
@@ -42,7 +41,6 @@ export const createDemoUpdates = (
         if (waiting !== undefined) listener(waiting)
         return () => void listeners.delete(listener)
       },
-      install: () => {},
       openPage: () => void (pages += 1),
       channel: {
         get: () => Promise.resolve(channel),
@@ -89,8 +87,3 @@ export const sampleNotes: readonly string[] = [
   "Fixed a crash when an agent finished while the window was minimized.",
   "Faster startup on large workspaces.",
 ]
-
-// The most an offer carries, as the desktop host caps it: 12 notes of 200 characters.
-export const longestNotes: readonly string[] = Array.from({ length: 12 }, (_, index) =>
-  `${index + 1}. ${"A long release note that runs on and on. ".repeat(6)}`.slice(0, 200),
-)

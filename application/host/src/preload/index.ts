@@ -22,7 +22,6 @@ import {
   appearanceChannel,
   directoryPickerChannel,
   installAppChannel,
-  installUpdateChannel,
   noticeChannel,
   noticeClickChannel,
   openInstalledChannel,
@@ -250,9 +249,6 @@ const bridge = {
     return () => {
       ipcRenderer.removeListener(updateOfferChannel, relay)
     }
-  },
-  installUpdate: () => {
-    ipcRenderer.send(installUpdateChannel)
   },
   openUpdatePage: () => {
     ipcRenderer.send(openUpdatePageChannel)

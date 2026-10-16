@@ -15,7 +15,7 @@ import type { SandboxState } from "../model/sandbox"
 import { activeProject } from "../model/state"
 import { createStore, type MutableStore, type Store } from "../model/store"
 import type { PreferencesValue, TerminalMetadata, Workspace } from "../model/types"
-import { noticeRaised, portableNagged, updateKey, type UpdateOffer } from "../model/update"
+import { noticeRaised, updateKey, type UpdateOffer } from "../model/update"
 import { writePreferences } from "../preferences/preferences-storage"
 import { noArrangement, type ProjectArrangement } from "../projects/project-arrangement"
 import { writeProjectArrangement } from "../projects/project-arrangement-storage"
@@ -261,8 +261,10 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
 }
 
 // The update the backend offers, kept for the footer; a later offer replaces the last.
-// One for a version not yet shown opens its notice, which waits while the footer is
-// hidden; so does a stale one for a portable copy (`noticeRaised`).
+// Only a portable copy has a notice: one for a version not yet shown opens it, and so does
+// a stale one (`noticeRaised`); it waits while the footer is hidden. A copy that updates
+// itself raises nothing, as its downloads show as a bar. An offer heard before the host
+// says whether this is a portable copy is raised once it does (`watchPortable`).
 // What counts as already raised is what the person was shown in this run of the app, which
 // the host names, kept beyond the page's life (`readUpdateRaised`, written as the notice
 // shows), so a reload, a window opened again or a new attempt at the backend does not
@@ -271,13 +273,13 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
 export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => void) =>
   updates?.onOffer((update) => {
     const state = ui.getSnapshot()
-    const raise = noticeRaised(update, {
-      previous: state.update,
-      seen: state.updateSeen,
-      portable: state.portable?.portable === true,
-      shownThisRun: raisedThisRun(update, state.portable),
-      now: Date.now(),
-    })
+    const raise =
+      state.portable?.portable === true &&
+      noticeRaised(update, {
+        seen: state.updateSeen,
+        shownThisRun: raisedThisRun(update, state.portable),
+        now: Date.now(),
+      })
     ui.update((current) => ({ ...current, update, updateOpen: current.updateOpen || raise }))
   }) ?? (() => {})
 
@@ -297,27 +299,22 @@ const raisedThisRun = (offer: UpdateOffer, portable: PortableState | null): bool
 }
 
 // Asks the backend once whether the app is a portable copy, and keeps the answer for the
-// footer. An offer heard before the answer, for a copy found stale, raises its notice now.
+// footer. An offer heard before the answer raises its notice now, if the answer says portable.
 // A host that fails to say is taken as not saying.
 export const watchPortable = (portable: Backend["portable"], ui: UiStore): (() => void) => {
   let live = true
   void portable?.state().then(
     (portableState) => {
       if (!live) return
-      const { update, updateOpen, updateSeen } = ui.getSnapshot()
-      // A notice already open when the answer comes was shown before the run was known.
-      if (
-        portableState.portable &&
-        update !== null &&
-        updateOpen &&
-        updateSeen === updateKey(update)
-      )
-        noteUpdateShown(portableState, updateSeen)
+      const { update, updateSeen } = ui.getSnapshot()
       const raise =
         portableState.portable &&
         update !== null &&
-        portableNagged(update, Date.now()) &&
-        !raisedThisRun(update, portableState)
+        noticeRaised(update, {
+          seen: updateSeen,
+          shownThisRun: raisedThisRun(update, portableState),
+          now: Date.now(),
+        })
       ui.update((state) => ({
         ...state,
         portable: portableState,

@@ -10,7 +10,6 @@ import type { IpcMainEvent } from "electron"
 import { afterEach, beforeEach, vi } from "vitest"
 
 import {
-  installUpdateChannel,
   openUpdatePageChannel,
   setUpdateChannelChannel,
   updateChannelChannel,
@@ -27,7 +26,6 @@ import {
   retryCheckMs,
   installFallbackMs,
   installOnlyOnOrderlyQuit,
-  installUpdate,
   portableOf,
   quitWithoutInstalling,
   registerUpdateIpc,
@@ -395,7 +393,6 @@ const registered = (own: boolean, channel: UpdateChannel = "stable") => {
     {
       window: () => (own ? "window" : undefined),
       request: (window) => void calls.push(`request ${window}`),
-      install: () => void calls.push("install"),
       openPage: () => void calls.push("open page"),
       channel: () => channel,
       setChannel: (next) => void calls.push(`channel ${next}`),
@@ -413,11 +410,10 @@ describe("taking the page's requests about updates", () => {
     expect(calls).toEqual(["request window"])
   })
 
-  it("installs and opens the release page when asked", () => {
+  it("opens the release page when asked", () => {
     const { send, calls } = registered(true)
-    send(installUpdateChannel)
     send(openUpdatePageChannel)
-    expect(calls).toEqual(["install", "open page"])
+    expect(calls).toEqual(["open page"])
   })
 
   it("answers the channel the build follows", () => {
@@ -436,7 +432,6 @@ describe("taking the page's requests about updates", () => {
   it("ignores any other sender, and tells it only the default channel", () => {
     const { send, calls } = registered(false, "early")
     send(updateRequestChannel)
-    send(installUpdateChannel)
     send(openUpdatePageChannel)
     send(setUpdateChannelChannel, "early")
     expect(send(updateChannelChannel)).toBe("stable")
@@ -455,108 +450,8 @@ const deferred = <T>() => {
   }
 }
 
-// An updater whose quitAndInstall behaves as electron-updater's does when installing
-// fails: it logs and returns, without quitting or throwing. `ends` is how it behaves
-// when installing works: the app quits (as BaseUpdater does after a setImmediate).
-const installing = ({
-  downloaded = true,
-  settled = () => Promise.resolve(true),
-  ends = true,
-  throws = false,
-  shutdownMs = 0,
-  fallbackMs = 10_000,
-} = {}) => {
-  const steps: string[] = []
-  let stopping = false
-  const quitAndInstall = (): void => {
-    steps.push("install")
-    if (throws) throw new Error("no updater")
-    if (ends) steps.push("quit by updater")
-  }
-  const run = (): void =>
-    installUpdate({
-      downloaded: () => downloaded,
-      settled,
-      stopping: () => stopping,
-      stop: () => {
-        stopping = true
-        steps.push("stop")
-      },
-      shutdown: async () => {
-        steps.push("shutdown")
-        await new Promise((resolve) => setTimeout(resolve, shutdownMs))
-        steps.push("shut down")
-      },
-      install: quitAndInstall,
-      quit: () => void steps.push("quit"),
-      fallbackMs,
-    })
-  return { run, steps }
-}
-
-describe("restarting into the update", () => {
-  beforeEach(() => void vi.useFakeTimers())
-  afterEach(() => void vi.useRealTimers())
-
-  it("saves and shuts down the way quitting does, then installs", async () => {
-    const { run, steps } = installing()
-    run()
-    await vi.advanceTimersByTimeAsync(0)
-    expect(steps).toEqual(["stop", "shutdown", "shut down", "install", "quit by updater"])
-  })
-
-  it("ignores a second request while the first is still shutting down", async () => {
-    const { run, steps } = installing({ shutdownMs: 20 })
-    run()
-    run()
-    await vi.advanceTimersByTimeAsync(20)
-    expect(steps.filter((step) => step === "shutdown")).toHaveLength(1)
-    expect(steps).toContain("install")
-  })
-
-  it("does nothing while no update is downloaded", async () => {
-    const { run, steps } = installing({ downloaded: false })
-    run()
-    await vi.advanceTimersByTimeAsync(60_000)
-    expect(steps).toEqual([])
-  })
-
-  it("waits for a newer release downloading in place of the update, then restarts into it", async () => {
-    const { promise, resolve } = deferred<boolean>()
-    const { run, steps } = installing({ settled: () => promise })
-    run()
-    run()
-    await vi.advanceTimersByTimeAsync(60_000)
-    expect(steps).toEqual([])
-    resolve(true)
-    await vi.advanceTimersByTimeAsync(0)
-    expect(steps).toEqual(["stop", "shutdown", "shut down", "install", "quit by updater"])
-  })
-
-  it("does not restart when that download fails, as nothing is left to install", async () => {
-    const { run, steps } = installing({ settled: () => Promise.resolve(false) })
-    run()
-    await vi.advanceTimersByTimeAsync(60_000)
-    expect(steps).toEqual([])
-  })
-
-  it("quits at once when installing throws", async () => {
-    const { run, steps } = installing({ throws: true })
-    run()
-    await vi.advanceTimersByTimeAsync(0)
-    expect(steps).toEqual(["stop", "shutdown", "shut down", "install", "quit"])
-  })
-
-  it("quits after the wait when the updater returns without ending the app", async () => {
-    const { run, steps } = installing({ ends: false, fallbackMs: 10_000 })
-    run()
-    await vi.advanceTimersByTimeAsync(9_999)
-    expect(steps).toEqual(["stop", "shutdown", "shut down", "install"])
-    await vi.advanceTimersByTimeAsync(1)
-    expect(steps).toEqual(["stop", "shutdown", "shut down", "install", "quit"])
-  })
-
-  it("waits longer on macOS, where Squirrel stages the update first", () => {
+describe("the wait for a restart into an installed copy", () => {
+  it("is longer on macOS, where the move can be slow", () => {
     expect(installFallbackMs("darwin")).toBeGreaterThan(installFallbackMs("linux"))
     expect(installFallbackMs("win32")).toBe(installFallbackMs("linux"))
   })
@@ -598,13 +493,9 @@ class FakeUpdater extends EventEmitter implements Pick<Updater, "checkForUpdates
     return this.downloadResult?.() ?? Promise.resolve()
   }
   installed = 0
-  restarted = 0
   install(): boolean {
     this.installed += 1
     return true
-  }
-  quitAndInstall(): void {
-    this.restarted += 1
   }
   autoDownload = false
   autoInstallOnAppQuit = false
@@ -783,7 +674,7 @@ describe("checking for updates", () => {
       })
 
       it("offers it as available when the first download fails partway, which the error event logs", async () => {
-        const { updater, offered, failed, logged, settled } = checking()
+        const { updater, offered, failed, logged } = checking()
         const download = deferred<unknown>()
         updater.downloadResult = () => download.promise
         updater.emit("update-available", { version: "1.2.3" })
@@ -797,7 +688,6 @@ describe("checking for updates", () => {
         ])
         expect(logged).toEqual(["The update check failed."])
         expect(failed).toEqual([])
-        await expect(settled()).resolves.toBe(false)
         updater.emit("download-progress", { percent: 80 })
         expect(offered).toHaveLength(2)
       })
@@ -855,7 +745,7 @@ describe("checking for updates", () => {
       })
 
       it("keeps a download ready that fails only after it was reported in", async () => {
-        const { updater, offered, settled } = checking()
+        const { updater, offered } = checking()
         const download = deferred<unknown>()
         updater.downloadResult = () => download.promise
         updater.emit("update-available", { version: "1.2.3" })
@@ -863,7 +753,6 @@ describe("checking for updates", () => {
         download.reject(new Error("the blockmap could not be copied"))
         await vi.advanceTimersByTimeAsync(0)
         expect(offered.at(-1)).toEqual(["ready", "1.2.3", []])
-        await expect(settled()).resolves.toBe(true)
       })
 
       it("leaves a release found meanwhile to a later check", () => {
@@ -935,30 +824,6 @@ describe("checking for updates", () => {
         expect(updater.autoInstallOnAppQuit).toBe(true)
       })
 
-      it("shows it in place of a restart asked for before its progress came in", async () => {
-        const { updater, offered, settled } = waiting()
-        await expect(settled()).resolves.toBe(false)
-        expect(offered.at(-1)).toEqual(["downloading", "1.3.0", [], 0])
-        updater.emit("download-progress", { percent: 0.5 })
-        expect(offered).toHaveLength(2)
-        updater.emit("download-progress", { percent: 30 })
-        await expect(settled()).resolves.toBe(false)
-        expect(offered.at(-1)).toEqual(["downloading", "1.3.0", [], 30])
-      })
-
-      it("lets a restart wait for it once it was reported in, and tells whether it came through", async () => {
-        const { updater, settled, download } = waiting()
-        updater.emit("update-downloaded", { version: "1.3.0" })
-        let ready: boolean | undefined
-        void settled().then((value) => void (ready = value))
-        await vi.advanceTimersByTimeAsync(0)
-        expect(ready).toBeUndefined()
-        download.resolve(undefined)
-        await vi.advanceTimersByTimeAsync(0)
-        expect(ready).toBe(true)
-        await expect(settled()).resolves.toBe(true)
-      })
-
       it("leaves a release found meanwhile to a later check", () => {
         const { updater } = waiting()
         updater.emit("update-available", { version: "1.4.0" })
@@ -967,12 +832,11 @@ describe("checking for updates", () => {
       })
 
       it("offers it as available when its download fails, and downloads it at a later check", async () => {
-        const { updater, offered, failed, logged, settled, download } = waiting()
+        const { updater, offered, failed, logged, download } = waiting()
         // electron-updater reports the failure through the error event before it rejects.
         updater.emit("error", new Error("download failed"))
         download.reject(new Error("download failed"))
         await vi.advanceTimersByTimeAsync(0)
-        await expect(settled()).resolves.toBe(false)
         // The ready update is likely gone, so the page hears even without any progress.
         expect(offered).toEqual([
           ["ready", "1.2.3", []],
@@ -993,13 +857,6 @@ describe("checking for updates", () => {
       stop()
       updater.emit("update-available", { version: "1.2.3" })
       expect(updater.downloads).toHaveLength(0)
-    })
-
-    it("has no update to install before one has downloaded", async () => {
-      const { updater, settled } = checking()
-      await expect(settled()).resolves.toBe(false)
-      updater.emit("update-downloaded", { version: "1.2.3" })
-      await expect(settled()).resolves.toBe(true)
     })
 
     context("after an install failed on a version", () => {
@@ -1054,14 +911,6 @@ describe("checking for updates", () => {
         ["available", "1.2.3", ["Faster."]],
       ])
       expect(logged).toEqual(["Installing the update failed."])
-    })
-
-    it("does the same for an error raised while restarting", () => {
-      const { updater, failed } = checking()
-      updater.emit("update-downloaded", { version: "1.2.3" })
-      updater.quitAndInstall()
-      updater.emit("error", new Error("the file could not be replaced"))
-      expect(failed).toEqual(["1.2.3"])
     })
 
     it("does not count an error from a check or channel switch that fails after the download", () => {
@@ -1214,7 +1063,7 @@ describe("quitting by a signal", () => {
     expect(quitting(false).autoInstallOnAppQuit).toBe(false)
   })
 
-  it("still installs on closing the last window or restarting into the update", () => {
+  it("still installs on closing the last window or restarting into an installed copy", () => {
     expect(quitting(true).autoInstallOnAppQuit).toBe(true)
   })
 
@@ -1343,31 +1192,5 @@ describe("electron-updater's download folder", () => {
       expect(name, "a name on one line").toMatch(/^[^>|]/u)
       expect(name).not.toMatch(/version/iu)
     }
-  })
-})
-
-describe("electron-updater's restart", () => {
-  it("emits before-quit-for-update on Electron's autoUpdater only after a successful install; re-check the Linux lock release in index.ts if this fails", async () => {
-    // The host lets go of the single-instance lock on that event, so that the new AppImage,
-    // which electron-updater starts first, can take it (see installUpdate's callback in
-    // index.ts). If electron-updater changes when it emits, "Restart now" may end the app
-    // without the new version starting, or a failed install may leave the lock released.
-    const require = createRequire(import.meta.url)
-    const file = join(dirname(require.resolve("electron-updater")), "BaseUpdater.js")
-    const source = (await readFile(file, "utf8")).replaceAll("\r\n", "\n")
-    const start = source.search(/quitAndInstall\(isSilent = false, isForceRunAfter = false\)\s*\{/u)
-    expect(start, "BaseUpdater.quitAndInstall").toBeGreaterThanOrEqual(0)
-    const end = source.indexOf("\n    }\n", start)
-    expect(end, "the end of BaseUpdater.quitAndInstall").toBeGreaterThan(start)
-    const body = source.slice(start, end)
-    const steps = [
-      /const isInstalled = this\.install\(/u,
-      /if \(isInstalled\)\s*\{/u,
-      /setImmediate\(\(\) => \{/u,
-      /require\("electron"\)\.autoUpdater\.emit\("before-quit-for-update"\)/u,
-      /this\.app\.quit\(\)/u,
-    ].map((step) => body.search(step))
-    expect(steps.every((at) => at >= 0)).toBe(true)
-    expect(steps).toEqual(steps.toSorted((a, b) => a - b))
   })
 })

@@ -11,7 +11,6 @@ import {
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
 import {
-  installUpdateChannel,
   openUpdatePageChannel,
   setUpdateChannelChannel,
   updateChannelChannel,
@@ -243,14 +242,12 @@ export const registerUpdateIpc = <Window>(
   {
     window,
     request,
-    install,
     openPage,
     channel,
     setChannel,
   }: {
     readonly window: (event: IpcMainEvent | IpcMainInvokeEvent) => Window | undefined
     readonly request: (window: Window) => void
-    readonly install: () => void
     readonly openPage: () => void
     readonly channel: () => UpdateChannel
     readonly setChannel: (channel: UpdateChannel) => void
@@ -259,9 +256,6 @@ export const registerUpdateIpc = <Window>(
   ipc.on(updateRequestChannel, (event) => {
     const target = window(event)
     if (target !== undefined) request(target)
-  })
-  ipc.on(installUpdateChannel, (event) => {
-    if (window(event) !== undefined) install()
   })
   ipc.on(openUpdatePageChannel, (event) => {
     if (window(event) !== undefined) openPage()
@@ -276,57 +270,12 @@ export const registerUpdateIpc = <Window>(
 }
 
 /**
- * How long a restart waits for the updater to end the app before quitting it. Installing
- * can fail without a word: electron-updater's `quitAndInstall` logs a failed Linux or
- * Windows install and returns, and its macOS one waits for Squirrel.Mac, which may never
- * have the update. Squirrel stages from a local copy, so macOS gets longer.
+ * How long a restart into an installed copy waits for the new process to end this app
+ * before quitting it. Installing can fail without a word, and a macOS move may be slow, so
+ * macOS gets longer.
  */
 export const installFallbackMs = (platform: NodeJS.Platform): number =>
   platform === "darwin" ? 30_000 : 10_000
-
-/**
- * Restarts into the downloaded update after the same shutdown quitting runs. Does
- * nothing while no update is downloaded or a shutdown already started, which makes a
- * second request harmless. `settled` (see `checkForUpdates`) is waited for first, and
- * nothing is restarted unless it holds: a newer release still downloading in place of the
- * update is shown to the page instead, to restart into once it is in. The shells are gone
- * once it goes ahead, so
- * the app must not go on running: should installing throw, or still not have ended the
- * app after `fallbackMs`, it quits. That quit installs on the way out if the updater
- * still can, as any quit does.
- *
- * The wait for the updater to end the app starts only once `install` returns.
- */
-export const installUpdate = ({
-  downloaded,
-  settled,
-  stopping,
-  stop,
-  shutdown,
-  install,
-  quit,
-  fallbackMs,
-}: {
-  readonly downloaded: () => boolean
-  readonly settled: () => Promise<boolean>
-  readonly stopping: () => boolean
-  readonly stop: () => void
-  readonly shutdown: () => Promise<void>
-  readonly install: () => void
-  readonly quit: () => void
-  readonly fallbackMs: number
-}): void => {
-  if (!downloaded() || stopping()) return
-  void settled().then((ready) => {
-    // A request made while the same download was awaited may have gone ahead first.
-    if (!ready || stopping()) return
-    stop()
-    void shutdown()
-      .then(install)
-      .then(() => void setTimeout(quit, fallbackMs))
-      .catch(quit)
-  })
-}
 
 /**
  * A quit that leaves an update waiting uninstalled: for the system ending the session,
@@ -347,8 +296,8 @@ export const quitWithoutInstalling =
  * Electron turns SIGTERM, SIGINT and SIGHUP into an ordinary quit with exit code 0, which
  * electron-updater installs on. A desktop logout or `kill` would then swap the AppImage in
  * the middle of ending the session, and the system may kill the swap halfway. The
- * orderly quits are closing the last window and restarting into the update, and both
- * are marked before the quit begins; any other, a signal or the menu's Quit, finds the
+ * orderly quits are closing the last window and restarting into an installed copy,
+ * and both are marked before the quit begins; any other, a signal or the menu's Quit, finds the
  * mark missing. Switching off is one way: nothing switches it on again.
  */
 export const installOnlyOnOrderlyQuit =
@@ -384,9 +333,8 @@ export type Updater = {
   on(event: "error", listener: (error: Error) => void): unknown
   checkForUpdates(): Promise<unknown>
   downloadUpdate(): Promise<unknown>
-  /** The install that quitting runs, and the one a restart runs; see `checkForUpdates`. */
+  /** The install that quitting runs; see `checkForUpdates`. */
   install?: (isSilent?: boolean, isForceRunAfter?: boolean) => boolean
-  quitAndInstall?: (isSilent?: boolean, isForceRunAfter?: boolean) => void
 }
 
 /** The part of Electron's native `autoUpdater` that learning of a staged update uses. */
@@ -416,23 +364,23 @@ export type NativeUpdater = {
  * One download is tracked at a time, whether the first or one in place of an update
  * already downloaded. While it is under way a release found is left to the next check, and
  * only its progress is offered. The schedule goes on once an update has downloaded, and a
- * newer release it finds replaces that update, so one restart lands on the latest
+ * newer release it finds replaces that update, so one quit lands on the latest
  * release. No release file carries a version in its name, so electron-updater downloads
  * the newer one beside the waiting file and renames it over that file once complete;
  * quitting meanwhile installs the waiting update on Windows and Linux. The offer turns
  * from `ready` to `downloading` the newer release as its progress comes in, so the page
- * shows it and no restart until it is in. Should it fail, the waiting file is likely gone
+ * shows it again. Should it fail, the waiting file is likely gone
  * with it, as electron-updater clears its download folder then: the newer release is
- * offered as `available` until the retry downloads it. On macOS the schedule ends once an update has downloaded
- * instead, as whether Squirrel.Mac stages an update over one it has staged is untried;
- * the next launch checks again.
+ * offered as `available` until the retry downloads it. On macOS the schedule ends once an
+ * update has downloaded instead, as whether Squirrel.Mac stages an update over one it has
+ * staged is untried; the next launch checks again.
  *
  * An error raised while installing fails the install: installing on quit is switched
  * off, so the same failing install is not tried at every quit, `installFailed` hears of
  * the version, and `offer` is told the update is only `available`. Installing is when
- * the updater's `install` (quitting) or `quitAndInstall` (restarting) has been called,
- * which this wraps to know, and on macOS also while Squirrel stages the download; any
- * other error, such as a check still in flight failing offline, is only logged. The
+ * the updater's `install` (quitting) has been called, which this wraps to know, and on
+ * macOS also while Squirrel stages the download; any other error, such as a check still
+ * in flight failing offline, is only logged. The
  * notes of an offer are the release's, and none unless the update information names
  * that release.
  *
@@ -441,17 +389,13 @@ export type NativeUpdater = {
  * release replaces the offer.
  *
  * On macOS, pass Electron's `native` updater: electron-updater reports a download before
- * Squirrel.Mac has staged it, and restarting before then waits on Squirrel indefinitely.
+ * Squirrel.Mac has staged it, and quitting before then leaves nothing to install.
  * The update stays `downloading`, at the last percent reported, until Squirrel has it,
  * and is `ready` then.
  *
  * `setChannel` follows another channel from the next check, and makes one soon, unless the
  * schedule has ended. `stop` ends the schedule, after which no new download starts; one
- * under way goes on. Quitting and restarting stop it first. `settled` gives whether an
- * update is downloaded and waits to install: once a download electron-updater has
- * reported in is done, and false while a newer release still downloads in place of the
- * update, which it then offers as `downloading`, so a restart asked for before its
- * progress came in shows it instead of going ahead later.
+ * under way goes on. Quitting stops it first.
  */
 export const checkForUpdates = (
   updater: Updater,
@@ -485,7 +429,6 @@ export const checkForUpdates = (
 ): {
   readonly setChannel: (channel: UpdateChannel) => void
   readonly stop: () => void
-  readonly settled: () => Promise<boolean>
 } => {
   // Downloads are asked for, to leave out the release that failed to install.
   updater.autoDownload = false
@@ -509,16 +452,14 @@ export const checkForUpdates = (
   let installing = false
   let staging = false
   let failed = false
-  for (const method of ["install", "quitAndInstall"] as const) {
-    const original: unknown = updater[method]
-    if (typeof original !== "function") continue
+  const original: unknown = updater.install
+  if (typeof original === "function")
     Object.assign(updater, {
-      [method]: (...args: unknown[]): unknown => {
+      install: (...args: unknown[]): unknown => {
         installing = true
         return Reflect.apply(original, updater, args)
       },
     })
-  }
   updater.on("error", (error) => {
     // MacUpdater reports a native error twice; the first is the failure, and the second
     // adds nothing to log or mark.
@@ -622,13 +563,5 @@ export const checkForUpdates = (
       first = setTimeout(check, switchCheckMs)
     },
     stop,
-    settled: () => {
-      if (loading === undefined) return Promise.resolve(downloaded !== undefined)
-      if (downloaded?.version === loading.version) return loading.done
-      // A newer release is still coming in: the page is shown it rather than restarted.
-      loading.percent = Math.max(0, loading.percent)
-      offer("downloading", loading.version, loading.notes, loading.percent)
-      return Promise.resolve(false)
-    },
   }
 }

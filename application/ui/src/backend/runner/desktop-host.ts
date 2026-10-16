@@ -104,9 +104,8 @@ export const hostOffer = (offer: unknown): UpdateOffer | undefined => {
 // page shows only what looks like a release's, and the channel only as one it knows.
 export const desktopUpdates = (host: DesktopHost | undefined): Backend["updates"] => {
   const listen = host?.onUpdate
-  const install = host?.installUpdate
   const openPage = host?.openUpdatePage
-  if (!listen || !install || !openPage) return undefined
+  if (!listen || !openPage) return undefined
   const get = host.updateChannel
   const set = host.setUpdateChannel
   return {
@@ -115,7 +114,6 @@ export const desktopUpdates = (host: DesktopHost | undefined): Backend["updates"
         const checked = hostOffer(offer)
         if (checked) listener(checked)
       }),
-    install: () => install(),
     openPage: () => openPage(),
     ...(get && set
       ? {

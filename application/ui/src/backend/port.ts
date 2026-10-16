@@ -215,14 +215,13 @@ export type Backend = {
   }
   // Optional. The desktop app's self-updates: `onOffer` hears each update the app learns
   // of, at once when one already waits and again for each newer one, and returns the
-  // stop. A `ready` offer is downloaded: `install` restarts the app into it once the
-  // pages have saved. An `available` one the app can't install itself, so the person
-  // gets it from its release page, which `openPage` opens. `channel`, where the app
+  // stop. A `ready` offer is downloaded and installs when the app next quits. An
+  // `available` one the app can't install itself, so the person gets it from its release
+  // page, which `openPage` opens. `channel`, where the app
   // lets the person choose, reads which releases it follows and switches them. Absent
   // where the app does not update itself, as in a browser.
   readonly updates?: {
     readonly onOffer: (listener: (offer: UpdateOffer) => void) => () => void
-    readonly install: () => void
     readonly openPage: () => void
     readonly channel?: {
       readonly get: () => Promise<UpdateChannel>

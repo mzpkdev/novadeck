@@ -54,11 +54,6 @@ export type DesktopBridge = {
    */
   onUpdate?(listener: (update: UpdateOffer) => void): () => void
   /**
-   * Restarts the app into the downloaded update: the host lets every page finish its
-   * saves first, as quitting does. Does nothing unless the last offer was `ready`.
-   */
-  installUpdate?(): void
-  /**
    * Opens the release page of the last offer's version in the browser. The host builds
    * the address from its own release repository; the page never names one. Does
    * nothing before an offer.
@@ -202,8 +197,8 @@ export const updateChannels: readonly UpdateChannel[] = ["stable", "early"]
 /**
  * An update the host tells the page of. `downloading`: a release the host is downloading,
  * `percent` (a whole number from 0 to 100) along; it turns `ready` once downloaded, or
- * `available` should the download fail. `ready`: downloaded, and installed by
- * `installUpdate` or when the app next quits. `available`: a newer release this build
+ * `available` should the download fail. `ready`: downloaded, and installed when
+ * the app next quits. `available`: a newer release this build
  * cannot install itself, which the person installs from its release page, as for an
  * unsigned macOS app, an AppImage in a folder it cannot write, a portable copy, or after
  * an install failed. `notes` are the release's notes as plain-text lines, at most

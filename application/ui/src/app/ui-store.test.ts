@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, vi } from "vitest"
 
-import { clearUpdateRaised, readUpdateRaised } from "../backend/update-raised"
+import { clearUpdateRaised } from "../backend/update-raised"
 import { createWorkspaceStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
 import { updateKey, type UpdateOffer } from "../model/update"
@@ -441,7 +441,6 @@ const updateHost = () => {
         report = undefined
       }
     },
-    install: () => {},
     openPage: () => {},
   }
   return {
@@ -471,22 +470,18 @@ describe("a waiting update", () => {
     expect(listening()).toBe(false)
   })
 
-  it("opens its notice for a version not shown yet, and again for a newer one", () => {
+  it("raises no notice on a copy that updates itself, whatever it is offered", async () => {
     const { updates, report } = updateHost()
-    const ui = createUiStore(initial("ready:0.0.80"))
+    const ui = createUiStore(initial())
     watchUpdates(updates, ui)
+    expect(ui.getSnapshot().portable).toBeNull()
     report(offered("0.0.80"))
+    report(offered("0.0.81", "available"))
+    report({ kind: "downloading", version: "0.0.82", notes: [], percent: 10 })
     expect(ui.getSnapshot().updateOpen).toBe(false)
-    report(offered("0.0.81"))
-    expect(ui.getSnapshot().updateOpen).toBe(true)
-  })
-
-  it("opens its notice again when the version already shown turns from ready to available", () => {
-    const { updates, report } = updateHost()
-    const ui = createUiStore(initial("ready:0.0.80"))
-    watchUpdates(updates, ui)
-    report(offered("0.0.80", "available"))
-    expect(ui.getSnapshot().updateOpen).toBe(true)
+    ui.update((state) => ({ ...state, portable: { portable: false } }))
+    report(offered("0.0.83"))
+    expect(ui.getSnapshot().updateOpen).toBe(false)
   })
 
   it("is never there where the backend has no updates", () => {
@@ -598,26 +593,46 @@ describe("a portable copy", () => {
     expect(late.getSnapshot().updateOpen).toBe(true)
   })
 
-  it("marks a notice shown before the host named the run, once it does", async () => {
+  it("raises the notice of a recent release not seen, whichever is heard first", async () => {
+    const recent: UpdateOffer = { kind: "available", version: "0.0.80", notes: [] }
+    const host = {
+      state: () => Promise.resolve(here),
+      install: () => Promise.resolve({ kind: "installing" as const }),
+      openInstalled: () => {},
+    }
+    // The offer first: nothing opens until the host says this is a portable copy.
+    const first = updateHost()
+    const early = createUiStore(initial())
+    watchUpdates(first.updates, early)
+    first.report(recent)
+    expect(early.getSnapshot().updateOpen).toBe(false)
+    watchPortable(host, early)
+    await vi.waitFor(() => expect(early.getSnapshot().updateOpen).toBe(true))
+    // The answer first.
+    const second = updateHost()
+    const late = createUiStore(initial())
+    watchPortable(host, late)
+    await vi.waitFor(() => expect(late.getSnapshot().portable).toEqual(here))
+    watchUpdates(second.updates, late)
+    second.report(recent)
+    expect(late.getSnapshot().updateOpen).toBe(true)
+  })
+
+  it("raises nothing when the answer is that it is not a portable copy", async () => {
     const { updates, report } = updateHost()
-    // A release not yet seen opens its notice at once, before any portable answer.
     const ui = createUiStore(initial())
     watchUpdates(updates, ui)
     report(stale())
-    expect(ui.getSnapshot().updateOpen).toBe(true)
-    // The footer shows it, as the command `updateShown` records, with the run unknown.
-    ui.update((state) => ({ ...state, updateSeen: updateKey(stale()) }))
-    noteUpdateShown(ui.getSnapshot().portable, updateKey(stale()))
-    expect(readUpdateRaised(here.run)).toBeNull()
     watchPortable(
       {
-        state: () => Promise.resolve(here),
+        state: () => Promise.resolve({ portable: false }),
         install: () => Promise.resolve({ kind: "installing" }),
         openInstalled: () => {},
       },
       ui,
     )
-    await vi.waitFor(() => expect(readUpdateRaised(here.run)).toBe(updateKey(stale())))
+    await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual({ portable: false }))
+    expect(ui.getSnapshot().updateOpen).toBe(false)
   })
 
   it("does not raise the notice again for a stale release it already heard", async () => {
@@ -670,12 +685,4 @@ describe("a portable copy", () => {
       })
     },
   )
-
-  it("leaves the notice of an installed copy to once per version", () => {
-    const { updates, report } = updateHost()
-    const ui = createUiStore(initial("available:0.0.80"))
-    watchUpdates(updates, ui)
-    report(stale())
-    expect(ui.getSnapshot().updateOpen).toBe(false)
-  })
 })

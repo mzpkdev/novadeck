@@ -815,7 +815,8 @@ App:
   narrow), which never opens by itself; its panel offers Later and Install Novadeck, and
   pressing it here never ends: the chip reads Installing…. "Update available"
   adds a release this copy learned of two days ago: the chip reads Update available and its
-  notice, raised once per version, installs rather than downloads. "Stale
+  notice, raised once per version, installs rather than downloads; its "long notes" and "no notes" variants show the notice's
+  list at the caps (five shown, "and 7 more") and empty. "Stale
   update" has known of a newer release for 20 days, so the notice comes up at every boot.
   "Newer install exists" and "Install fails" arm the other ends of pressing
   Install Novadeck: a panel saying a newer Novadeck is already installed with Open
@@ -838,17 +839,14 @@ App:
   Preferences first to see them named in the dialog; Agents' "Fail next" makes a disconnect
   fail before the run. `?uninstall=` opens `unavailable`, `manual`, `removed`, `leftover`,
   `failed`, `stopped`, `trash`, `windows`, `windows-failed` or `no-data` for specs.
-- **Updates:** have an update downloaded, available (the app can't install it itself), with
-  no notes, or with notes at the caps, for the notice above the footer's "Update ready" or
-  "Update available" chip. Downloading counts the chip up in steps (its notice, opened from the
-  chip, shows the progress with Later alone), then brings up the Ready notice. Each press offers a newer version, so the notice comes up
-  again; Later leaves the chip, which opens it again. Install failed turns the update
-  waiting from ready to available, and the notice comes up again with Download; pressed
-  while Downloading counts, it turns the chip to Update available without a notice, as a
-  failed download does. Restart
-  now shows Restarting…, which stays until Finish restart reloads the demo, as the app
-  comes back on the new version; Download opens no page in the demo. Early builds on and
-  off set the channel Preferences' Updates switch shows once Preferences is reopened.
+- **Updates:** Download counts the floating progress bar above the footer's right end up in
+  steps, shows it ready for a few seconds, then fades it; Download, held stops it at 40% to
+  look at. Download failed drops a running bar at once and shows the footer's Update
+  available chip, as a failed download does. Release to fetch shows that chip alone, which
+  opens the release page (counted, since a browser has none). Ready at
+  launch offers an update downloaded before this run, which shows nothing, as at a launch.
+  Finish restart reloads the demo, as the app comes back on the new version. Early builds on
+  and off set the channel Preferences' Updates switch shows once Preferences is reopened.
   `?demo=update`, `?demo=update-available` and `?demo=update-downloading` open variants
   that already have one waiting, for specs.
 

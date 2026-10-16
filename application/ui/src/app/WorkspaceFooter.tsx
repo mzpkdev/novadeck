@@ -98,24 +98,29 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
       status={status}
       navigate={navigate}
       onRetry={backend.crashLoop ? commands.retryAfterCrashLoop : undefined}
+      // A copy that updates itself shows only its downloads; a portable one, which can't,
+      // has its install entry, with the release it is missing.
+      progress={updates && !portable ? offer : null}
+      noticeOpen={sandboxOpen}
+      available={
+        updates && !portable && !portablePending && offer?.kind === "available"
+          ? { version: offer.version, onOpenPage: updates.openPage }
+          : undefined
+      }
       update={
-        (offer && updates) || (portable && portableHost)
+        portable && portableHost
           ? {
               offer: updates ? (offer ?? undefined) : undefined,
-              portable:
-                portable && portableHost
-                  ? {
-                      // The install entry covers the sandbox notice a portable copy would show.
-                      unsandboxed: sandbox !== null && !sandbox.sandboxed,
-                      onInstall: portableHost.install,
-                      onOpenInstalled: portableHost.openInstalled,
-                    }
-                  : undefined,
+              portable: {
+                // The install entry covers the sandbox notice a portable copy would show.
+                unsandboxed: sandbox !== null && !sandbox.sandboxed,
+                onInstall: portableHost.install,
+                onOpenInstalled: portableHost.openInstalled,
+              },
               open: updateOpen,
               blocked: asking || welcome || sandboxOpen,
               onOpenChange: commands.setUpdateOpen,
               onShown: commands.updateShown,
-              onInstall: updates?.install ?? (() => {}),
               onOpenPage: updates?.openPage ?? (() => {}),
               returnFocus: () => {
                 const { selected, view } = currentState(store.getSnapshot())

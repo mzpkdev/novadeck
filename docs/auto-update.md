@@ -2,9 +2,9 @@
 
 Every Novadeck build either updates itself or tells the person that a newer release
 exists and where to get it. Installed apps look on GitHub Releases shortly after launch
-and every four hours. The app never restarts on its own: a downloaded update installs
-when the app next quits, or when the person chooses to restart, which saves every page
-first, as quitting does.
+and every four hours. The app never restarts on its own, and the page has no restart
+button: a downloaded update installs when the app next quits, and the page shows only a
+progress bar while it downloads.
 
 The repository to look in comes from `resources/app-update.yml`, which electron-builder
 writes into the app from its `publish` block. The release workflow fills that block from
@@ -73,28 +73,26 @@ build checks its own signature once at launch with `codesign`. See
   counts. A download already on disk from an earlier launch reports none and is `ready` at
   once, without a flash of progress. It becomes `ready` once downloaded (on macOS, once
   Squirrel has staged it, with the percent staying where it was until then), and the page
-  then raises the notice with Restart now; the update installs on the next quit or when the
-  person restarts. The chip shows the progress meanwhile and raises no notice. One download
+  then shows "Update ready" on a floating bar above the footer for a few seconds before it
+  fades; the update installs on the next quit. The bar shows
+  the progress meanwhile; it has nothing to press and never takes focus. A `ready` offer
+  the page did not see downloading, as at a launch, shows nothing. One download
   is tracked at a time, and a release found while it is under way waits for the next check.
 - **A failed download** is tried again by a check five minutes later, once per release in a
   run; after that the four-hourly checks try it. Once its progress (or an update it
-  replaces) was offered, it is offered as `available` meanwhile, and the chip reads Update
-  available. The page raises no notice for a download that turned `available` straight
-  from its progress; it does when a newer release failed before any progress in place of
-  a ready one, as the update waiting is gone, and after a reload. One that failed before
-  any progress, with no update waiting, goes untold, as a failed check does. A failed
-  staging on macOS (an install failure) turns the chip to Update available the same way,
-  quietly; the next launch tells of it with a notice.
-- **A newer release** found while an update waits replaces it, so one restart lands on the
-  latest release rather than one restart per release missed. No release file carries a
+  replaces) was offered, it is offered as `available` meanwhile, and the page drops the
+  bar at once and shows nothing in its place. One that failed before any progress, with no
+  update waiting, goes untold, as a failed check does. A failed staging on macOS (an
+  install failure) turns the offer to `available` the same way, quietly.
+- **A newer release** found while an update waits replaces it, so one quit lands on the
+  latest release rather than one per release missed. No release file carries a
   version in its name (`electron-builder.yml`), so electron-updater downloads the newer one
   beside the waiting file and renames it over that file once complete; a quit meanwhile
   installs the waiting update on Windows and Linux. The offer turns from `ready` into
-  `downloading` the newer release as its progress comes in, so the page shows it and offers
-  no restart until it is in. A restart asked for in the moment before its progress came in
-  shows the download instead of going ahead later. Should the download fail, electron-updater clears its download
+  `downloading` the newer release as its progress comes in, so the page shows the bar
+  again. Should the download fail, electron-updater clears its download
   folder, which likely takes the waiting file too: the newer release is offered as
-  `available` until the retry downloads it. Quitting and restarting end the schedule first,
+  `available` until the retry downloads it. Quitting ends the schedule first,
   so no new download starts on the way out; one under way goes on, and a quit after it
   lands installs the newer release. On Windows the newer one costs its changed ranges and
   then the whole file, and its percent starts over once: electron-updater's differential
@@ -105,8 +103,10 @@ build checks its own signature once at launch with `codesign`. See
   waiting file: were the folder emptied while the updater still names the file, quitting
   would delete the running AppImage and install nothing.
 - **Telling** builds download nothing and keep checking, so a newer release replaces the
-  offer. The offer is `available`, and the page's button opens the release page,
-  `https://github.com/<owner>/<repo>/releases/tag/v<version>`, in the browser.
+  offer. The offer is `available`, and an installed copy shows a quiet "Update available"
+  chip in the footer (no panel, notes or Later) whose press opens the release page,
+  `https://github.com/<owner>/<repo>/releases/tag/v<version>`, in the browser. A portable
+  copy has its install entry instead.
 - **Notes** are shown only when the update information names the offered release (its
   release name, "Novadeck v<version>", ends in the version). When the promoted tag is not in
   the releases feed electron-updater falls back to the newest entry, whose notes belong to
@@ -118,8 +118,7 @@ build checks its own signature once at launch with `codesign`. See
 ### Install failures
 
 Only an error raised while installing counts as a failed install: one raised after the
-updater's `install` (the quit-time install) or `quitAndInstall` (a restart) was called, which
-the host wraps to know, and on macOS one raised while Squirrel stages the download. The
+updater's `install` (the quit-time install) was called, which the host wraps to know, and on macOS one raised while Squirrel stages the download. The
 AppImage's folder turned read-only, say. Any other error, such as a check still in flight failing offline after
 the download, is only logged. The host then switches installing on quit off, so the same
 failure does not come back at every quit; writes the version whose install failed (the
@@ -131,13 +130,9 @@ is ignored. The comparison is in `checkForUpdates` (`failedVersion`), where it i
 temporary file that is renamed over, re-reading the file first, so the failure mark, which
 is written as the app exits, cannot race another change.
 
-Restarting saves every page and ends the shells before the updater installs. If the
-updater returns without ending the app, the app quits after 10 seconds (30 on macOS) rather
-than go on running without its shells. On Linux electron-updater starts the new AppImage
-first and quits this process after, so the restart lets go of the single-instance lock just
-before quitting, when the updater emits `before-quit-for-update` on Electron's `autoUpdater`,
-which it does only once the install went ahead. The new version, which needs a second or more
-to ask for the lock, can then take it. After a quiet failure the lock stays held.
+Restarting a portable copy into the installed one saves every page and ends the shells
+first. If the new process does not end the app, it quits after 10 seconds (30 on macOS)
+rather than go on running without its shells.
 
 ### Quitting by a signal on Linux
 
@@ -148,7 +143,7 @@ so a desktop logout or `kill` could kill an AppImage swap halfway. The host tell
 from signals by marking them before they begin:
 
 - Closing the last window.
-- Restarting into the update.
+- Restarting a portable copy into the installed one.
 - Ctrl+Q and File > Quit. Electron's default menu is present on Linux even with the menu
   bar hidden, and its Quit is a role that cannot be told from a signal, so the host sets
   the same menu (File, Edit, View and Window) with a Quit of its own on the same
@@ -388,9 +383,9 @@ keeps the workspace.
 The host takes Electron's single-instance lock at startup. Chromium keys it on the data
 folder (`userData`), not on the executable, so a portable and an installed copy exclude each
 other. A second launch quits at once, before it starts anything, and the running window comes
-to the front, or opens one on macOS, where the app lives on with no window. A Linux update
-restart is the exception: it lets go of the lock just before quitting, so the new version,
-which electron-updater starts first, can take it.
+to the front, or opens one on macOS, where the app lives on with no window. Restarting
+into an installed copy is the exception: it lets go of the lock before the new process
+starts (`releaseLock`), so it can take it.
 
 The packaged smoke test (`smoke.mjs`) and the Linux sandbox check in `release.yml` pass
 `--user-data-dir`, so each gets its own lock. The other smoke launches share the default
@@ -403,7 +398,7 @@ kill the process tree and wait.
 ## The page's view
 
 `DesktopBridge` in `application/protocol/src/bridge.ts` carries `onUpdate` (an
-`UpdateOffer` with `kind`, `version`, `notes` and, for `downloading`, a whole `percent`), `installUpdate`, `openUpdatePage`,
+`UpdateOffer` with `kind`, `version`, `notes` and, for `downloading`, a whole `percent`), `openUpdatePage`,
 `updateChannel` and `setUpdateChannel`. Release notes arrive from GitHub as HTML; the host
 turns them into plain-text lines (one per list item or paragraph, tags, entities and
 control characters stripped, at most `updateNotesLength` lines of `updateNoteLength`

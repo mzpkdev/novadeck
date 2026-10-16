@@ -61,7 +61,16 @@ const installing: InstallResult = { kind: "installing" }
 // Each press is another release, so the notice that comes once per version comes again.
 let patch = 79
 
-const release = (days: number): UpdateOffer => releaseOffer(`0.0.${(patch += 1)}`, days)
+const release = (days: number, notes: readonly string[] = sampleNotes): UpdateOffer => ({
+  ...releaseOffer(`0.0.${(patch += 1)}`, days),
+  notes,
+})
+
+// Release notes at the caps: 12 lines of 200 characters, of which the notice shows five
+// and says how many more there are.
+const longestNotes: readonly string[] = Array.from({ length: 12 }, (_, index) =>
+  `${index + 1}. ${"A long release note that runs on and on. ".repeat(6)}`.slice(0, 200),
+)
 
 // The panel's group for portable copies. Each action boots the demo again as one, with
 // the host's answer to an install armed.
@@ -82,6 +91,18 @@ export const portableGroup = (launch: DemoLaunch): DemoActionGroup => {
         hint: "2-day-old release: chip, notice once per version",
         reboots: true,
         run: () => launch.setPortable({ install: installing, offer: release(2) }),
+      },
+      {
+        label: "Update available, long notes",
+        hint: "12 long notes: the notice shows 5 and “and 7 more”",
+        reboots: true,
+        run: () => launch.setPortable({ install: installing, offer: release(2, longestNotes) }),
+      },
+      {
+        label: "Update available, no notes",
+        hint: "Same notice, no notes",
+        reboots: true,
+        run: () => launch.setPortable({ install: installing, offer: release(2, []) }),
       },
       {
         label: "Stale update",

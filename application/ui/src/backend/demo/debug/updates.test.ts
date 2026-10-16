@@ -41,11 +41,10 @@ describe("demo updates", () => {
 
   it("holds the restart until it is finished, and finishes only while an update waits", () => {
     let restarts = 0
-    const { updates, offer, finish } = createDemoUpdates(() => void (restarts += 1))
+    const { offer, finish } = createDemoUpdates(() => void (restarts += 1))
     finish()
     expect(restarts).toBe(0)
     offer(ready("0.0.80"))
-    updates.install()
     expect(restarts).toBe(0)
     finish()
     expect(restarts).toBe(1)

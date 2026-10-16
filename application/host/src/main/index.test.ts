@@ -75,10 +75,7 @@ describe("compiled desktop host", () => {
       // The decision itself is covered in ./updater.test.ts.
       expect(main).toContain("updatePlan(")
       expect(main).toContain('await import("electron-updater")')
-      expect(main).toContain("shutdown: shutDown")
-      expect(main).toContain("quitAndInstall(")
       expect(preload).toContain("novadeck:update-offer")
-      expect(preload).toContain("novadeck:install-update")
       expect(preload).toContain("novadeck:open-update-page")
       expect(preload).toContain("novadeck:set-update-channel")
       // electron-builder's portable Windows target is not shipped, and its variable is not read.
@@ -129,23 +126,6 @@ describe("compiled desktop host", () => {
 
       expect(main).toMatch(
         /extractWithProcess\(installedEnvironment\(process\.env, appImageMounts\(\)\)\)/u,
-      )
-    })
-
-    it("lets go of the lock before electron-updater starts the new AppImage on a restart", async () => {
-      const main = await read("main/index.js")
-
-      // On Electron's own autoUpdater, which electron-updater emits on; the bundler may
-      // rename the import.
-      const native =
-        /\{[^}]*\bautoUpdater(?: as ([\w$]+))?(?=\s*[,}])[^}]*\} from "electron"/u.exec(main)
-      expect(native).not.toBeNull()
-      const name = (native?.[1] ?? "autoUpdater").replaceAll("$", "\\$")
-      expect(main).toMatch(
-        new RegExp(
-          `process\\.platform === "linux"\\)\\s*${name}\\.once\\("before-quit-for-update", \\(\\) => app\\.releaseSingleInstanceLock\\(\\)\\);\\s*updater\\?\\.quitAndInstall\\(true, true\\)`,
-          "u",
-        ),
       )
     })
 

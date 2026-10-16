@@ -31,51 +31,16 @@ describe("a stale release", () => {
   })
 })
 
-describe("a notice's raising", () => {
+describe("a portable copy's notice raising", () => {
   const raised = (
     offer: UpdateOffer,
-    options: {
-      previous?: UpdateOffer | null
-      seen?: string | null
-      portable?: boolean
-      shownThisRun?: boolean
-    },
-  ): boolean =>
-    noticeRaised(offer, {
-      previous: null,
-      seen: null,
-      portable: false,
-      shownThisRun: false,
-      now,
-      ...options,
-    })
+    options: { seen?: string | null; shownThisRun?: boolean } = {},
+  ): boolean => noticeRaised(offer, { seen: null, shownThisRun: false, now, ...options })
 
   context("for an offer not shown before", () => {
     it("is raised", () => {
-      expect(raised(dated(2 * day), { portable: true })).toBe(true)
+      expect(raised(dated(2 * day))).toBe(true)
       expect(raised(dated(2 * day), { seen: "available:0.0.79" })).toBe(true)
-    })
-  })
-
-  context("for a download", () => {
-    const downloading: UpdateOffer = {
-      kind: "downloading",
-      version: "0.0.80",
-      notes: [],
-      percent: 40,
-    }
-
-    it("is never raised, but the offer it turns into is", () => {
-      expect(raised(downloading, {})).toBe(false)
-      expect(raised(downloading, { portable: true })).toBe(false)
-      expect(raised({ ...downloading, kind: "ready" }, { seen: "downloading:0.0.80" })).toBe(true)
-    })
-
-    it("is not raised when it fails and turns available, as the host tries it again soon", () => {
-      const failed: UpdateOffer = { kind: "available", version: "0.0.80", notes: [] }
-      expect(raised(failed, { previous: downloading })).toBe(false)
-      expect(raised(failed, { previous: { ...downloading, version: "0.0.79" } })).toBe(true)
-      expect(raised(failed, { previous: { ...downloading, kind: "ready" } })).toBe(true)
     })
   })
 
@@ -83,25 +48,20 @@ describe("a notice's raising", () => {
     const seen = "available:0.0.80"
 
     it("is not raised again when the copy is recent", () => {
-      expect(raised(dated(2 * day), { seen, portable: true })).toBe(false)
-      expect(raised(dated(20 * day), { seen })).toBe(false)
+      expect(raised(dated(2 * day), { seen })).toBe(false)
     })
 
-    it("is raised again at a launch of a portable copy once stale", () => {
-      expect(raised(dated(20 * day), { seen, portable: true })).toBe(true)
+    it("is raised again at a launch once stale", () => {
+      expect(raised(dated(20 * day), { seen })).toBe(true)
     })
 
     it("is not raised again within a run that has shown its notice", () => {
-      expect(raised(dated(20 * day), { seen, portable: true, shownThisRun: true })).toBe(false)
+      expect(raised(dated(20 * day), { seen, shownThisRun: true })).toBe(false)
     })
 
     it("is not raised for a stale offer with no date", () => {
-      const undated: UpdateOffer = {
-        kind: "available",
-        version: "0.0.80",
-        notes: [],
-      }
-      expect(raised(undated, { seen, portable: true })).toBe(false)
+      const undated: UpdateOffer = { kind: "available", version: "0.0.80", notes: [] }
+      expect(raised(undated, { seen })).toBe(false)
     })
   })
 })

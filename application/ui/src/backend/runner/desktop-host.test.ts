@@ -98,7 +98,6 @@ describe("desktop notices", () => {
 // A host's update bridge that lets a test report offers and counts what the page asks.
 const updater = (channel: unknown = "stable") => {
   let report: ((offer: unknown) => void) | undefined
-  let installs = 0
   let pages = 0
   const set: unknown[] = []
   const bridge = {
@@ -108,7 +107,6 @@ const updater = (channel: unknown = "stable") => {
         report = undefined
       }
     },
-    installUpdate: () => void (installs += 1),
     openUpdatePage: () => void (pages += 1),
     updateChannel: () => Promise.resolve(channel),
     setUpdateChannel: (next: unknown) => void set.push(next),
@@ -116,7 +114,6 @@ const updater = (channel: unknown = "stable") => {
   return {
     bridge,
     report: (offer: unknown) => report?.(offer),
-    installs: () => installs,
     pages: () => pages,
     set,
   }
@@ -214,12 +211,11 @@ describe("desktop updates", () => {
       expect(heard[0]!.notes).toEqual([])
     })
 
-    it("installs and opens the release page through the host", () => {
-      const { bridge, installs, pages } = updater()
+    it("opens the release page through the host", () => {
+      const { bridge, pages } = updater()
       const updates = desktopUpdates(bridge)!
-      updates.install()
       updates.openPage()
-      expect([installs(), pages()]).toEqual([1, 1])
+      expect(pages()).toBe(1)
     })
 
     it("reads the channel and switches it, accepting only a channel it knows", async () => {
@@ -393,7 +389,6 @@ const heardDate = (outdatedSince: unknown) => {
       })
       return () => {}
     },
-    installUpdate: () => {},
     openUpdatePage: () => {},
   } as unknown as DesktopHost)!.onOffer((each) => (offer = each))
   return offer?.outdatedSince

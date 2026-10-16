@@ -45,9 +45,6 @@ export const updateOfferChannel = "novadeck:update-offer"
 /** Renderer-to-main request to be told, on `updateOfferChannel`, of the last offer. */
 export const updateRequestChannel = "novadeck:update-request"
 
-/** Renderer-to-main request to restart into the downloaded update. */
-export const installUpdateChannel = "novadeck:install-update"
-
 /** Renderer-to-main request to open the release page of the last offer in the browser. */
 export const openUpdatePageChannel = "novadeck:open-update-page"
 
