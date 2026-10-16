@@ -1,6 +1,15 @@
-import { afterEach, describe as context, describe, expect, it, onTestFailed } from "vitest"
+import {
+  afterEach,
+  describe as context,
+  describe,
+  expect,
+  it,
+  onTestFailed,
+  onTestFinished,
+} from "vitest"
 
 import { pageScheme, saveFromAnotherWindow, systemScheme } from "./support/appearance"
+import { motionDiagnostics } from "./support/motion-diagnostics"
 import {
   commandInput,
   expectSelected,
@@ -16,8 +25,10 @@ import {
 // This project uses ordinary motion: the main behavior suite opts out of animations.
 // Transitions finish; a running terminal's spinner and header sweep loop for as long as
 // it runs, so they never count.
-const animationsFinished = async (): Promise<void> => {
-  let pending: unknown[] = []
+let motion: ReturnType<typeof motionDiagnostics> | undefined
+const animationsFinished = async (phase: string): Promise<void> => {
+  const wait = motion?.beginWait(phase)
+  let pending: Record<string, unknown>[] = []
   onTestFailed(() =>
     console.error(
       "UI_PENDING_ANIMATIONS",
@@ -53,53 +64,112 @@ const animationsFinished = async (): Promise<void> => {
           computed: effect?.getComputedTiming(),
         }
       })
+      motion?.sample(animations, pending, wait)
       return animations.length
     })
     .toBe(0)
+  if (wait !== undefined) motion?.settled(wait)
+}
+
+const motionCase = (name: string, body: () => Promise<void>) => async () => {
+  const capture = motionDiagnostics()
+  motion = capture
+  let closed = false
+  const finish = (boundary: string) => {
+    if (closed) return undefined
+    closed = true
+    if (motion === capture) motion = undefined
+    const result = capture.stop()
+    const text = JSON.stringify({
+      name,
+      boundary,
+      diagnostic:
+        result?.updateRejections || result?.callbackRejections
+          ? "unexpected-update-rejection"
+          : result?.pendingUpdates || result?.pendingCallbacks
+            ? "incomplete-pending-update"
+            : "observed",
+      result,
+    })
+    const chunks = Math.ceil(text.length / 8000)
+    for (let index = 0; index < chunks; index += 1)
+      console.info(
+        "UI_MOTION_DIAGNOSTICS",
+        JSON.stringify({
+          chunk: index + 1,
+          chunks,
+          data: text.slice(index * 8000, (index + 1) * 8000),
+        }),
+      )
+    return result
+  }
+  // Timeout fallback; normal and assertion-failure snapshots happen before fixture cleanup.
+  onTestFinished(() => {
+    finish("after-case-hooks")
+  })
+  let result: ReturnType<typeof capture.stop>
+  try {
+    await body()
+  } finally {
+    result = finish("test-body-finally")
+  }
+  // Original errors propagate before this point; successful assertions cannot hide a failed update.
+  if (result?.updateRejections || result?.callbackRejections)
+    throw new Error("Motion capture observed an unexpected updateCallbackDone rejection")
+  if (result?.pendingUpdates || result?.pendingCallbacks)
+    throw new Error("Motion capture incomplete: updateCallbackDone remained pending at stop")
 }
 
 describe("workspace motion", () => {
   context("when moving a terminal between views", () => {
-    it("finishes the transition with its selection and input intact", async () => {
-      expect(matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false)
-      expect(document.startViewTransition).toBeTypeOf("function")
-      await openWorkspace()
-      await terminalTab("Dev server").click()
-      await commandInput("Dev server").fill("retained draft")
+    it(
+      "finishes the transition with its selection and input intact",
+      motionCase("selection and input", async () => {
+        expect(matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false)
+        expect(document.startViewTransition).toBeTypeOf("function")
+        await openWorkspace()
+        await terminalTab("Dev server").click()
+        await commandInput("Dev server").fill("retained draft")
 
-      await viewSwitcher().getByText("Grid", { exact: true }).click()
-      await expect.element(view("Grid")).toBeChecked()
-      await animationsFinished()
-      await expectSelected("Dev server")
-      await expect.element(commandInput("Dev server")).toHaveValue("retained draft")
+        await viewSwitcher().getByText("Grid", { exact: true }).click()
+        await expect.element(view("Grid")).toBeChecked()
+        await animationsFinished("Grid")
+        await expectSelected("Dev server")
+        await expect.element(commandInput("Dev server")).toHaveValue("retained draft")
 
-      await terminal("Dev server")
-        .getByRole("button", { name: labelled("Focus ", "Dev server") })
-        .click()
-      await expect.element(view("Focus")).toBeChecked()
-      await animationsFinished()
-      await expect.element(commandInput("Dev server")).toHaveValue("retained draft")
-      await commandInput("Dev server").click()
-      await press("!")
-      await expect.element(commandInput("Dev server")).toHaveValue("retained draft!")
-    })
+        await terminal("Dev server")
+          .getByRole("button", { name: labelled("Focus ", "Dev server") })
+          .click()
+        await expect.element(view("Focus")).toBeChecked()
+        await animationsFinished("Focus")
+        await expect.element(commandInput("Dev server")).toHaveValue("retained draft")
+        await commandInput("Dev server").click()
+        await press("!")
+        await expect.element(commandInput("Dev server")).toHaveValue("retained draft!")
+      }),
+    )
   })
 
   context("when another view is requested during a transition", () => {
-    it("settles on the last requested view and remains interactive", async () => {
-      await openWorkspace()
-      await viewSwitcher().getByText("Grid", { exact: true }).click()
-      await viewSwitcher().getByText("Canvas", { exact: true }).click()
-      await expect.element(view("Canvas")).toBeChecked()
-      await animationsFinished()
-      await expect.element(terminal("Checkout implementation")).toBeVisible()
+    it(
+      "settles on the last requested view and remains interactive",
+      motionCase("last requested view", async () => {
+        await openWorkspace()
+        await viewSwitcher().getByText("Grid", { exact: true }).click()
+        await viewSwitcher().getByText("Canvas", { exact: true }).click()
+        await expect.element(view("Canvas")).toBeChecked()
+        await animationsFinished("Canvas")
+        await expect.element(terminal("Checkout implementation")).toBeVisible()
 
-      await viewSwitcher().getByText("Focus", { exact: true }).click()
-      await expect.element(view("Focus")).toBeChecked()
-      await animationsFinished()
-      await commandInput("Checkout implementation").fill("still interactive")
-      await expect.element(commandInput("Checkout implementation")).toHaveValue("still interactive")
-    })
+        await viewSwitcher().getByText("Focus", { exact: true }).click()
+        await expect.element(view("Focus")).toBeChecked()
+        await animationsFinished("Focus")
+        await commandInput("Checkout implementation").fill("still interactive")
+        await expect
+          .element(commandInput("Checkout implementation"))
+          .toHaveValue("still interactive")
+      }),
+    )
   })
 })
 
