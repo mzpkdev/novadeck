@@ -1,4 +1,5 @@
-import { basename, dirname, join } from "node:path"
+// macOS paths, whichever system the tests run on.
+import { posix } from "node:path"
 
 import { updateVersionPattern } from "@novadeck/protocol/bridge"
 
@@ -101,9 +102,9 @@ export type BundleRecoveryHost = Pick<
 export const recoverBundles = async (host: BundleRecoveryHost): Promise<string | undefined> => {
   const tidy = async (place: readonly [string, string]): Promise<string | undefined> => {
     const [folder, name] = place
-    const target = join(folder, name)
-    const aside = join(folder, `.${name}.old`)
-    const staged = join(folder, `.${name}.new`)
+    const target = posix.join(folder, name)
+    const aside = posix.join(folder, `.${name}.old`)
+    const staged = posix.join(folder, `.${name}.new`)
     let restored: string | undefined
     try {
       if (await host.exists(aside)) {
@@ -143,7 +144,7 @@ export const installBundle = async (
   existing: string | undefined,
   host: BundleInstallHost,
 ): Promise<BundleInstall> => {
-  const names = existing === undefined ? [host.packaged] : [host.packaged, basename(existing)]
+  const names = existing === undefined ? [host.packaged] : [host.packaged, posix.basename(existing)]
   const restored = await recoverBundles({ ...host, names })
   existing ??= restored
   let target: string
@@ -154,14 +155,14 @@ export const installBundle = async (
     if (existing === host.running || (await host.versionOf(existing)) === host.version)
       return { kind: "installed", image: existing }
     target = existing
-    if (!(await host.writable(existing)) || !(await host.writable(dirname(existing))))
+    if (!(await host.writable(existing)) || !(await host.writable(posix.dirname(existing))))
       return failed(
         "Novadeck in Applications belongs to another account on this Mac. Remove it and try again.",
       )
   } else if (await host.writable(host.applications)) {
-    target = join(host.applications, host.packaged)
+    target = posix.join(host.applications, host.packaged)
   } else {
-    target = join(host.userApplications, host.packaged)
+    target = posix.join(host.userApplications, host.packaged)
     try {
       await host.mkdir(host.userApplications)
     } catch (error) {
@@ -169,10 +170,10 @@ export const installBundle = async (
       return failed(reasonOf(error))
     }
   }
-  const folder = dirname(target)
-  const name = basename(target)
-  const staged = join(folder, `.${name}.new`)
-  const aside = join(folder, `.${name}.old`)
+  const folder = posix.dirname(target)
+  const name = posix.basename(target)
+  const staged = posix.join(folder, `.${name}.new`)
+  const aside = posix.join(folder, `.${name}.old`)
   try {
     await host.remove(staged)
     await host.remove(aside)
