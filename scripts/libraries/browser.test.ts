@@ -2,7 +2,7 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
-import { afterAll, describe, expect, it } from "vitest"
+import { describe, expect, it, onTestFinished } from "vitest"
 
 import { browserEntries, checkLibrary, libraries } from "./browser.ts"
 import { template } from "./template.ts"
@@ -33,6 +33,21 @@ describe("a library's browser subpaths", () => {
     ).toEqual([
       { subpath: ".", file: "./src/index.ts" },
       { subpath: "./view", file: "./dist/view.js" },
+    ])
+  })
+
+  it("take a condition's fallbacks, and the next condition where one leads nowhere", () => {
+    expect(
+      browserEntries({
+        name: "@fixture/any",
+        exports: {
+          "./view": ["./src/view.ts"],
+          "./pty": { development: { node: "./src/pty.ts" }, default: "./dist/pty.js" },
+        },
+      }),
+    ).toEqual([
+      { subpath: "./view", file: "./src/view.ts" },
+      { subpath: "./pty", file: "./dist/pty.js" },
     ])
   })
 
@@ -70,9 +85,15 @@ describe("the browser build check", () => {
     ])
   })
 
+  it("fails a library with no exports, which can't tell browser from Node", async () => {
+    expect(await checkLibrary(fixture("unexported"))).toEqual([
+      expect.objectContaining({ problem: "package.json has no exports" }),
+    ])
+  })
+
   it("passes a library made from the template", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "novadeck-library-"))
-    afterAll(() => rmSync(workspace, { recursive: true, force: true }))
+    onTestFinished(() => rmSync(workspace, { recursive: true, force: true }))
     cpSync(join(root, "tsconfig.base.json"), join(workspace, "tsconfig.base.json"))
     const folder = join(workspace, "libraries", "example")
     for (const [path, content] of Object.entries(template("example", "An example.", versions))) {

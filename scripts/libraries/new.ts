@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
 import { isLibraryName, template, type Versions } from "./template.ts"
@@ -12,8 +12,23 @@ const root = join(import.meta.dirname, "..", "..")
 const [name, ...words] = process.argv.slice(2)
 const description = words.join(" ")
 
-if (!name || !isLibraryName(name) || !description) {
-  console.error("usage: pnpm new:library <name> <description>, the name in lower-case-words")
+// The workspace's package names, without their scope: a library may not take one.
+const taken = ["application", "engines", "harnesses", "libraries"]
+  .flatMap((folder) =>
+    existsSync(join(root, folder))
+      ? readdirSync(join(root, folder)).map((each) => join(root, folder, each, "package.json"))
+      : [],
+  )
+  .concat(join(root, "atlas", "package.json"))
+  .filter((file) => existsSync(file))
+  .map((file) =>
+    (JSON.parse(readFileSync(file, "utf8")) as { name: string }).name.split("/").at(-1)!,
+  )
+
+if (!name || !isLibraryName(name, taken) || !description) {
+  console.error(
+    "usage: pnpm new:library <name> <description>, the name in lower-case-words, neither a workspace package's nor harness-*",
+  )
   process.exit(1)
 }
 
@@ -32,8 +47,9 @@ for (const [path, content] of Object.entries(template(name, description, devDepe
 }
 // In the repository's own style, as the template's JSON is written plainly.
 execFileSync(process.execPath, [join(root, "node_modules", "oxfmt", "bin", "oxfmt"), folder], {
-  stdio: "ignore",
+  cwd: root,
+  stdio: ["ignore", "ignore", "inherit"],
 })
 console.log(
-  `Wrote libraries/${name}. Next: pnpm install, then fence it in (see libraries/README.md).`,
+  `Wrote libraries/${name}. Next: pnpm install, fence it in and give it its first test (see libraries/README.md).`,
 )

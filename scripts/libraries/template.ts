@@ -9,8 +9,15 @@ export type Versions = {
   readonly vitest: string
 }
 
-/** Whether `name` can name a library: lower-case words joined by hyphens. */
-export const isLibraryName = (name: string): boolean => /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(name)
+/**
+ * Whether `name` can name a new library: lower-case words joined by hyphens, not one of
+ * `taken` (the workspace's package names, without their scope) and not `harness-`, which
+ * names the harness packages.
+ */
+export const isLibraryName = (name: string, taken: readonly string[]): boolean =>
+  /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(name) &&
+  !name.startsWith("harness-") &&
+  !taken.includes(name)
 
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 
@@ -45,7 +52,13 @@ export const template = (
       vitest: versions.vitest,
     },
   }),
-  "tsconfig.json": json({ extends: "../../tsconfig.base.json", include: ["src/**/*.ts"] }),
+  // Its rootDir fails the typecheck, tests included, on a relative import that leaves src,
+  // as into a sibling library: the lint fence sees only paths that name a folder.
+  "tsconfig.json": json({
+    extends: "../../tsconfig.base.json",
+    compilerOptions: { rootDir: "src" },
+    include: ["src/**/*.ts"],
+  }),
   "tsconfig.build.json": json({
     extends: "./tsconfig.json",
     compilerOptions: {
@@ -53,7 +66,6 @@ export const template = (
       declaration: true,
       noEmit: false,
       outDir: "dist",
-      rootDir: "src",
     },
     exclude: ["src/**/*.test.ts"],
   }),

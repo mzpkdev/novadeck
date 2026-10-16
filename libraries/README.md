@@ -31,17 +31,22 @@ the build rules and the test sandbox. The app keeps the product.
 
 ## What enforces them
 
-- **The import fence** in `.oxlintrc.json`: an override per library refuses app code, paths into
-  `application/`, `harnesses/` and `libraries/`, and the libraries outside its order; one on
-  `application/ui/src` refuses the libraries' Node subpaths (`/pty`, `/host`, `/server`,
-  `/electron`, `/browser/host`). oxlint takes `no-restricted-imports` from the last matching
-  override alone, so each library's override repeats the bans they all share, and
+- **The import fence** in `.oxlintrc.json`: an override per library refuses app code by package
+  name, paths that name `application/`, `harnesses/`, `libraries/` or `atlas/`, and the libraries
+  outside its order; one on `application/ui/src` refuses the libraries' Node subpaths (`/pty`,
+  `/host`, `/server`, `/electron`, `/browser/host`). oxlint takes `no-restricted-imports` from the
+  last matching override alone, and a `!` pattern in one group allows the name in every group, so
+  each library's override repeats the bans they all share as plain lists, and
   `scripts/harnesses/fence.test.ts` lints probe files with the real config to check what each
-  file ends up with.
+  file ends up refusing.
+- **The typecheck's `rootDir`**: a relative import that leaves the library's `src`, as
+  `../../wire/src` into a sibling, names no folder the lint knows, and fails `tsc` instead, tests
+  included.
 - **The browser build check** (`scripts/libraries/browser.test.ts`): the lint sees direct imports
   only, so each library's browser subpaths are bundled for the browser, and the check fails on
-  any Node built-in, native module or unresolvable package they pull in.
-- **The build's `rootDir`**: a relative import that leaves the library's `src` fails `tsc`.
+  any Node built-in, native module or unresolvable package they pull in, and on a library with no
+  `exports`. It sees imports, not globals: `process`, `Buffer` or `__dirname` in browser code, an
+  import guarded by `try`, or one whose name is computed, get past it.
 
 ## Adding a library
 
@@ -55,4 +60,5 @@ dev tools, `tsconfig.json` on the shared `tsconfig.base.json`, a build config, a
 a README. Then fence it in: add it to `order` in `scripts/harnesses/fence.test.ts`, give it an
 override in `.oxlintrc.json` like its neighbours', and add it to the list each other library's
 override refuses. The fence test fails until a folder here is in its order, and until each
-override refuses what the order says.
+override refuses what the order says. The new library's `pnpm test` fails too until it has its
+first test.

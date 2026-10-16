@@ -8,8 +8,8 @@ import { build } from "esbuild"
 // it. This bundles each library's browser subpaths for the browser, as the UI would, and
 // fails on any Node built-in or native module they pull in.
 
-/** A library's `exports`: a target, or conditions mapping to more of them. */
-type Target = string | { readonly [condition: string]: Target } | null
+/** A library's `exports`: a target, fallbacks, or conditions mapping to more of them. */
+type Target = string | readonly Target[] | { readonly [condition: string]: Target } | null
 type Manifest = { readonly name: string; readonly exports?: Target }
 
 /** A library subpath the browser imports, and the source file it starts from. */
@@ -23,14 +23,21 @@ export type Problem = {
 }
 
 // The conditions a browser bundle matches, as the UI's dev build does: source first.
-const conditions = new Set(["development", "browser", "import", "default"])
+const conditions = new Set(["development", "browser", "module", "import", "default"])
 
-/** The file a target resolves to for the browser, or none where only Node may import it. */
+/**
+ * The file a target resolves to for the browser, or none where only Node may import it: the
+ * first of its fallbacks, and the first matching condition that leads to a file, as a
+ * bundler moves on past one that leads nowhere.
+ */
 const browserFile = (target: Target): string | undefined => {
   if (typeof target === "string") return target
   if (!target) return undefined
-  const condition = Object.keys(target).find((each) => conditions.has(each))
-  return condition ? browserFile(target[condition] ?? null) : undefined
+  if (Array.isArray(target)) return target.map(browserFile).find(Boolean)
+  return Object.entries(target as { readonly [condition: string]: Target })
+    .filter(([condition]) => conditions.has(condition))
+    .map(([, next]) => browserFile(next))
+    .find(Boolean)
 }
 
 /**
@@ -42,8 +49,9 @@ export const browserEntries = (manifest: Manifest): readonly Entry[] => {
   const map =
     typeof exports === "object" &&
     exports &&
+    !Array.isArray(exports) &&
     Object.keys(exports).every((key) => key.startsWith("."))
-      ? exports
+      ? (exports as { readonly [subpath: string]: Target })
       : { ".": exports ?? null }
   return Object.entries(map).flatMap(([subpath, target]) => {
     const file = browserFile(target)
@@ -100,6 +108,9 @@ const checkEntry = async (folder: string, entry: Entry): Promise<readonly string
 /** What the browser subpaths of the library in `folder` pull in that the browser can't run. */
 export const checkLibrary = async (folder: string): Promise<readonly Problem[]> => {
   const manifest = JSON.parse(readFileSync(join(folder, "package.json"), "utf8")) as Manifest
+  // Without exports nothing tells its browser subpaths from its Node ones.
+  if (manifest.exports === undefined)
+    return [{ library: manifest.name, subpath: ".", problem: "package.json has no exports" }]
   const results = await Promise.all(
     browserEntries(manifest).map(async (entry) =>
       (await checkEntry(folder, entry)).map((problem) => ({

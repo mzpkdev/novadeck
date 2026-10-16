@@ -98,6 +98,7 @@ const app = [
   "../../../../application/runner/src/manager.ts",
   "../../../../harnesses/core/src/box.ts",
   "../../../../libraries/wire/src/index.ts",
+  "../../../../atlas/src/index.ts",
 ]
 const library = (name: string) => [`@novadeck/${name}`, `@novadeck/${name}/sub`]
 const node = ["pty", "host", "server", "electron", "browser/host"].map(
@@ -111,24 +112,49 @@ const browser = [
 ]
 const own = ["./sibling.ts", "../index.ts", "node:path", "@xterm/xterm"]
 
-/** The probes: a file path, everything it imports, and what the fence must refuse. */
+/** How a probe writes an import: each form the fence must see. */
+type Form = "import" | "export" | "dynamic"
+const write: Readonly<Record<Form, (name: string) => string>> = {
+  import: (name) => `import "${name}"\n`,
+  export: (name) => `export * from "${name}"\n`,
+  dynamic: (name) => `await import("${name}")\n`,
+}
+
+/**
+ * The probes: a file path, everything it imports and in what form, and what the fence must
+ * refuse. A relative import into a sibling library that names no folder (`../../wire/src`)
+ * isn't among them: the lint can't tell it from the library's own, and the library's
+ * rootDir fails its typecheck instead.
+ */
 const probes = [
   ...names.flatMap((name) => {
     const imports = [...app, ...names.flatMap(library), ...own]
     const allowed = new Set([name, ...(order[name] ?? [])].flatMap(library))
     const refused = [...app, ...names.flatMap(library).filter((each) => !allowed.has(each))]
-    return [`libraries/${name}/src/probe.ts`, `libraries/${name}/src/deep/probe.test.ts`].map(
-      (file) => ({ file, imports, refused }),
-    )
+    return (
+      [
+        [`libraries/${name}/src/probe.ts`, "import"],
+        [`libraries/${name}/src/deep/probe.test.ts`, "export"],
+        [`libraries/${name}/src/deep/dynamic.ts`, "dynamic"],
+      ] as const
+    ).map(([file, form]) => ({ file, form, imports, refused }))
   }),
   // A library not in the order yet still keeps off app code.
   {
     file: "libraries/unlisted/src/probe.ts",
+    form: "import" as Form,
     imports: [...app, ...names.flatMap(library), ...own],
     refused: app,
   },
-  ...["application/ui/src/probe.ts", "application/ui/src/deep/probe.test.tsx"].map((file) => ({
+  ...(
+    [
+      ["application/ui/src/probe.ts", "import"],
+      ["application/ui/src/deep/probe.test.tsx", "export"],
+      ["application/ui/src/deep/dynamic.ts", "dynamic"],
+    ] as const
+  ).map(([file, form]) => ({
     file,
+    form,
     imports: [...node, ...browser, "../../../../libraries/terminal/src/view.ts", ...own],
     refused: [...node, "../../../../libraries/terminal/src/view.ts"],
   })),
@@ -140,9 +166,9 @@ let workspace = ""
 beforeAll(() => {
   workspace = mkdtempSync(join(tmpdir(), "novadeck-fence-"))
   writeFileSync(join(workspace, ".oxlintrc.json"), readFileSync(join(root, ".oxlintrc.json")))
-  for (const { file, imports } of probes) {
+  for (const { file, form, imports } of probes) {
     mkdirSync(dirname(join(workspace, file)), { recursive: true })
-    writeFileSync(join(workspace, file), imports.map((each) => `import "${each}"\n`).join(""))
+    writeFileSync(join(workspace, file), imports.map(write[form]).join(""))
   }
   const oxlint = join(root, "node_modules", "oxlint", "bin", "oxlint")
   // oxlint exits non-zero on the refusals it's here to find.
@@ -151,9 +177,13 @@ beforeAll(() => {
       return execFileSync(process.execPath, [oxlint, "--format", "json", "."], {
         cwd: workspace,
         encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
       })
     } catch (error) {
-      return (error as { stdout: string }).stdout
+      // Only what it printed counts: one that couldn't run printed nothing.
+      const { stdout } = error as { stdout?: string }
+      if (!stdout) throw error
+      return stdout
     }
   })()
   const { diagnostics } = JSON.parse(output) as {
@@ -184,7 +214,7 @@ describe("the libraries' lint fence", () => {
   it.each(probes.filter(({ file }) => file.startsWith("libraries/")))(
     "refuses $file exactly app code and the libraries outside its order",
     ({ file, refused }) => {
-      expect((refusals.get(file) ?? []).toSorted()).toEqual(refused.toSorted())
+      expect([...new Set(refusals.get(file))].toSorted()).toEqual(refused.toSorted())
     },
   )
 })
@@ -193,7 +223,7 @@ describe("the browser code's lint fence", () => {
   it.each(probes.filter(({ file }) => file.startsWith("application/")))(
     "refuses $file exactly the libraries' Node subpaths and paths into libraries/",
     ({ file, refused }) => {
-      expect((refusals.get(file) ?? []).toSorted()).toEqual(refused.toSorted())
+      expect([...new Set(refusals.get(file))].toSorted()).toEqual(refused.toSorted())
     },
   )
 })
