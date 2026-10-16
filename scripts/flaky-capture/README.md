@@ -90,3 +90,86 @@ scenario failures; either result still needs investigation before choosing a rep
 
 Artifacts remain for seven days. Keep successful controls and the first failure together
 when archiving them, with the actual checked-out SHA rather than only the PR merge ref.
+
+## Follow-up native captures
+
+The `Flaky hunt 3` workflow adds macOS uninstall evidence and a Linux Antigravity
+experiment. It runs on pull requests changing its workflow, these collectors or the
+Antigravity probe/config. Both jobs check out and verify the exact PR head, use read-only
+repository permissions, disable persisted checkout credentials and always upload their
+visible capture directories for seven days. The workflow uses no repository secrets and
+publishes no release. Its jobs are separate from the original `Flaky capture` workflow;
+any original Grid or natural Antigravity jobs that also run are additional controls,
+outside the experiment's six-process bound.
+
+### macOS uninstall
+
+Use the same Node 26, locked dependency, protocol and Chromium setup as Grid, on macOS:
+
+```sh
+node scripts/flaky-capture/uninstall.ts --output /path/to/uninstall-capture --attempts 3
+```
+
+Each attempt starts a fresh Vitest process and runs all 11 original uninstall cases,
+including the predecessors of the target assertion. The original 1,500 ms fixture
+delay, 6,000 ms target poll and 30-second case deadlines stay unchanged. The collector
+adds passive observations and tracing, with no forced delay or replay of a failed case.
+It stops on the first nonzero process; at most three processes run.
+
+The per-process watchdog is five minutes and the total collector budget is 15 minutes.
+The workflow allows 17 minutes for capture within a 25-minute job so setup and artifact
+upload have headroom. Watchdog or incomplete collection results are infrastructure
+evidence, not a reproduced uninstall assertion.
+
+Retained files include checkout/tool/browser identity, process outcomes and logs,
+finalized case results, per-case lifecycle observations, incoming and transformed source
+hashes, and failure screenshots/traces. Successful controls remain beside the first
+failure. Read the target observation together with its preceding cases; trace and event
+collection can affect scheduling.
+
+The opt-in transforms require exact source matches and observe confirmation, registration
+and firing of the existing 1,500 ms timer, result receipt and the original poll reads.
+Native events, DOM busy/error state and long tasks are observed passively. Each phase
+records both its originating case and the case active when it was observed, so late
+callbacks remain attributable. Normal UI, spec and fixture files stay unchanged; the
+transforms and their hashes are retained under each attempt's `transforms/` directory.
+
+### Linux staged Stop experiment
+
+Use the Antigravity environment above. Build the runner and its dependency closure so a
+fresh checkout has the protocol, relay and harness exports, then install the pinned binary:
+
+```sh
+pnpm --filter @novadeck/runner... build
+node scripts/e2e/install/main.ts
+node scripts/flaky-capture/agy.ts --output /path/to/agy-experiment --attempts 5 --experiment staged-stop
+```
+
+The launcher uses the existing loopback-only namespace and fake model, with no provider
+credentials. This command has a fixed maximum of six fresh physical processes: one
+natural-order control and five staged variants. There are two Enter attempts at the
+Stop-handler return, two at the first post-Stop native frame showing both Did five and
+Generating, and one control using the same staging after that frame clears.
+
+The staged variants deliberately hold the fake model's Five reply while pre-pasting Then
+and verifying it on two screen reads. They then send Enter at the selected boundary,
+bypassing the original API's roughly 100 ms post-paste delay. These are experimental
+perturbations; the natural control retains its original input order. No resend, process
+signal, held EOF, harness-mode change or test-deadline increase is added. Original
+30-second reply waits and the 180-second case ceiling still apply. The workflow bounds
+the complete capture step at 22 minutes within a 30-minute job; those infrastructure
+limits do not extend a reply or case deadline.
+
+An invalid precondition consumes its fixed slot and records why; no replacement process
+is launched. A target, scenario or infrastructure failure stops collection with exit 1.
+If fixed slots finish but any precondition was invalid, exit 2 marks an inconclusive
+experiment, which the workflow labels in its summary. That result is not a reproduced
+product failure. Exit 0 requires all six slots to be valid and delivered. A failed or
+inconclusive run needs evidence review before another collection is chosen.
+
+Artifacts retain the fixed plan, per-process outcomes and invalidity reasons, native PTY
+chunks and rendered frames, write-entry/return timing, HTTP finish/close events, hook
+times, delivery/binding state, transcripts/history and visible hook traces. A returned
+PTY write is an acknowledgment from the input API, not proof that the harness consumed
+the key then. Compare the natural, busy-frame and cleared-frame controls before assigning
+a cause; a staged failure alone does not establish the original natural failure's cause.
