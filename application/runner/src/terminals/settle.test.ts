@@ -241,6 +241,87 @@ describe("settling a draft kept only by doubt", () => {
     await settle("c", "d")
   })
 
+  it.for(["empty", "draft", "queued"] as const)(
+    "recovers a late post-interruption prompt only with an %s screen",
+    async (screen, { resources }) => {
+      const manager = fixture(resources).manager({ ...ptyOptions, platform: "win32" })
+      const terminal = await manager.create(
+        { id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 },
+        "creator",
+      )
+      const inside = manager as unknown as Inside
+      const record = inside.records.get(terminal.id)!
+      const identity = { agent: "codex", sessionId: "a", instance: null }
+      record.binding = identity
+      let reads = 0
+      inside.screenOf = () => {
+        reads += 1
+        return Promise.resolve(
+          screenWith({
+            rows: [
+              screen === "draft" ? "› another draft" : "› ",
+              screen === "queued" ? "Messages to be submitted after next tool call" : "",
+            ],
+            cursor: { row: 0, column: screen === "draft" ? 15 : 2 },
+          }),
+        )
+      }
+      const { messaging } = inside
+      const at = Date.now()
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+      try {
+        messaging.rooted(terminal.id, [
+          {
+            type: "new",
+            root: { ...identity, source: "binding" },
+            guess: false,
+            ready: true,
+            startedAt: at,
+          },
+        ])
+        messaging.observe(terminal.id, [
+          { ...identity, type: "turn-started", cause: "harness", startedAt: at },
+        ])
+        vi.setSystemTime(at + 3432)
+        messaging.keys(terminal.id, ["escape"], false)
+        vi.setSystemTime(at + 7347)
+        messaging.keys(terminal.id, ["content"], false)
+        vi.setSystemTime(at + 7525)
+        messaging.keys(terminal.id, ["enter"], false)
+        vi.setSystemTime(at + 12433)
+        messaging.observe(terminal.id, [
+          {
+            ...identity,
+            type: "turn-started",
+            cause: "prompt",
+            startedAt: at + 12427.8293,
+            firedAt: at + 11996,
+          },
+        ])
+        vi.setSystemTime(at + 12977)
+        messaging.observe(terminal.id, [
+          { ...identity, type: "turn-ended", outcome: "completed", startedAt: at + 12974 },
+        ])
+        expect(messaging.delivery(terminal.id)).toMatchObject({
+          state: "drafting",
+          byPerson: false,
+          box: { doubted: true },
+        })
+        await vi.advanceTimersByTimeAsync(0)
+        expect(reads).toBe(1)
+        expect(messaging.delivery(terminal.id).state).toBe("drafting")
+        await vi.advanceTimersByTimeAsync(100)
+        expect(messaging.delivery(terminal.id)).toMatchObject({
+          state: screen === "empty" ? "settled" : "drafting",
+          byPerson: false,
+        })
+        expect(reads).toBe(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+
   it("gives up after its window, leaving the draft", async ({ resources }) => {
     const drafted = await doubting(fixture(resources), [typed])
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })

@@ -31,7 +31,10 @@ const key = (kind: KeyKind, time = at, asked = false): DeliveryEvent => ({
   at: time,
 })
 // A root turn's start, heard at `time`, its hook started then unless it says when.
-const prompted = (time = at + 100, startedAt = time): DeliveryEvent => ({
+const prompted = (
+  time = at + 100,
+  startedAt = time,
+): Extract<DeliveryEvent, { type: "prompt" }> => ({
   type: "prompt",
   by: "prompt",
   at: time,
@@ -493,6 +496,109 @@ describe("a terminal's delivery state", () => {
 })
 
 describe("the person's submission", () => {
+  it.for(["claude", "codex"] as const)(
+    "keeps the next submitted prompt when an older %s hook arrives after its Enter",
+    (agent) => {
+      // Windows CI artifacts 12030729320 / 12031880182: both prompts reached the
+      // model, but the first late hook spent the second prompt's later Enter.
+      const first = agent === "claude" ? 2551 : 2365
+      const typed = agent === "claude" ? 2602 : 2964
+      const entered = agent === "claude" ? 2710 : 3128
+      const fired = agent === "claude" ? 2616 : 3001
+      const heard = agent === "claude" ? 3041 : 3410
+      let delivery = run(
+        unbound,
+        { ...announced, at },
+        key("content", at + first - 100),
+        key("enter", at + first),
+      )
+      if (agent === "codex") delivery = transition(delivery, { ...binds, at: at + 2941.7754 })
+      delivery = run(delivery, key("content", at + typed), key("enter", at + entered))
+      delivery = transition(
+        delivery,
+        {
+          ...prompted(at + heard, at + heard - 3),
+          firedAt: at + fired,
+        },
+        10_000,
+      )
+      expect(delivery.box.enteredAt).toBe(at + entered)
+      if (agent === "claude") delivery = transition(delivery, { ...stop, at: at + 3607 })
+      delivery = transition(
+        delivery,
+        {
+          ...prompted(at + 4085, at + 4082.6985),
+          firedAt: at + 3695,
+        },
+        10_000,
+      )
+      expect(delivery).toMatchObject({ byPerson: true, box: { empty: true, queuing: false } })
+      expect(transition(delivery, { ...stop, at: at + 4596 }).state).toBe("settled")
+    },
+  )
+
+  it("keeps text typed after the next Enter when an older hook arrives late", () => {
+    const next = run(
+      settled,
+      key("content", at + 100),
+      key("enter", at + 200),
+      key("content", at + 300),
+      key("enter", at + 400),
+      key("content", at + 500),
+    )
+    const older = transition(next, { ...prompted(at + 600), firedAt: at + 250 }, 10_000)
+    const newer = transition(older, { ...prompted(at + 900), firedAt: at + 700 }, 10_000)
+    expect(newer).toMatchObject({ byPerson: false, box: { empty: false, doubted: false } })
+    expect(transition(newer, stop).state).toBe("drafting")
+  })
+
+  it("keeps a later Escape for the newer prompt when the older hook arrives late", () => {
+    const next = run(
+      settled,
+      key("content", at + 100),
+      key("enter", at + 200),
+      key("content", at + 300),
+      key("enter", at + 400),
+      key("escape", at + 800),
+    )
+    const older = transition(next, { ...prompted(at + 1000), firedAt: at + 250 }, 10_000)
+    expect(older.box.escapedAt).toBe(at + 800)
+    const newer = transition(older, { ...prompted(at + 1200), firedAt: at + 700 }, 10_000)
+    expect(newer.state).toBe("unknown")
+    expect(ringableSince(newer)).toBeUndefined()
+  })
+
+  it("recovers only the empty box after a late post-interruption prompt, without attributing it", () => {
+    // Codex Windows: Escape +3432, Carry on Enter +7525, its hook fired +11996.
+    const entered = run(
+      working,
+      key("escape", at + 3432),
+      key("content", at + 7347),
+      key("enter", at + 7525),
+    )
+    expect(entered.state).toBe("unknown")
+    const prompt = { ...prompted(at + 12433, at + 12427.8293), firedAt: at + 11996 } as const
+    const next = transition(entered, prompt, 10_000)
+    const completed = transition(next, { ...stop, at: at + 12977 })
+    expect(completed).toMatchObject({ state: "drafting", byPerson: false, box: { doubted: true } })
+    expect(
+      transition(completed, { type: "emptied", at: at + 13100, epoch: completed.epoch }),
+    ).toMatchObject({ state: "settled", byPerson: false, box: { empty: true } })
+    for (const kind of ["content", "neutral", "accept", "escape"] as const) {
+      const changed = transition(entered, key(kind, at + 7800), 10_000)
+      const result = run(transition(changed, prompt, 10_000), stop)
+      expect(result.box.doubted).toBe(false)
+      expect(transition(result, { type: "emptied", at: at + 13100, epoch: result.epoch })).toBe(
+        result,
+      )
+    }
+    const asked = run(entered, key("content", at + 7800, true))
+    expect(run(transition(asked, prompt, 10_000), stop).box.doubted).toBe(false)
+    // Two submissions may leave a second queued prompt: never doubt alone.
+    const twice = run(entered, key("content", at + 7600), key("enter", at + 7700))
+    expect(run(transition(twice, prompt, 10_000), stop).box.doubted).toBe(false)
+  })
+
   it("is a prompt shortly after their bare Enter, with nothing typed since", () => {
     expect(run(drafting, key("enter"), prompted(at + submitWindowMs), stop).state).toBe("settled")
     // Too late: not the Enter's.

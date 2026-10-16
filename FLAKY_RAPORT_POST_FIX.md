@@ -123,7 +123,7 @@ establishes the intended mid-turn queue precondition; it is not a production
 repair for the end-of-turn delivery observation. No timeout or production input
 timing changed. All three pinned harnesses passed the corrected scenario locally,
 as did typecheck, lint, formatting and independent review. Evidence and controls:
-`repair-validation/agy-chat/`. CI for this fixture follow-up is pending.
+`repair-validation/agy-chat/`. Subsequent CI results are recorded below.
 
 The fixture follow-up's macOS Quality run then timed out in a trust integration
 fixture. A controlled schedule reproduced its call-count assumption: the initial
@@ -134,6 +134,37 @@ clean test pass; production code, assertions and deadlines are unchanged. The CI
 log lacks phase tracing, so this is a proven fixture race compatible with that
 timeout, not a proven reconstruction of its exact schedule. Evidence:
 `repair-validation/ci-macos-trust-report.md`.
+
+### Delayed prompt hooks and completed turns left Drafting
+
+At `eb27537f`, all Quality jobs passed, including the corrected macOS trust test.
+The stronger queued-chat settlement check exposed a shared Windows delivery-state
+bug in Claude and Codex: both replies were complete and their prompts empty, but
+Novadeck remained Drafting. Codex's existing interruption scenario also failed to
+settle. Logs and raw traces are retained under `repair-validation/claude-chat/`.
+
+In both paired-prompt traces, the second Enter arrived before the first prompt's
+hook was received. That older hook unconditionally erased the newer Enter's
+bookkeeping. The repair preserves a submission after the hook's firing boundary,
+including later draft and cancellation state, for its own prompt hook to consume.
+
+The interrupted Codex trace reveals a second path: a sole Enter submitted while
+Unknown was conservatively marked as possibly queued. Its delayed hook fell outside
+the existing person-attribution window; the stale queue flag then prevented empty
+screen recovery. That specific sole submission can now become uncertain, keeping
+`byPerson=false`. It settles only after completion and repeated empty/no-queue
+screen reads. Real queued input, later typing, request drafts and cancellation
+remain protected; neither attribution windows nor test deadlines changed.
+
+Full build, typecheck, lint and formatting pass; the full runner suite passes
+3,030 tests with 35 skipped. Three regression cases fail on the old transition.
+All 265 focused tests and six
+real Linux agent scenarios pass after repair. Independent replay of all three
+recorded Windows event sequences confirms the corrected transitions, including
+conservative screen recovery for interruption. Evidence:
+`repair-validation/claude-chat/REPORT.md` and
+`repair-validation/claude-chat-review/REVIEW.md`. Native validation of this final
+state-machine repair follows separately from the historical audit.
 
 ## Sample identity and method
 

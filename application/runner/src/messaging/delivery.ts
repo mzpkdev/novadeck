@@ -556,10 +556,14 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
         event.by === "prompt" &&
         delivery.state !== "ringing" &&
         (pendingEnter(delivery, fired.at, fired.windowMs) !== undefined || box.queued)
+      // Its hook can arrive after the next prompt's Enter. That later submission
+      // belongs to another turn, queued while this one was already running.
+      const later = event.by === "prompt" && box.enteredAt !== null && box.enteredAt > fired.at
       // Only a prompt uses up the person's Enter, or the prompt they queued. Keys after
       // its hook started are a new draft.
-      const after: Box =
-        event.by === "prompt"
+      const after: Box = later
+        ? { ...box, queuing: true, queuingSince: box.queuingSince ?? box.enteredAt }
+        : event.by === "prompt"
           ? {
               ...box,
               enteredAt: null,
@@ -579,7 +583,8 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
                 !box.typedSinceEnter &&
                 !box.strayed &&
                 !box.draftWhileAsked &&
-                !box.queuing &&
+                (!box.queuing ||
+                  (delivery.state === "unknown" && box.queuingSince === box.enteredAt)) &&
                 !box.queued,
               ...(person && {
                 empty: box.typedAt === null && !box.strayed,
@@ -599,7 +604,7 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
         epoch: delivery.epoch + 1,
         continued: 0,
         byPerson: person,
-        box: { ...after, queuing: false, escapedAt: null },
+        box: later ? after : { ...after, queuing: false, escapedAt: null },
       })
       // The person's Escape after the Enter it answers and after its hook fired may have
       // cancelled the turn before any other hook ran: Unknown, its prompt back in the box.
