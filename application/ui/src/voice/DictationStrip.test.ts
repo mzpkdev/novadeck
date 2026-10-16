@@ -30,6 +30,7 @@ const voiceState: VoiceState = {
   installing: null,
   check: null,
   failure: null,
+  refused: null,
 }
 
 const controller = (): DictationController => ({
@@ -153,6 +154,7 @@ describe("voice input's setup in a terminal's strip", () => {
     ;(each.voice as MutableStore<VoiceState>).update((state) => ({
       ...state,
       installing: {
+        origin: "person",
         model: "turbo",
         step: "model",
         received: 215 * 1024 * 1024,

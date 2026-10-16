@@ -21,9 +21,8 @@ export const demoMurmurState: MurmurState = {
   installing: null,
   check: null,
   unsupported: null,
-  recheck: false,
-  unchecked: false,
   offers: 0,
+  refused: null,
   failure: null,
 }
 
@@ -36,11 +35,15 @@ const installedState: MurmurState = {
   check: sampleCheck,
 }
 
-const softwareSample =
-  "This computer reports only software rendering; no graphics hardware answered."
+const softwareSample = {
+  reason: "This computer reports only software rendering; no graphics hardware answered.",
+  source: "host",
+} as const
 
-const unsupportedSample =
-  "No graphics device answered. On Linux, check that a Vulkan driver is installed."
+const unsupportedSample = {
+  reason: "No graphics device answered. On Linux, check that a Vulkan driver is installed.",
+  source: "check",
+} as const
 
 // Where the demo starts: installed (the try demo's), not installed (the offer and the
 // Addons card's Install), on a computer known not to run it, or not installed on a
@@ -116,7 +119,7 @@ const installingAt = (step: "engine" | "model" | "check", received: number): Mur
   installing: {
     step,
     received,
-    engineOnly: false,
+    origin: "person",
     total: step === "model" ? downloadSizes.model : step === "engine" ? downloadSizes.engine : 0,
   },
 })
@@ -137,7 +140,7 @@ export const createDemoMurmur = (
     start === "installed"
       ? installedState
       : start === "unsupported"
-        ? { ...demoMurmurState, unsupported: unsupportedSample, recheck: true }
+        ? { ...demoMurmurState, unsupported: unsupportedSample }
         : start === "offered-out"
           ? { ...demoMurmurState, offers: 3 }
           : demoMurmurState,
@@ -160,7 +163,7 @@ export const createDemoMurmur = (
     const total = step === "engine" ? sizes.engine : step === "model" ? sizes.model : 1
     state.update((current) => ({
       ...current,
-      installing: { step, received: Math.round((total * part) / ticks), total, engineOnly: false },
+      installing: { step, received: Math.round((total * part) / ticks), total, origin: "person" },
     }))
   }
   // With no device that works the check ends in Not available, as the runner's: the
@@ -172,7 +175,6 @@ export const createDemoMurmur = (
         ...demoMurmurState,
         wanted: choice !== false,
         unsupported: unsupportedSample,
-        recheck: true,
         offers: current.offers,
       }))
       return
@@ -193,26 +195,26 @@ export const createDemoMurmur = (
       enabled: choice !== false,
       wanted: choice !== false,
       check: { device, integrated: true, milliseconds: 5200 },
+      // A check that passes ends the verdict an earlier one gave.
+      unsupported: null,
       failure: null,
     }))
   }
 
-  const install = (): void => {
-    if (state.getSnapshot().installing) {
-      state.update((current) => ({
-        ...current,
-        failure: "An install is already running.",
-      }))
-      return
+  const install = (): Promise<void> => {
+    const refuse = (message: string): Promise<void> => {
+      state.update((current) => ({ ...current, refused: { call: "install", message } }))
+      return Promise.resolve()
     }
+    if (state.getSnapshot().installing) return refuse("An install is already running.")
+    // As the runner: the host's word is final, a check's verdict stands until a check passes.
+    if (state.getSnapshot().unsupported?.source === "host")
+      return refuse("Murmur can't run on this computer.")
     // As the runner: a first install says murmur is wanted, whatever was chosen before.
     if (!state.getSnapshot().installed) choice = undefined
     state.update((current) => ({
       ...current,
-      // Installing again asks the computer anew.
-      unsupported: null,
-      recheck: false,
-      unchecked: false,
+      refused: null,
       failure: null,
       check: null,
       wanted: choice !== false,
@@ -224,6 +226,7 @@ export const createDemoMurmur = (
         later(() => progress(step, part), (index + part / ticks) * timing.step)
     })
     later(finish, todo.length * timing.step)
+    return Promise.resolve()
   }
 
   const show = (scenario: DemoMurmurScenario): void => {
@@ -231,7 +234,7 @@ export const createDemoMurmur = (
     choice = undefined
     if (scenario === "installed") keepOffers(state, installedState)
     else if (scenario === "unsupported")
-      keepOffers(state, { ...demoMurmurState, unsupported: unsupportedSample, recheck: true })
+      keepOffers(state, { ...demoMurmurState, unsupported: unsupportedSample })
     else if (scenario === "unsupported-host")
       // The host saw only software rendering: no Check again.
       keepOffers(state, { ...demoMurmurState, unsupported: softwareSample })
@@ -242,7 +245,6 @@ export const createDemoMurmur = (
         enabled: false,
         check: null,
         unsupported: unsupportedSample,
-        recheck: true,
       })
     else if (scenario === "installing")
       // Held at the model, half there, until cancelled.
@@ -253,11 +255,7 @@ export const createDemoMurmur = (
       later(() => keepOffers(state, installedState), 1800)
     } else if (scenario === "unavailable-after-check") {
       keepOffers(state, installingAt("check", 0))
-      later(
-        () =>
-          keepOffers(state, { ...demoMurmurState, unsupported: unsupportedSample, recheck: true }),
-        1800,
-      )
+      later(() => keepOffers(state, { ...demoMurmurState, unsupported: unsupportedSample }), 1800)
     } else if (scenario === "network-failure") {
       // An install that fails on the network, as the footer's item sees it: running, then not.
       keepOffers(state, installingAt("model", downloadSizes.model / 2))
@@ -291,7 +289,7 @@ export const createDemoMurmur = (
       // check owed, no failure.
       state.update((current) =>
         current.installing?.step === "check"
-          ? { ...current, installing: null, installed: true, unchecked: true }
+          ? { ...current, installing: null, installed: true }
           : { ...current, installing: null },
       )
     },
@@ -302,10 +300,10 @@ export const createDemoMurmur = (
       state.update((current) => ({ ...demoMurmurState, wanted: false, offers: current.offers }))
       return Promise.resolve()
     },
-    set: ({ offered, ...settings }) =>
+    // The one-time offer was shown in a session: counted, and nothing else changes.
+    noteOffered: () => void state.update((current) => ({ ...current, offers: current.offers + 1 })),
+    set: (settings) =>
       state.update((current) => {
-        // The one-time offer was shown in a session: counted, and nothing else changes.
-        if (offered) return { ...current, offers: current.offers + 1 }
         // Turned on before an install, it is wanted, and the install will turn it on.
         if (settings.enabled === true && !current.installed) {
           choice = undefined

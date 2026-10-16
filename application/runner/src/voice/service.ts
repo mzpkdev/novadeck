@@ -68,6 +68,9 @@ class UnfitModel extends EngineError {}
 // library, a blocked program), which only another model starting settles.
 class StartFailure extends EngineError {}
 
+// A check that passed, with the model it says suits this computer.
+type Checked = { readonly check: VoiceCheck; readonly recommended: VoiceModel }
+
 const unavailable = (reason: VoiceUnavailable["reason"], message: string): DomainError =>
   new DomainError("VOICE_UNAVAILABLE", message, { reason })
 
@@ -109,9 +112,6 @@ export class Voice {
   private updateFailedAt: number | undefined
   private uninstalling = false
   private installing: VoiceInstall | null = null
-  // Whether this machine runs a model on a GPU, as the last check found; undefined until one has.
-  // It lets an install that follows a failed one go to the model that suits.
-  private gpu: boolean | undefined
   private failure: string | null = null
   private running:
     | { readonly done: Promise<void>; readonly controller: AbortController }
@@ -247,12 +247,17 @@ export class Voice {
     const controller = new AbortController()
     this.updateFailedAt = undefined
     this.failure = null
-    this.gpu = this.settings.voiceCheck()?.gpu ?? this.gpu
     const model = this.aim()
     // Installing it at all says the person wants it, whatever they chose before: an off
     // from then on, during the install too, still holds.
     if (this.installed.length === 0) this.settings.saveVoiceSettings({ enabled: null })
-    this.installing = { model, step: "engine", received: 0, total: this.manifest.size }
+    this.installing = {
+      origin: "person",
+      model,
+      step: "engine",
+      received: 0,
+      total: this.manifest.size,
+    }
     this.changed()
     this.running = { controller, done: this.run(model, this.manifest, controller.signal) }
   }
@@ -277,10 +282,7 @@ export class Voice {
     // GPU-less result, or the host's verdict on this launch, never demotes it.
     const kept = this.keptModel()
     if (kept !== undefined) return kept
-    return this.options.softwareGraphics ||
-      this.gpu === false ||
-      this.settings.voiceCheck()?.gpu === false ||
-      this.settings.voiceSettings().model === "small"
+    return this.options.softwareGraphics || this.settings.voiceSettings().model === "small"
       ? "small"
       : "turbo"
   }
@@ -306,7 +308,13 @@ export class Voice {
       return
     const controller = new AbortController()
     this.failure = null
-    this.installing = { model: settings.model, step: "engine", received: 0, total: manifest.size }
+    this.installing = {
+      origin: "update",
+      model: settings.model,
+      step: "engine",
+      received: 0,
+      total: manifest.size,
+    }
     this.changed()
     this.running = { controller, done: this.run(settings.model, manifest, controller.signal, true) }
   }
@@ -353,7 +361,6 @@ export class Voice {
       this.settings.saveVoiceCheck(null)
       // The model chosen for this computer is forgotten with it: a reinstall tries turbo again.
       this.settings.saveVoiceSettings({ model: "turbo" })
-      this.gpu = undefined
       this.failure = null
     } finally {
       this.uninstalling = false
@@ -560,6 +567,7 @@ export class Voice {
     // What was chosen as the install began, before it or a refresh changes that, and
     // whether anything was installed then.
     const before = { settings: this.settings.voiceSettings() }
+    const origin = engineOnly ? "update" : "person"
     let model = aim
     // Whether small has been chosen for this computer, which only a turbo rejected for its
     // own sake, or small passing where turbo would not start, settles.
@@ -570,14 +578,14 @@ export class Voice {
       const folder = engineFolder(this.directory, manifest.sha256)
       if (!(await exists(join(folder, engineProgram)))) {
         const total = manifest.size
-        this.progress({ model, step: "engine", received: 0, total }, true)
+        this.progress({ origin, model, step: "engine", received: 0, total }, true)
         await fetchEngine({
           manifest,
           source: this.source,
           directory: this.directory,
           program: engineProgram,
           signal,
-          progress: (received) => this.progress({ model, step: "engine", received, total }),
+          progress: (received) => this.progress({ origin, model, step: "engine", received, total }),
           // Unpacking removes the engines this one replaces; none may be running, and no
           // clip may start one from a folder that is going. Clips are told to wait until
           // the new engine is there, which the refresh after the unpacking, or after a
@@ -590,10 +598,10 @@ export class Voice {
         await this.refresh()
       }
       if (engineOnly) return
-      let check: VoiceCheck | undefined
+      let checked: Checked | undefined
       let startFailure: StartFailure | undefined
       try {
-        check = await this.fetchAndCheck(model, manifest, signal, model === "turbo" && !keep)
+        checked = await this.fetchAndCheck(model, manifest, signal, model === "turbo" && !keep)
       } catch (error) {
         if (keep || model !== "turbo" || !(error instanceof StartFailure) || signal.aborted)
           throw error
@@ -602,7 +610,7 @@ export class Voice {
       if (
         !keep &&
         startFailure === undefined &&
-        (check === undefined || (model === "turbo" && check.recommended === "small"))
+        (checked === undefined || (model === "turbo" && checked.recommended === "small"))
       ) {
         // Turbo is rejected: small is this computer's model from here, so a failure or a
         // cancel in what follows leaves small chosen, off until it passes, with no turbo
@@ -616,13 +624,13 @@ export class Voice {
         })
         await pruneModels(this.directory, [this.modelPath(model), this.vadPath()])
         await this.load()
-        check = await this.fetchAndCheck(model, manifest, signal, false)
+        checked = await this.fetchAndCheck(model, manifest, signal, false)
       } else if (startFailure !== undefined) {
         // Turbo did not start, which may be the engine's doing: turbo stays, and nothing is
         // chosen, until small starts where it did not.
         model = "small"
         try {
-          check = await this.fetchAndCheck(model, manifest, signal, false)
+          checked = await this.fetchAndCheck(model, manifest, signal, false)
         } catch (error) {
           // Neither starts: the engine is the problem, not a model.
           if (error instanceof StartFailure) throw startFailure
@@ -630,7 +638,7 @@ export class Voice {
         }
         committed = true
       }
-      if (check === undefined) throw new EngineError("The voice model could not be checked.")
+      if (checked === undefined) throw new EngineError("The voice model could not be checked.")
       // The other model is of no use now.
       await pruneModels(this.directory, [this.modelPath(model), this.vadPath()])
       // The model checked out, so it is the one used, and voice input is on, as the person
@@ -641,7 +649,7 @@ export class Voice {
         enabled: this.settings.voiceEnabledChoice() !== false,
       })
       await this.load()
-      this.settings.saveVoiceCheck(check)
+      this.settings.saveVoiceCheck(checked.check)
     } catch (error) {
       // Cancelling is the person's choice, not a failure.
       if (!signal.aborted && !aborted(error)) {
@@ -682,7 +690,7 @@ export class Voice {
     manifest: Manifest,
     signal: AbortSignal,
     fallback: boolean,
-  ): Promise<VoiceCheck | undefined> {
+  ): Promise<Checked | undefined> {
     await this.fetchModel(model, signal)
     // The models an earlier pin named are of no use now.
     await pruneModels(this.directory, [
@@ -690,7 +698,7 @@ export class Voice {
       this.modelPath("small"),
       this.vadPath(),
     ])
-    this.progress({ model, step: "check", received: 0, total: 0 }, true)
+    this.progress({ origin: "person", model, step: "check", received: 0, total: 0 }, true)
     try {
       return await this.busyWith(() => this.measure(model, manifest, signal))
     } catch (error) {
@@ -706,7 +714,7 @@ export class Voice {
       { artifact: this.catalog.vad, path: this.vadPath() },
     ]
     const total = parts.reduce((sum, part) => sum + part.artifact.size, 0)
-    this.progress({ model, step: "model", received: 0, total }, true)
+    this.progress({ origin: "person", model, step: "model", received: 0, total }, true)
     let done = 0
     for (const { artifact, path } of parts) {
       // One file after the other, so the bytes received add up.
@@ -722,7 +730,13 @@ export class Voice {
           size: artifact.size,
           signal,
           progress: (received) =>
-            this.progress({ model, step: "model", received: done + received, total }),
+            this.progress({
+              origin: "person",
+              model,
+              step: "model",
+              received: done + received,
+              total,
+            }),
         })
       }
       done += artifact.size
@@ -734,7 +748,7 @@ export class Voice {
     model: VoiceModel,
     manifest: Manifest,
     signal: AbortSignal,
-  ): Promise<VoiceCheck> {
+  ): Promise<Checked> {
     const config = this.engineConfig(manifest, model, "en")
     // Its own engine, so a dictation's model is neither swapped out for this one nor
     // ended by the check, and a check never fails because a clip came in.
@@ -771,8 +785,7 @@ export class Voice {
       if (result.text === "")
         throw new UnfitModel("The engine ran but heard nothing in its test clip.")
       const gpu = engine.gpu ?? false
-      this.gpu = gpu
-      return { model, milliseconds, gpu, recommended: recommend({ gpu, milliseconds }) }
+      return { check: { model, milliseconds }, recommended: recommend({ gpu, milliseconds }) }
     } finally {
       signal.removeEventListener("abort", stop)
       await engine.close()

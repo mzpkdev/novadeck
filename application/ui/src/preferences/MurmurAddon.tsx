@@ -1,6 +1,14 @@
 import { useState } from "react"
 
-import { MURMUR_NAME, type Murmur, type MurmurState } from "../model/murmur"
+import type { Refusal } from "../model/addon"
+import { formatSize, stepLabel } from "../model/addon-format"
+import {
+  MURMUR_NAME,
+  murmurChecking,
+  unchecked,
+  type Murmur,
+  type MurmurState,
+} from "../model/murmur"
 import { ConfirmDialog } from "../ui-toolkit/ConfirmDialog"
 import { Switch } from "../ui-toolkit/Switch"
 import {
@@ -15,11 +23,10 @@ import {
   deviceText,
   murmurDownloadNote,
   murmurInstallSize,
-  murmurStepTitles,
   murmurUncheckedText,
+  refusalText,
 } from "./murmur-addon"
 import { settingsCardClasses } from "./settings"
-import { formatSize } from "./voice-addon"
 
 export type MurmurAddonValue = {
   readonly state: MurmurState
@@ -43,14 +50,16 @@ export const MurmurAddon = ({
   // Set once the person confirms an uninstall, holding the failure then showing: the state
   // has no field for a removal under way, so the card waits for the engine to be gone, a
   // new failure to turn up, or the removal to settle (a repeat of the same failure).
-  const [removing, setRemoving] = useState<{
-    readonly failure: string | null
-  } | null>(null)
-  if (removing && murmur && (!murmur.state.installed || murmur.state.failure !== removing.failure))
+  const [removing, setRemoving] = useState<{ readonly refused: Refusal | null } | null>(null)
+  if (removing && murmur && (!murmur.state.installed || murmur.state.refused !== removing.refused))
     setRemoving(null)
   if (!murmur) return <Note>{`${MURMUR_NAME} isn't available here.`}</Note>
   const { state, actions } = murmur
-  const { failure, installing, installed, check, unsupported, recheck, unchecked } = state
+  const { installing, installed, check, unsupported } = state
+  // What went wrong: the runner's word, or else the backend's refusal of a call.
+  const failure = state.failure ?? (state.refused ? refusalText(state.refused) : null)
+  const recheck = unsupported?.source === "check"
+  const owed = unchecked(state)
   if (!state.available)
     return <Note>{`This build has no ${MURMUR_NAME} engine for this platform.`}</Note>
   // An install under way is shown whatever the verdict said: Check again keeps it until the new check ends.
@@ -58,11 +67,11 @@ export const MurmurAddon = ({
     return (
       <div className={settingsCardClasses}>
         <InstallProgress
-          title={murmurStepTitles[installing.step]}
+          title={stepLabel(installing.step, murmurChecking)}
           {...(installing.step !== "check" && {
             detail: `${formatSize(installing.received)} of ${formatSize(installing.total)}`,
           })}
-          label={murmurStepTitles[installing.step]}
+          label={stepLabel(installing.step, murmurChecking)}
           received={installing.step === "check" ? 0 : installing.received}
           total={installing.total}
           indeterminate={installing.step === "check"}
@@ -82,7 +91,7 @@ export const MurmurAddon = ({
         <AddonDetails
           {...(recheck && { action: { label: "Check again", onClick: actions.install } })}
         >
-          {unsupported}
+          {unsupported.reason}
         </AddonDetails>
       </div>
     )
@@ -126,7 +135,7 @@ export const MurmurAddon = ({
             <AddonDetails
               {...(recheck && { action: { label: "Check again", onClick: actions.install } })}
             >
-              {unsupported}
+              {unsupported?.reason ?? ""}
             </AddonDetails>
           </>
         ) : (
@@ -159,7 +168,7 @@ export const MurmurAddon = ({
             {busy ? "Removing…" : "Uninstall"}
           </button>
         </AddonRow>
-        {(failure || (unchecked && !noRetry)) && (
+        {(failure || (owed && !noRetry)) && (
           // Installed with no check that passed, murmur can't run yet: another install runs
           // the check again, unless the host's word holds, where nothing can run it.
           <div className="flex items-center justify-between gap-6">
@@ -191,7 +200,7 @@ export const MurmurAddon = ({
         cancelLabel="Cancel"
         onConfirm={() => {
           setConfirming(false)
-          setRemoving({ failure })
+          setRemoving({ refused: state.refused })
           void actions.uninstall().finally(() => setRemoving(null))
         }}
         onCancel={() => setConfirming(false)}

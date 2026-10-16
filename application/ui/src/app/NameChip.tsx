@@ -21,14 +21,14 @@ export const NameChip = ({
   readonly terminalId: string
   readonly context: string
 }): React.JSX.Element | null => {
-  const { backend, commands, ui } = useWorkspaceServices()
+  const { backend, commands } = useWorkspaceServices()
   const { murmur } = backend
   const murmurState = useSyncExternalStore(murmur?.state.subscribe ?? never, () =>
     murmur?.state.getSnapshot(),
   )
   const target = useUiState((state) => state.nameOffer)
-  // Whether another offer (voice input's) has taken the run's mark.
-  const taken = useUiState((state) => state.addonOfferShown)
+  // The run's one unasked offer: the chip is for Murmur, or for nobody yet.
+  const claimed = useUiState((state) => state.addonOffer)
   const view = useWorkspaceState((workspace) => currentState(workspace).view)
   const [open, setOpen] = useState(false)
   // Whether the popover closed by a press outside it, where focus belongs to whatever was pressed.
@@ -40,36 +40,12 @@ export const NameChip = ({
     target?.id === terminalId &&
     target.context === context &&
     offerable(murmurState) &&
-    // Once counted the chip is the one the run's mark is for; before that, a mark someone
-    // else took means the chip never comes up.
-    (target.counted === true || !taken)
-  // The chip's own button, once it is drawn.
-  const [button, setButton] = useState<HTMLButtonElement | null>(null)
-  // Counted once it is seen, not when it was meant to be: a window panned out of the Canvas's
-  // view draws it unseen. The run's mark keeps voice input's offer from coming up too, and the
-  // runner counts the session.
+    (claimed === null || claimed === "murmur")
+  // Drawn, it takes the run's offer (which counts it); if voice input's came first it was not
+  // free, and the chip stops drawing.
   useEffect(() => {
-    if (!drawn || !button || ui.getSnapshot().addonOfferShown) return undefined
-    const count = (): void => {
-      if (ui.getSnapshot().addonOfferShown) return
-      // Counted first, so the mark taken next never reads as another offer's.
-      if (target) commands.offerNameTo({ ...target, counted: true })
-      commands.markAddonOfferShown()
-      murmur?.set({ offered: true })
-    }
-    // Where nothing can say what is in view, it is counted as drawn.
-    if (typeof IntersectionObserver === "undefined") {
-      count()
-      return undefined
-    }
-    const watching = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return
-      watching.disconnect()
-      count()
-    })
-    watching.observe(button)
-    return () => watching.disconnect()
-  }, [drawn, button, ui, commands, murmur, target])
+    if (drawn) commands.takeAddonOffer("murmur")
+  }, [drawn, commands])
   if (!drawn || !murmur || !murmurState) return null
   // The terminal gets typing focus back once the popover is gone by an answer or Esc; one
   // that closed by a press elsewhere leaves focus where the person put it.
@@ -99,7 +75,6 @@ export const NameChip = ({
       }}
       trigger={
         <button
-          ref={setButton}
           type="button"
           className="name-chip nodrag nopan"
           aria-label={offerText.chip}

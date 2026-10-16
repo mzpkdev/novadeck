@@ -35,6 +35,7 @@ const installed: VoiceState = {
   installing: null,
   check: null,
   failure: null,
+  refused: null,
 }
 
 type FakeClip = VoiceClip & {
@@ -56,7 +57,7 @@ const setup = (state: VoiceState = installed) => {
     state: createStore(state),
     install: () => {
       calls.push("install")
-      return gate.pending
+      return gate.pending ?? Promise.resolve()
     },
     cancel: () => void calls.push("cancel"),
     uninstall: () => {},
@@ -348,7 +349,7 @@ describe("dictation", () => {
   it("records while an update replaces the engine, which the runner keeps serving", () => {
     const app = setup({
       ...installed,
-      installing: { model: "turbo", step: "engine", received: 1, total: 2 },
+      installing: { origin: "person", model: "turbo", step: "engine", received: 1, total: 2 },
     })
     app.controller.dictation.press(target, "KeyM")
     expect(app.clips).toHaveLength(1)
@@ -358,7 +359,7 @@ describe("dictation", () => {
     const busy: VoiceState = {
       ...installed,
       enabled: false,
-      installing: { model: "turbo", step: "model", received: 1, total: 2 },
+      installing: { origin: "person", model: "turbo", step: "model", received: 1, total: 2 },
     }
     it("starts nothing and says voice input is still installing", () => {
       const app = setup(busy)
@@ -417,7 +418,7 @@ describe("dictation", () => {
     it("does not offer it while it installs, and says so", () => {
       const app = setup({
         ...notInstalled,
-        installing: { model: "turbo", step: "model", received: 1, total: 2 },
+        installing: { origin: "person", model: "turbo", step: "model", received: 1, total: 2 },
       })
       app.controller.dictation.press(target, "KeyM")
       expect(app.offers).toEqual([])
@@ -491,7 +492,9 @@ describe("dictation", () => {
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
       await flush()
-      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      update(app, {
+        installing: { origin: "person", model: "turbo", step: "model", received: 1, total: 2 },
+      })
       expect(kind(app)).toBe("installing")
       update(app, { ...installed, installing: null })
       expect(kind(app)).toBe("ready")
@@ -504,7 +507,9 @@ describe("dictation", () => {
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
       await flush()
-      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      update(app, {
+        installing: { origin: "person", model: "turbo", step: "model", received: 1, total: 2 },
+      })
       update(app, { installing: null, failure: "Out of disk space." })
       expect(kind(app)).toBe("failed")
       app.advance(failureMilliseconds)
@@ -538,7 +543,9 @@ describe("dictation", () => {
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
       await flush()
-      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      update(app, {
+        installing: { origin: "person", model: "turbo", step: "model", received: 1, total: 2 },
+      })
       update(app, { ...installed, installing: null })
       expect(kind(app)).toBe("ready")
 
@@ -561,10 +568,21 @@ describe("dictation", () => {
       update(app, { installing: null, failure: "Old failure." })
       expect(kind(app)).toBe("installing")
 
-      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      update(app, {
+        installing: { origin: "person", model: "turbo", step: "model", received: 1, total: 2 },
+      })
       through()
       await flush()
       expect(kind(app)).toBe("installing")
+    })
+
+    it("shows the backend's refusal of the install call as a failure, not that of a setting", async () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.setupActions.turnOn()
+      await flush()
+      update(app, { refused: { call: "install", message: "Voice input is already installing." } })
+      expect(kind(app)).toBe("failed")
     })
 
     it("shows nothing after a cancel, and nothing for a refused setting", async () => {
@@ -572,15 +590,19 @@ describe("dictation", () => {
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
       await flush()
-      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      update(app, {
+        installing: { origin: "person", model: "turbo", step: "model", received: 1, total: 2 },
+      })
       update(app, { installing: null })
       expect(kind(app)).toBeUndefined()
 
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
       await flush()
-      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
-      update(app, { failure: "Couldn't change voice input: no." })
+      update(app, {
+        installing: { origin: "person", model: "turbo", step: "model", received: 1, total: 2 },
+      })
+      update(app, { refused: { call: "set", message: "No." } })
       expect(kind(app)).toBe("installing")
       // The install ends with only that refusal on record: not a failure of the install.
       update(app, { installing: null })

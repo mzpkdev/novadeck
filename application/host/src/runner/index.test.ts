@@ -214,7 +214,7 @@ describe("compiled desktop runner", () => {
           const client = await runner.connect()
           // eslint-disable-next-line no-await-in-loop -- As above.
           for await (const state of client.murmur.watch()) {
-            states.push(state.unsupported)
+            states.push(state.unsupported?.reason ?? null)
             break
           }
           // eslint-disable-next-line no-await-in-loop -- As above.

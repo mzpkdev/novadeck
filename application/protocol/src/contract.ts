@@ -21,7 +21,7 @@ import {
   planSaveResult,
   maxUploadPartLength,
   maxVoicePartLength,
-  murmurChange,
+  murmurSettings,
   murmurState,
   name,
   project,
@@ -443,7 +443,10 @@ export const contract = {
     uninstall: procedure.input(z.void()).output(z.void()),
     // Changes the settings given; the others stay. Turning murmur on before any install
     // says it is wanted, for the install to turn on.
-    set: procedure.input(murmurChange).output(z.void()),
+    set: procedure.input(murmurSettings.partial()).output(z.void()),
+    // Counts a session of the app the one-time offer of murmur was shown in, which it stops
+    // after three of.
+    noteOffered: procedure.input(z.void()).output(z.void()),
     // Asks murmur for the gist of the reply that ended the terminal's turn at `at`, which the
     // client shows unread. It lands on the terminal's `activity.lastTurn.gist`. Nothing happens
     // when murmur can't run, that end is no longer the last, or the terminal is unknown.

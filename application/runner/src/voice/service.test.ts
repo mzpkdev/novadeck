@@ -123,7 +123,7 @@ describe("installing voice input", () => {
       model: "small",
       installing: null,
       failure: null,
-      check: { model: "small", gpu: false, recommended: "small" },
+      check: { model: "small" },
     })
     expect(store.voiceSettings()).toMatchObject({ enabled: true, model: "small" })
   })
@@ -138,12 +138,13 @@ describe("installing voice input", () => {
     await voice.install()
     const states = await watching
 
-    expect(voice.state().check).toMatchObject({ model: "turbo", gpu: true, recommended: "turbo" })
+    expect(voice.state().check).toMatchObject({ model: "turbo" })
     expect(voice.state()).toMatchObject({ model: "turbo", installed: ["turbo"], enabled: true })
     const steps = states.flatMap((state) =>
       state.installing ? [`${state.installing.model} ${state.installing.step}`] : [],
     )
     expect([...new Set(steps)]).toEqual(["turbo engine", "turbo model", "turbo check"])
+    expect(states.every((state) => (state.installing?.origin ?? "person") === "person")).toBe(true)
   })
 
   it("falls back to small without a GPU, quietly, and removes turbo", async ({ resources }) => {
@@ -169,7 +170,7 @@ describe("installing voice input", () => {
       installed: ["small"],
       enabled: true,
       failure: null,
-      check: { model: "small", recommended: "small" },
+      check: { model: "small" },
     })
     expect(await readdir(`${directory}/models`)).toHaveLength(2)
   })
@@ -738,7 +739,7 @@ describe("voice input settings", () => {
 
   it("ignore a saved check that cannot be read", async ({ resources }) => {
     const { voice, store } = await installed(resources)
-    store.saveVoiceCheck({ model: "small", milliseconds: 1, gpu: false, recommended: "small" })
+    store.saveVoiceCheck({ model: "small", milliseconds: 1 })
     expect(voice.state().check).not.toBeNull()
 
     store.saveVoiceCheck(JSON.parse('{"model":"huge"}') as never)
@@ -996,6 +997,8 @@ describe("voice input after the app brings a new engine", () => {
       expect.arrayContaining(["engine"]),
     )
     expect(watched.every((state) => state.installing?.step !== "model")).toBe(true)
+    // The app's update, not the person, asked for it.
+    expect(watched.every((state) => (state.installing?.origin ?? "update") === "update")).toBe(true)
     const after = await readdir(join(directory, "engine"))
     expect(after).toHaveLength(1)
     expect(after).not.toEqual(before)

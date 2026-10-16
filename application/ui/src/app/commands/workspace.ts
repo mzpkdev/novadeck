@@ -97,11 +97,11 @@ export type WorkspaceCommands = ShellCommands &
     readonly retryAfterCrashLoop: () => void
     readonly dismissCrashLoop: () => void
     // Notes that an addon offer came up in this run, so no other offers itself unasked.
-    readonly markAddonOfferShown: () => void
+    // Takes this run's one unasked offer for `addon`, which counts it where it is counted
+    // (Murmur's, with the runner); false where the other addon took it first.
+    readonly takeAddonOffer: (addon: "voice" | "murmur") => boolean
     // Puts Murmur's offer chip on a terminal, or takes it away (null).
-    readonly offerNameTo: (
-      target: { readonly context: string; readonly id: string; readonly counted?: true } | null,
-    ) => void
+    readonly offerNameTo: (target: { readonly context: string; readonly id: string } | null) => void
     // Opens or closes the update's notice, which the footer's chip reopens after Later.
     readonly setUpdateOpen: (open: boolean) => void
     // Opens or closes the sandbox notice; opening it closes the update's, which shares its place.
@@ -128,6 +128,7 @@ const holding = (
 
 export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands => {
   const { workspace, ui, navigation, newTerminal, pickDirectory, crashLoop, effects } = ctx
+  const { murmur } = ctx
   const { go, navigateWorkspace } = navigation
   const { set, pulse } = shellEdits(ctx)
   const shell = createShellCommands(ctx)
@@ -505,8 +506,13 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
     },
     dismissCrashLoop: () => ui.update((state) => ({ ...state, crashLoopDismissed: true })),
     offerNameTo: (nameOffer) => ui.update((state) => ({ ...state, nameOffer })),
-    markAddonOfferShown: () =>
-      ui.update((state) => (state.addonOfferShown ? state : { ...state, addonOfferShown: true })),
+    takeAddonOffer: (addon) => {
+      const taken = ui.getSnapshot().addonOffer
+      if (taken !== null) return taken === addon
+      ui.update((state) => ({ ...state, addonOffer: addon }))
+      if (addon === "murmur") murmur?.noteOffered()
+      return true
+    },
     setUpdateOpen: (updateOpen) =>
       ui.update((state) =>
         state.updateOpen === updateOpen && !(updateOpen && state.sandboxOpen)

@@ -1,11 +1,6 @@
-import {
-  isInstallFailure,
-  isRefusedInstall,
-  MURMUR_NAME,
-  murmurStepTitles,
-  type MurmurState,
-} from "../model/murmur"
-import { formatSize } from "../model/voice-format"
+import type { Refusal } from "../model/addon"
+import { formatSize, stepLabel } from "../model/addon-format"
+import { MURMUR_NAME, murmurChecking, type MurmurState } from "../model/murmur"
 
 // What Murmur's footer item shows, as a plain function of the addon's state: an install's
 // progress as it goes, then how it ended. Only an install seen from here (started in this
@@ -17,40 +12,31 @@ export type FooterPhase = "idle" | "installing" | "done" | "failed" | "unavailab
 // How long "Terminals name themselves now" stays.
 export const doneForMs = 4000
 
-// Whether the runner has said how it is: the placeholder before its first snapshot has no
-// download sizes.
-export const isSnapshot = (state: MurmurState): boolean => state.sizes.model > 0
-
-// Where the item stands after `state`, given where it stood. `baseline` is the failure the
-// runner's first snapshot showed (a past run's), which is not an install's; before that
-// snapshot (`undefined`) nothing is judged. The engine's own update, which the runner says it
-// is running, shows nothing, and the refusal of another call (a decline that did not save, an
-// uninstall or a cancel) is not an install's failure. A cancel is no failure at all: the runner
-// leaves the files with the check owed (`unchecked`) and no failure.
+// Where the item stands after `state`, given where it stood. The app's own engine update
+// (an install of origin "update") shows nothing. From rest only a refused install call shows,
+// and each refusal is an event: `handled` is the one the person last answered, and another,
+// though in the same words, is a new one. What the runner reports of itself from rest (a device
+// that went away, an engine update that failed) is Addons'. A cancel is no failure: the runner
+// leaves the files with the check owed and no failure.
 export const footerPhase = (
   phase: FooterPhase,
   state: MurmurState,
-  baseline: string | null | undefined,
+  handled: Refusal | null,
   // The verdict that stood as the install began (a Check again keeps it until the new check
   // ends): only another is news of it.
   verdictBefore: string | null = null,
 ): FooterPhase => {
-  if (baseline === undefined) return phase
-  const failure = state.failure !== null && isInstallFailure(state.failure) ? state.failure : null
   if (state.installing)
-    return phase === "installing" || !state.installing.engineOnly ? "installing" : phase
+    return phase === "installing" || state.installing.origin === "person" ? "installing" : phase
   if (phase === "installing") {
     // It ended: how, is for the state to say.
-    if (state.unsupported !== null && state.unsupported !== verdictBefore) return "unavailable"
-    if (failure !== null) return "failed"
+    if (state.unsupported !== null && state.unsupported.reason !== verdictBefore)
+      return "unavailable"
+    if (state.failure !== null) return "failed"
     return state.installed && state.check !== null ? "done" : "idle"
   }
   if (phase === "idle")
-    // Only an install this app asked for shows from rest: one the runner turned away. What
-    // the runner reports of itself (a device that went away, an engine update that failed) is
-    // Addons'.
-    return failure !== null && isRefusedInstall(failure) && failure !== baseline ? "failed" : "idle"
-  if (phase === "failed" && failure === null) return "idle"
+    return state.refused?.call === "install" && state.refused !== handled ? "failed" : "idle"
   return phase
 }
 
@@ -70,13 +56,15 @@ export const installPercent = (state: MurmurState): number | null => {
 export const footerText = (
   phase: Exclude<FooterPhase, "idle">,
   state: MurmurState,
+  // Why it failed, as the runner or the refused call said, for a failed item.
+  failure: string | null = null,
 ): { readonly label: string; readonly summary: string } => {
   if (phase === "done")
     return { label: "Terminals name themselves now", summary: "Terminals name themselves now" }
   if (phase === "failed")
     return {
       label: `${MURMUR_NAME} \u00b7 failed`,
-      summary: `${MURMUR_NAME} couldn't turn on${state.failure ? `. ${state.failure}` : ""}`,
+      summary: `${MURMUR_NAME} couldn't turn on${failure ? `. ${failure}` : ""}`,
     }
   if (phase === "unavailable")
     return {
@@ -93,7 +81,7 @@ export const footerText = (
 // What the open sheet says of the step under way.
 export const stepText = ({ installing }: MurmurState): string => {
   if (!installing) return "Starting…"
-  const title = murmurStepTitles[installing.step]
+  const title = stepLabel(installing.step, murmurChecking)
   return installing.step === "check"
     ? title
     : `${title} · ${formatSize(installing.received)} of ${formatSize(installing.total)}`

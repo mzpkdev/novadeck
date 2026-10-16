@@ -26,7 +26,7 @@ import {
   type TerminalSummary,
   type RequestAnswer,
   type TranscriptChange,
-  type MurmurChange,
+  type MurmurSettings,
   type MurmurState,
   type VoiceChange,
   type VoiceState,
@@ -423,7 +423,9 @@ export type Runner = {
     /** Removes the engine and the model, and turns murmur off. */
     uninstall(): Promise<void>
     /** Changes the settings given; the others stay. */
-    set(settings: MurmurChange): Promise<void>
+    set(settings: Partial<MurmurSettings>): Promise<void>
+    /** Counts a session of the app the one-time offer was shown in. */
+    noteOffered(): Promise<void>
     /**
      * Asks murmur to write the gist of the reply that ended the terminal's turn at `at`,
      * which the client shows unread; it arrives in the terminal's activity. Does nothing
@@ -1295,6 +1297,7 @@ export const connectRunner = async (
       cancel: () => call((wire) => wire.murmur.cancel()),
       uninstall: () => call((wire) => wire.murmur.uninstall()),
       set: (settings) => call((wire) => wire.murmur.set(settings)),
+      noteOffered: () => call((wire) => wire.murmur.noteOffered()),
       gist: (terminalId, at) => call((wire) => wire.murmur.gist({ terminalId, at })),
     },
     settings: {

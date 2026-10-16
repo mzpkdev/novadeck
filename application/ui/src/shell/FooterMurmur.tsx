@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react"
 
+import type { Refusal } from "../model/addon"
 import { MURMUR_NAME, type Murmur, type MurmurState } from "../model/murmur"
 import { Progress } from "../ui-toolkit/Progress"
 import { ProgressRing } from "../ui-toolkit/ProgressRing"
@@ -9,7 +10,6 @@ import {
   footerPhase,
   footerText,
   installPercent,
-  isSnapshot,
   stepText,
   type FooterPhase,
 } from "./murmur-footer"
@@ -43,9 +43,10 @@ export const FooterMurmur = ({
 }): React.JSX.Element | null => {
   const state = murmur?.state
   const [phase, setPhase] = useState<FooterPhase>("idle")
-  // The failure the runner's first snapshot showed, a past run's, which is not this install's;
-  // undefined until that snapshot has come.
-  const [baseline, setBaseline] = useState<string | null | undefined>(undefined)
+  // The refusal of an install call the person last answered: another, in the same words, is a
+  // new one. And why the item failed, kept as the refusal itself goes with the next snapshot.
+  const [handled, setHandled] = useState<Refusal | null>(null)
+  const [why, setWhy] = useState("")
   const [open, setOpen] = useState(false)
   const chip = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLElement>(null)
@@ -55,13 +56,14 @@ export const FooterMurmur = ({
   const lost = useRef(false)
   const titleId = useId()
   const panelId = useId()
-  if (state && baseline === undefined && isSnapshot(state)) setBaseline(state.failure)
   // The verdict that stood as the install began.
   const [before, setBefore] = useState<string | null>(null)
-  const next = state ? footerPhase(phase, state, baseline, before) : "idle"
-  if (next === "installing" && phase !== "installing" && state) setBefore(state.unsupported)
+  const next = state ? footerPhase(phase, state, handled, before) : "idle"
+  if (next === "installing" && phase !== "installing" && state)
+    setBefore(state.unsupported?.reason ?? null)
   if (next !== phase) {
     setPhase(next)
+    if (next === "failed" && state) setWhy(state.failure ?? state.refused?.message ?? "")
     // What went wrong, or can't be, is said once on its own; the rest opens when asked.
     setOpen(next === "failed" || next === "unavailable")
   }
@@ -99,7 +101,7 @@ export const FooterMurmur = ({
   if (!murmur || !state) return null
   const shown = phase !== "idle"
   const { actions } = murmur
-  const text = shown ? footerText(phase, state) : undefined
+  const text = shown ? footerText(phase, state, why) : undefined
   const percent = installPercent(state)
   const tone = phase === "failed" ? "danger" : phase === "done" ? "success" : undefined
   const leave = (): void => {
@@ -107,7 +109,7 @@ export const FooterMurmur = ({
     asked.current = false
     setOpen(false)
     if (phase === "unavailable" || phase === "failed") {
-      setBaseline(state.failure)
+      setHandled(state.refused)
       setPhase("idle")
     }
     if (inside) chip.current?.focus()
@@ -191,7 +193,7 @@ export const FooterMurmur = ({
               <p id={titleId} className="update-title">
                 Couldn't turn on {MURMUR_NAME}
               </p>
-              <p className="update-text update-error footer-murmur-error">{state.failure}</p>
+              <p className="update-text update-error footer-murmur-error">{why}</p>
               <div className="update-actions">
                 <button type="button" className="button min-h-8 px-3" onClick={leave}>
                   Not now
@@ -201,7 +203,8 @@ export const FooterMurmur = ({
                   className="button primary min-h-8 px-3"
                   onClick={() => {
                     setOpen(false)
-                    actions.install()
+                    setHandled(state.refused)
+                    void actions.install()
                   }}
                 >
                   Try again
@@ -216,7 +219,7 @@ export const FooterMurmur = ({
               </p>
               <details className="update-text">
                 <summary className="cursor-pointer select-none">Details</summary>
-                <p className="m-0 mt-1 break-words">{state.unsupported}</p>
+                <p className="m-0 mt-1 break-words">{state.unsupported?.reason}</p>
               </details>
               <div className="update-actions">
                 <button type="button" className="button min-h-8 px-3" onClick={leave}>

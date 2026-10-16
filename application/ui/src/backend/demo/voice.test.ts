@@ -15,7 +15,7 @@ describe("the demo's voice input", () => {
       installed: ["turbo"],
       enabled: true,
       wanted: true,
-      check: { model: "turbo", gpu: true },
+      check: { model: "turbo" },
     })
   })
 
@@ -34,7 +34,7 @@ describe("the demo's voice input", () => {
       installing: null,
       installed: ["turbo"],
       enabled: true,
-      check: { model: "turbo", gpu: true },
+      check: { model: "turbo" },
     })
   })
 
@@ -157,6 +157,13 @@ describe("the demo's voice input", () => {
     voice.show("uninstalled")
     voice.uninstall()
     expect(voice.state.getSnapshot().aim).toBe("turbo")
+  })
+
+  it("only wants a model that never passed its check when it is turned on", () => {
+    const voice = createDemoVoice({ step: 100, transcribe: 10 })
+    voice.show("cancelled-at-check")
+    voice.set({ enabled: true })
+    expect(voice.state.getSnapshot()).toMatchObject({ enabled: false, wanted: true })
   })
 
   it("answers a canned transcript shortly after a clip ends", async () => {

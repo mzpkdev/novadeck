@@ -263,9 +263,7 @@ export class Murmur implements Describer {
   private loading: Promise<void> = Promise.resolve()
   private updateFailedAt: number | undefined
   private uninstalling = false
-  private installing: Omit<MurmurInstall, "engineOnly"> | null = null
-  // Whether the job running is the engine's own update, which the app starts, not an install.
-  private engineOnlyRun = false
+  private installing: MurmurInstall | null = null
   private failure: string | null = null
   private running:
     | { readonly done: Promise<void>; readonly controller: AbortController }
@@ -397,23 +395,21 @@ export class Murmur implements Describer {
       enabled: this.settings.murmurSettings().enabled && installed,
       wanted: this.settings.murmurEnabledChoice() !== false,
       sizes: { engine: this.manifest?.size ?? 0, model: this.model.size },
-      installing: this.installing && { ...this.installing, engineOnly: this.engineOnlyRun },
+      installing: this.installing,
       check,
-      unsupported: this.unsupported()?.reason ?? null,
+      unsupported: this.unsupported(),
       offers: this.settings.murmurOffers(),
-      recheck: this.unsupported()?.recheck ?? false,
-      unchecked: installed && check === null && !this.installing && this.unsupported() === null,
       failure: this.failure ?? this.runtimeFailure,
     }
   }
 
   // Why this computer can't run murmur, if the host or an install said so. An install's
   // verdict is of the engine build it ran: another build's engine gives it no weight.
-  private unsupported(): { readonly reason: string; readonly recheck: boolean } | null {
-    if (this.options.softwareGraphics) return { reason: softwareOnly, recheck: false }
+  private unsupported(): MurmurState["unsupported"] {
+    if (this.options.softwareGraphics) return { reason: softwareOnly, source: "host" }
     const verdict = this.settings.murmurUnsupported()
     return verdict !== null && verdict.engine === this.manifest?.sha256
-      ? { reason: verdict.reason, recheck: true }
+      ? { reason: verdict.reason, source: "check" }
       : null
   }
 
@@ -506,8 +502,7 @@ export class Murmur implements Describer {
     // Installing it says the person wants it, whatever they chose before; an off from then
     // on, during the install too, still holds.
     if (!this.installed()) this.settings.saveMurmurSettings({ enabled: null })
-    this.engineOnlyRun = false
-    this.installing = { step: "engine", received: 0, total: this.manifest.size }
+    this.installing = { step: "engine", received: 0, total: this.manifest.size, origin: "person" }
     this.changed()
     this.running = { controller, done: this.run(this.manifest, controller.signal) }
   }
@@ -531,8 +526,7 @@ export class Murmur implements Describer {
       return
     const controller = new AbortController()
     this.failure = null
-    this.engineOnlyRun = true
-    this.installing = { step: "engine", received: 0, total: manifest.size }
+    this.installing = { step: "engine", received: 0, total: manifest.size, origin: "update" }
     this.changed()
     this.running = { controller, done: this.run(manifest, controller.signal, true) }
   }
@@ -575,19 +569,14 @@ export class Murmur implements Describer {
       this.changed()
       // The program is in use until it has exited, which Windows will not delete.
       await this.server.stop()
-      // A look at the disk meanwhile (a watch's refresh) must not bring back what is going.
-      this.replacing = true
-      this.swaps += 1
       try {
-        await removeContents(this.directory)
+        await this.whileReplacing(() => removeContents(this.directory))
       } catch (error) {
         throw new DomainError(
           "CONFLICT",
           `Murmur could not be removed: ${error instanceof Error ? error.message : String(error)}. Close anything using the files in ${this.directory} and try again.`,
         )
       } finally {
-        this.replacing = false
-        this.swaps += 1
         await this.refresh()
       }
       this.settings.saveMurmurCheck(null)
@@ -601,16 +590,20 @@ export class Murmur implements Describer {
     }
   }
 
-  async set({
-    offered,
-    ...change
-  }: MurmurSettingsChange & { readonly offered?: true | undefined }): Promise<void> {
+  /** Counts a session of the app the one-time offer was shown in. */
+  async noteOffered(): Promise<void> {
+    this.assertOpen()
+    await this.ready()
+    this.assertOpen()
+    this.settings.saveMurmurOffers(this.settings.murmurOffers() + 1)
+    this.changed()
+  }
+
+  async set(change: MurmurSettingsChange): Promise<void> {
     this.assertOpen()
     await this.ready()
     this.assertOpen()
     if (this.uninstalling) throw new DomainError("CONFLICT", "Murmur is being removed.")
-    // The one-time offer was put in front of the person in a session: counted.
-    if (offered) this.settings.saveMurmurOffers(this.settings.murmurOffers() + 1)
     const wasOn = this.settings.murmurSettings().enabled
     // Turned on before any install, it is wanted, and the install that follows turns it on.
     if (change.enabled === true && !this.installed())
@@ -651,9 +644,23 @@ export class Murmur implements Describer {
     return modelPathOf(this.directory, this.model)
   }
 
-  private progress(install: Omit<MurmurInstall, "engineOnly">, force = false): void {
-    this.installing = install
+  // What an install is doing now; who started it stays as it was.
+  private progress(install: Omit<MurmurInstall, "origin">, force = false): void {
+    this.installing = { ...install, origin: this.installing?.origin ?? "person" }
     this.watchers.progress(force)
+  }
+
+  // Runs `work`, which takes engine files away or puts them in place: a look at the disk that
+  // spans it (a watch's refresh) is not believed, and cannot bring back what is going.
+  private async whileReplacing<T>(work: () => Promise<T>): Promise<T> {
+    this.replacing = true
+    this.swaps += 1
+    try {
+      return await work()
+    } finally {
+      this.replacing = false
+      this.swaps += 1
+    }
   }
 
   private async run(manifest: Manifest, signal: AbortSignal, engineOnly = false): Promise<void> {
@@ -663,28 +670,22 @@ export class Murmur implements Describer {
       if (!(await exists(join(engineFolder(this.directory, manifest.sha256), program)))) {
         const total = manifest.size
         this.progress({ step: "engine", received: 0, total }, true)
-        try {
-          await fetchEngine({
+        await this.whileReplacing(() =>
+          fetchEngine({
             manifest,
             source: this.source,
             directory: this.directory,
             program,
             signal,
             progress: (received) => this.progress({ step: "engine", received, total }),
-            // Unpacking removes the engines this one replaces; none may be running, and a
-            // refresh must not bring one back until the new one is there.
+            // Unpacking removes the engines this one replaces; none may be running.
             replacing: async () => {
-              this.replacing = true
-              this.swaps += 1
               this.engineDir = undefined
               this.changed()
               await this.server.stop()
             },
-          })
-        } finally {
-          this.replacing = false
-          this.swaps += 1
-        }
+          }),
+        )
         await this.refresh()
       }
       if (engineOnly) return
@@ -728,16 +729,10 @@ export class Murmur implements Describer {
     })
     this.settings.saveMurmurCheck(null)
     this.failure = null
-    // A look at the disk meanwhile (a watch's refresh) must not bring back what is going.
-    this.replacing = true
-    this.swaps += 1
     try {
-      await removeContents(this.directory)
+      await this.whileReplacing(() => removeContents(this.directory))
     } catch {
       // Left behind, it only takes room; the verdict stands.
-    } finally {
-      this.replacing = false
-      this.swaps += 1
     }
   }
 

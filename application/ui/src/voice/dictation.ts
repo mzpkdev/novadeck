@@ -1,7 +1,7 @@
 import { createStore, type MutableStore, type Store } from "../model/store"
 import type { TerminalKey } from "../model/types"
 import {
-  changeFailurePrefix,
+  installFailure,
   maxClipSeconds,
   type Voice,
   type VoiceClip,
@@ -391,7 +391,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
       return setSetup({ kind: "installing", target: current.target })
     }
     if (isReady) return seen ? setSetup({ kind: "ready", target: current.target }) : setSetup(null)
-    if (backend.failure !== null && !backend.failure.startsWith(changeFailurePrefix))
+    if (installFailure(backend) !== null)
       return setSetup({ kind: "failed", target: current.target })
     // Under way once and gone with nothing to show: cancelled.
     if (seen && current.kind === "installing") setSetup(null)

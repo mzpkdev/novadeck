@@ -24,6 +24,7 @@ export const demoVoiceState: VoiceState = {
   installing: null,
   check: null,
   failure: null,
+  refused: null,
 }
 
 const installedState: VoiceState = {
@@ -31,7 +32,7 @@ const installedState: VoiceState = {
   installed: ["turbo"],
   engineInstalled: true,
   enabled: true,
-  check: { model: "turbo", milliseconds: 2300, gpu: true, recommended: "turbo" },
+  check: { model: "turbo", milliseconds: 2300 },
 }
 
 // Where the demo starts: installed (the try demo's), or not (the offer, and the Addons
@@ -121,7 +122,13 @@ export const createDemoVoice = (
     const total = sizeOf(model, step)
     state.update((current) => ({
       ...current,
-      installing: { model, step, received: Math.round((total * part) / ticks), total },
+      installing: {
+        origin: "person",
+        model,
+        step,
+        received: Math.round((total * part) / ticks),
+        total,
+      },
     }))
   }
   const finish = (model: VoiceModel): void => {
@@ -135,7 +142,7 @@ export const createDemoVoice = (
       enabled: choice !== false,
       wanted: choice !== false,
       model,
-      check: { model, milliseconds: gpu ? 2300 : 3800, gpu, recommended: model },
+      check: { model, milliseconds: gpu ? 2300 : 3800 },
     }))
   }
 
@@ -148,9 +155,12 @@ export const createDemoVoice = (
   // cancelled, or failing as a connection that drops.
   let endsIn: "hold" | "failure" | undefined = start === "failing" ? "failure" : undefined
 
-  const install = (): void => {
+  const begin = (): void => {
     if (state.getSnapshot().installing) {
-      state.update((current) => ({ ...current, failure: "An install is already running." }))
+      state.update((current) => ({
+        ...current,
+        refused: { call: "install", message: "Voice input is already installing." },
+      }))
       return
     }
     const { installed, aim } = state.getSnapshot()
@@ -175,6 +185,7 @@ export const createDemoVoice = (
       wanted: choice !== false,
       // At once, as the first step of the install is begun by the call itself.
       installing: {
+        origin: "person",
         model: aim,
         step: steps[0]!.step,
         received: 0,
@@ -204,6 +215,11 @@ export const createDemoVoice = (
       return
     }
     later(() => finish(aim === "turbo" && slowTurbo ? "small" : aim), steps.length * timing.step)
+  }
+  // The call comes back at once, as the runner's does once the install has started.
+  const install = (): Promise<void> => {
+    begin()
+    return Promise.resolve()
   }
 
   const show = (scenario: DemoVoiceScenario): void => {
@@ -263,13 +279,17 @@ export const createDemoVoice = (
     set: (settings) =>
       state.update((current) => {
         const next = { ...current, ...settings }
-        // Turned on before an install, it is wanted, and the install will turn it on.
-        if (settings.enabled === true && !next.installed.includes(next.model)) {
+        // Turned on before an install, or with a model that never passed its check, it is only
+        // wanted, as the runner has it, and the install that follows turns it on.
+        if (
+          settings.enabled === true &&
+          (!next.installed.includes(next.model) || next.check?.model !== next.model)
+        ) {
           choice = undefined
-          return { ...next, enabled: false, wanted: true, failure: null }
+          return { ...next, enabled: false, wanted: true, failure: null, refused: null }
         }
         if (settings.enabled !== undefined) choice = settings.enabled
-        return { ...next, wanted: choice !== false, failure: null }
+        return { ...next, wanted: choice !== false, failure: null, refused: null }
       }),
     record: () => ({
       append: () => {},

@@ -1,7 +1,8 @@
 import { Check, Mic, TriangleAlert } from "lucide-react"
 import { useSyncExternalStore } from "react"
 
-import { formatSize, installSize, stepLabels } from "../model/voice-format"
+import { formatSize, stepLabel } from "../model/addon-format"
+import { installFailure, installSize } from "../model/voice"
 import { Chord } from "../ui-toolkit/Chord"
 import { Progress } from "../ui-toolkit/Progress"
 import type { DictationController, VoiceSetup } from "./dictation"
@@ -93,7 +94,7 @@ export const VoiceSetupContent = ({
             "Checking…"
           ) : (
             <>
-              <span className="dictation-long">{stepLabels[installing.step]} </span>
+              <span className="dictation-long">{stepLabel(installing.step)} </span>
               {formatSize(installing.received)} of {formatSize(installing.total)}
             </>
           )}
@@ -121,9 +122,8 @@ export const VoiceSetupContent = ({
     )
   }
   // The backend's own words often name voice input already.
-  const said = /voice input/i.test(state.failure ?? "")
-    ? (state.failure ?? "")
-    : `${failurePrefix} ${state.failure ?? ""}`
+  const told = installFailure(state) ?? ""
+  const said = /voice input/i.test(told) ? told : `${failurePrefix} ${told}`
   return (
     <>
       <TriangleAlert size={14} className="dictation-icon" aria-hidden />

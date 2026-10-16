@@ -1,6 +1,7 @@
+import type { Refusal } from "../model/addon"
 import type { MurmurState } from "../model/murmur"
 import { describe, expect, it } from "../test"
-import { footerPhase, footerText, installPercent, isSnapshot, stepText } from "./murmur-footer"
+import { footerPhase, footerText, installPercent, stepText } from "./murmur-footer"
 
 const idle: MurmurState = {
   available: true,
@@ -11,18 +12,21 @@ const idle: MurmurState = {
   installing: null,
   check: null,
   unsupported: null,
-  recheck: false,
-  unchecked: false,
   offers: 1,
+  refused: null,
   failure: null,
 }
-const installing = (step: "engine" | "model" | "check", received: number): MurmurState => ({
+const installing = (
+  step: "engine" | "model" | "check",
+  received: number,
+  origin: "person" | "update" = "person",
+): MurmurState => ({
   ...idle,
   installing: {
     step,
     received,
     total: step === "engine" ? 100 : step === "model" ? 300 : 0,
-    engineOnly: false,
+    origin,
   },
 })
 const checked: MurmurState = {
@@ -31,9 +35,10 @@ const checked: MurmurState = {
   enabled: true,
   check: { device: "Intel Arc Graphics", integrated: true, milliseconds: 900 },
 }
+const refusal = (call: Refusal["call"], message = "No."): Refusal => ({ call, message })
 
 describe("Murmur's footer item", () => {
-  it("shows an install as it goes, whoever started it", () => {
+  it("shows an install as it goes, whoever started it from here", () => {
     expect(footerPhase("idle", installing("engine", 10), null)).toBe("installing")
     expect(footerPhase("installing", installing("check", 0), null)).toBe("installing")
   })
@@ -46,116 +51,73 @@ describe("Murmur's footer item", () => {
     expect(footerPhase("installing", { ...idle, failure: "The download stopped." }, null)).toBe(
       "failed",
     )
-    expect(footerPhase("installing", { ...idle, unsupported: "No device." }, null)).toBe(
-      "unavailable",
-    )
+    expect(
+      footerPhase(
+        "installing",
+        { ...idle, unsupported: { reason: "No device.", source: "check" } },
+        null,
+      ),
+    ).toBe("unavailable")
   })
 
   it("leaves when an install is cancelled, as the runner leaves it: files, a check owed, no failure", () => {
-    // Cancelled in the check, once the model is down.
-    const cancelled: MurmurState = { ...idle, installed: true, unchecked: true }
+    const cancelled: MurmurState = { ...idle, installed: true }
     expect(footerPhase("installing", cancelled, null)).toBe("idle")
-    // Cancelled while downloading.
     expect(footerPhase("installing", idle, null)).toBe("idle")
   })
 
-  it("shows a failure that arrived from a refused call, but not the one the app started with", () => {
-    const failed = { ...idle, failure: "Couldn't install: refused." }
-    expect(footerPhase("idle", failed, null)).toBe("failed")
-    expect(footerPhase("idle", failed, failed.failure)).toBe("idle")
-    // A failure of a murmur that works is Addons'.
-    expect(footerPhase("idle", { ...checked, failure: "Murmur stopped." }, null)).toBe("idle")
+  it("shows a refused install from rest, once for each refusal, though the words repeat", () => {
+    const first = { ...idle, refused: refusal("install", "Already installing.") }
+    expect(footerPhase("idle", first, null)).toBe("failed")
+    // Answered: the same refusal is not news, another in the same words is.
+    expect(footerPhase("idle", first, first.refused)).toBe("idle")
+    const again = { ...idle, refused: refusal("install", "Already installing.") }
+    expect(footerPhase("idle", again, first.refused)).toBe("failed")
   })
 
-  it("judges nothing before the runner's first snapshot, so a past run's failure never shows", () => {
-    const placeholder: MurmurState = { ...idle, sizes: { engine: 0, model: 0 }, offers: 0 }
-    expect(isSnapshot(placeholder)).toBe(false)
-    expect(isSnapshot(idle)).toBe(true)
-    // Mounted before the snapshot: the baseline is unknown, and nothing is shown.
-    expect(footerPhase("idle", placeholder, undefined)).toBe("idle")
-    expect(footerPhase("idle", { ...idle, failure: "From a past run." }, undefined)).toBe("idle")
-    // Once the snapshot gave the baseline, that failure is not an install's.
-    expect(footerPhase("idle", { ...idle, failure: "From a past run." }, "From a past run.")).toBe(
-      "idle",
-    )
-  })
-
-  it("shows nothing for an engine update the runner says it runs, whatever the check holds", () => {
-    const engine = { step: "engine" as const, received: 1, total: 100, engineOnly: true }
-    // The check kept: the usual case.
-    expect(footerPhase("idle", { ...checked, installing: engine }, null)).toBe("idle")
-    // The check dropped, as when its device went away: still the engine's own update, so no
-    // item, and no failure of it opens a sheet by itself.
-    const dropped = { ...checked, check: null, installing: engine }
-    expect(footerPhase("idle", dropped, null)).toBe("idle")
-    // What the runner says of itself from rest is Addons': a device that went away, a failed
-    // engine update (the check dropped, or the interface moved on and nothing is installed).
+  it("leaves what the runner says of itself from rest to Addons", () => {
     for (const state of [
-      { ...checked, check: null, unchecked: true, failure: "The graphics device went away." },
+      { ...checked, check: null, failure: "The graphics device went away." },
       { ...idle, failure: "The download stopped: the connection dropped." },
     ])
       expect(footerPhase("idle", state, null)).toBe("idle")
-    // Ended, still no "done": it was never shown.
-    expect(footerPhase("idle", checked, null)).toBe("idle")
   })
 
-  it("shows an install the person started, even over files that are there", () => {
-    const retry: MurmurState = {
-      ...checked,
-      check: null,
-      installing: { step: "check", received: 0, total: 0, engineOnly: false },
-    }
+  it.each(["uninstall", "cancel", "set"] as const)("leaves a refused %s to Addons", (call) => {
+    const refused = { ...idle, refused: refusal(call) }
+    expect(footerPhase("idle", refused, null)).toBe("idle")
+    expect(footerPhase("installing", refused, null)).toBe("idle")
+  })
+
+  it("shows nothing for an update's engine fetch, whatever the check holds, and something for a person's", () => {
+    const update = (state: MurmurState) => ({
+      ...state,
+      installing: { step: "engine" as const, received: 1, total: 100, origin: "update" as const },
+    })
+    expect(footerPhase("idle", update(checked), null)).toBe("idle")
+    expect(footerPhase("idle", update({ ...checked, check: null }), null)).toBe("idle")
+    // Ended, still no "done": it was never shown.
+    expect(footerPhase("idle", checked, null)).toBe("idle")
+    // A retry the person started over files that are there.
+    const retry = { ...checked, check: null, installing: installing("check", 0).installing }
     expect(footerPhase("idle", retry, null)).toBe("installing")
   })
 
-  it.each([
-    "Couldn't change the setting: the runner is busy.",
-    "Couldn't uninstall: Disk busy.",
-    "Couldn't cancel the install: the runner is busy.",
-  ])("leaves the refusal of another call to Addons: %s", (failure) => {
-    const refused = { ...idle, failure }
-    expect(footerPhase("idle", refused, null)).toBe("idle")
-    expect(footerPhase("installing", refused, null)).toBe("idle")
-    expect(footerPhase("failed", refused, null)).toBe("idle")
-  })
-
-  it("shows a refused install, and a failure of the install itself", () => {
-    expect(footerPhase("idle", { ...idle, failure: "Couldn't install: refused." }, null)).toBe(
-      "failed",
-    )
-    expect(footerPhase("installing", { ...idle, failure: "The download stopped." }, null)).toBe(
-      "failed",
-    )
-  })
-
   it("is not told Not available by a verdict that stood when the install began", () => {
-    const standing = { ...idle, unsupported: "No graphics device answered.", recheck: true }
+    const standing = { ...idle, unsupported: { reason: "No device.", source: "check" as const } }
     // A Check again that was cancelled, or failed on the network, keeps the old verdict.
-    expect(footerPhase("installing", standing, null, standing.unsupported)).toBe("idle")
+    expect(footerPhase("installing", standing, null, "No device.")).toBe("idle")
     expect(
       footerPhase(
         "installing",
         { ...standing, failure: "The download stopped." },
         null,
-        standing.unsupported,
+        "No device.",
       ),
     ).toBe("failed")
     // A verdict that is new is news, whether none stood before or another did.
     expect(footerPhase("installing", standing, null, null)).toBe("unavailable")
     expect(footerPhase("installing", standing, null, "Another reason.")).toBe("unavailable")
-  })
-
-  it("keeps the failed label short, and says the failure once in the live summary", () => {
-    const failed = { ...idle, failure: "The download stopped." }
-    expect(footerText("failed", failed).label).toBe("Murmur \u00b7 failed")
-    expect(footerText("failed", failed).summary).toBe(
-      "Murmur couldn't turn on. The download stopped.",
-    )
-  })
-
-  it("leaves a failed item once the failure is cleared", () => {
-    expect(footerPhase("failed", idle, null)).toBe("idle")
-    expect(footerPhase("failed", { ...idle, failure: "Still." }, null)).toBe("failed")
   })
 
   it("counts the download as one, the check as none", () => {
@@ -173,6 +135,13 @@ describe("Murmur's footer item", () => {
     )
     expect(footerText("installing", installing("check", 0)).label).toBe("Murmur")
     expect(footerText("done", checked).label).toBe("Terminals name themselves now")
+  })
+
+  it("keeps the failed label short, and says the failure once in the live summary", () => {
+    expect(footerText("failed", idle, "The download stopped.").label).toBe("Murmur · failed")
+    expect(footerText("failed", idle, "The download stopped.").summary).toBe(
+      "Murmur couldn't turn on. The download stopped.",
+    )
   })
 
   it("says the step, never GPU", () => {

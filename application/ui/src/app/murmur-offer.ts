@@ -1,8 +1,7 @@
-import { standingFinish, finishGraceMs, sightTurnEnd, type SeenEnd } from "../model/agent-finish"
+import { formatSize } from "../model/addon-format"
 import type { MurmurState } from "../model/murmur"
-import type { Store } from "../model/store"
 import type { TerminalMetadata, Workspace } from "../model/types"
-import { formatSize } from "../model/voice-format"
+import type { WorkspaceServices } from "./controller/context"
 import { currentContext, currentState } from "./selectors"
 
 // The one-time offer of Murmur: a chip beside the title of the first terminal whose agent
@@ -57,55 +56,21 @@ export const offerText = {
   decline: "No thanks",
 } as const
 
-const terminalsOf = (workspace: Workspace): Map<string, TerminalMetadata> =>
-  new Map(
-    workspace.projects.flatMap((project) =>
-      project.history.flatMap((session) =>
-        session.state.roster.terminals.map(
-          (terminal) => [`${project.id}/${session.id}/${terminal.id}`, terminal] as const,
-        ),
-      ),
-    ),
-  )
-
-// Calls `onFinish` with the session context and id of each terminal whose agent's turn ends
-// complete, in any session, as the finish notices tell it (a terminal first seen only takes
-// in what it shows, and a completed end waits `graceMs` in case the person's Escape turns it
-// interrupted). Returns the unsubscribe.
-export const watchAgentFinishes = (
-  workspace: Store<Workspace>,
-  onFinish: (terminal: { readonly context: string; readonly id: string }) => void,
-  graceMs = finishGraceMs,
-): (() => void) => {
-  let previous = workspace.getSnapshot()
-  let terminals = terminalsOf(previous)
-  const seen = new Map<string, SeenEnd>()
-  const waiting = new Set<ReturnType<typeof setTimeout>>()
-  for (const [key, terminal] of terminals) seen.set(key, sightTurnEnd(undefined, terminal).seen)
-  const unsubscribe = workspace.subscribe(() => {
-    const snapshot = workspace.getSnapshot()
-    if (snapshot.projects === previous.projects) return
-    previous = snapshot
-    const before = terminals
-    terminals = terminalsOf(snapshot)
-    for (const [key, terminal] of terminals) {
-      if (before.get(key) === terminal) continue
-      const { seen: next, finish } = sightTurnEnd(seen.get(key), terminal)
-      seen.set(key, next)
-      if (!finish || finish.failed || next === null) continue
-      const timer = setTimeout(() => {
-        waiting.delete(timer)
-        const current = terminals.get(key)
-        if (current && standingFinish(current, next))
-          onFinish({ context: key.slice(0, key.length - current.id.length - 1), id: current.id })
-      }, graceMs)
-      waiting.add(timer)
-    }
-    for (const key of seen.keys()) if (!terminals.has(key)) seen.delete(key)
-  })
-  return () => {
-    unsubscribe()
-    for (const timer of waiting) clearTimeout(timer)
-    waiting.clear()
+// What to do when an agent's turn ends complete (the finish hook of `watchFinishes`): put the
+// chip on that terminal if the offer is due, no other addon's offer has this run, and the
+// terminal can carry it. A finish that does not qualify is let go, and the next that does is
+// the one.
+export const nameFinished =
+  ({
+    backend,
+    workspace,
+    ui,
+    commands,
+  }: Pick<WorkspaceServices, "backend" | "workspace" | "ui" | "commands">) =>
+  (context: string, id: string): void => {
+    const { murmur } = backend
+    if (!murmur || ui.getSnapshot().addonOffer !== null) return
+    if (!offerDue(murmur.state.getSnapshot())) return
+    if (canCarryChip(workspace.getSnapshot(), { context, id }))
+      commands.offerNameTo({ context, id })
   }
-}

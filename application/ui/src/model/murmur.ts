@@ -1,3 +1,4 @@
+import type { Refusal } from "./addon"
 import type { Store } from "./store"
 
 // Murmur, as a backend offers it: a small model that runs on the backend's machine, on its
@@ -21,14 +22,13 @@ export type MurmurState = {
   readonly wanted: boolean
   // Download sizes in bytes.
   readonly sizes: { readonly engine: number; readonly model: number }
-  // What an install is doing, with the bytes received of the step's total.
+  // What an install is doing, with the bytes received of the step's total, and who started
+  // it: the person, or the app's update, which fetches a new engine alone.
   readonly installing: {
     readonly step: "engine" | "model" | "check"
     readonly received: number
     readonly total: number
-    // The engine's own update, which the app starts for a murmur that is on, not an install the
-    // person asked for.
-    readonly engineOnly: boolean
+    readonly origin: "person" | "update"
   } | null
   // The device that passed the check after an install; null until one does.
   readonly check: {
@@ -36,65 +36,44 @@ export type MurmurState = {
     readonly integrated: boolean
     readonly milliseconds: number
   } | null
-  // Why the last install failed for a reason that may pass (network, disk), or why a change
-  // was refused, until the next snapshot or try.
+  // Why murmur is not working, as the runner says it: an install that failed for a reason
+  // that may pass (network, disk), a device that went away, an engine that keeps failing.
   readonly failure: string | null
-  // Why this computer can't run murmur, technical, for a details view: set before any
-  // download when the host knows, or by an install that found out (its downloads are then
-  // removed). Not a failure to retry: there is nothing to install, and no offer.
-  readonly unsupported: string | null
-  // Whether that came from an install and "Check again" (an install) asks anew; the host's
-  // word is not, and an engine of another build forgets an install's by itself.
-  readonly recheck: boolean
-  // Installed, with no check passed and no install running: a check that was cancelled, or
-  // dropped because its device went away. Not a failure in itself: `failure` is null unless
-  // something else went wrong, and then it takes precedence. Installing again runs the check.
-  readonly unchecked: boolean
+  // Why this computer can't run murmur, technical, for a details view: the host's word
+  // ("host", nothing downloads and an install is refused), or a check's, which an install runs
+  // again and which is kept until another passes. Not a failure to retry, and no offer.
+  readonly unsupported: { readonly reason: string; readonly source: "host" | "check" } | null
   // In how many sessions of the app the one-time offer was shown; it stops after three.
   readonly offers: number
+  // A call the person made that the backend refused, until the next snapshot. Apart from
+  // `failure`, which is only what the runner says.
+  readonly refused: Refusal | null
 }
 
-// What a backend's call is called in the failure it shows in the state, `Couldn't ${name}: why`.
-export const changeNames = {
-  install: "install",
-  cancel: "cancel the install",
-  uninstall: "uninstall",
-  set: "change the setting",
-} as const
+// Installed, with no check passed and no install running: a check that was cancelled, or
+// dropped because its device went away. Not a failure in itself: installing again runs just
+// the check.
+export const unchecked = (state: MurmurState): boolean =>
+  state.installed && state.check === null && state.installing === null && state.unsupported === null
 
-// Whether a failure in the state is the refusal of the install call itself, as the runner
-// turned it away.
-export const isRefusedInstall = (failure: string): boolean =>
-  failure.startsWith(`Couldn't ${changeNames.install}`)
-
-// Whether a failure in the state is an install's, or the refusal of another call.
-export const isInstallFailure = (failure: string): boolean =>
-  ![changeNames.cancel, changeNames.uninstall, changeNames.set].some((name) =>
-    failure.startsWith(`Couldn't ${name}`),
-  )
-
-// What each step of an install is called.
-export const murmurStepTitles = {
-  engine: "Downloading engine",
-  model: "Downloading model",
-  check: "Checking this computer",
-} as const
+// What murmur's check is called in the steps of an install.
+export const murmurChecking = "Checking this computer"
 
 export type MurmurSettings = {
   readonly enabled: boolean
 }
 
-// What a backend is told of murmur: its on or off, or that the one-time offer was shown.
-export type MurmurChange = Partial<MurmurSettings> & { readonly offered?: true }
-
 export type Murmur = {
   readonly state: Store<MurmurState>
-  // Each of these starts the change; `state` shows it as it goes, and its end or failure.
-  readonly install: () => void
+  // Starts an install; `state` shows it as it goes, and its end or failure. Settles once the
+  // call has returned, whether the backend took it or refused it (`state.refused` says which).
+  readonly install: () => Promise<void>
   readonly cancel: () => void
   // Settles when the removal ended, whether it worked or failed (`state` shows which).
   readonly uninstall: () => Promise<void>
-  readonly set: (settings: MurmurChange) => void
+  readonly set: (settings: Partial<MurmurSettings>) => void
+  // Counts a session of the app the one-time offer was shown in. Fire and forget.
+  readonly noteOffered: () => void
   // A backend may ask the app to offer murmur now, on the selected terminal, where the demo's
   // debug panel does: each bump is a request.
   readonly offer?: Store<number>

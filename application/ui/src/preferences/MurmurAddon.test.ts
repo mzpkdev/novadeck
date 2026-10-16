@@ -15,14 +15,13 @@ const unchecked: MurmurState = {
   installing: null,
   check: null,
   unsupported: null,
-  recheck: false,
-  unchecked: true,
   offers: 0,
+  refused: null,
   failure: null,
 }
 
 const actions = () => ({
-  install: vi.fn<() => void>(),
+  install: vi.fn<() => Promise<void>>(() => Promise.resolve()),
   cancel: vi.fn<() => void>(),
   uninstall: vi.fn<() => Promise<void>>(() => Promise.resolve()),
   set: vi.fn<(settings: { enabled?: boolean }) => void>(),
@@ -63,7 +62,10 @@ const deferred = () => {
 }
 
 describe("murmur's card when an uninstall fails", () => {
-  const failed: MurmurState = { ...unchecked, failure: "Couldn't uninstall: Disk busy." }
+  const failed: MurmurState = {
+    ...unchecked,
+    refused: { call: "uninstall", message: "Disk busy." },
+  }
 
   it("stops saying Removing once the call settles, though the failure is the same as before", async () => {
     const removal = deferred()
@@ -120,8 +122,10 @@ describe("murmur's card on a computer that can't run it", () => {
     ...unchecked,
     installed: false,
     failure: null,
-    unsupported: "No graphics device answered. On Linux, check that a Vulkan driver is installed.",
-    recheck: true,
+    unsupported: {
+      reason: "No graphics device answered. On Linux, check that a Vulkan driver is installed.",
+      source: "check" as const,
+    },
   }
 
   it("says Not available in place of Install, with the reason behind Details", () => {
@@ -156,7 +160,13 @@ describe("murmur's card on a computer that can't run it", () => {
   it("has no Check again for what the host saw", () => {
     const { container, unmount } = render(
       createElement(MurmurAddon, {
-        murmur: { state: { ...unsupported, recheck: false }, actions: actions() },
+        murmur: {
+          state: {
+            ...unsupported,
+            unsupported: { reason: "Software rendering only.", source: "host" as const },
+          },
+          actions: actions(),
+        },
       }),
     )
     expect(button("Check again", container)).toBeUndefined()
@@ -188,8 +198,10 @@ describe("murmur's card when a verdict stands beside files", () => {
           state: {
             ...unchecked,
             failure: null,
-            unsupported: "This computer reports only software rendering.",
-            recheck: false,
+            unsupported: {
+              reason: "This computer reports only software rendering.",
+              source: "host" as const,
+            },
           },
           actions: actions(),
         },
@@ -212,8 +224,10 @@ describe("murmur's card when a verdict stands beside files", () => {
             enabled: true,
             check: { device: "Intel Arc Graphics", integrated: true, milliseconds: 900 },
             failure: null,
-            unsupported: "This computer reports only software rendering.",
-            recheck: false,
+            unsupported: {
+              reason: "This computer reports only software rendering.",
+              source: "host" as const,
+            },
           },
           actions: actions(),
         },
@@ -233,10 +247,8 @@ describe("murmur's card when an install runs beside a standing verdict", () => {
           state: {
             ...unchecked,
             installed: false,
-            unchecked: false,
-            unsupported: "No graphics device answered.",
-            recheck: true,
-            installing: { step: "check", received: 0, total: 0, engineOnly: false },
+            unsupported: { reason: "No graphics device answered.", source: "check" as const },
+            installing: { step: "check", received: 0, total: 0, origin: "person" },
           },
           actions: actions(),
         },
@@ -256,10 +268,11 @@ describe("murmur's card under the host's verdict", () => {
           state: {
             ...unchecked,
             enabled: true,
-            unchecked: false,
             check: { device: "Intel Arc Graphics", integrated: true, milliseconds: 900 },
-            unsupported: "This computer reports only software rendering.",
-            recheck: false,
+            unsupported: {
+              reason: "This computer reports only software rendering.",
+              source: "host" as const,
+            },
             failure: "Murmur stopped: its engine kept failing.",
           },
           actions: actions(),

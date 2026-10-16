@@ -196,32 +196,38 @@ out-of-memory or load failure (another program may hold the video memory), a cra
 start of any other kind, a spawn error, an error answer, an answer cut off, and a mixed result
 (one device unusable, another timed out). On a verdict the runner removes the engine and the
 model, saves the reason with the sha of the engine build that ran, and shows `unsupported` in
-the state (and `recheck: true`). Preferences then says "Not available on this computer" with the
+the state (`unsupported: { reason, source: "check" }`). Preferences then says "Not available on this computer" with the
 reason behind Details, and the offer never comes up. An app update with another engine sha
 forgets the verdict by itself; Check again, inside Details, installs again, which clears the
-verdict and checks anew. The host also tells the runner at start
-(`--novadeck-murmur-graphics=software`) when Electron's `app.getGPUInfo("basic")` lists only
+verdict and checks anew; until that check passes the old verdict stands, through a cancel or a
+failure. The host also tells the runner at start (`--novadeck-graphics=software`, shared with
+voice input) when Electron's `app.getGPUInfo("basic")` lists only
 software adapters (SwiftShader, llvmpipe, WARP), so the same state shows before any download;
-that verdict is the host's word, is not saved, offers no Check again (`recheck: false`), and an
+that verdict is the host's word, is not saved, is `source: "host"` (so no Check again), and an
 unsure answer counts as capable. Apple silicon always does. It gates offering and installing
 only: an installed and checked murmur keeps working.
 
 If a later launch finds the engine doesn't list the checked device (it may list none), the check
 is dropped and `failure` says "The graphics device murmur was checked on isn't there now.". The
-state then reads `unchecked: true`, which Try again (an install) answers by running just the check.
+UI then derives "unchecked" (below), which Try again (an install) answers by running just the check.
 
 ## The card's state
 
-Installed with no passed check (a check the person cancelled, a restart after a failed one, or
-a check dropped because its device went away) is `installed: true, check: null, unchecked: true`
-and no `failure` of its own: a cancel is no failure (if something else went wrong, `failure` is
-set too and is what the card shows). Install again runs just the check. `failure` is set
-for a failed install or engine update, and clears on the next one. While murmur runs it is set
-when the worker thread won't start or after three engine failures in a row (a crash or no answer
-in time), and clears on the next job that succeeds or when murmur is turned on. The check is
-kept in those cases. `installing.engineOnly` says the job running is the app's own engine update,
-not an install the person asked for. `offers` counts the sessions of the app the one-time offer
-was shown in (the app reports one with `set({ offered: true })`), and it stops after three.
+Installed with no passed check and nothing running (a check the person cancelled, a restart
+after a failed one, or a check dropped because its device went away) is `installed: true,
+check: null`, which the UI derives as "unchecked" (`unchecked(state)` in `model/murmur.ts`; it
+is not on the wire). It has no `failure` of its own: a cancel is no failure (if something else
+went wrong, `failure` is set too and is what the card shows). Install again runs just the check.
+`failure` is only what the runner says: a failed install or engine update, until the next one;
+while murmur runs, the worker thread that won't start or three engine failures in a row (a crash
+or no answer in time), until the next job that succeeds or murmur is turned on. The check is
+kept in those cases. A call the backend refused is the adapter's word, apart from `failure`
+(`refused` in the UI's state, until the next snapshot). `installing.origin` says who started the
+job: `"person"`, or `"update"` for the app's own engine update, which shows nothing.
+
+`offers` counts the sessions of the app the one-time offer was shown in. The app reports one
+with `murmur.noteOffered()` when the chip is drawn (`takeAddonOffer("murmur")`), and the offer
+stops after three.
 
 ## Being polite
 

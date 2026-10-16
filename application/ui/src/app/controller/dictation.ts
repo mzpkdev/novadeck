@@ -99,7 +99,10 @@ export const useDictationController = ({
   backend,
   workspace,
   ui,
-}: Pick<WorkspaceServices, "backend" | "workspace" | "ui">): DictationController | undefined => {
+  commands,
+}: Pick<WorkspaceServices, "backend" | "workspace" | "ui" | "commands">):
+  | DictationController
+  | undefined => {
   const { voice, typeInto } = backend
   const controller = useMemo(
     () =>
@@ -107,10 +110,7 @@ export const useDictationController = ({
       typeInto &&
       createDictation({
         voice,
-        offered: () =>
-          ui.update((state) =>
-            state.addonOfferShown ? state : { ...state, addonOfferShown: true },
-          ),
+        offered: () => void commands.takeAddonOffer("voice"),
         typeInto: dictateInto(ui, typeInto, (key) =>
           backend.conversations
             ? workspace
@@ -124,7 +124,7 @@ export const useDictationController = ({
         now: domEffects.now,
         after: domEffects.after,
       }),
-    [voice, typeInto, backend.conversations, workspace, ui],
+    [voice, typeInto, backend.conversations, workspace, ui, commands],
   )
   useEffect(() => () => controller?.dictation.cancel(), [controller])
   useEffect(() => controller?.start(), [controller])

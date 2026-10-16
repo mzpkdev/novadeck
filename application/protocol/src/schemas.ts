@@ -689,22 +689,25 @@ export const maxVoiceSeconds = 120
  */
 export const maxVoicePartLength = 196_608
 
+// Why an addon is installing: the person asked, or the app updated and brought a new engine,
+// which is fetched alone and needs nothing from the person.
+export const installOrigin = z.enum(["person", "update"])
+
 // What an install is doing: downloading the engine or the model, or checking that they
 // transcribe, with the bytes received of the step's total.
 export const voiceInstall = z.strictObject({
+  origin: installOrigin,
   model: voiceModel,
   step: z.enum(["engine", "model", "check"]),
   received: z.int().nonnegative(),
   total: z.int().nonnegative(),
 })
 
-// How the engine did on a test clip after an install: how long it took, whether it ran on
-// a GPU, and the model that suits this machine.
+// How the engine did on a test clip after an install: the model checked and how long a clip
+// took.
 export const voiceCheck = z.strictObject({
   model: voiceModel,
   milliseconds: z.int().nonnegative(),
-  gpu: z.boolean(),
-  recommended: voiceModel,
 })
 
 export const voiceState = z.strictObject({
@@ -729,8 +732,7 @@ export const voiceState = z.strictObject({
   installing: voiceInstall.nullable(),
   check: voiceCheck.nullable(),
   // Why the last install, or the engine's update, failed, until the next install, update
-  // or removal, or the person turns voice input on despite a failed check. A clip that fails to transcribe is its
-  // caller's error alone.
+  // or removal. A clip that fails to transcribe is its caller's error alone.
   failure: z.string().max(1024).nullable(),
 })
 
@@ -743,9 +745,8 @@ export const murmurInstall = z.strictObject({
   step: z.enum(["engine", "model", "check"]),
   received: z.int().nonnegative(),
   total: z.int().nonnegative(),
-  // Whether this is only the engine's update, which the app starts by itself for a murmur that
-  // is on, not an install the person asked for.
-  engineOnly: z.boolean(),
+  // Who started it: the person, or the app's update, which fetches a new engine alone.
+  origin: installOrigin,
 })
 
 // The device that passed the check after an install: its name, whether it is an
@@ -772,23 +773,18 @@ export const murmurState = z.strictObject({
   // Null until a check passes.
   check: murmurCheck.nullable(),
   // Why this computer can't run murmur, technical and for a details view, once it is known:
-  // the host saw only software rendering, or an install found no graphics device that runs
-  // the model, or the engine could not load a library it needs (the downloads are then
-  // removed). Null while nothing says it can't. It is no failure to try again, and an install
-  // is refused while the host's word holds; an install's own verdict is cleared by installing
-  // again (`recheck`).
-  unsupported: z.string().max(1024).nullable(),
+  // the host saw only software rendering (`source: "host"`), or an install found no graphics
+  // device that runs the model, or the engine could not load a library it needs
+  // (`source: "check"`; the downloads are then removed). Null while nothing says it can't. It
+  // is no failure to try again. An install is refused while the host's word holds; a check's
+  // verdict stands until another check passes, which installing again runs, and an engine of
+  // another build forgets it.
+  unsupported: z
+    .strictObject({ reason: z.string().max(1024), source: z.enum(["host", "check"]) })
+    .nullable(),
   // In how many sessions of the app the one-time offer was shown; the app stops offering after
   // three, whether or not they answered.
   offers: z.int().nonnegative(),
-  // Whether `unsupported` came from an install and can be asked again (an install clears
-  // it and checks anew); the host's word about software rendering is not, it is read at
-  // each start. An engine of another build forgets an install's verdict by itself.
-  recheck: z.boolean(),
-  // Installed, with no check passed and no install running: a check that was cancelled, or
-  // dropped because its device went away. Not a failure in itself: `failure` is null unless
-  // something else went wrong, and then it takes precedence. Installing again runs just the check.
-  unchecked: z.boolean(),
   // Why murmur is not working, in words for the person: the last install or engine update
   // that failed (network, disk), until the next install, update or removal; the device it was
   // checked on being gone (the check is then null, and Try again installs just the check); a
@@ -799,13 +795,6 @@ export const murmurState = z.strictObject({
 
 export const murmurSettings = z.strictObject({
   enabled: z.boolean(),
-})
-
-// What the person or the app changes of murmur: its on or off, or that the one-time offer
-// of it was put in front of them in a session of the app (`offered`), which the runner counts.
-export const murmurChange = z.strictObject({
-  enabled: z.boolean().optional(),
-  offered: z.literal(true).optional(),
 })
 
 /**
@@ -975,6 +964,7 @@ export type AgentIntegration = z.infer<typeof agentIntegration>
 export type RunnerSettings = z.infer<typeof runnerSettings>
 export type VoiceModel = z.infer<typeof voiceModel>
 export type VoiceInstall = z.infer<typeof voiceInstall>
+export type InstallOrigin = z.infer<typeof installOrigin>
 export type VoiceCheck = z.infer<typeof voiceCheck>
 export type VoiceState = z.infer<typeof voiceState>
 export type VoiceUnavailable = z.infer<typeof voiceUnavailable>
@@ -985,7 +975,6 @@ export type MurmurInstall = z.infer<typeof murmurInstall>
 export type MurmurCheck = z.infer<typeof murmurCheck>
 export type MurmurState = z.infer<typeof murmurState>
 export type MurmurSettings = z.infer<typeof murmurSettings>
-export type MurmurChange = z.infer<typeof murmurChange>
 export type MessageState = z.infer<typeof messageState>
 export type DeliveryState = z.infer<typeof deliveryState>
 export type AgentMessage = z.infer<typeof agentMessage>

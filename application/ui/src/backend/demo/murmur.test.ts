@@ -43,7 +43,7 @@ describe("the demo's murmur", () => {
         enabled: false,
         check: null,
         failure: null,
-        unsupported: expect.stringMatching(/graphics device/),
+        unsupported: { reason: expect.stringMatching(/graphics device/), source: "check" },
       })
     })
 
@@ -55,15 +55,34 @@ describe("the demo's murmur", () => {
       await vi.advanceTimersByTimeAsync(50)
       expect(murmur.state.getSnapshot()).toMatchObject({ installing: { step: "engine" } })
       await vi.advanceTimersByTimeAsync(400)
-      expect(murmur.state.getSnapshot()).toMatchObject({ installed: false, recheck: true })
+      expect(murmur.state.getSnapshot()).toMatchObject({
+        installed: false,
+        unsupported: { source: "check" },
+      })
+    })
+
+    it("keeps a check's verdict while it checks again, until a check passes, and refuses the host's", async () => {
+      const murmur = createDemoMurmur({ step: 100, device: "Intel Arc Graphics" }, "unsupported")
+      void murmur.install()
+      await vi.advanceTimersByTimeAsync(50)
+      expect(murmur.state.getSnapshot()).toMatchObject({
+        installing: { origin: "person" },
+        unsupported: { source: "check" },
+      })
+      await vi.advanceTimersByTimeAsync(400)
+      expect(murmur.state.getSnapshot()).toMatchObject({ installed: true, unsupported: null })
+
+      murmur.show("unsupported-host")
+      await murmur.install()
+      expect(murmur.state.getSnapshot().refused).toMatchObject({ call: "install" })
+      expect(murmur.state.getSnapshot().installing).toBeNull()
     })
 
     it("starts Not available when asked to", () => {
       const murmur = createDemoMurmur(undefined, "unsupported")
       expect(murmur.state.getSnapshot()).toMatchObject({
         installed: false,
-        unsupported: expect.stringMatching(/Vulkan/),
-        recheck: true,
+        unsupported: { reason: expect.stringMatching(/Vulkan/), source: "check" },
         // Not a decline: murmur is still wanted, only not here.
         wanted: true,
       })
@@ -102,8 +121,7 @@ describe("the demo's murmur", () => {
         installed: true,
         check: null,
         enabled: false,
-        recheck: true,
-        unsupported: expect.any(String),
+        unsupported: expect.objectContaining({ source: "check" }),
       })
     })
 
@@ -119,7 +137,7 @@ describe("the demo's murmur", () => {
       await vi.advanceTimersByTimeAsync(2000)
       expect(murmur.state.getSnapshot()).toMatchObject({
         installed: false,
-        unsupported: expect.any(String),
+        unsupported: expect.objectContaining({ reason: expect.any(String) }),
       })
     })
 
@@ -133,8 +151,8 @@ describe("the demo's murmur", () => {
 
     it("counts the sessions the offer was shown in, and keeps the count through every scenario", () => {
       const murmur = createDemoMurmur(undefined, "uninstalled")
-      murmur.set({ offered: true })
-      murmur.set({ offered: true })
+      murmur.noteOffered()
+      murmur.noteOffered()
       expect(murmur.state.getSnapshot().offers).toBe(2)
       murmur.show("installing")
       murmur.show("network-failure")
@@ -146,8 +164,7 @@ describe("the demo's murmur", () => {
       const murmur = createDemoMurmur()
       murmur.show("unsupported-host")
       expect(murmur.state.getSnapshot()).toMatchObject({
-        unsupported: expect.stringMatching(/software rendering/),
-        recheck: false,
+        unsupported: { reason: expect.stringMatching(/software rendering/), source: "host" },
       })
     })
 
@@ -174,7 +191,6 @@ describe("the demo's murmur", () => {
       installing: null,
       installed: true,
       check: null,
-      unchecked: true,
       failure: null,
     })
   })

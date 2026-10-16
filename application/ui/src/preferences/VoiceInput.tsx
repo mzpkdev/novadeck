@@ -1,28 +1,23 @@
 import { useState, type RefObject } from "react"
 
-import type { Voice, VoiceState } from "../model/voice"
+import { dictationKeys } from "../interaction/shortcuts"
+import { formatSize, stepLabel } from "../model/addon-format"
+import { installSize, type Voice, type VoiceState } from "../model/voice"
 import { Chord } from "../ui-toolkit/Chord"
 import { ConfirmDialog } from "../ui-toolkit/ConfirmDialog"
 import { Select } from "../ui-toolkit/Select"
 import { Switch } from "../ui-toolkit/Switch"
 import { AddonFailure, addonNoteClasses, addonRowClasses, InstallProgress } from "./addon-parts"
 import { settingsCardClasses } from "./settings"
-import {
-  checkText,
-  dictationKeys,
-  formatSize,
-  installedSize,
-  installSize,
-  languages,
-  stepLabels,
-  voiceOnDisk,
-  voiceSetUp,
-} from "./voice-addon"
+import { checkText, installedSize, languages, voiceOnDisk, voiceSetUp } from "./voice-addon"
 
 export type VoiceAddon = {
   readonly state: VoiceState
   readonly actions: Pick<Voice, "install" | "cancel" | "uninstall" | "set">
 }
+
+// What the card says went wrong: the runner's failure, or the backend's refusal of any call.
+const told = (state: VoiceState): string | null => state.failure ?? state.refused?.message ?? null
 
 const rowClasses = addonRowClasses
 const noteClasses = addonNoteClasses
@@ -35,7 +30,7 @@ const Installing = ({
   readonly onCancel: () => void
 }): React.JSX.Element => {
   const { step, received, total } = installing
-  const label = stepLabels[step]
+  const label = stepLabel(step)
   return (
     <InstallProgress
       title={`${label}${step === "check" ? "" : `: ${step === "model" ? "speech model" : "speech engine"}`}`}
@@ -67,7 +62,7 @@ export const VoiceInput = ({
   // has no field for a removal under way, so the card waits for the engine to be gone or a
   // new failure to turn up.
   const [removing, setRemoving] = useState<{ readonly failure: string | null } | null>(null)
-  if (removing && voice && (!voiceOnDisk(voice.state) || voice.state.failure !== removing.failure))
+  if (removing && voice && (!voiceOnDisk(voice.state) || told(voice.state) !== removing.failure))
     setRemoving(null)
   if (!voice)
     return (
@@ -76,7 +71,8 @@ export const VoiceInput = ({
       </div>
     )
   const { state, actions } = voice
-  const { failure, installing } = state
+  const { installing } = state
+  const failure = told(state)
   const failed = failure && <AddonFailure>{failure}</AddonFailure>
   // What an installed card can still do about a failure: install again, which fetches an
   // engine that is missing or out of date, runs the check, and skips models on disk. It

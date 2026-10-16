@@ -360,6 +360,7 @@ export const createRouter = (options: {
       cancel: authorized.murmur.cancel.handler(() => murmur.cancel()),
       uninstall: authorized.murmur.uninstall.handler(() => murmur.uninstall()),
       set: authorized.murmur.set.handler(({ input }) => murmur.set(input)),
+      noteOffered: authorized.murmur.noteOffered.handler(() => murmur.noteOffered()),
       gist: authorized.murmur.gist.handler(({ input }) =>
         terminals.gistWanted(input.terminalId, input.at),
       ),

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import type { VoiceState } from "../model/voice"
-import { formatSize, installedSize, installSize, voiceSetUp } from "./voice-addon"
+import { formatSize } from "../model/addon-format"
+import { installSize, type VoiceState } from "../model/voice"
+import { installedSize, voiceSetUp } from "./voice-addon"
 
 const megabyte = 1024 * 1024
 const state: VoiceState = {
@@ -17,16 +18,19 @@ const state: VoiceState = {
   installing: null,
   check: null,
   failure: null,
+  refused: null,
 }
 
 describe("whether voice input is set up", () => {
-  const check = { model: "small", milliseconds: 3000, gpu: false, recommended: "small" } as const
-  it("needs its model installed and either checked or turned on", () => {
+  const check = { model: "small", milliseconds: 3000 } as const
+  it("needs its model installed and passed its check", () => {
     expect(voiceSetUp(state)).toBe(false)
     // A cancel left the model on disk, never checked: Addons offers the install.
     expect(voiceSetUp({ ...state, installed: ["small"], model: "small" })).toBe(false)
     expect(voiceSetUp({ ...state, installed: ["small"], model: "small", check })).toBe(true)
-    expect(voiceSetUp({ ...state, installed: ["small"], model: "small", enabled: true })).toBe(true)
+    expect(voiceSetUp({ ...state, installed: ["small"], model: "small", enabled: true })).toBe(
+      false,
+    )
   })
 
   it("quotes the model an install aims for", () => {

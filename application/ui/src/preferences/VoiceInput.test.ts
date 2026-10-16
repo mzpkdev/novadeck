@@ -18,10 +18,11 @@ const base: VoiceState = {
   installing: null,
   check: null,
   failure: null,
+  refused: null,
 }
 
 const actions: Pick<Voice, "install" | "cancel" | "uninstall" | "set"> = {
-  install: () => {},
+  install: () => Promise.resolve(),
   cancel: () => {},
   uninstall: () => {},
   set: () => {},
@@ -68,7 +69,7 @@ describe("voice input's card in Addons", () => {
   })
 
   it("offers Uninstall once the model passed its check", () => {
-    const check = { model: "small", milliseconds: 3000, gpu: false, recommended: "small" } as const
+    const check = { model: "small", milliseconds: 3000 } as const
     const view = render(card({ ...base, installed: ["small"], enabled: true, check }))
     expect(labels(view.container)).toContain("Uninstall")
     expect(labels(view.container)).not.toContain("Install")

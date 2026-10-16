@@ -17,6 +17,7 @@ import { connectBackend } from "./controller/backend-connection"
 import { WorkspaceServicesContext, type WorkspaceServices } from "./controller/context"
 import { domEffects } from "./controller/effects"
 import { dialogDepthOf, useRouteSync } from "./controller/useRouteSync"
+import { nameFinished } from "./murmur-offer"
 import { watchPageFocus } from "./page-focus"
 import { resolveRoute } from "./routing"
 import {
@@ -82,6 +83,7 @@ const createServices = (
     pickDirectory: backend.pickDirectory,
     crashLoop: backend.crashLoop,
     resetTitle: backend.resetTitle,
+    murmur: backend.murmur,
     conversations: backend.conversations,
     panes,
     canvas,
@@ -158,6 +160,7 @@ export const WorkspaceProvider = ({
       watchFinishes(services.workspace, services.ui, {
         notify: services.backend.notices?.show,
         unread: services.backend.murmur?.gist,
+        finished: nameFinished(services),
       }),
     [services],
   )

@@ -1,7 +1,6 @@
-import { murmurStepTitles, type MurmurState } from "../model/murmur"
-import { formatSize } from "../model/voice-format"
-
-export { murmurStepTitles }
+import type { Refusal } from "../model/addon"
+import { formatSize } from "../model/addon-format"
+import type { MurmurState } from "../model/murmur"
 
 // What an installed murmur with no passed check says, beside Try again.
 export const murmurUncheckedText =
@@ -17,6 +16,10 @@ export const murmurInstallSize = ({ sizes }: MurmurState): number => sizes.engin
 // The note under Install.
 export const murmurDownloadNote = (state: MurmurState): string =>
   `Downloads ${formatSize(murmurInstallSize(state))} once, then works offline.`
+
+// What a call the backend refused says, with the call named.
+export const refusalText = ({ call, message }: Refusal): string =>
+  `Couldn't ${{ install: "install", cancel: "cancel the install", uninstall: "uninstall", set: "change the setting" }[call]}: ${message}`
 
 // Where murmur runs, once a check has passed.
 export const deviceText = ({ device }: NonNullable<MurmurState["check"]>): string =>

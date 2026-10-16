@@ -69,17 +69,12 @@ export type UiState = {
   readonly closing: { readonly context: string; readonly id: string } | null
   // The person chose "Not now" for this crash loop; it asks again only after the next one.
   readonly crashLoopDismissed: boolean
-  // Whether an addon offer (voice input, murmur) came up in this run of the app: each run
+  // Which addon's offer (voice input or murmur) came up in this run of the app: each run
   // offers at most one unasked; never persisted.
-  readonly addonOfferShown: boolean
+  readonly addonOffer: "voice" | "murmur" | null
   // The terminal Murmur's offer chip sits on, by session context and id: the first whose
   // agent finished a turn, until the offer is answered; never persisted.
-  // `counted` once the chip was seen and the run's mark taken, so a later voice offer is fine.
-  readonly nameOffer: {
-    readonly context: string
-    readonly id: string
-    readonly counted?: true
-  } | null
+  readonly nameOffer: { readonly context: string; readonly id: string } | null
   // How many crashes the backend reports while its far side keeps crashing; 0 otherwise.
   readonly crashLoop: number
   // The update the desktop app last told of: downloaded, or to fetch from its release page.
@@ -146,7 +141,7 @@ export const initialUi = ({
   created: null,
   closing: null,
   crashLoopDismissed: false,
-  addonOfferShown: false,
+  addonOffer: null,
   nameOffer: null,
   crashLoop: 0,
   update: null,
@@ -471,8 +466,10 @@ export type FinishNotify = (notice: {
 // its agent finishes is marked unread, and `notify`, where given and the person wants it,
 // shows them one notification for it. `unread`, where given, is told each such finish by
 // its terminal and the end's `at`, so murmur can write a gist of its reply. The mark clears
-// once they look at that terminal, its agent works again, or the terminal goes. What each
-// terminal showed when this started is taken in as seen.
+// once they look at that terminal, its agent works again, or the terminal goes. `finished`,
+// where given, is told each finish that completed (not one that failed), whoever looks at it,
+// by the terminal's session context and id. What each terminal showed when this started is
+// taken in as seen.
 export const watchFinishes = (
   workspace: Store<Workspace>,
   ui: UiStore,
@@ -480,10 +477,12 @@ export const watchFinishes = (
     notify,
     graceMs = finishGraceMs,
     unread: gist,
+    finished: completed,
   }: {
     notify?: FinishNotify | undefined
     graceMs?: number
     unread?: ((terminalId: string, at: number) => void) | undefined
+    finished?: ((context: string, id: string) => void) | undefined
   } = {},
 ): (() => void) => {
   let previous = workspace.getSnapshot()
@@ -556,6 +555,8 @@ export const watchFinishes = (
       finish: AgentFinish
     }[],
   ): void => {
+    for (const { key, terminal, finish } of finished)
+      if (!finish.failed) completed?.(contextOf(key, terminal), terminal.id)
     const looking = viewing(workspace.getSnapshot(), ui.getSnapshot())
     setUnread((current) => {
       let unread = current

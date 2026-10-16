@@ -7,8 +7,9 @@ import {
 } from "@novadeck/protocol"
 import { hasCode, type Runner } from "@novadeck/protocol/client"
 
+import type { Refusal } from "../../model/addon"
 import { createStore } from "../../model/store"
-import { changeFailurePrefix, type Voice, type VoiceClip, type VoiceState } from "../../model/voice"
+import type { Voice, VoiceClip, VoiceState } from "../../model/voice"
 
 // The runner's voice input addon: its state as `voice.watch` streams it, installs and
 // settings as calls whose failures show in that state until the next snapshot, and clips
@@ -39,6 +40,7 @@ export const noVoice: VoiceState = {
   installing: null,
   check: null,
   failure: null,
+  refused: null,
 }
 
 // How often a clip's audio goes up while it records: often enough that the end of a
@@ -96,9 +98,6 @@ const littleEndian = (chunks: readonly Int16Array[]): Uint8Array => {
   return bytes
 }
 
-// `change`'s words for a refused setting: the failure then starts with `changeFailurePrefix`.
-const changeWhat = changeFailurePrefix.replace(/^Couldn't /, "")
-
 export const createRunnerVoice = (
   calls: VoiceCalls,
   // Keeps a call the backend waits for before it stops, as its other calls are.
@@ -121,7 +120,7 @@ export const createRunnerVoice = (
       try {
         for await (const snapshot of next) {
           if (stream !== next) return
-          state.update(() => snapshot)
+          state.update(() => ({ ...snapshot, refused: null }))
         }
       } catch {
         // The runner closed, or has no voice input.
@@ -131,9 +130,9 @@ export const createRunnerVoice = (
   }
 
   // Runs a call that changes the addon; the next snapshot shows its effect, and a
-  // rejection shows meanwhile as the failure.
+  // rejection shows meanwhile as the refusal of that call.
   const change = (
-    what: string,
+    which: Refusal["call"],
     call: () => Promise<void>,
     // Shown at once, and taken back if the call is refused.
     optimistic?: (current: VoiceState) => VoiceState,
@@ -144,7 +143,7 @@ export const createRunnerVoice = (
       state.update((current) => ({
         ...current,
         ...(optimistic && { installing: null }),
-        failure: `Couldn't ${what}: ${reason(error)}`,
+        refused: { call: which, message: reason(error) },
       }))
     })
   }
@@ -220,7 +219,7 @@ export const createRunnerVoice = (
       // the install does not offer it again.
       install: () =>
         change(
-          "install voice input",
+          "install",
           () => calls.install(),
           (current) =>
             current.installing
@@ -228,7 +227,9 @@ export const createRunnerVoice = (
               : {
                   ...current,
                   failure: null,
+                  refused: null,
                   installing: {
+                    origin: "person",
                     model: current.aim,
                     step: "engine",
                     received: 0,
@@ -236,9 +237,9 @@ export const createRunnerVoice = (
                   },
                 },
         ),
-      cancel: () => change("cancel the install", () => calls.cancel()),
-      uninstall: () => change("uninstall voice input", () => calls.uninstall()),
-      set: (settings) => change(changeWhat, () => calls.set(settings)),
+      cancel: () => change("cancel", () => calls.cancel()),
+      uninstall: () => change("uninstall", () => calls.uninstall()),
+      set: (settings) => change("set", () => calls.set(settings)),
       record,
     },
     follow,

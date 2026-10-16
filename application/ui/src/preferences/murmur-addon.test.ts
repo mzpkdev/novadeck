@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import type { MurmurState } from "../model/murmur"
-import { deviceText, murmurDownloadNote, murmurInstallSize, murmurStepTitles } from "./murmur-addon"
+import { stepLabel } from "../model/addon-format"
+import { murmurChecking, type MurmurState } from "../model/murmur"
+import { deviceText, murmurDownloadNote, murmurInstallSize, refusalText } from "./murmur-addon"
 
 const state: MurmurState = {
   available: true,
@@ -12,9 +13,8 @@ const state: MurmurState = {
   installing: null,
   check: null,
   unsupported: null,
-  recheck: false,
-  unchecked: false,
   offers: 0,
+  refused: null,
   failure: null,
 }
 
@@ -29,8 +29,21 @@ describe("murmur's card", () => {
 
   it("never says GPU to the person", () => {
     expect(murmurDownloadNote(state)).not.toMatch(/GPU/)
-    expect(Object.values(murmurStepTitles).join(" ")).not.toMatch(/GPU/)
-    expect(murmurStepTitles.check).toBe("Checking this computer")
+    expect(
+      (["engine", "model", "check"] as const)
+        .map((step) => stepLabel(step, murmurChecking))
+        .join(" "),
+    ).not.toMatch(/GPU/)
+    expect(stepLabel("check", murmurChecking)).toBe("Checking this computer")
+  })
+
+  it("names the call a refusal was of", () => {
+    expect(refusalText({ call: "uninstall", message: "Disk busy." })).toBe(
+      "Couldn't uninstall: Disk busy.",
+    )
+    expect(refusalText({ call: "set", message: "Busy." })).toBe(
+      "Couldn't change the setting: Busy.",
+    )
   })
 
   it("names the device it runs on", () => {

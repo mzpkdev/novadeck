@@ -1,3 +1,4 @@
+import type { Refusal } from "./addon"
 import type { Store } from "./store"
 
 // Voice input, as a backend offers it: speech recorded here, transcribed on the backend's
@@ -34,28 +35,27 @@ export type VoiceState = {
   readonly sizes: { readonly engine: number; readonly turbo: number; readonly small: number }
   // What an install is doing, with the bytes received of the step's total.
   readonly installing: {
+    // Whether the person asked, or the app's update brought a new engine to fetch alone.
+    readonly origin: "person" | "update"
     readonly model: VoiceModel
     readonly step: "engine" | "model" | "check"
     readonly received: number
     readonly total: number
   } | null
-  // How the engine did on a test clip after an install, and the model that suits this
-  // machine.
-  readonly check: {
-    readonly model: VoiceModel
-    readonly milliseconds: number
-    readonly gpu: boolean
-    readonly recommended: VoiceModel
-  } | null
-  // Why the last install, or the engine's update, failed. A clip that fails to transcribe
-  // rejects to its caller instead. A backend may also show here why a change was refused,
-  // until its next snapshot.
+  // How the engine did on a test clip after an install: the model checked and how long it took.
+  readonly check: { readonly model: VoiceModel; readonly milliseconds: number } | null
+  // Why the last install, or the engine's update, failed, as the runner says. A clip that
+  // fails to transcribe rejects to its caller instead.
   readonly failure: string | null
+  // A call the person made that the backend refused, until its next snapshot; apart from
+  // `failure`, which is the runner's word on an install it ran.
+  readonly refused: Refusal | null
 }
 
-// What `change` writes into a state's failure when a setting is refused; unlike an
-// install's failure, it is not about setting voice input up.
-export const changeFailurePrefix = "Couldn't change voice input"
+// What shows of an install that went wrong, whoever says so: the runner's failure of one it
+// ran, or the backend's refusal of the call to start it. A refused setting or removal is not.
+export const installFailure = (state: VoiceState): string | null =>
+  state.failure ?? (state.refused?.call === "install" ? state.refused.message : null)
 
 export type VoiceSettings = {
   readonly enabled: boolean
@@ -88,11 +88,18 @@ export type VoiceClip = {
 export type Voice = {
   readonly state: Store<VoiceState>
   // Each of these starts the change; `state` shows it as it goes, and its end or failure.
-  // Answers once the call is through, where it is a call that takes time.
-  readonly install: () => Promise<void> | void
+  // Answers once the call is through, refused or not (a refusal shows in `refused`).
+  readonly install: () => Promise<void>
   readonly cancel: () => void
   readonly uninstall: () => void
   readonly set: (settings: VoiceChange) => void
   // Starts a clip.
   readonly record: () => VoiceClip
 }
+
+// What an install downloads: the model it aims for (turbo, or small where the computer is
+// known not to suit turbo) unless it is on disk already, and the engine unless that is. A turbo that later turns
+// out too slow for this computer costs small's download after, which isn't counted.
+export const installSize = (state: VoiceState): number =>
+  (state.installed.includes(state.aim) ? 0 : state.sizes[state.aim]) +
+  (state.engineInstalled ? 0 : state.sizes.engine)

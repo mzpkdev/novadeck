@@ -1,8 +1,4 @@
-import { dictationKeys } from "../interaction/shortcuts"
 import type { VoiceState } from "../model/voice"
-import { formatSize, installSize, stepLabels } from "../model/voice-format"
-
-export { dictationKeys, formatSize, installSize, stepLabels }
 
 // What the voice input card says, as plain functions of the addon's state.
 
@@ -28,10 +24,10 @@ export const languages = [
   { label: "Arabic", value: "ar" },
 ]
 
-// Whether voice input is set up: its model is installed and either passed its check or was
-// turned on despite a failed one. Otherwise Addons offers the install, whatever is on disk.
+// Whether voice input is set up: its model is installed and passed its check. Otherwise
+// Addons offers the install, whatever is on disk.
 export const voiceSetUp = (state: VoiceState): boolean =>
-  state.installed.includes(state.model) && (state.check !== null || state.enabled)
+  state.installed.includes(state.model) && state.check !== null
 
 // What an uninstall frees: the engine, where it is on disk, and every model there (each
 // size with the speech-detection model, which a second model counts once more).

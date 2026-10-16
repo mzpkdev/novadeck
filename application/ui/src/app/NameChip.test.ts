@@ -1,15 +1,16 @@
-import { act, createElement } from "react"
+import { createElement } from "react"
 import { afterEach, beforeEach, vi } from "vitest"
 
 import type { Murmur, MurmurState } from "../model/murmur"
 import { createStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
-import { context, describe, expect, it } from "../test"
+import { describe, expect, it } from "../test"
 import { openCommands } from "../test/commands"
 import { render } from "../test/render"
 import { WorkspaceServicesContext, type WorkspaceServices } from "./controller/context"
+import { nameFinished } from "./murmur-offer"
 import { NameChip } from "./NameChip"
-import { NameOffer } from "./NameOffer"
+import { watchFinishes } from "./ui-store"
 
 const offered: MurmurState = {
   available: true,
@@ -20,32 +21,32 @@ const offered: MurmurState = {
   installing: null,
   check: null,
   unsupported: null,
-  recheck: false,
-  unchecked: false,
   offers: 0,
+  refused: null,
   failure: null,
 }
 
 const target = { projectId: "project", workspaceSessionId: "initial" }
 const finished = { context: "project/initial", id: "02" }
 
-// The services the chip and its watcher read: the real stores and commands over a fixture
-// (test/commands.ts), and a murmur that records.
+// The services the chip and the offer on a finish read: the real stores and commands over a
+// fixture (test/commands.ts), and a murmur that records.
 const setup = () => {
-  const { workspace, ui, commands } = openCommands()
+  const noteOffered = vi.fn<() => void>()
+  const { workspace, ui, commands } = openCommands({ murmur: { noteOffered } })
   workspace.dispatch({
     type: "view/change",
     target,
     view: "focus",
     enabledViews: ["focus", "grid"],
   })
-  const set = vi.fn<Murmur["set"]>()
   const murmur: Murmur = {
     state: createStore(offered),
-    install: vi.fn<() => void>(),
+    install: () => Promise.resolve(),
     cancel: vi.fn<() => void>(),
     uninstall: () => Promise.resolve(),
-    set,
+    set: vi.fn<Murmur["set"]>(),
+    noteOffered,
   }
   const services = { backend: { murmur }, workspace, ui, commands } as unknown as WorkspaceServices
   const status = (agent: AgentStatus) =>
@@ -55,183 +56,136 @@ const setup = () => {
       terminalId: "02",
       status: { state: "running", agent },
     })
-  const mount = (children: ReturnType<typeof createElement>) =>
-    render(createElement(WorkspaceServicesContext.Provider, { value: services }, children))
-  return { workspace, ui, set, commands, status, mount }
+  const mount = () =>
+    render(
+      createElement(
+        WorkspaceServicesContext.Provider,
+        { value: services },
+        createElement(NameChip, { terminalId: "02", context: "project/initial" }),
+      ),
+    )
+  return { workspace, ui, noteOffered, commands, status, mount, services }
 }
 
 const chip = () => document.querySelector<HTMLButtonElement>("button.name-chip")
 
-describe("the offer chip counts the session once it is seen", () => {
-  beforeEach(() => vi.useFakeTimers())
-  afterEach(() => {
-    vi.useRealTimers()
-    vi.unstubAllGlobals()
-  })
-
-  it("counts and marks the run when it is drawn, once, though it is drawn again", () => {
-    const { ui, set, commands, mount } = setup()
+describe("the offer chip takes the run's one unasked offer", () => {
+  it("counts the session when it is drawn, once, though it is drawn again", () => {
+    const { ui, noteOffered, commands, mount } = setup()
     commands.offerNameTo(finished)
-    const first = mount(createElement(NameChip, { terminalId: "02", context: "project/initial" }))
+    const first = mount()
     expect(chip()).not.toBeNull()
-    expect(set).toHaveBeenCalledExactlyOnceWith({ offered: true })
-    expect(ui.getSnapshot().addonOfferShown).toBe(true)
+    expect(noteOffered).toHaveBeenCalledOnce()
+    expect(ui.getSnapshot().addonOffer).toBe("murmur")
     first.unmount()
 
     // A switch of view draws the window again: it is not counted twice.
-    const second = mount(createElement(NameChip, { terminalId: "02", context: "project/initial" }))
+    const second = mount()
     expect(chip()).not.toBeNull()
-    expect(set).toHaveBeenCalledOnce()
+    expect(noteOffered).toHaveBeenCalledOnce()
     second.unmount()
   })
 
-  it("counts nothing until the chip is in view, as one panned out of the Canvas is not", () => {
-    const seen: IntersectionObserverCallback[] = []
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(callback: IntersectionObserverCallback) {
-          seen.push(callback)
-        }
-        observe(): void {}
-        disconnect(): void {}
-      },
-    )
-    const { ui, set, commands, mount } = setup()
+  it("is not drawn when voice input's offer took the run first, and counts nothing", () => {
+    const { noteOffered, commands, mount } = setup()
+    commands.takeAddonOffer("voice")
     commands.offerNameTo(finished)
-    const { unmount } = mount(
-      createElement(NameChip, { terminalId: "02", context: "project/initial" }),
-    )
-    expect(set).not.toHaveBeenCalled()
-    expect(ui.getSnapshot().addonOfferShown).toBe(false)
+    const { unmount } = mount()
 
-    act(() => {
-      seen[0]?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver)
-    })
-    expect(set).toHaveBeenCalledExactlyOnceWith({ offered: true })
-    expect(ui.getSnapshot().addonOfferShown).toBe(true)
-    unmount()
-  })
-})
-
-describe("the chip and another offer's mark", () => {
-  const stubSeen = (): IntersectionObserverCallback[] => {
-    const seen: IntersectionObserverCallback[] = []
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(callback: IntersectionObserverCallback) {
-          seen.push(callback)
-        }
-        observe(): void {}
-        disconnect(): void {}
-      },
-    )
-    return seen
-  }
-  afterEach(() => vi.unstubAllGlobals())
-
-  it("stops drawing a chip that was not seen once voice input's offer took the run's mark", () => {
-    stubSeen()
-    const { ui, set, commands, mount } = setup()
-    commands.offerNameTo(finished)
-    const { unmount } = mount(
-      createElement(NameChip, { terminalId: "02", context: "project/initial" }),
-    )
-    expect(chip()).not.toBeNull()
-
-    // Panned into view only later, the run was already claimed: it never shows, uncounted.
-    act(() => commands.markAddonOfferShown())
     expect(chip()).toBeNull()
-    expect(set).not.toHaveBeenCalled()
-    expect(ui.getSnapshot().nameOffer).not.toBeNull()
+    expect(noteOffered).not.toHaveBeenCalled()
     unmount()
   })
 
-  it("keeps a chip that was counted when voice input's offer comes after, as it was asked for", () => {
-    const { set, commands, mount } = setup()
+  it("stays when voice input's offer comes after, as it was asked for", () => {
+    const { ui, noteOffered, commands, mount } = setup()
     commands.offerNameTo(finished)
-    const { unmount } = mount(
-      createElement(NameChip, { terminalId: "02", context: "project/initial" }),
-    )
-    expect(set).toHaveBeenCalledOnce()
+    const { unmount } = mount()
 
-    act(() => commands.markAddonOfferShown())
+    expect(commands.takeAddonOffer("voice")).toBe(false)
     expect(chip()).not.toBeNull()
-    expect(set).toHaveBeenCalledOnce()
+    expect(ui.getSnapshot().addonOffer).toBe("murmur")
+    expect(noteOffered).toHaveBeenCalledOnce()
     unmount()
   })
 })
 
-describe("the watcher that puts the chip on a terminal", () => {
+describe("the offer on a finished turn", () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
+  // What the app wires: the finish hook of `watchFinishes`, graced for 100 ms here.
+  const watching = (setupped: ReturnType<typeof setup>) =>
+    watchFinishes(setupped.workspace, setupped.ui, {
+      graceMs: 100,
+      finished: nameFinished(setupped.services),
+    })
   const finish = async (status: ReturnType<typeof setup>["status"]) => {
     status({ working: true })
     status({ working: false, lastTurn: { outcome: "completed", reply: "Done.", at: 10 } })
     await vi.advanceTimersByTimeAsync(1000)
   }
 
-  context("when a finish qualifies", () => {
-    it("targets that terminal, and counts nothing before the chip is drawn", async () => {
-      const { workspace, ui, set, status, mount } = setup()
-      workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
-      const { unmount } = mount(createElement(NameOffer))
-      await finish(status)
+  it("targets the terminal when it is shown under its plain name, and counts nothing yet", async () => {
+    const offer = setup()
+    offer.workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
+    const stop = watching(offer)
+    await finish(offer.status)
 
-      expect(ui.getSnapshot().nameOffer).toEqual(finished)
-      expect(ui.getSnapshot().addonOfferShown).toBe(false)
-      expect(set).not.toHaveBeenCalled()
-      unmount()
-    })
+    expect(offer.ui.getSnapshot().nameOffer).toEqual(finished)
+    expect(offer.ui.getSnapshot().addonOffer).toBeNull()
+    expect(offer.noteOffered).not.toHaveBeenCalled()
+    stop()
   })
 
-  context("when a finish is let go", () => {
-    it("neither targets nor counts a terminal whose title someone gave", async () => {
-      const { workspace, ui, set, status, mount } = setup()
-      workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
-      workspace.dispatch({
-        type: "terminal/update",
-        target,
-        terminalId: "02",
-        titleSource: { kind: "person" },
-      })
-      const { unmount } = mount(createElement(NameOffer))
-      await finish(status)
-
-      expect(ui.getSnapshot().nameOffer).toBeNull()
-      expect(ui.getSnapshot().addonOfferShown).toBe(false)
-      expect(set).not.toHaveBeenCalled()
-      unmount()
+  it("lets go of a terminal whose title someone gave", async () => {
+    const offer = setup()
+    offer.workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
+    offer.workspace.dispatch({
+      type: "terminal/update",
+      target,
+      terminalId: "02",
+      titleSource: { kind: "person" },
     })
+    const stop = watching(offer)
+    await finish(offer.status)
 
-    it("never targets one once voice input's offer has come up", async () => {
-      const { workspace, ui, set, commands, status, mount } = setup()
-      workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
-      commands.markAddonOfferShown()
-      const { unmount } = mount(createElement(NameOffer))
-      await finish(status)
+    expect(offer.ui.getSnapshot().nameOffer).toBeNull()
+    expect(offer.noteOffered).not.toHaveBeenCalled()
+    stop()
+  })
 
-      expect(ui.getSnapshot().nameOffer).toBeNull()
-      expect(set).not.toHaveBeenCalled()
-      unmount()
-    })
+  it("lets go of a terminal that is not the one Focus shows", async () => {
+    const offer = setup()
+    offer.workspace.dispatch({ type: "terminal/select", target, terminalId: "01" })
+    const stop = watching(offer)
+    await finish(offer.status)
 
-    it("lets go of a finish in Focus of a terminal that is not the one shown", async () => {
-      const { workspace, ui, status, mount } = setup()
-      workspace.dispatch({
-        type: "view/change",
-        target,
-        view: "focus",
-        enabledViews: ["focus", "grid"],
-      })
-      workspace.dispatch({ type: "terminal/select", target, terminalId: "01" })
-      const { unmount } = mount(createElement(NameOffer))
-      await finish(status)
+    expect(offer.ui.getSnapshot().nameOffer).toBeNull()
+    stop()
+  })
 
-      expect(ui.getSnapshot().nameOffer).toBeNull()
-      unmount()
-    })
+  it("targets nothing once voice input's offer has the run", async () => {
+    const offer = setup()
+    offer.workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
+    offer.commands.takeAddonOffer("voice")
+    const stop = watching(offer)
+    await finish(offer.status)
+
+    expect(offer.ui.getSnapshot().nameOffer).toBeNull()
+    expect(offer.noteOffered).not.toHaveBeenCalled()
+    stop()
+  })
+
+  it("tells nothing of a turn that failed", async () => {
+    const offer = setup()
+    offer.workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
+    const stop = watching(offer)
+    offer.status({ working: true })
+    offer.status({ working: false, lastTurn: { outcome: "failed", at: 10 } })
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(offer.ui.getSnapshot().nameOffer).toBeNull()
+    stop()
   })
 })
