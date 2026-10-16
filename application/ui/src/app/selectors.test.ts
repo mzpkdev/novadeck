@@ -39,22 +39,23 @@ describe("the leads that run", () => {
     expect(runningLeads(back)).toEqual({ "02": { handle: "moth", name: "Terminal" } })
   })
 
-  it("name the first live terminal that holds the lead's handle", () => {
+  it("name the first live terminal with the lead's handle, passing over one that exited", () => {
     const shared = [
       { type: "terminal/add", target, terminal: terminalFixture(3, "~/project") },
       { type: "terminal/update", target, terminalId: "03", handle: "moth" },
       { type: "terminal/rename", target, terminalId: "03", name: "Other" },
-      {
-        type: "terminal/status",
-        target,
-        terminalId: "01",
-        status: { state: "exited", exitCode: 0, signal: null },
-      },
     ].reduce(
       (state, action) => workspaceReducer(state, action as Parameters<typeof workspaceReducer>[1]),
       led(),
     )
-    expect(runningLeads(shared)).toEqual({ "02": { handle: "moth", name: "Other" } })
+    expect(runningLeads(shared)).toEqual({ "02": { handle: "moth", name: "Terminal" } })
+    const exited = workspaceReducer(shared, {
+      type: "terminal/status",
+      target,
+      terminalId: "01",
+      status: { state: "exited", exitCode: 0, signal: null },
+    })
+    expect(runningLeads(exited)).toEqual({ "02": { handle: "moth", name: "Other" } })
   })
 
   it("leave a terminal without one once its lead is closed", () => {
