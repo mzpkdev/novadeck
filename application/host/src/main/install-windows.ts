@@ -91,26 +91,6 @@ const folderKey = (folder: string): string =>
     .toLowerCase()
 
 /**
- * The folder of `folders` that the executable `execPath` is inside of, or undefined if
- * none. The setup replaces everything in the install folder, and its running-app check
- * (`_CHECK_APP_RUNNING` in electron-builder's `allowOnlyOneInstallerInstance.nsh`) stops
- * every process whose path `StartsWith($INSTDIR, CurrentCultureIgnoreCase)`: a plain
- * case-insensitive prefix with no separator after it. So this mirrors that exactly, and a
- * sibling that starts with the same letters (`novadeck-portable`) counts as inside, since
- * the setup would stop it too.
- */
-export const insideInstallFolder = (
-  execPath: string,
-  folders: readonly (string | undefined)[],
-): string | undefined => {
-  const here = win32.normalize(execPath).toLowerCase()
-  return folders.find((folder): folder is string => {
-    if (folder === undefined || folder === "") return false
-    return here.startsWith(folderKey(folder))
-  })
-}
-
-/**
  * Whether the running executable is a copy the installer made, as opposed to the unpacked
  * ZIP, which carries nothing of the installer. The NSIS installer writes
  * `Uninstall <executable name>.exe` beside the executable (`UNINSTALL_FILENAME` in
@@ -326,7 +306,11 @@ export const setupResult = (
     }
   if (installed !== undefined) return { kind: "installed", image: installed.image }
   if (ran === "timeout") return { kind: "failed", reason: setupRunningReason }
-  return { kind: "failed", reason: "The installer did not finish installing Novadeck." }
+  return {
+    kind: "failed",
+    reason:
+      "The installer did not finish installing Novadeck. It stops when a copy of Novadeck runs from its install folder; quit that copy and try again.",
+  }
 }
 
 /** How getting the setup ready went: the file, or why not. */
@@ -620,26 +604,3 @@ export const installedAtLeast = (
     ({ version: found }) =>
       found !== undefined && (found === version || isNewerVersion(found, version)),
   )
-
-/**
- * The two PowerShell commands electron-builder's `IS_POWERSHELL_AVAILABLE` runs (see
- * `allowOnlyOneInstallerInstance.nsh`), each answering by exit code 0 for yes. The
- * installer's `_CHECK_APP_RUNNING` then stops only the processes running from its install
- * folder; where PowerShell is not available it stops every process named `novadeck.exe`
- * instead, which would stop this copy. So the setup is run only where both say yes.
- */
-export const powershellChecks = [
-  "if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }",
-  "if ((Get-ExecutionPolicy -Scope Process) -eq 'Restricted') { exit 1 } else { exit 0 }",
-] as const
-
-/**
- * Whether the installer's running-app check can use PowerShell, which `run` asks by
- * running `powershell.exe -C <command>` and answering whether it exited 0.
- */
-export const powershellUsable = async (
-  run: (command: string) => Promise<boolean>,
-): Promise<boolean> => {
-  for (const command of powershellChecks) if (!(await run(command))) return false
-  return true
-}

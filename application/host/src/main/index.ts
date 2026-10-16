@@ -64,10 +64,8 @@ import { isInstalledImage } from "./install-location.js"
 import {
   findInstalledWindows,
   hashBody,
-  insideInstallFolder,
   installedAtLeast,
   installedByInstaller,
-  powershellUsable,
   prepareSetup,
   readInstallRecord,
   reportPercents,
@@ -731,24 +729,6 @@ const downloadSetup = async (
   }
 }
 
-// Whether PowerShell can do what the installer's running-app check asks of it, as the
-// installer would run it: its stub is 32-bit, so the 32-bit PowerShell is the one it finds.
-const installerPowerShell = (): Promise<boolean> => {
-  const system = process.env.SystemRoot ?? "C:\\Windows"
-  const wow = win32.join(system, "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe")
-  const file = existsSync(wow)
-    ? wow
-    : win32.join(system, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-  return powershellUsable(
-    (command) =>
-      new Promise((resolve) => {
-        execFile(file, ["-C", command], { timeout: 30_000, windowsHide: true }, (error) =>
-          resolve(!error),
-        )
-      }),
-  )
-}
-
 // How long the setup is waited for before the install is judged by what it left.
 const setupWaitMs = 5 * 60_000
 
@@ -758,21 +738,6 @@ const setupWaitMs = 5 * 60_000
 const installWindowsSetup = async (
   progress: (progress: InstallProgress) => void,
 ): Promise<PortableInstall> => {
-  // The setup replaces what is in the install folder, and stops what runs from there.
-  const record = await installRecord().catch(() => undefined)
-  const inside = insideInstallFolder(process.execPath, [record?.location, defaultInstallFolder()])
-  if (inside !== undefined)
-    return {
-      kind: "failed",
-      reason: `Novadeck can't install while this copy runs from a folder whose name starts with ${inside}. Move this copy somewhere else, like Downloads, and try again.`,
-    }
-  // Without PowerShell the setup stops every novadeck.exe by name, this copy among them.
-  if (!(await installerPowerShell()))
-    return {
-      kind: "failed",
-      reason:
-        "Novadeck can't install itself while it runs on this PC. Quit Novadeck, then run the installer from the Releases page.",
-    }
   const repository = await releaseRepository()
   const outcome = await prepareSetup({
     downloads: {

@@ -325,14 +325,7 @@ keeps the workspace.
   open the installed Novadeck from the Start menu or uninstall it in Windows Settings. A newer
   one is never overwritten: the answer is `newer`, and at launch the portable gives way to it
   (see "The launch redirect").
-- **Install.** First two refusals, before anything is downloaded. The copy may not run from
-  the install folder (the recorded `InstallLocation` or the default one, compared as a
-  case-insensitive path prefix, so a sibling such as `novadeck-portable` counts too;
-  `insideInstallFolder`), since the setup replaces what is there: `failed`, "Novadeck can't install
-  while this copy runs from a folder whose name starts with <folder>. Move this copy somewhere
-  else, like Downloads, and try again." And PowerShell must be able to do the installer's running-app
-  check (below): `failed`, "Novadeck can't install itself while it runs on this PC. Quit
-  Novadeck, then run the installer from the Releases page." Then, while the app runs
+- **Install.** While the app runs
   normally, it downloads `latest.yml` and
   `novadeck-win-x64-setup.exe` from `releases/latest/download/` of the repository
   `app-update.yml` names, through Electron's `net.fetch` (so the system and PAC proxy are honoured
@@ -360,24 +353,27 @@ keeps the workspace.
   executable, and only then is the answer `installed`; otherwise `failed`. The setup folder is
   deleted afterwards. If Windows refuses to start the setup, the answer is `failed`.
 - **The installer's running-app check.** electron-builder's NSIS template
-  (`include/allowOnlyOneInstallerInstance.nsh`, `_CHECK_APP_RUNNING`, run at the start of the
-  install section) looks for running copies of `novadeck.exe`: with PowerShell available, only
-  processes whose path starts with the install folder; otherwise (`tasklist`) every
-  `novadeck.exe` of the current user, which would include this portable copy, and the
-  fallback would stop it. A copy found is asked to close, with the message box answered "OK"
-  in a silent run, then stopped with `Stop-Process` on the PowerShell path (`taskkill` on the
-  fallback), forced after a second. So the host first runs the installer's own availability
-  test (`IS_POWERSHELL_AVAILABLE`: `Get-CimInstance` exists, and the Process-scope execution
-  policy is not `Restricted`; `powershellUsable`), with the 32-bit `SysWOW64` PowerShell when
-  present, since the NSIS stub is 32-bit, and refuses to install where it fails. With
-  PowerShell available, the check stops processes whose path starts with the install folder:
-  a plain case-insensitive prefix (`StartsWith($INSTDIR, CurrentCultureIgnoreCase)`), with
-  no separator after it. The host mirrors that exactly (`insideInstallFolder`), so a portable
-  copy in a sibling such as `...\Programs\novadeck-portable` is refused too; one anywhere
-  else is ignored. The
-  single-instance lock excludes a running installed copy, so the check kills nothing of the
-  person's. Residual risks: the installer runs its own PowerShell check again when it starts; if that fails transiently after the host's probe passed, it falls back to stopping every `novadeck.exe` by name (`taskkill`), which would close the portable copy. And the setup also stops any process running from the install folder,
-  such as an older installed copy's relay, which the person might notice.
+  (`include/allowOnlyOneInstallerInstance.nsh`, `CHECK_APP_RUNNING`, run at the start of the
+  install section and of the uninstaller) normally stops every `novadeck.exe` of the user by
+  name where PowerShell is unusable, which would include this portable copy. It calls
+  `customCheckAppRunning` instead when a build defines it, and
+  `application/host/resources/installer.nsh` does (builder includes that file by name). One
+  rule, in terms of the install folder alone: Novadeck runs from it when `novadeck.exe`
+  there cannot be opened for writing, and nothing else counts, so a copy running from any
+  other folder (the portable one) is never seen, let alone stopped. A silent run that is not
+  a self-update (`--updated`), which is how this copy runs the setup, closes nothing: with
+  Novadeck running from the install folder it ends with exit code 2 and changes nothing, and
+  the install answers `failed` ("...quit that copy and try again"). A self-update by an
+  installed copy (`--updated`, the app is quitting) waits for it, then closes what still runs
+  from the install folder; an interactive run asks first. Closing is by PowerShell, only
+  processes whose path starts with `<install folder>\`, a separator included, never this setup
+  itself (and so never by name); asked politely the first round, forced after. Without
+  PowerShell nothing is closed: a silent run ends, an interactive one asks the person to
+  close Novadeck. `install-windows.test.ts` pins that
+  builder's template still calls the hook and that the macro never stops by name. Residual
+  risk: when an older installed copy exists, the new setup first runs that copy's own
+  uninstaller, which has builder's old check, so the first install over a build from before
+  this macro can still stop copies by name; later ones use the macro.
 - **Limits.** Only a real Windows run proves this end to end. Smart App Control blocks an
   unsigned installer and, once signing is in place, SmartScreen may still warn about a fresh
   publisher; see [release-signing.md](release-signing.md). The block happens when the setup is
