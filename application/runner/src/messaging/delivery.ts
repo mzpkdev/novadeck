@@ -114,6 +114,12 @@ export type Box = {
    */
   readonly queued: boolean
   /**
+   * When the Stop came that left `queued` set; null otherwise. A harness submits such a
+   * prompt itself, with its hook late, so for `queueBarMs` after it the screen cannot say
+   * the box is idle.
+   */
+  readonly queuedAt: number | null
+  /**
    * Whether a key that may change the box came while a request waited on the person: a
    * draft, applied once the request clears, that only a confirmed submission undoes.
    */
@@ -151,6 +157,20 @@ type Counts = {
 }
 
 export type DeliveryState = Delivery["state"]
+
+/**
+ * How long after a Stop that left the person's prompt queued the screen is not believed to
+ * show an idle box, in milliseconds: the harness submits that prompt itself, and its hook
+ * may be late (about 4.5 s on a loaded Windows runner), as a ring's confirmation may be
+ * (`confirmMs` in `terminals/doorbell.ts`, 5 s plus the hook shell's slack).
+ */
+export const queueBarMs = (slackMs: number): number => 5_000 + slackMs
+
+/** How much longer the screen is not believed at `now`; 0 once the bar is lifted or none stands. */
+export const queueBarLeft = (delivery: Delivery, now: number, slackMs: number): number =>
+  delivery.box.queued && delivery.box.queuedAt !== null
+    ? Math.max(delivery.box.queuedAt + queueBarMs(slackMs) - now, 0)
+    : 0
 
 /** Novadeck continues a root turn at most this often, by its own count, then lets it end. */
 export const maxContinuations = 2
@@ -290,6 +310,7 @@ const emptyBox: Box = {
   typedSinceEnter: false,
   strayed: false,
   queued: false,
+  queuedAt: null,
   draftWhileAsked: false,
   doubted: false,
   ours: false,
@@ -377,6 +398,7 @@ const typed = (box: Box): Box => ({
   typedAt: null,
   typedSinceEnter: true,
   queued: false,
+  queuedAt: null,
   doubted: false,
   ours: false,
 })
@@ -606,6 +628,7 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
               enteredAt: null,
               typedAt: null,
               queued: false,
+              queuedAt: null,
               strayed: false,
               // An expired Enter cannot attribute this turn, but with no later keys or
               // queued prompt the screen can still settle what that Enter left behind.
@@ -669,7 +692,11 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
         }
       // A turn that ends with the person's queued prompt: its harness submits it next.
       const queued: Box = mayRun(delivery)
-        ? { ...box, queued: box.queuing && !box.typedSinceEnter }
+        ? {
+            ...box,
+            queued: box.queuing && !box.typedSinceEnter,
+            queuedAt: box.queuing && !box.typedSinceEnter ? event.at : null,
+          }
         : box
       // What the turn started still runs, and may start another turn by itself.
       if (event.background)
@@ -761,7 +788,8 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
       return (delivery.state === "drafting" ||
         delivery.state === "unknown" ||
         delivery.state === "fresh") &&
-        event.epoch === delivery.epoch
+        event.epoch === delivery.epoch &&
+        queueBarLeft(delivery, event.at, slackMs) === 0
         ? delivery.state === "drafting" && delivery.completedAt !== undefined
           ? { ...counts(delivery), box: emptyBox, state: "settled", since: delivery.completedAt }
           : { ...counts(delivery), box: emptyBox, state: "ready", since: event.at }

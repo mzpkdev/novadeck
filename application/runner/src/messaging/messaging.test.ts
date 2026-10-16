@@ -2614,6 +2614,24 @@ describe("a new agent session at its own prompt", () => {
     expect(messaging.stalled("N")).toBe(false)
   })
 
+  it("does not look at a terminal whose Stop left a prompt queued until the harness' time to submit it has passed", () => {
+    const { messaging, send, observe, prompt, stop, launched, clock: time } = openedClaude()
+    observe("N", launched, sessionStarted(launched, "startup"))
+    messaging.keys("N", ["content", "enter"], false)
+    prompt("N", launched)
+    sent(send("A", "owl", "hello"))
+    // The person queues a second prompt during the turn; the Stop leaves it queued.
+    messaging.keys("N", ["content", "enter"], false)
+    stop("N", launched)
+    expect(messaging.delivery("N")).toMatchObject({ state: "drafting", box: { queued: true } })
+    // The harness submits it itself, its hook late: its screen cannot be believed yet.
+    expect(messaging.stalled("N")).toBe(false)
+    expect(messaging.queueBar("N")).toBeGreaterThan(0)
+    time.now += 6_000
+    expect(messaging.queueBar("N")).toBe(0)
+    expect(messaging.stalled("N")).toBe(true)
+  })
+
   it("keeps what the person typed during a ring as their draft", () => {
     const { messaging, send, observe, ask, stop, launched } = openedClaude()
     observe("N", launched, sessionStarted(launched, "startup"))

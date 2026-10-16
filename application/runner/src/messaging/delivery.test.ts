@@ -1,6 +1,8 @@
 import { harnesses } from "../harnesses/registry.js"
 import { describe, expect, it } from "../test.js"
 import {
+  queueBarLeft,
+  queueBarMs,
   continues,
   midTurnCall,
   maxContinuations,
@@ -1222,14 +1224,40 @@ describe("an idle agent whose screen shows its box empty", () => {
     expect(emptied(ringingNow)).toBe(ringingNow)
   })
 
-  it("takes a prompt thought queued as no bar: an Enter that answered a dialog before its request was heard looks the same", () => {
+  it("takes a prompt thought queued as no bar once the harness' time to submit it has passed", () => {
     // Windows' hooks are slow: the person's arrow and Enter in a question's dialog come before
     // its request is heard (`asked` false), so the Enter reads as a prompt queued behind the turn.
     const queuedTurn = run(working, typing, enter, stop)
-    expect(queuedTurn).toMatchObject({ state: "drafting", box: { queued: true } })
-    // The harness shows what it really holds, and the doorbell's reading asks it first: with
-    // nothing queued on screen and the box empty, the screen decides.
-    expect(emptied(queuedTurn).state).toBe("ready")
+    expect(queuedTurn).toMatchObject({
+      state: "drafting",
+      box: { queued: true, queuedAt: at },
+    })
+    const look = (when: number) =>
+      transition(queuedTurn, { type: "emptied", at: when, epoch: queuedTurn.epoch })
+    // The harness may have submitted that prompt itself, its hook late: the screen's empty
+    // box is not believed for a while after the Stop, or the turn would be misattributed.
+    expect(queueBarLeft(queuedTurn, at + 1_000, 0)).toBe(queueBarMs(0) - 1_000)
+    expect(look(at + 1_000)).toBe(queuedTurn)
+    expect(look(at + queueBarMs(0) - 1)).toBe(queuedTurn)
+    // Past it, with nothing started, the screen decides: a dialog's Enter ends Ready.
+    expect(queueBarLeft(queuedTurn, at + queueBarMs(0), 0)).toBe(0)
+    expect(look(at + queueBarMs(0)).state).toBe("ready")
+    // A slower hook shell widens the bar by its slack.
+    expect(queueBarMs(15_000)).toBe(queueBarMs(0) + 15_000)
+  })
+
+  it("keeps #184's late-prompt case behind the bar until the prompt's hook, or the bar's end", () => {
+    // A queued prompt the harness submits at the Stop: its hook comes late, as its own turn.
+    const late = prompted(at + 4000, at + 3000)
+    const queuedTurn = run(working, typing, enter, stop)
+    const barred = transition(queuedTurn, {
+      type: "emptied",
+      at: at + 2_000,
+      epoch: queuedTurn.epoch,
+    })
+    expect(barred).toBe(queuedTurn)
+    // The hook arrives: the turn starts as the person's queued prompt, nothing to read.
+    expect(transition(queuedTurn, late).state).toBe("working")
   })
 
   it("is dropped when a turn or a session came since the look", () => {

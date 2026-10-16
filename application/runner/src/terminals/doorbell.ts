@@ -69,6 +69,8 @@ export type DoorbellHost = {
   readonly leftover: (terminalId: string, screen: ScreenText) => string | undefined
   /** Starts the submission of that line, under its nonce: the terminal is Ringing; false when it may not now. */
   readonly ringLeftover: (terminalId: string, nonce: string) => boolean
+  /** How much longer the screen is not believed, after a Stop that left a prompt queued; 0 if none. */
+  readonly barred?: (terminalId: string) => number
   /** Writes to the terminal's shell; false once it is gone. */
   readonly write: (terminalId: string, data: string) => boolean
   /**
@@ -314,6 +316,13 @@ export class Doorbell {
       this.note(terminalId, `look: ringable ${ringable}, stalled ${stalled}, again ${again}`)
     if (!ringable && !stalled) {
       this.backoff.delete(terminalId)
+      // A prompt the harness submits itself after a Stop has its hook late: the screen is
+      // believed again once the bar has passed.
+      const bar = this.host.barred?.(terminalId) ?? 0
+      if (bar > 0) {
+        this.note(terminalId, `screen not believed for ${Math.round(bar)} ms (a queued prompt)`)
+        this.later(terminalId, bar + 50)
+      }
       return undefined
     }
     // Rings that failed three times in a row wait for a root turn event or a key of the

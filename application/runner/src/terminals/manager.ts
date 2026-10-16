@@ -1956,6 +1956,7 @@ export class Terminals {
         )
       },
       stamp: (terminalId) => this.messaging.stamp(terminalId),
+      barred: (terminalId) => this.messaging.queueBar(terminalId),
       // The agent's own box, read by its harness off the calm screen: empty and taking a
       // prompt makes an idle Fresh, Drafting or Unknown terminal Ready (see
       // docs/agent-messaging.md, "The doorbell"); anything else says why it is not.

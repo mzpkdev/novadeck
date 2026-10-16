@@ -785,11 +785,15 @@ facts above, so the prompt's emptiness is known before any message arrives:
   only ever a doubt about the box, and the screen is the authority on what is in it, so a
   stray key, an answer typed in a dialog, or a replacing session announced past the
   submission window (a slow `/clear`) no longer keep an idle agent from its messages.
-  A prompt Novadeck took the person to have queued behind a turn is no bar: an Enter
-  that answered a dialog before its request was heard (Windows' hooks are slow) reads
-  the same. The screen decides, as the harness shows what it really holds queued
-  (`BoxProfile.queued`), which keeps the box from reading empty; a prompt it submits next
-  starts its own turn, whose hook delivers.
+  A prompt Novadeck took the person to have queued behind a turn bars the look for a
+  while: at the Stop the harness submits it itself, its hook late (about 4.5 s seen on a
+  loaded Windows runner), and a screen with an empty box would misattribute that turn
+  or ring into it. For `confirmMs` after the Stop (5 s, plus the hook shell's slack on
+  Windows) neither the screen read nor `emptied` applies, and the prompt's hook, if it
+  comes, starts its turn as the person's. Past it, such a prompt is no bar: an Enter that
+  answered a dialog before its request was heard (Windows' hooks are slow) reads the same
+  and never starts a turn. The screen then decides, as the harness shows what it really
+  holds queued (`BoxProfile.queued`), which keeps the box from reading empty.
 - **Unknown**: the last turn ended without a normal Stop (Esc, a denial, `StopFailure`,
   Claude Code's transcript recording an interrupt, Antigravity's status line saying idle
   with no root Stop since the turn began), or a ring failed after its paste. The

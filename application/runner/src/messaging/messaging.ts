@@ -23,6 +23,7 @@ import {
   pendingEnter,
   type DeliveryEvent,
   type KeyKind,
+  queueBarLeft,
   type Waits,
   waitsIn,
 } from "./delivery.js"
@@ -817,8 +818,17 @@ export class Messaging {
     const live = this.live.get(terminalId)
     if (!live) return false
     const { delivery } = live
-    if (!waitsIn(delivery)) return false
+    if (!waitsIn(delivery) || queueBarLeft(delivery, this.now(), this.slackMs) > 0) return false
     return this.waiting(live)
+  }
+
+  /**
+   * How long the terminal's screen is not believed yet, after a Stop that left the person's
+   * prompt queued for the harness to submit; 0 when no bar stands.
+   */
+  queueBar(terminalId: string): number {
+    const delivery = this.live.get(terminalId)?.delivery
+    return delivery ? queueBarLeft(delivery, this.now(), this.slackMs) : 0
   }
 
   /** Why the doorbell can't ring the terminal, as its screen shows; null once it can. */
