@@ -109,6 +109,18 @@ describe("Antigravity's command confirmation", () => {
     }
   })
 
+  it("shows the call's own command as detail, with its lines, indent and blank lines", () => {
+    const multi = "if true; then\n\n    echo a\n\n\n\techo b\nfi"
+    const rows = command.pending.screen120!.rows
+    const at = rows.indexOf("   echo approved")
+    const shown = ["   if true; then", "", "       echo a", "", "", "   \techo b", "   fi"]
+    const found = read(
+      [...rows.slice(0, at), ...shown, ...rows.slice(at + 1)],
+      permission(run(multi)),
+    )
+    expect(found.dialog).toMatchObject({ detail: multi })
+  })
+
   it("joins an option wrapped on a narrow screen", () => {
     const found = read(command.pending.screen60!.rows, permission(run("echo approved")))
     expect(found.dialog).toMatchObject({

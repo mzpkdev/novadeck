@@ -229,7 +229,11 @@ const confirmationRead = (
   const dialog: ReadDialog = {
     type: "choices",
     title: read.question,
-    detail: read.shown,
+    // A command shows as the call runs it, not as the screen drew and wrapped it.
+    detail:
+      read.command && typeof callOf(request.input)?.args.CommandLine === "string"
+        ? (callOf(request.input)!.args.CommandLine as string)
+        : read.shown,
     // Its No refuses and ends the turn (probed), so the person's words may follow it as
     // the next prompt, which the driver sends once the dialog is answered.
     options: read.options.map(({ number, label }) => ({
