@@ -18,7 +18,7 @@ export const doneForMs = 4000
 // though in the same words, is a new one. What the runner reports of itself from rest (a device
 // that went away, an engine update that failed) is Addons'. A cancel is no failure: the runner
 // leaves the files with the check owed and no failure. A failed item the runner's failure made
-// goes when that failure clears (a runner restart, an uninstall, No thanks); one a refusal made
+// goes when that failure clears (a runner restart, an install or update, a removal); one a refusal made
 // stays until it is answered, as the refusal itself goes with the next snapshot.
 export const footerPhase = (
   phase: FooterPhase,

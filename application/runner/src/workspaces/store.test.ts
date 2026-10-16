@@ -1157,10 +1157,7 @@ describe("murmur's settings", () => {
     expect(reopened.murmurUnsupported()).toBeNull()
   })
 
-  it("reads a voice check an earlier build saved with more in it, and one that cannot be read as none", ({
-    directory,
-    store,
-  }) => {
+  it("reads a voice check an earlier build saved with more in it", ({ directory, store }) => {
     const path = join(directory(), "workspace.sqlite")
     const workspace = store(path)
     expect(workspace.voiceCheck()).toBeNull()
