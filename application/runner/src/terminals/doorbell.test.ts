@@ -66,7 +66,7 @@ const terminal = (
   let resizedAt = 0
   let resizeAtForeground = options.resizeAtForeground ?? false
   let stalled = options.stalled !== undefined
-  const barEnd = Date.now() + (options.barredMs ?? 0)
+  let barEnd = Date.now() + (options.barredMs ?? 0)
   let reading: "empty" | "starting" | Waits = options.stalled ?? "empty"
   const emptied: number[] = []
   const blocks: (Waits | null)[] = []
@@ -195,6 +195,8 @@ const terminal = (
     oursReported,
     bump: () => (stamp += 1),
     screens: () => screens,
+    // A queued prompt bars the screen from being believed for this long from now.
+    bar: (ms: number) => (barEnd = Date.now() + ms),
     stop: () => {
       clearInterval(ticker)
       clearInterval(streamer)
@@ -623,20 +625,57 @@ describe("the doorbell's care with a terminal it looks at", () => {
     doorbell.close()
   })
 
-  it("looks just after a queued prompt's bar and calls the terminal Ready", async () => {
-    const { host, emptied, emptiedAt, screens, stop } = terminal({
+  it("looks just after a queued prompt's bar, not when the old wait would end", async () => {
+    const { host, emptied, emptiedAt, screens, bar, read, stop } = terminal({
       ringable: false,
-      stalled: "empty",
-      barredMs: 300,
+      stalled: "dialog",
     })
-    const doorbell = new Doorbell(host, host.queue, { ...recheck, calmMs: 30 })
-    const began = Date.now()
+    const doorbell = new Doorbell(host, host.queue, {
+      ...recheck,
+      calmMs: 30,
+      recheckMs: 20,
+      recheckMaxMs: 640,
+    })
     doorbell.changed("t")
-    await sleep(200)
-    expect(screens()).toBe(0)
-    await vi.waitFor(() => expect(emptied).toHaveLength(1))
-    expect(emptiedAt[0]! - began).toBeGreaterThanOrEqual(300)
-    expect(emptiedAt[0]! - began).toBeLessThan(600)
+    // The wait doubles to its cap; a look just made leaves the longest one ahead.
+    await sleep(1_000)
+    const looks = screens()
+    await vi.waitFor(() => expect(screens()).toBeGreaterThan(looks), { timeout: 1_500 })
+    const began = Date.now()
+    bar(100)
+    read("empty")
+    doorbell.changed("t")
+    await vi.waitFor(() => expect(emptied).toHaveLength(1), { timeout: 1_500 })
+    expect(emptiedAt[0]! - began).toBeGreaterThanOrEqual(100)
+    expect(emptiedAt[0]! - began).toBeLessThan(400)
+    stop()
+    doorbell.close()
+  })
+
+  it("starts the backing off over at a key of the person's, though the screen lags it", async () => {
+    const { host, rows, emptied, emptiedAt, bump, read, stop } = terminal({
+      ringable: false,
+      stalled: "dialog",
+    })
+    const doorbell = new Doorbell(host, host.queue, {
+      ...recheck,
+      calmMs: 30,
+      recheckMs: 20,
+      recheckMaxMs: 640,
+    })
+    doorbell.changed("t")
+    await sleep(1_500)
+    // Esc closes the dialog: the key is known at once, its redraw a few ms later.
+    const keyAt = Date.now()
+    bump()
+    doorbell.changed("t")
+    await sleep(3)
+    rows[1] = "dialog closed"
+    read("empty")
+    const redrawing = setInterval(() => doorbell.changed("t"), 10)
+    await vi.waitFor(() => expect(emptied).toHaveLength(1), { timeout: 2_000 })
+    clearInterval(redrawing)
+    expect(emptiedAt[0]! - keyAt).toBeLessThan(300)
     stop()
     doorbell.close()
   })

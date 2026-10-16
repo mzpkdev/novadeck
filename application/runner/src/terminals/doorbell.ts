@@ -342,11 +342,14 @@ export class Doorbell {
     // a real change: it ends the wait, and the screen is read once a calm window has passed.
     if (stalled && !again) {
       const news = this.lookedStamp.get(terminalId) !== this.host.stamp(terminalId)
+      // A key or a turn event starts the backing off over: what follows it is news.
+      if (news) {
+        this.backoff.delete(terminalId)
+        this.notBefore.delete(terminalId)
+      }
       const quiet = Math.max(
         (this.looked.get(terminalId) ?? Number.NEGATIVE_INFINITY) + this.calmMs,
-        news
-          ? Number.NEGATIVE_INFINITY
-          : (this.notBefore.get(terminalId) ?? Number.NEGATIVE_INFINITY),
+        this.notBefore.get(terminalId) ?? Number.NEGATIVE_INFINITY,
       )
       const wait = quiet - this.now()
       if (wait > 0) {
