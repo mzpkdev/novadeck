@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { describe, expect, it } from "../test.js"
+import { describe, expect, it, onTestFinished } from "vitest"
+
 import { shortName, spellings } from "./tripwire.js"
 
 describe("a path's spellings", () => {
@@ -22,11 +23,9 @@ describe("a path's spellings", () => {
 })
 
 describe.skipIf(process.platform !== "win32")("a path's short name", () => {
-  it("is Windows' 8.3 one for a path that has one, and none for one that is already", ({
-    resources,
-  }) => {
-    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-tripwire-")))
-    resources.defer(() => rmSync(root, { recursive: true, force: true }))
+  it("is Windows' 8.3 one for a path that has one, and none for one that is already", () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-tripwire-")))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }))
     const long = join(root, "Łódź with spaces")
     mkdirSync(long)
     const short = shortName(long)

@@ -3,9 +3,8 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 
-import { vi } from "vitest"
+import { describe, expect, it, onTestFinished, vi } from "vitest"
 
-import { describe, expect, it } from "../test.js"
 import {
   parseDarwinFolders,
   parseDarwinProcesses,
@@ -15,15 +14,13 @@ import {
 } from "./reap.js"
 
 describe.skipIf(process.platform !== "linux")("reap", () => {
-  it("ends a process left in the sandbox, naming it, and one stopped as stopped", async ({
-    resources,
-  }) => {
-    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-")))
-    resources.defer(() => rmSync(root, { recursive: true, force: true }))
+  it("ends a process left in the sandbox, naming it, and one stopped as stopped", async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reap-")))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }))
     const sandbox = { root, home: join(root, "home"), started: 0 }
     const leak = () => {
       const child = spawn("sleep", ["60"], { cwd: root, env: {}, stdio: "ignore" })
-      resources.defer(() => {
+      onTestFinished(() => {
         child.kill("SIGKILL")
       })
       return child.pid!
@@ -42,13 +39,11 @@ describe.skipIf(process.platform !== "linux")("reap", () => {
 })
 
 describe.skipIf(process.platform !== "win32")("reap on Windows", () => {
-  it("ends what runs in the sandbox or has its home, naming it, and nothing else", async ({
-    resources,
-  }) => {
-    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-")))
-    const elsewhere = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-other-")))
-    resources.defer(() => rmSync(root, { recursive: true, force: true, maxRetries: 5 }))
-    resources.defer(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
+  it("ends what runs in the sandbox or has its home, naming it, and nothing else", async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reap-")))
+    const elsewhere = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reap-other-")))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true, maxRetries: 5 }))
+    onTestFinished(() => rmSync(elsewhere, { recursive: true, force: true, maxRetries: 5 }))
     const sandbox = { root, home: join(root, "home"), started: Date.now() }
     const start = (cwd: string, env: NodeJS.ProcessEnv) => {
       const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], {
@@ -56,7 +51,7 @@ describe.skipIf(process.platform !== "win32")("reap on Windows", () => {
         env: { SystemRoot: process.env.SystemRoot, ...env },
         stdio: "ignore",
       })
-      resources.defer(() => {
+      onTestFinished(() => {
         child.kill()
       })
       return child
@@ -88,13 +83,11 @@ describe.skipIf(process.platform !== "win32")("reap on Windows", () => {
 })
 
 describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
-  it("ends what runs in the sandbox or has its home, naming it, and nothing else", async ({
-    resources,
-  }) => {
-    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-")))
-    const elsewhere = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-other-")))
-    resources.defer(() => rmSync(root, { recursive: true, force: true }))
-    resources.defer(() => rmSync(elsewhere, { recursive: true, force: true }))
+  it("ends what runs in the sandbox or has its home, naming it, and nothing else", async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reap-")))
+    const elsewhere = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reap-other-")))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+    onTestFinished(() => rmSync(elsewhere, { recursive: true, force: true }))
     const sandbox = { root, home: join(root, "home"), started: Date.now() }
     const start = (cwd: string, env: NodeJS.ProcessEnv) => {
       // Node rather than a system program such as sleep: macOS shows no environment of its
@@ -107,7 +100,7 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
         stdio: "ignore",
         detached: true,
       })
-      resources.defer(() => {
+      onTestFinished(() => {
         child.kill("SIGKILL")
       })
       return child
@@ -134,13 +127,11 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
     expect(await reap(sandbox)).toEqual([])
   }, 30_000)
 
-  it("ends a system program one of them started elsewhere, which shows no environment", async ({
-    resources,
-  }) => {
-    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-")))
-    const elsewhere = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-other-")))
-    resources.defer(() => rmSync(root, { recursive: true, force: true }))
-    resources.defer(() => rmSync(elsewhere, { recursive: true, force: true }))
+  it("ends a system program one of them started elsewhere, which shows no environment", async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reap-")))
+    const elsewhere = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reap-other-")))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+    onTestFinished(() => rmSync(elsewhere, { recursive: true, force: true }))
     const sandbox = { root, home: join(root, "home"), started: Date.now() }
     // A shell of the sandbox's, in a group of its own, that leaves sleep running elsewhere:
     // macOS shows neither's environment, and sleep's folder isn't the sandbox's.
@@ -150,7 +141,7 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
       stdio: "ignore",
       detached: true,
     })
-    resources.defer(() => {
+    onTestFinished(() => {
       try {
         process.kill(-shell.pid!, "SIGKILL")
       } catch {
@@ -170,13 +161,11 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
     expect(await reap(sandbox)).toEqual([])
   }, 30_000)
 
-  it("ends one found through its parent though that parent has gone since, and it ignores SIGTERM", async ({
-    resources,
-  }) => {
-    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-")))
-    const elsewhere = realpathSync.native(mkdtempSync(join(tmpdir(), "novadeck-reap-other-")))
-    resources.defer(() => rmSync(root, { recursive: true, force: true }))
-    resources.defer(() => rmSync(elsewhere, { recursive: true, force: true }))
+  it("ends one found through its parent though that parent has gone since, and it ignores SIGTERM", async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reap-")))
+    const elsewhere = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reap-other-")))
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+    onTestFinished(() => rmSync(elsewhere, { recursive: true, force: true }))
     const sandbox = { root, home: join(root, "home"), started: Date.now() }
     // A shell of the sandbox's starts sleep elsewhere, deaf to SIGTERM, and leaves within
     // the reaper's 3 s grace, 2 s in, long enough for a slow first look to find it: sleep is
@@ -186,7 +175,7 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
       ["-c", `(trap '' TERM; cd '${elsewhere}' && exec /bin/sleep 60) & /bin/sleep 2`],
       { cwd: root, env: {}, stdio: "ignore", detached: true },
     )
-    resources.defer(() => {
+    onTestFinished(() => {
       try {
         process.kill(-shell.pid!, "SIGKILL")
       } catch {
@@ -201,7 +190,7 @@ describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {
     expect(sleeping).toHaveLength(1)
     const pid = Number(/\((\d+)/.exec(sleeping[0]!)![1])
     // Gone once launchd has reaped it, which may take a moment after the SIGKILL.
-    await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 2_000 })
+    await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(/ESRCH/), { timeout: 2_000 })
     expect(await reap(sandbox)).toEqual([])
   }, 30_000)
 })
