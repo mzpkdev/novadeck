@@ -244,7 +244,8 @@ taskbar, with that count, which opens its
 threads in the companion pane: one per peer, latest first, each message with its
 direction, time, state and the agent's text exactly as written, never formatted. A held
 thread has **Release**, and the pane's header has **Pause all agents' messages**, one
-switch for every project and session. It all updates as messages move. The content preview
+switch for every project and session. It pauses only messages between agents; your Inbox
+replies still go through. It all updates as messages move. The content preview
 (`pnpm dev:previews`) shows a thread between its two agents; the behaviour specs' demo
 (`?demo=messages`) has every state, a held thread and the pause.
 
@@ -784,7 +785,11 @@ App:
   the next answer to any item fail, so its sheet shows why and keeps the item and draft for retry. Ask, Tell and Your reply
   also appear in the terminal's Messages pane under You; replies show queued and delivered states.
   "Stale next answer" makes the next answer report that the ask is no longer available,
-  keeping the draft. "Usage limit, reset passed" adds the limit Novadeck can't resume, with its
+  keeping the draft. "Ask withdrawn" and "Ask session ended" remove the sample preview ask
+  and keep its outcome in Messages. "Next reply not delivered" queues the next reply, then
+  shows the delivery failure in its Inbox confirmation and Messages history. Reply boxes
+  accept up to 4,096 characters and show the limit. Pausing messages between agents leaves
+  your replies going through. "Usage limit, reset passed" adds the limit Novadeck can't resume, with its
   window reset, offering Continue now. "A new item arrives" adds the next kind not there
   yet, and "Clear the Inbox" empties it.
 - **Startup:** "Hold the splash" keeps it until you press Escape; "Slow attach" counts

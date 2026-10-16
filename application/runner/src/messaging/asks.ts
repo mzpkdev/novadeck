@@ -13,11 +13,20 @@ import { z } from "zod"
 import { DomainError } from "../errors.js"
 import type { RootChange } from "../harnesses/roots.js"
 import { Latest } from "../terminals/latest.js"
-import { byteLength, type Message } from "./mailbox.js"
+import {
+  allowSend,
+  byteLength,
+  cleanInboxText,
+  rates,
+  retentionMs,
+  undelivered,
+  type Message,
+} from "./mailbox.js"
 
 // Resolved letters stay as the Messages pane's history. Only open letters reach Inbox.
 export type Letter = InboxLetter & {
   readonly state: "open" | "answered" | "read" | "withdrawn" | "gone"
+  readonly settledAt?: number
 }
 export type AskRecords = {
   letters(): readonly Letter[]
@@ -46,18 +55,26 @@ type Host = {
     subject: string,
     text: string,
     commit: (message: Message) => void,
+    choice?: { readonly option?: string; readonly action?: string },
   ): void
   changed(terminalId: string): void
   exists(terminalId: string): boolean
+  replyState(askId: string): Message | undefined
+  forgetReplies(ids: readonly string[]): void
 }
 
 const subject = z
   .string()
-  .trim()
-  .min(1)
-  .max(256)
-  // eslint-disable-next-line no-control-regex -- Subjects cannot contain control characters.
-  .refine((text) => !/[\r\n\x00-\x1f]/.test(text), "Use one line for the subject")
+  .transform(cleanInboxText)
+  .pipe(
+    z
+      .string()
+      .trim()
+      .min(1)
+      .max(256)
+      // eslint-disable-next-line no-control-regex -- Subjects must stay one line after cleaning.
+      .refine((text) => !/[\r\n\x00-\x1f]/.test(text), "Use one line for the subject"),
+  )
 const markdown = z.string().max(16_384)
 const option = z.strictObject({
   label: subject,
@@ -74,8 +91,13 @@ const requestedShape = z.discriminatedUnion("type", [
   }),
   z.strictObject({
     type: z.literal("action"),
-    command: z.string().trim().min(1).max(4096),
-    directory: z.string().max(4096).nullable().optional(),
+    command: z.string().transform(cleanInboxText).pipe(z.string().trim().min(1).max(4096)),
+    directory: z
+      .string()
+      .transform(cleanInboxText)
+      .pipe(z.string().max(4096))
+      .nullable()
+      .optional(),
     done_label: subject,
   }),
 ])
@@ -130,7 +152,17 @@ const askText = (ask: AgentAsk): string => {
     .join("\n\n")
 }
 
+export const maxOpenAsks = 50
+export const maxUnreadTells = 50
+export const maxResolvedLetters = 100
+export const askSweepMs = 60_000
+
 export class Asks {
+  private readonly byTerminal = new Map<string, Map<string, Letter>>()
+  private readonly open = new Map<string, Letter>()
+  private readonly texts = new Map<string, string>()
+  private readonly sent = new Map<string, readonly number[]>()
+  private readonly sweeper: ReturnType<typeof setInterval> | undefined
   private readonly letters = new Map<string, Letter>()
   private readonly readers = new Set<Latest<InboxLetter[]>>()
   private closed = false
@@ -138,8 +170,20 @@ export class Asks {
     private readonly host: Host,
     private readonly records: AskRecords = memoryAsks(),
     private readonly now = Date.now,
+    { sweepMs = askSweepMs }: { readonly sweepMs?: number } = {},
   ) {
-    for (const letter of records.letters()) this.letters.set(letter.id, letter)
+    for (const letter of records.letters()) this.keep(letter)
+    this.prune()
+    if (sweepMs > 0) {
+      this.sweeper = setInterval(() => {
+        try {
+          this.prune()
+        } catch (error) {
+          console.error("Novadeck could not prune its Inbox history:", error)
+        }
+      }, sweepMs)
+      this.sweeper.unref()
+    }
   }
 
   call(
@@ -168,6 +212,7 @@ export class Asks {
         )
           throw new Error("That ask is no longer open in your session.")
         this.put({ ...letter, state: "withdrawn" })
+        this.maintain(terminalId)
         return { ok: true, id: letter.id, withdrawn: true }
       }
       const content =
@@ -211,15 +256,35 @@ export class Asks {
         throw new Error(
           "This Inbox item is over 32 KB. Shorten its details or put longer content in a file.",
         )
-      const open = [...this.letters.values()].filter(
-        (each) => each.terminalId === terminalId && each.state === "open",
+      const existing = this.byTerminal.get(terminalId)
+      // A call from the new session confirms which old asks no longer belong here, even
+      // when Antigravity's earlier root was a guess.
+      for (const letter of existing?.values() ?? [])
+        if (letter.content.kind === "ask" && letter.state === "open" && !same(letter, owner))
+          this.put({ ...letter, state: "gone" })
+      const open = [...(existing?.values() ?? [])].filter(
+        (each) =>
+          each.state === "open" &&
+          each.content.kind === kind &&
+          (kind === "tell" || same(each, owner)),
       )
-      if (open.length >= 50)
+      const cap = kind === "ask" ? maxOpenAsks : maxUnreadTells
+      if (open.length >= cap)
         throw new Error(
-          "You already have 50 Inbox items waiting. Withdraw an ask before adding another.",
+          kind === "ask"
+            ? "You already have 50 open asks in this session. Withdraw one before adding another."
+            : "You already have 50 unread updates. Wait for the user to read them before adding another.",
         )
-      const letter: Letter = { id: randomUUID(), ...owner, at: this.now(), content, state: "open" }
+      const at = this.now()
+      const times = allowSend(this.sent.get(terminalId) ?? [], at, rates.sender)
+      if (!times)
+        throw new Error(
+          `An agent may create ${rates.sender} Inbox asks or updates a minute. Withdrawals are still available; try again shortly.`,
+        )
+      const letter: Letter = { id: randomUUID(), ...owner, at, content, state: "open" }
       this.put(letter)
+      this.sent.set(terminalId, times)
+      this.maintain(terminalId)
       return { ok: true, id: letter.id }
     } catch (error) {
       return failure(error)
@@ -227,7 +292,7 @@ export class Asks {
   }
 
   list(): InboxLetter[] {
-    return [...this.letters.values()]
+    return [...this.open.values()]
       .filter(
         (each) =>
           each.state === "open" &&
@@ -253,25 +318,37 @@ export class Asks {
     const answer = parsed.data
     const { ask } = letter.content
     let text: string
+    let choice: { readonly option?: string; readonly action?: string } = {}
     if (answer.type === "done") {
       if (ask.shape.type !== "action")
         throw new DomainError("ANSWER_FAILED", "This ask has no action to mark done.")
-      text = ask.shape.doneLabel
+      text = ""
+      choice = { action: ask.shape.doneLabel }
     } else {
       const picked = answer.option
       if (picked !== null && (ask.shape.type !== "options" || !ask.shape.options[picked]))
         throw new DomainError("ANSWER_FAILED", "Choose one of this ask's options.")
       const label =
         picked !== null && ask.shape.type === "options" ? ask.shape.options[picked]!.label : ""
-      text = [label, answer.text.trim()].filter(Boolean).join("\n\n")
-      if (!text) throw new DomainError("ANSWER_FAILED", "Write an answer or choose an option.")
+      text = answer.text.trim()
+      if (label) choice = { option: label }
+      if (!text && !label)
+        throw new DomainError("ANSWER_FAILED", "Write an answer or choose an option.")
     }
-    const answered: Letter = { ...letter, state: "answered" }
-    this.host.reply(letter.terminalId, letter.id, ask.subject, text, (message) => {
-      this.records.answerLetter(answered, message)
-      this.letters.set(id, answered)
-    })
+    const answered: Letter = { ...letter, state: "answered", settledAt: this.now() }
+    this.host.reply(
+      letter.terminalId,
+      letter.id,
+      ask.subject,
+      text,
+      (message) => {
+        this.records.answerLetter(answered, message)
+        this.keep(answered)
+      },
+      choice,
+    )
     this.changed(letter.terminalId)
+    this.maintain(letter.terminalId)
   }
 
   read(ids: readonly string[]): void {
@@ -281,13 +358,14 @@ export class Asks {
       if (letter?.state === "open" && letter.content.kind === "tell")
         this.put({ ...letter, state: "read" })
     }
+    this.maintain()
   }
 
   rooted(terminalId: string, changes: readonly RootChange[]): void {
     if (this.closed) return
     for (const change of changes) {
       if (change.type === "corrected")
-        for (const letter of this.letters.values())
+        for (const letter of this.byTerminal.get(terminalId)?.values() ?? [])
           if (
             letter.terminalId === terminalId &&
             letter.state === "open" &&
@@ -308,7 +386,7 @@ export class Asks {
   reconcile(terminalId: string): void {
     if (this.closed) return
     const owner = this.host.owner(terminalId)
-    for (const letter of this.letters.values())
+    for (const letter of this.byTerminal.get(terminalId)?.values() ?? [])
       if (
         letter.terminalId === terminalId &&
         letter.state === "open" &&
@@ -316,17 +394,29 @@ export class Asks {
       )
         this.put({ ...letter, state: "gone" })
     this.changed(terminalId)
+    this.maintain(terminalId)
   }
 
   history(terminalId: string, listing: TerminalMessages): TerminalMessages {
-    const letters = [...this.letters.values()].filter((each) => each.terminalId === terminalId)
-    const threads = [...listing.threads]
+    const letters = this.byTerminal.get(terminalId)?.values() ?? []
+    const threads = new Map(listing.threads.map((thread) => [thread.id, thread]))
     for (const letter of letters) {
       const thread = `t-${letter.id.replaceAll("-", "")}`
-      const found = threads.findIndex((each) => each.id === thread)
+      const known = threads.get(thread)
       const content = letter.content
-      const text =
-        content.kind === "ask" ? askText(content.ask) : `${content.subject}\n\n${content.body}`
+      let text = this.texts.get(letter.id)
+      if (text === undefined) {
+        text =
+          content.kind === "ask" ? askText(content.ask) : `${content.subject}\n\n${content.body}`
+        this.texts.set(letter.id, text)
+      }
+      const reply =
+        known?.messages.find((message) => message.inbox === "answer") ??
+        this.host.replyState(letter.id)
+      const inboxState =
+        letter.state === "answered" && reply?.state === "gone" && reply.deliveredAt === null
+          ? ("undelivered" as const)
+          : letter.state
       const trace = {
         id: `m-${letter.id.replaceAll("-", "")}`,
         thread,
@@ -341,8 +431,8 @@ export class Asks {
         held: null,
         deliveredAt: letter.at,
         inbox: content.kind,
+        inboxState,
       }
-      const known = found >= 0 ? threads[found] : undefined
       const messages = [trace, ...(known?.messages ?? [])]
       const entry = {
         id: thread,
@@ -353,12 +443,11 @@ export class Asks {
         stopped: false,
         messages,
       }
-      if (found < 0) threads.push(entry)
-      else threads[found] = entry
+      threads.set(thread, entry)
     }
     return {
       ...listing,
-      threads: threads
+      threads: [...threads.values()]
         .toSorted((a, b) => (b.messages.at(-1)?.sentAt ?? 0) - (a.messages.at(-1)?.sentAt ?? 0))
         .slice(0, 1000),
     }
@@ -366,17 +455,55 @@ export class Asks {
 
   forgetProject(projectId: string): void {
     const gone = [...this.letters.values()].filter((each) => each.projectId === projectId)
-    this.records.removeLetters(gone.map((each) => each.id))
-    for (const letter of gone) this.letters.delete(letter.id)
-    this.publish()
+    this.remove(gone)
   }
 
-  prune(): void {
-    const gone = [...this.letters.values()].filter(
-      (each) => !this.host.exists(each.terminalId) && this.now() - each.at > 24 * 60 * 60_000,
-    )
-    this.records.removeLetters(gone.map((each) => each.id))
-    for (const letter of gone) this.letters.delete(letter.id)
+  prune(terminalId?: string): void {
+    if (this.closed) return
+    const at = this.now()
+    const gone: Letter[] = []
+    const groups = terminalId
+      ? [this.byTerminal.get(terminalId)].filter((letters) => letters !== undefined)
+      : this.byTerminal.values()
+    for (const letters of groups) {
+      const resolved = [...letters.values()]
+        .filter((letter) => letter.state !== "open")
+        .map((letter) => {
+          const reply = this.host.replyState(letter.id)
+          return {
+            letter,
+            reply,
+            at: Math.max(
+              letter.settledAt ?? letter.at,
+              reply?.deliveredAt ?? 0,
+              reply?.response?.goneAt ?? 0,
+            ),
+          }
+        })
+        .toSorted((a, b) => a.at - b.at)
+      const eligible = resolved.filter(({ reply }) => !reply || !undelivered(reply))
+      const expired = eligible.filter((entry) => at - entry.at >= retentionMs)
+      const ids = new Set(expired.map(({ letter }) => letter.id))
+      const excess = Math.max(0, resolved.length - ids.size - maxResolvedLetters)
+      for (const { letter } of eligible
+        .filter((entry) => !ids.has(entry.letter.id))
+        .slice(0, excess))
+        ids.add(letter.id)
+      for (const letter of letters.values())
+        if (
+          ids.has(letter.id) ||
+          (!this.host.exists(letter.terminalId) &&
+            at - (letter.settledAt ?? letter.at) >= retentionMs &&
+            !this.host.replyState(letter.id))
+        )
+          gone.push(letter)
+    }
+    this.remove(gone)
+    for (const [id, times] of this.sent) {
+      const recent = times.filter((time) => at - time < rates.windowMs)
+      if (recent.length) this.sent.set(id, recent)
+      else this.sent.delete(id)
+    }
   }
 
   async *watch(signal?: AbortSignal): AsyncGenerator<InboxLetter[]> {
@@ -402,19 +529,57 @@ export class Asks {
 
   close(): void {
     this.closed = true
+    clearInterval(this.sweeper)
     for (const reader of this.readers) reader.finish()
     this.readers.clear()
   }
-  private put(letter: Letter): void {
-    this.records.saveLetter(letter)
+  private maintain(terminalId?: string): void {
+    try {
+      this.prune(terminalId)
+    } catch (error) {
+      console.error("Novadeck could not prune its Inbox history:", error)
+    }
+  }
+  private keep(letter: Letter): void {
     this.letters.set(letter.id, letter)
-    this.changed(letter.terminalId)
+    const terminal = this.byTerminal.get(letter.terminalId) ?? new Map<string, Letter>()
+    terminal.set(letter.id, letter)
+    this.byTerminal.set(letter.terminalId, terminal)
+    if (letter.state === "open") this.open.set(letter.id, letter)
+    else this.open.delete(letter.id)
+  }
+  private put(letter: Letter): void {
+    const saved =
+      letter.state !== "open" && this.letters.get(letter.id)?.state === "open"
+        ? { ...letter, settledAt: this.now() }
+        : letter
+    this.records.saveLetter(saved)
+    this.keep(saved)
+    this.changed(saved.terminalId)
+  }
+  private remove(letters: readonly Letter[]): void {
+    if (!letters.length) return
+    const ids = letters.map((letter) => letter.id)
+    this.records.removeLetters(ids)
+    this.host.forgetReplies(ids)
+    const changed = new Set<string>()
+    for (const letter of letters) {
+      this.letters.delete(letter.id)
+      this.open.delete(letter.id)
+      this.texts.delete(letter.id)
+      const terminal = this.byTerminal.get(letter.terminalId)
+      terminal?.delete(letter.id)
+      if (!terminal?.size) this.byTerminal.delete(letter.terminalId)
+      changed.add(letter.terminalId)
+    }
+    for (const id of changed) this.changed(id)
   }
   private changed(terminalId: string): void {
     this.host.changed(terminalId)
     this.publish()
   }
   private publish(): void {
+    if (!this.readers.size) return
     const listing = this.list()
     const key = JSON.stringify(listing)
     for (const reader of this.readers) reader.push(listing, key)

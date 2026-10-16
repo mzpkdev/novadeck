@@ -122,7 +122,7 @@ it("keeps options, recommendations, code and action labels in separate Inbox his
   }
 })
 
-it("holds the person's reply while paused without asking for a thread release", () => {
+it("delivers the person's reply while messages between agents are paused", () => {
   vi.useFakeTimers()
   try {
     const messages = createDemoMessages([], true)
@@ -131,13 +131,68 @@ it("holds the person's reply while paused without asking for a thread release", 
     messages.record(ask, { kind: "ask", answer: { type: "reply", option: null, text: "Samples" } })
     const thread = () => Object.values(messages.state.getSnapshot().terminals)[0]!.threads[0]!
     expect(thread().held).toBe(false)
-    expect(thread().messages.at(-1)).toMatchObject({ state: "held", held: "paused" })
-    vi.runAllTimers()
-    expect(thread().messages.at(-1)?.state).toBe("held")
-    messages.pause(false)
+    expect(thread().messages.at(-1)).toMatchObject({ state: "queued", held: null })
     vi.runAllTimers()
     expect(thread().messages.at(-1)?.state).toBe("delivered")
+    expect(messages.state.getSnapshot().paused).toBe(true)
   } finally {
     vi.useRealTimers()
   }
+})
+
+it("records an ask's withdrawal and ended session without losing its text", () => {
+  const messages = createDemoMessages([])
+  const inbox = createDemoInbox(Date.now(), undefined, messages.record)
+  inbox.resolve(demoInboxIds.preview, "withdrawn")
+  inbox.resolve(demoInboxIds.login, "gone")
+  const history = Object.values(messages.state.getSnapshot().terminals).flatMap((mail) =>
+    mail.threads.flatMap((thread) => thread.messages),
+  )
+  expect(history.find((message) => message.id === demoInboxIds.preview)).toMatchObject({
+    inboxState: "withdrawn",
+    text: expect.stringContaining("Should the preview"),
+  })
+  expect(history.find((message) => message.id === demoInboxIds.login)).toMatchObject({
+    inboxState: "gone",
+    text: expect.stringContaining("vercel login"),
+  })
+})
+
+it("keeps an undelivered reply and its ask's outcome in history", () => {
+  vi.useFakeTimers()
+  try {
+    const messages = createDemoMessages([])
+    const inbox = createDemoInbox(Date.now(), undefined, messages.record)
+    inbox.dropReplyNext()
+    inbox.answer(demoInboxIds.preview, {
+      kind: "ask",
+      answer: { type: "reply", option: null, text: "Samples" },
+    })
+    vi.runAllTimers()
+    const history = Object.values(messages.state.getSnapshot().terminals).flatMap((mail) =>
+      mail.threads.flatMap((thread) => thread.messages),
+    )
+    expect(history.find((message) => message.id === demoInboxIds.preview)?.inboxState).toBe(
+      "undelivered",
+    )
+    expect(history.find((message) => message.inbox === "answer")).toMatchObject({
+      state: "gone",
+      deliveredAt: null,
+    })
+    expect(inbox.state.getSnapshot().failed[demoInboxIds.preview]).toContain(
+      "Your reply was not delivered",
+    )
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it("marks told history read when updates are read together", () => {
+  const messages = createDemoMessages([])
+  const inbox = createDemoInbox(Date.now(), undefined, messages.record)
+  inbox.readAll()
+  const history = Object.values(messages.state.getSnapshot().terminals).flatMap((mail) =>
+    mail.threads.flatMap((thread) => thread.messages),
+  )
+  expect(history.find((message) => message.id === demoInboxIds.told)?.inboxState).toBe("read")
 })

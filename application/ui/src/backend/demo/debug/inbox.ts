@@ -152,6 +152,24 @@ export const inboxGroups = (inbox: DemoInbox | undefined): readonly DemoActionGr
           hint: "The next answer fails because its ask is no longer available, keeping the reply draft",
           run: () => inbox.failNext("That ask is no longer available."),
         },
+        ...(["withdrawn", "gone"] as const).map((outcome) => ({
+          label: outcome === "withdrawn" ? "Ask withdrawn" : "Ask session ended",
+          hint:
+            outcome === "withdrawn"
+              ? "Removes the sample preview ask; its Messages record says Withdrawn"
+              : "Removes the sample preview ask; its Messages record says Agent session ended",
+          run: () => {
+            const item = fresh(demoInboxIds.preview)
+            if (!item) return
+            inbox.add(item)
+            inbox.resolve(item.id, outcome)
+          },
+        })),
+        {
+          label: "Next reply not delivered",
+          hint: "The next ask reply queues, then fails delivery; its Inbox confirmation and Messages history say it did not arrive",
+          run: () => inbox.dropReplyNext(),
+        },
         {
           label: "A new item arrives",
           hint: "The next of the kinds above not in the Inbox joins it, waiting from now",

@@ -9,8 +9,10 @@ import {
   type InboxItem,
   type InboxState,
 } from "../../model/inbox"
+import type { InboxHistory } from "../../model/messages"
 import { createStore } from "../../model/store"
 import { demoHandle } from "./handles"
+import { deliveryMs } from "./messages"
 import { demoTerminalId, terminals } from "./samples"
 
 // The demo's Inbox: hardcoded items on the sample terminals, answered for a moment and
@@ -25,6 +27,8 @@ export type DemoInbox = Inbox & {
   readonly clear: () => void
   // The next answer fails instead of taking, so the sheet shows why.
   readonly failNext: (reason?: string) => void
+  readonly resolve: (id: string, outcome: "withdrawn" | "gone") => void
+  readonly dropReplyNext: () => void
 }
 
 // Whether a backend's Inbox is the demo's, which the debug panel adds items to.
@@ -611,7 +615,7 @@ const resumed = (found: InboxItem, on: boolean): InboxItem =>
 export const createDemoInbox = (
   now: number,
   items = demoInboxItems(now),
-  record: (item: InboxItem, answer?: InboxAnswer) => void = () => {},
+  record: (item: InboxItem, answer?: InboxAnswer, outcome?: InboxHistory) => void = () => {},
 ): DemoInbox => {
   for (const each of items) record(each)
   const state = createStore<InboxState>({ ...emptyInbox, items })
@@ -619,6 +623,7 @@ export const createDemoInbox = (
     state.update(next)
   }
   let failing: string | null = null
+  let dropping = false
   const find = (id: string): InboxItem | undefined =>
     state.getSnapshot().items.find((each) => each.id === id)
   return {
@@ -653,13 +658,27 @@ export const createDemoInbox = (
         answering: { ...current.answering, [id]: true },
         failed: withoutKey(current.failed, id),
       }))
+      const undelivered = dropping && answer.kind === "ask"
+      if (undelivered) dropping = false
       setTimeout(() => {
-        record(found, answer)
+        record(found, answer, undelivered ? "undelivered" : undefined)
         change((current) => ({
           items: current.items.filter((each) => each.id !== id),
           answering: withoutKey(current.answering, id) as Record<string, true>,
           failed: current.failed,
         }))
+        if (undelivered)
+          setTimeout(
+            () =>
+              change((current) => ({
+                ...current,
+                failed: {
+                  ...current.failed,
+                  [id]: "Your reply was not delivered because the agent's session ended.",
+                },
+              })),
+            deliveryMs,
+          )
       }, answerMs)
     },
     see: (id) =>
@@ -671,17 +690,29 @@ export const createDemoInbox = (
             }
           : current,
       ),
-    readAll: () =>
+    readAll: () => {
+      for (const each of state.getSnapshot().items)
+        if (each.kind === "update") record(each, { kind: "update", action: "read" })
       change((current) => ({
         ...current,
         items: current.items.filter((each) => each.kind !== "update"),
-      })),
+      }))
+    },
     add: (added) => {
       record(added)
       change((current) => ({
         ...current,
         items: [...current.items.filter((each) => each.id !== added.id), added],
       }))
+    },
+    resolve: (id, outcome) => {
+      const found = find(id)
+      if (found?.kind !== "ask") return
+      record(found, undefined, outcome)
+      change((current) => ({ ...current, items: current.items.filter((each) => each.id !== id) }))
+    },
+    dropReplyNext: () => {
+      dropping = true
     },
     clear: () => change(() => emptyInbox),
     failNext: (reason = "The agent didn't take that answer. Try again.") => {

@@ -1,3 +1,5 @@
+import { vi } from "vitest"
+
 import { describe, expect, it } from "../../../test"
 import { createDemoInbox, demoInboxIds } from "../inbox"
 import { inboxGroups } from "./inbox"
@@ -43,8 +45,8 @@ describe("the debug panel's Inbox group", () => {
   it("adds the next kind that is missing, until every kind is there", () => {
     const inbox = createDemoInbox(1, [])
     const notes: string[] = []
-    // Every action but the reset limit, the two failing answers, the arrival and the clear adds a kind.
-    const kinds = inboxGroups(inbox)[0]!.actions.length - 5
+    // Lifecycle controls change existing items rather than adding a kind.
+    const kinds = inboxGroups(inbox)[0]!.actions.length - 8
     for (let each = 0; each < kinds; each += 1) run(inbox, "A new item arrives", notes)
     expect(inbox.state.getSnapshot().items).toHaveLength(kinds)
     run(inbox, "A new item arrives", notes)
@@ -74,6 +76,35 @@ describe("the debug panel's Inbox group", () => {
       true,
     )
     expect(inbox.state.getSnapshot().answering).toEqual({})
+  })
+
+  it("makes withdrawn and ended asks reachable as retained history", () => {
+    const outcomes: string[] = []
+    const inbox = createDemoInbox(1, [], (_, __, outcome) => {
+      if (outcome) outcomes.push(outcome)
+    })
+    run(inbox, "Ask withdrawn")
+    run(inbox, "Ask session ended")
+    expect(outcomes).toEqual(["withdrawn", "gone"])
+    expect(inbox.state.getSnapshot().items).toEqual([])
+  })
+
+  it("makes a queued reply's delivery failure reachable", () => {
+    vi.useFakeTimers()
+    try {
+      const inbox = createDemoInbox(1)
+      run(inbox, "Next reply not delivered")
+      inbox.answer(demoInboxIds.preview, {
+        kind: "ask",
+        answer: { type: "reply", option: null, text: "Samples." },
+      })
+      vi.runAllTimers()
+      expect(inbox.state.getSnapshot().failed[demoInboxIds.preview]).toContain(
+        "Your reply was not delivered",
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("clears the Inbox", () => {

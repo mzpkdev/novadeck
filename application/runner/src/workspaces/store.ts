@@ -959,7 +959,7 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, AskRecor
         ${message.response ? JSON.stringify(message.response) : null})
       ON CONFLICT (id) DO UPDATE SET to_session = excluded.to_session, state = excluded.state,
         delivered_at = excluded.delivered_at, notified = excluded.notified,
-        stopped = excluded.stopped
+        stopped = excluded.stopped, response = excluded.response
     `
   }
 

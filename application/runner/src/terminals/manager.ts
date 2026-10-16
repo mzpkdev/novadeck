@@ -872,15 +872,16 @@ export class Terminals {
     this.asks = new Asks(
       {
         owner: (id) => this.messaging.inboxOwner(id),
-        reply: (id, ask, subject, text, commit) =>
-          this.messaging.personReply(id, ask, subject, text, commit),
+        reply: (id, ask, subject, text, commit, choice) =>
+          this.messaging.personReply(id, ask, subject, text, commit, choice),
+        replyState: (id) => this.messaging.inboxReply(id),
+        forgetReplies: (ids) => this.messaging.forgetResponses(ids),
         changed: (id) => this.mailChanged(id),
         exists: (id) =>
           !this.closedIds.has(id) && (this.records.has(id) || this.identity(id) !== undefined),
       },
       options.asks,
     )
-    this.asks.prune()
     this.inputs = new InputQueue({
       hold: (terminalId, budget) => this.holdInput(terminalId, budget),
     })

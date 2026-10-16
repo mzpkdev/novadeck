@@ -42,6 +42,7 @@ export const dialogMs = 3000
 export const detailGraceMs = 5000
 export const retryMs = 1000
 const retryCapMs = 10_000
+const replyTrackingLimit = 1000
 // How long an answer to trouble may leave its item standing before it can be answered again.
 // Antigravity marks a turn's start at its first model call, which can take a while.
 export const settleMs = 15_000
@@ -336,6 +337,11 @@ export const createRunnerInbox = (
   // What the person answered, until the item goes; and why an answer didn't take.
   const submitted = new Set<string>()
   const inFlight = new Set<string>()
+  // Keep recent replies until delivery is known, their terminal closes or observed history goes.
+  const replies = new Map<
+    string,
+    { readonly thread: string; readonly source: InboxSource; readonly observed: boolean }
+  >()
   const failed = new Map<string, string>()
   let due: ReturnType<typeof setTimeout> | undefined
   // Per item, when its answer is given up on if the item still stands.
@@ -457,6 +463,35 @@ export const createRunnerInbox = (
     // A held thread's release or stop is tracked with the messages, so a pane's counts too.
     const { releasing, failed: refused } = mail.getSnapshot()
     const rest: Record<string, string> = Object.fromEntries(failed)
+    const threads = new Map(
+      Object.values(mail.getSnapshot().terminals).flatMap((listing) =>
+        listing.threads.map((thread) => [thread.id, thread] as const),
+      ),
+    )
+    for (const [id, reply] of replies) {
+      const history = threads.get(reply.thread)
+      const lost = history?.messages.some(
+        (message) =>
+          message.inboxState === "undelivered" ||
+          (message.inbox === "answer" && message.state === "gone" && message.deliveredAt === null),
+      )
+      if (
+        history?.messages.some(
+          (message) => message.inbox === "answer" && message.state === "delivered",
+        )
+      ) {
+        replies.delete(id)
+      } else if (lost || !terminalOf(reply.source)) {
+        const message = "Your reply was not delivered because the agent's session ended."
+        failed.set(id, message)
+        rest[id] = message
+        replies.delete(id)
+      } else if (!history && reply.observed) {
+        replies.delete(id)
+      } else if (history && !reply.observed) {
+        replies.set(id, { ...reply, observed: true })
+      }
+    }
     for (const item of items)
       if (item.kind === "held") {
         const thread = item.held.threadId
@@ -524,6 +559,7 @@ export const createRunnerInbox = (
       },
       (error: unknown) => {
         inFlight.delete(id)
+        replies.delete(id)
         fail(id, reason(error))
       },
     )
@@ -547,8 +583,16 @@ export const createRunnerInbox = (
       else streams.stop(threadId)
       return
     }
-    if (item.kind === "ask" && given.kind === "ask")
+    if (item.kind === "ask" && given.kind === "ask") {
+      replies.delete(id)
+      replies.set(id, {
+        thread: `t-${id.replaceAll("-", "")}`,
+        source: item.source,
+        observed: false,
+      })
+      if (replies.size > replyTrackingLimit) replies.delete(replies.keys().next().value!)
       return call(id, () => streams.asks.answer(id, given.answer))
+    }
     if (item.kind === "update" && given.kind === "update") {
       if (item.update.type === "told") return call(id, () => streams.asks.read([id]))
       failed.delete(id)
@@ -648,6 +692,7 @@ export const createRunnerInbox = (
         seen.clear()
         submitted.clear()
         inFlight.clear()
+        replies.clear()
         failed.clear()
         state.update(() => emptyInbox)
       }

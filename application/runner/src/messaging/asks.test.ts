@@ -6,10 +6,13 @@ import { join } from "node:path"
 import { terminalMessages } from "@novadeck/protocol"
 import { vi } from "vitest"
 
+import { agents, harnesses } from "../harnesses/registry.js"
 import { describe, expect, it } from "../test.js"
 import { WorkspaceStore } from "../workspaces/store.js"
-import { Asks, memoryAsks, type AskRecords } from "./asks.js"
+import { Asks, askSweepMs, maxResolvedLetters, memoryAsks, type AskRecords } from "./asks.js"
+import { retentionMs, wrap, type Message } from "./mailbox.js"
 import { Messaging } from "./messaging.js"
+import { memoryMailbox, type MailboxRecords } from "./records.js"
 
 const identity = {
   terminalId: randomUUID(),
@@ -28,9 +31,23 @@ const letter = {
     recommend: 0,
   },
 }
-const setup = (records: AskRecords = memoryAsks(), store?: WorkspaceStore) => {
+const setup = (
+  records: AskRecords = memoryAsks(),
+  store?: WorkspaceStore,
+  options: {
+    readonly now?: () => number
+    readonly sweepMs?: number
+    readonly mailbox?: MailboxRecords
+  } = {},
+) => {
   let kept = true
-  const messaging = new Messaging({ ...(store && { records: store }), restoreMs: 0, sweepMs: 0 })
+  const mailbox = store ?? options.mailbox
+  const messaging = new Messaging({
+    ...(mailbox && { records: mailbox }),
+    now: options.now ?? Date.now,
+    restoreMs: 0,
+    sweepMs: 0,
+  })
   messaging.register(
     identity.terminalId,
     { projectId: identity.projectId, sessionId: identity.workspaceSessionId },
@@ -50,13 +67,16 @@ const setup = (records: AskRecords = memoryAsks(), store?: WorkspaceStore) => {
   const asks = new Asks(
     {
       owner: (id) => messaging.inboxOwner(id),
-      reply: (id, ask, subject, text, commit) =>
-        messaging.personReply(id, ask, subject, text, commit),
+      reply: (id, ask, subject, text, commit, choice) =>
+        messaging.personReply(id, ask, subject, text, commit, choice),
+      replyState: (id) => messaging.inboxReply(id),
+      forgetReplies: (ids) => messaging.forgetResponses(ids),
       changed: () => {},
       exists: () => kept,
     },
     records,
-    () => 123,
+    options.now ?? (() => 123),
+    { sweepMs: options.sweepMs ?? 0 },
   )
   const create = (request: unknown = letter) => {
     const result = asks.call(identity.terminalId, "ask", request)
@@ -66,6 +86,10 @@ const setup = (records: AskRecords = memoryAsks(), store?: WorkspaceStore) => {
   return {
     messaging,
     asks,
+    stop: () => {
+      asks.close()
+      messaging.close()
+    },
     bind,
     create,
     forget: () => {
@@ -156,7 +180,7 @@ describe("Inbox asks and updates", () => {
     messaging.close()
   })
 
-  it("holds answers while messaging is paused, and shows the original ask as delivered history", () => {
+  it("queues person answers while agent messaging is paused, and shows the original ask as delivered history", () => {
     const { asks, messaging, create } = setup()
     messaging.pause(true)
     const id = create()
@@ -167,7 +191,7 @@ describe("Inbox asks and updates", () => {
     ).threads[0]!.messages
     expect(messages.map((each) => [each.inbox, each.state, each.held])).toEqual([
       ["ask", "delivered", null],
-      ["answer", "held", "paused"],
+      ["answer", "queued", null],
     ])
     messaging.pause(false)
     expect(
@@ -417,5 +441,509 @@ describe("unread tell lifetimes", () => {
     expect(asks.list()).toEqual([])
     expect(records.letters().find((each) => each.id === second.id)?.state).toBe("gone")
     messaging.close()
+  })
+})
+
+const inboxClock = () => {
+  let at = 1_000_000
+  return {
+    now: () => at,
+    advance: (ms = 6_001) => {
+      at += ms
+    },
+  }
+}
+
+describe("Inbox creation limits", () => {
+  it("shares ten creations a minute between asks and tells, while allowing withdrawal at the limit", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const run = setup(undefined, undefined, clock)
+    resources.defer(run.stop)
+    const id = run.create()
+    for (let index = 0; index < 9; index++)
+      expect(
+        run.asks.call(identity.terminalId, index % 2 ? "ask" : "tell", {
+          subject: "Update",
+          body: "Body",
+        }).ok,
+      ).toBe(true)
+    expect(
+      run.asks.call(identity.terminalId, "tell", { subject: "Too many", body: "Body" }),
+    ).toMatchObject({ ok: false, reason: expect.stringContaining("10 Inbox") })
+    expect(run.asks.call(identity.terminalId, "ask", { withdraw: id }).ok).toBe(true)
+    clock.advance(60_001)
+    expect(run.asks.call(identity.terminalId, "ask", { subject: "Later", body: "Body" }).ok).toBe(
+      true,
+    )
+  })
+
+  it("gives unread tells and current-session asks independent fifty-item caps", ({ resources }) => {
+    const clock = inboxClock()
+    const run = setup(undefined, undefined, clock)
+    resources.defer(run.stop)
+    for (let index = 0; index < 50; index++) {
+      expect(
+        run.asks.call(identity.terminalId, "tell", { subject: `Update ${index}`, body: "Body" }).ok,
+      ).toBe(true)
+      clock.advance()
+    }
+    expect(
+      run.asks.call(identity.terminalId, "tell", { subject: "Too many", body: "Body" }),
+    ).toMatchObject({ ok: false, reason: expect.stringContaining("50 unread updates") })
+    for (let index = 0; index < 50; index++) {
+      run.create()
+      clock.advance()
+    }
+    expect(run.asks.list()).toHaveLength(100)
+    expect(run.asks.call(identity.terminalId, "ask", letter)).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("50 open asks"),
+    })
+    run.bind("replacement")
+    run.asks.reconcile(identity.terminalId)
+    expect(run.asks.list()).toHaveLength(50)
+    expect(run.asks.call(identity.terminalId, "ask", letter).ok).toBe(true)
+  })
+
+  it("clears stale guessed-session asks when the replacement makes its own call, without growing hidden open records", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const records = memoryAsks()
+    const run = setup(records, undefined, clock)
+    resources.defer(run.stop)
+    for (let session = 0; session < 4; session++) {
+      const change = {
+        type: "new" as const,
+        root: {
+          agent: "claude" as const,
+          sessionId: `guess-${session}`,
+          instance: null,
+          source: "binding" as const,
+        },
+        guess: true,
+        ready: true,
+      }
+      run.messaging.rooted(identity.terminalId, [change])
+      run.asks.rooted(identity.terminalId, [change])
+      for (let index = 0; index < 50; index++) {
+        run.create()
+        clock.advance()
+      }
+      expect(run.asks.list()).toHaveLength(50)
+      expect(records.letters().filter((each) => each.state === "open")).toHaveLength(50)
+      expect(records.letters().length).toBeLessThanOrEqual(maxResolvedLetters + 50)
+    }
+  })
+})
+
+describe("bounded Inbox history", () => {
+  it("retains only the latest hundred resolved records per terminal at runtime", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const records = memoryAsks()
+    const run = setup(records, undefined, clock)
+    resources.defer(run.stop)
+    const ids: string[] = []
+    for (let index = 0; index < 150; index++) {
+      const id = run.create({ subject: `Question ${index}`, body: "x".repeat(15_000) })
+      ids.push(id)
+      run.asks.call(identity.terminalId, "ask", { withdraw: id })
+      clock.advance()
+    }
+    expect(records.letters()).toHaveLength(maxResolvedLetters)
+    expect(records.letters().map((each) => each.id)).toEqual(ids.slice(-maxResolvedLetters))
+    expect(
+      run.asks.history(
+        identity.terminalId,
+        run.messaging.list(identity.terminalId, identity.handle),
+      ).threads,
+    ).toHaveLength(maxResolvedLetters)
+  })
+
+  it("expires old resolved records on its timer without another create, and on startup", async ({
+    resources,
+  }) => {
+    vi.useFakeTimers()
+    resources.defer(() => {
+      vi.useRealTimers()
+    })
+    const clock = inboxClock()
+    const records = memoryAsks()
+    const run = setup(records, undefined, { ...clock, sweepMs: askSweepMs })
+    resources.defer(run.stop)
+    const id = run.create()
+    run.asks.call(identity.terminalId, "ask", { withdraw: id })
+    clock.advance(retentionMs + 1)
+    await vi.advanceTimersByTimeAsync(askSweepMs)
+    expect(records.letters()).toEqual([])
+    const next = run.create()
+    run.asks.call(identity.terminalId, "ask", { withdraw: next })
+    run.stop()
+    clock.advance(retentionMs + 1)
+    const restored = setup(records, undefined, clock)
+    resources.defer(restored.stop)
+    expect(records.letters()).toEqual([])
+  })
+
+  it("pins pending replies, retains their final gone outcome for a fresh day, and prunes both together", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const records = memoryAsks()
+    const run = setup(records, undefined, clock)
+    resources.defer(run.stop)
+    const id = run.create()
+    run.asks.answer(id, { type: "reply", option: null, text: "My answer" })
+    for (let index = 0; index < 110; index++) {
+      clock.advance()
+      const next = run.create()
+      run.asks.call(identity.terminalId, "ask", { withdraw: next })
+    }
+    expect(records.letters()).toHaveLength(maxResolvedLetters)
+    expect(records.letters().some((each) => each.id === id)).toBe(true)
+    clock.advance(retentionMs + 1)
+    run.asks.prune()
+    expect(records.letters().map((each) => each.id)).toEqual([id])
+    expect(run.messaging.inboxReply(id)?.state).toBe("queued")
+    run.bind("replacement")
+    run.asks.reconcile(identity.terminalId)
+    expect(records.letters().map((each) => each.id)).toEqual([id])
+    expect(run.messaging.inboxReply(id)?.response?.goneAt).toBe(clock.now())
+    expect(
+      run.asks.history(
+        identity.terminalId,
+        run.messaging.list(identity.terminalId, identity.handle),
+      ).threads[0]?.messages[0]?.inboxState,
+    ).toBe("undelivered")
+    clock.advance(retentionMs + 1)
+    run.asks.prune()
+    expect(records.letters()).toEqual([])
+    expect(run.messaging.inboxReply(id)).toBeUndefined()
+    expect(run.messaging.list(identity.terminalId, identity.handle).threads).toEqual([])
+  })
+})
+
+describe("Inbox history outcomes and safe instructions", () => {
+  it("shows withdrawn, session-gone, and answer-gone-before-delivery states", ({ resources }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    const withdrawn = run.create()
+    run.asks.call(identity.terminalId, "ask", { withdraw: withdrawn })
+    const gone = run.create()
+    const answered = run.create()
+    run.asks.answer(answered, { type: "reply", option: 0, text: "" })
+    run.bind("replacement")
+    run.asks.reconcile(identity.terminalId)
+    const history = run.asks.history(
+      identity.terminalId,
+      run.messaging.list(identity.terminalId, identity.handle),
+    )
+    const trace = (id: string) =>
+      history.threads.find((thread) => thread.id === `t-${id.replaceAll("-", "")}`)!.messages[0]!
+    expect(trace(withdrawn).inboxState).toBe("withdrawn")
+    expect(trace(gone).inboxState).toBe("gone")
+    expect(trace(answered).inboxState).toBe("undelivered")
+    const delivered = {
+      ...history,
+      threads: history.threads.map((thread) => ({
+        ...thread,
+        messages: thread.messages.map((message) =>
+          message.inbox === "answer" ? { ...message, deliveredAt: 42 } : message,
+        ),
+      })),
+    }
+    const revised = run.asks.history(identity.terminalId, {
+      ...delivered,
+      threads: delivered.threads.map((thread) => ({
+        ...thread,
+        messages: thread.messages.filter((message) => message.inbox !== "ask"),
+      })),
+    })
+    expect(
+      revised.threads.find((thread) => thread.id === `t-${answered.replaceAll("-", "")}`)!
+        .messages[0]!.inboxState,
+    ).toBe("answered")
+  })
+
+  it("strips terminal escapes, controls and bidi from subjects and action instructions", ({
+    resources,
+  }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    run.create({
+      subject: "\u001b[31mLogin\u001b[0m\u202e\u0007",
+      body: "Do it yourself",
+      shape: {
+        type: "action",
+        command: "\u001b[32mtool login\u001b[0m\u2066\u0000",
+        directory: "/repo\u202d\u0007",
+        done_label: "Done\u202c",
+      },
+    })
+    expect(run.asks.list()[0]?.content).toMatchObject({
+      kind: "ask",
+      ask: {
+        subject: "Login",
+        shape: { type: "action", command: "tool login", directory: "/repo", doneLabel: "Done" },
+      },
+    })
+  })
+
+  it("accepts Unicode person text under the encoded budget and names the bound for expanded text", ({
+    resources,
+  }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    const id = run.create()
+    expect(() =>
+      run.asks.answer(id, { type: "reply", option: null, text: "é".repeat(2100) }),
+    ).not.toThrow()
+    const tooLarge = run.create()
+    expect(() =>
+      run.asks.answer(tooLarge, { type: "reply", option: null, text: "&".repeat(4096) }),
+    ).toThrow(/encoded bytes; at most 8192/)
+    expect(run.asks.list().some((each) => each.id === tooLarge)).toBe(true)
+  })
+})
+
+const waitingMessage = (index: number, person = false): Message => ({
+  id: `m-wait${index}`,
+  projectId: identity.projectId,
+  thread: `t-wait${index}`,
+  hop: 1,
+  from: {
+    terminalId: person ? "you" : "peer",
+    handle: person ? "you" : "fox",
+    agent: person ? null : "codex",
+    sessionId: person ? null : "peer-session",
+  },
+  to: {
+    terminalId: identity.terminalId,
+    handle: identity.handle,
+    agent: identity.agent,
+    sessionId: identity.sessionId,
+  },
+  text: "Waiting",
+  sentAt: Date.now(),
+  state: "queued",
+  deliveredAt: null,
+  notified: false,
+  stopped: false,
+  fromLead: false,
+  toLead: false,
+  ...(person && { response: { askId: randomUUID(), subject: "Earlier ask" } }),
+})
+
+describe("person mail and the agent pause", () => {
+  it("leaves room for a person's reply beside fifty paused peer messages", ({ resources }) => {
+    const mailbox = memoryMailbox()
+    mailbox.pauseMessaging(true)
+    for (let index = 0; index < 50; index++) mailbox.saveMessage(waitingMessage(index))
+    const run = setup(undefined, undefined, { mailbox })
+    resources.defer(run.stop)
+    const id = run.create()
+    run.asks.answer(id, { type: "reply", option: null, text: "My answer" })
+    expect(run.messaging.inboxReply(id)?.state).toBe("queued")
+    run.messaging.pause(true)
+    const listing = run.messaging.list(identity.terminalId, identity.handle)
+    expect(
+      listing.threads
+        .flatMap((thread) => thread.messages)
+        .filter((message) => message.inbox === "answer"),
+    ).toMatchObject([{ state: "queued", held: null }])
+    expect(
+      listing.threads
+        .flatMap((thread) => thread.messages)
+        .filter((message) => message.inbox !== "answer")
+        .every((message) => message.state === "held"),
+    ).toBe(true)
+  })
+
+  it("caps the person's queue separately and leaves a rejected answer retryable", ({
+    resources,
+  }) => {
+    const mailbox = memoryMailbox()
+    for (let index = 0; index < 50; index++) mailbox.saveMessage(waitingMessage(index, true))
+    const run = setup(undefined, undefined, { mailbox })
+    resources.defer(run.stop)
+    const id = run.create()
+    expect(() => run.asks.answer(id, { type: "reply", option: null, text: "One more" })).toThrow(
+      /50 person replies/,
+    )
+    expect(run.asks.list().some((each) => each.id === id)).toBe(true)
+    run.messaging.register(
+      "peer",
+      { projectId: identity.projectId, sessionId: identity.workspaceSessionId },
+      "fox",
+      null,
+    )
+    run.messaging.rooted("peer", [
+      {
+        type: "new",
+        root: { agent: "codex", sessionId: "peer-session", instance: null, source: "binding" },
+        guess: false,
+        ready: true,
+      },
+    ])
+    expect(
+      run.messaging.send("peer", { to: "moth", text: "Peer capacity is independent" }).ok,
+    ).toBe(true)
+  })
+
+  it("keeps a person reply deliverable after paused restart and a lost lease", async ({
+    resources,
+  }) => {
+    vi.useFakeTimers()
+    resources.defer(() => {
+      vi.useRealTimers()
+    })
+    const clock = inboxClock()
+    const folder = mkdtempSync(join(tmpdir(), "novadeck-paused-person-"))
+    resources.defer(() => rmSync(folder, { recursive: true, force: true }))
+    const path = join(folder, "workspace.sqlite")
+    const original = new WorkspaceStore(path)
+    const first = setup(original, original, clock)
+    first.messaging.pause(true)
+    const id = first.create()
+    first.asks.answer(id, { type: "reply", option: null, text: "Person answer while peers paused" })
+    first.stop()
+    original.close()
+    const store = new WorkspaceStore(path)
+    resources.defer(() => store.close())
+    const run = setup(store, store, clock)
+    resources.defer(run.stop)
+    expect(run.messaging.list(identity.terminalId, identity.handle).paused).toBe(true)
+    expect(run.messaging.inboxReply(id)?.state).toBe("queued")
+    const leased = run.messaging.ask(identity.terminalId, {
+      agent: identity.agent,
+      event: "UserPromptSubmit",
+      deadline: clock.now() + 3000,
+      events: [
+        {
+          type: "turn-started",
+          agent: identity.agent,
+          sessionId: identity.sessionId,
+          instance: null,
+          startedAt: clock.now(),
+          cause: "prompt",
+        },
+      ],
+    })
+    expect(leased.leaseId).not.toBeNull()
+    expect(Buffer.byteLength(leased.stdout ?? "")).toBeLessThanOrEqual(8192)
+    expect(run.messaging.inboxReply(id)?.state).toBe("leased")
+    clock.advance(5001)
+    await vi.advanceTimersByTimeAsync(5001)
+    expect(run.messaging.inboxReply(id)?.state).toBe("queued")
+    expect(
+      run.messaging.list(identity.terminalId, identity.handle).threads[0]?.messages[0]?.held,
+    ).toBeNull()
+  })
+})
+
+describe("retaining final reply outcomes", () => {
+  it("keeps a late delivery's question for a fresh day after it actually arrives", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const records = memoryAsks()
+    const run = setup(records, undefined, clock)
+    resources.defer(run.stop)
+    const id = run.create()
+    run.asks.answer(id, { type: "reply", option: null, text: "My answer" })
+    clock.advance(retentionMs + 1)
+    run.asks.prune()
+    const delivery = run.messaging.ask(identity.terminalId, {
+      agent: identity.agent,
+      event: "UserPromptSubmit",
+      deadline: clock.now() + 3000,
+      events: [
+        {
+          type: "turn-started",
+          agent: identity.agent,
+          sessionId: identity.sessionId,
+          instance: null,
+          startedAt: clock.now(),
+          cause: "prompt",
+        },
+      ],
+    })
+    expect(delivery.leaseId).not.toBeNull()
+    run.messaging.acknowledge(identity.terminalId, delivery.leaseId!)
+    run.asks.prune()
+    expect(run.messaging.inboxReply(id)?.deliveredAt).toBe(clock.now())
+    expect(records.letters().map((each) => each.id)).toEqual([id])
+    clock.advance(retentionMs + 1)
+    run.asks.prune()
+    expect(records.letters()).toEqual([])
+    expect(run.messaging.inboxReply(id)).toBeUndefined()
+  })
+
+  it("persists the reply's final gone time so startup pruning preserves that fresh outcome", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const folder = mkdtempSync(join(tmpdir(), "novadeck-gone-time-"))
+    resources.defer(() => rmSync(folder, { recursive: true, force: true }))
+    const path = join(folder, "workspace.sqlite")
+    const store = new WorkspaceStore(path)
+    const first = setup(store, store, clock)
+    const id = first.create()
+    first.asks.answer(id, { type: "reply", option: null, text: "My answer" })
+    clock.advance(retentionMs + 1)
+    first.bind("replacement")
+    first.asks.reconcile(identity.terminalId)
+    expect(store.messages()[0]?.response?.goneAt).toBe(clock.now())
+    first.stop()
+    store.close()
+    const reopened = new WorkspaceStore(path)
+    resources.defer(() => reopened.close())
+    // Read the persisted state before restoring an agent, as startup pruning does.
+    expect(reopened.messages()[0]?.state).toBe("gone")
+    expect(reopened.messages()[0]?.response?.goneAt).toBe(clock.now())
+    expect(reopened.letters().map((each) => each.id)).toEqual([id])
+  })
+})
+
+describe("person response delivery budgets", () => {
+  it("fits accepted4096-character replies and quoted metadata in every harness encoder", ({
+    resources,
+  }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    const id = run.create({
+      subject: "Question",
+      body: "Body",
+      shape: { type: "options", options: [{ label: "A choice" }] },
+    })
+    run.asks.answer(id, { type: "reply", option: 0, text: "a".repeat(4096) })
+    const response = run.messaging.inboxReply(id)!
+    expect(response.text).toHaveLength(4096)
+    expect(response.response?.option).toBe("A choice")
+    const wrapped = wrap([response], () => false, "Lead1234", "Person99")
+    for (const agent of agents) {
+      const profile = harnesses[agent].messaging
+      const printed = [
+        profile.stop(wrapped),
+        profile.prompt(wrapped),
+        ...Object.entries(profile.asks)
+          .filter(([, kind]) => kind === "tool")
+          .map(([event]) => profile.call?.(wrapped, event) ?? ""),
+      ]
+      for (const output of printed) expect(Buffer.byteLength(output)).toBeLessThanOrEqual(8192)
+    }
+    const expanded = run.create()
+    let reason = ""
+    try {
+      run.asks.answer(expanded, { type: "reply", option: null, text: "😀".repeat(2048) })
+    } catch (error) {
+      reason = (error as Error).message
+    }
+    expect(reason).toMatch(/\([0-9]+ encoded bytes; at most 8192\)/)
+    expect(run.asks.list().some((each) => each.id === expanded)).toBe(true)
   })
 })

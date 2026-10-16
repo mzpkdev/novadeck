@@ -1312,6 +1312,192 @@ describe("Inbox letters", () => {
     expect(inbox.state.getSnapshot().failed["letter-1"]).toBe("That ask is no longer available.")
   })
 
+  it("reports an accepted reply that later cannot be delivered", async () => {
+    const { letters, inbox, mailStore } = setup(workspaceOf(agentTerminal(1)))
+    letters.push([letter()])
+    await settle()
+    inbox.answer("letter-1", {
+      kind: "ask",
+      answer: { type: "reply", option: null, text: "My reply" },
+    })
+    letters.push([])
+    await settle()
+    expect(inbox.state.getSnapshot().failed).toEqual({})
+    mailStore.update(() =>
+      mailOf(
+        thread({
+          id: "t-letter1",
+          peer: "you",
+          held: false,
+          messages: [
+            message({ from: "you", to: "moth", inbox: "answer", state: "gone", held: null }),
+          ],
+        }),
+      ),
+    )
+    expect(inbox.state.getSnapshot().failed["letter-1"]).toBe(
+      "Your reply was not delivered because the agent's session ended.",
+    )
+    mailStore.update(() => noMail)
+    expect(inbox.state.getSnapshot().failed["letter-1"]).toContain("not delivered")
+  })
+
+  it("reports an undelivered ask trace even if its reply is no longer listed", async () => {
+    const { letters, inbox, mailStore } = setup(workspaceOf(agentTerminal(1)))
+    letters.push([letter()])
+    await settle()
+    inbox.answer("letter-1", { kind: "ask", answer: { type: "done" } })
+    letters.push([])
+    await settle()
+    mailStore.update(() =>
+      mailOf(
+        thread({
+          id: "t-letter1",
+          peer: "you",
+          held: false,
+          messages: [
+            message({
+              inbox: "ask",
+              inboxState: "undelivered",
+              to: "you",
+              state: "delivered",
+              held: null,
+            }),
+          ],
+        }),
+      ),
+    )
+    expect(inbox.state.getSnapshot().failed["letter-1"]).toContain("Your reply was not delivered")
+  })
+
+  it("retires tracking after delivery is acknowledged", async () => {
+    const { letters, inbox, mailStore } = setup(workspaceOf(agentTerminal(1)))
+    letters.push([letter()])
+    await settle()
+    inbox.answer("letter-1", {
+      kind: "ask",
+      answer: { type: "reply", option: null, text: "My reply" },
+    })
+    letters.push([])
+    await settle()
+    const delivered = message({
+      from: "you",
+      to: "moth",
+      inbox: "answer",
+      state: "delivered",
+      held: null,
+      deliveredAt: 10_000,
+    })
+    mailStore.update(() =>
+      mailOf(thread({ id: "t-letter1", peer: "you", held: false, messages: [delivered] })),
+    )
+    mailStore.update(() =>
+      mailOf(
+        thread({
+          id: "t-letter1",
+          peer: "you",
+          held: false,
+          messages: [{ ...delivered, state: "gone", deliveredAt: null }],
+        }),
+      ),
+    )
+    expect(inbox.state.getSnapshot().failed["letter-1"]).toBeUndefined()
+  })
+
+  it("keeps failure visible after the terminal and its history disappear", async () => {
+    const { letters, inbox, workspaceStore } = setup(workspaceOf(agentTerminal(1)))
+    letters.push([letter()])
+    await settle()
+    inbox.answer("letter-1", {
+      kind: "ask",
+      answer: { type: "reply", option: null, text: "My reply" },
+    })
+    letters.push([])
+    await settle()
+    workspaceStore.update(() => workspaceOf())
+    expect(inbox.state.getSnapshot().failed["letter-1"]).toContain("Your reply was not delivered")
+    workspaceStore.update(() => workspaceOf(agentTerminal(1)))
+    expect(inbox.state.getSnapshot().failed["letter-1"]).toContain("Your reply was not delivered")
+  })
+
+  it("retires a reply when its previously observed history is evicted", async () => {
+    const { letters, inbox, mailStore } = setup(workspaceOf(agentTerminal(1)))
+    letters.push([letter()])
+    await settle()
+    inbox.answer("letter-1", {
+      kind: "ask",
+      answer: { type: "reply", option: null, text: "My reply" },
+    })
+    letters.push([])
+    await settle()
+    const response = message({
+      from: "you",
+      to: "moth",
+      inbox: "answer",
+      state: "queued",
+      held: null,
+    })
+    mailStore.update(() =>
+      mailOf(thread({ id: "t-letter1", peer: "you", held: false, messages: [response] })),
+    )
+    mailStore.update(() => noMail)
+    mailStore.update(() =>
+      mailOf(
+        thread({
+          id: "t-letter1",
+          peer: "you",
+          held: false,
+          messages: [{ ...response, state: "gone" }],
+        }),
+      ),
+    )
+    expect(inbox.state.getSnapshot().failed["letter-1"]).toBeUndefined()
+  })
+
+  it("bounds replies whose history has not arrived while keeping recent failures observable", async () => {
+    const { letters, inbox, mailStore } = setup(workspaceOf(agentTerminal(1)))
+    for (let index = 0; index <= 1000; index += 1) {
+      letters.push([letter({ id: `queued-${index}` })])
+      // eslint-disable-next-line no-await-in-loop -- Each ask must reach the Inbox before it can be answered.
+      await settle()
+      inbox.answer(`queued-${index}`, {
+        kind: "ask",
+        answer: { type: "reply", option: null, text: "My reply" },
+      })
+    }
+    letters.push([])
+    await settle()
+    const lost = message({ from: "you", to: "moth", inbox: "answer", state: "gone", held: null })
+    mailStore.update(() =>
+      mailOf(thread({ id: "t-queued0", peer: "you", held: false, messages: [lost] })),
+    )
+    expect(inbox.state.getSnapshot().failed["queued-0"]).toBeUndefined()
+    mailStore.update(() =>
+      mailOf(thread({ id: "t-queued1000", peer: "you", held: false, messages: [lost] })),
+    )
+    expect(inbox.state.getSnapshot().failed["queued-1000"]).toContain(
+      "Your reply was not delivered",
+    )
+  })
+
+  it("keeps a size rejection's error when the terminal later closes", async () => {
+    const { letters, inbox, streams, workspaceStore } = setup(workspaceOf(agentTerminal(1)))
+    letters.push([letter()])
+    await settle()
+    streams.asks.answer.mockRejectedValueOnce(
+      new Error("This reply exceeds the delivery size limit."),
+    )
+    inbox.answer("letter-1", {
+      kind: "ask",
+      answer: { type: "reply", option: null, text: "My reply" },
+    })
+    await settle()
+    workspaceStore.update(() => workspaceOf())
+    expect(inbox.state.getSnapshot().failed["letter-1"]).toBe(
+      "This reply exceeds the delivery size limit.",
+    )
+  })
+
   it("reads a told update through the runner", async () => {
     const { letters, inbox, streams, read } = setup(workspaceOf(agentTerminal(1)))
     letters.push([told()])

@@ -344,3 +344,19 @@ it("keeps Inbox history's kind and You as the person", () => {
     messages: [{ inbox: "answer", from: "you" }],
   })
 })
+
+it("keeps Inbox history's lifecycle outcome", () => {
+  const example = listing()
+  const original = example.threads[0]!
+  const mail = mailOf({
+    ...example,
+    threads: [
+      {
+        ...original,
+        peer: "you",
+        messages: [{ ...original.messages[0]!, inbox: "ask", inboxState: "withdrawn" }],
+      },
+    ],
+  })
+  expect(mail.threads[0]?.messages[0]?.inboxState).toBe("withdrawn")
+})

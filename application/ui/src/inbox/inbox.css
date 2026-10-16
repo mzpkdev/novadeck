@@ -768,6 +768,11 @@
   resize: none;
   line-height: 20px;
 }
+.inbox-reply-limit {
+  margin: 6px 0 0;
+  color: var(--color-muted);
+  font-size: var(--text-caption);
+}
 .inbox-reply-input::placeholder {
   color: var(--color-muted);
 }

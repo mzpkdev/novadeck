@@ -3,6 +3,7 @@ import type { AgentAsk, InboxAnswer, InboxItem } from "../../model/inbox"
 import {
   noMail,
   type AgentMessage,
+  type InboxHistory,
   type MailState,
   type MessageThread,
   type Messages,
@@ -47,14 +48,13 @@ export type DemoMailbox = {
 // As the runner says it: a message still waiting is held while paused, or past the hops
 // its thread is allowed.
 const shown = (message: DemoMessage, thread: DemoThread, paused: boolean): AgentMessage => {
-  const hold =
-    message.inbox && message.inbox !== "answer"
-      ? null
-      : !message.inbox && message.hop > thread.allowed
-        ? "release"
-        : paused
-          ? "paused"
-          : null
+  const hold = message.inbox
+    ? null
+    : message.hop > thread.allowed
+      ? "release"
+      : paused
+        ? "paused"
+        : null
   return message.state === "queued" && hold
     ? { ...message, state: "held", held: hold }
     : { ...message, held: null }
@@ -100,6 +100,7 @@ const stateOf = (boxes: readonly DemoMailbox[], paused: boolean): MailState => (
 // How long a pause takes to reach the demo's stand-in runner, so its view shows one on
 // its way.
 const pauseMs = 150
+export const deliveryMs = 2000
 
 // The plain-text record retains the choices and details after the Inbox sheet clears.
 const askText = (ask: AgentAsk): string => {
@@ -133,7 +134,7 @@ const askText = (ask: AgentAsk): string => {
 }
 
 export type DemoMessages = Messages & {
-  readonly record: (item: InboxItem, answer?: InboxAnswer) => void
+  readonly record: (item: InboxItem, answer?: InboxAnswer, outcome?: InboxHistory) => void
 }
 
 export const createDemoMessages = (
@@ -146,9 +147,9 @@ export const createDemoMessages = (
   const publish = (): void => void state.update(() => stateOf(boxes, isPaused))
   return {
     state,
-    record: (item, answer) => {
+    record: (item, answer, outcome) => {
       if (item.kind !== "ask" && !(item.kind === "update" && item.update.type === "told")) return
-      if (answer && answer.kind !== "ask") return
+      if (answer && answer.kind !== "ask" && answer.kind !== "update") return
       const { source } = item
       const target = { projectId: source.projectId, workspaceSessionId: source.workspaceSessionId }
       const index = boxes.findIndex(
@@ -186,6 +187,7 @@ export const createDemoMessages = (
       const letter: DemoMessage = {
         id: reply ? `answer:${item.id}` : item.id,
         inbox: reply ? "answer" : item.kind === "ask" ? "ask" : "tell",
+        ...(!reply ? { inboxState: outcome ?? (answer ? "read" : "open") } : {}),
         from: reply ? "you" : source.handle,
         to: reply ? source.handle : "you",
         text,
@@ -194,7 +196,14 @@ export const createDemoMessages = (
         state: reply ? "queued" : "delivered",
         hop: (thread?.messages.length ?? 0) + 1,
       }
-      const messages = [...(thread?.messages ?? []).filter((each) => each.id !== letter.id), letter]
+      const messages = [
+        ...(thread?.messages ?? [])
+          .filter((each) => each.id !== letter.id)
+          .map((each) =>
+            reply && each.inbox === "ask" ? { ...each, inboxState: "answered" as const } : each,
+          ),
+        letter,
+      ]
       const updated: DemoMailbox = {
         ...box,
         terminals: box.terminals.some((each) => each.terminalId === source.terminalId)
@@ -219,37 +228,32 @@ export const createDemoMessages = (
       publish()
       if (reply)
         setTimeout(() => {
-          if (isPaused) return
           boxes = boxes.map((each) => ({
             ...each,
             threads: each.threads.map((current) => ({
               ...current,
               messages: current.messages.map((message) =>
-                message.id === letter.id
-                  ? { ...message, state: "delivered", deliveredAt: Date.now() }
-                  : message,
+                current.id !== id
+                  ? message
+                  : message.id === letter.id
+                    ? {
+                        ...message,
+                        state: outcome === "undelivered" ? "gone" : "delivered",
+                        deliveredAt: outcome === "undelivered" ? null : Date.now(),
+                      }
+                    : outcome === "undelivered" && message.inbox === "ask"
+                      ? { ...message, inboxState: "undelivered" }
+                      : message,
               ),
             })),
           }))
           publish()
-        }, 2000)
+        }, deliveryMs)
     },
     pause: (next) => {
       state.update((current) => ({ ...current, pending: true }))
       setTimeout(() => {
         isPaused = next
-        if (!next)
-          boxes = boxes.map((box) => ({
-            ...box,
-            threads: box.threads.map((thread) => ({
-              ...thread,
-              messages: thread.messages.map((message) =>
-                message.inbox === "answer" && message.state === "queued"
-                  ? { ...message, state: "delivered", deliveredAt: Date.now() }
-                  : message,
-              ),
-            })),
-          }))
         publish()
       }, pauseMs)
     },
