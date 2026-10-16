@@ -41,7 +41,7 @@ export default mergeConfig(
           test: {
             name: "behaviour",
             include: ["src/specs/**/*.spec.tsx"],
-            exclude: ["src/specs/motion.spec.tsx"],
+            exclude: ["src/specs/motion.spec.tsx", "src/specs/counters/**"],
             setupFiles: ["./src/specs/setup.ts"],
             // Whole-app renders under CI load can take longer than the 1s default.
             expect: { poll: { timeout: 5000 } },
@@ -79,6 +79,46 @@ export default mergeConfig(
                 ? { trace: { mode: "retain-on-failure", tracesDir: "test-results/traces" } }
                 : {}),
               // English dates, as the specs expect, whatever the machine's locale.
+              provider: playwright({
+                contextOptions: { reducedMotion: "reduce", locale: "en-US" },
+              }),
+              instances: [{ browser: "chromium" }],
+              viewport: { width: 1440, height: 900 },
+            },
+          },
+        },
+        {
+          extends: true,
+          server: { strictPort: false },
+          // The counter run fails the build on its counts, so it must not meet a reload when
+          // Vite finds a dependency to optimize partway through: they are optimized up front.
+          optimizeDeps: {
+            include: [
+              "@ark-ui/react/select",
+              "@ark-ui/react/tabs",
+              "@novadeck/protocol > @orpc/client",
+              "@novadeck/protocol > @orpc/client/standard",
+              "@novadeck/protocol > @orpc/contract",
+              "@novadeck/protocol > @orpc/standard-server-peer",
+              "@xterm/addon-fit",
+              "@xterm/addon-unicode-graphemes",
+              "@xterm/addon-web-links",
+              "@xterm/xterm",
+              "@xyflow/react",
+              "react-grid-layout",
+              "@novadeck/protocol > zod",
+            ],
+          },
+          test: {
+            name: "counters",
+            include: ["src/specs/counters/**/*.spec.tsx"],
+            setupFiles: ["./src/specs/setup.ts"],
+            // One long run: 13 terminals through three phases, a real frame per scripted step.
+            testTimeout: 180_000,
+            browser: {
+              enabled: true,
+              headless: true,
+              screenshotFailures: false,
               provider: playwright({
                 contextOptions: { reducedMotion: "reduce", locale: "en-US" },
               }),

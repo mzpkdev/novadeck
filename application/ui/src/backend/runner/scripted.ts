@@ -1,5 +1,6 @@
-import type { TerminalSummary } from "@novadeck/protocol"
+import type { TerminalEvent, TerminalSummary } from "@novadeck/protocol"
 import type {
+  AttachedTerminal,
   CompanionWatchItem,
   Runner,
   RunnerStatus,
@@ -16,15 +17,18 @@ import { encodeSession } from "./session-state"
 
 // Test support: a runner adapter over a runner the test scripts step by step.
 
-// Values pushed by the test, read by the adapter as a stream.
+// Values pushed by the test, read by the adapter as a stream, until it ends.
 export const channel = <T>() => {
   const queued: T[] = []
+  let ended = false
   let wake: (() => void) | undefined
+  const waiting = (): boolean => !queued.length && !ended
   const iterator: AsyncIterableIterator<T, undefined> = {
     [Symbol.asyncIterator]: () => iterator,
     next: async () => {
       // eslint-disable-next-line no-await-in-loop -- Waits for the next pushed value.
-      while (!queued.length) await new Promise<void>((resolve) => (wake = resolve))
+      while (waiting()) await new Promise<void>((resolve) => (wake = resolve))
+      if (!queued.length) return { value: undefined, done: true }
       return { value: queued.shift()!, done: false }
     },
     return: async () => ({ value: undefined, done: true }),
@@ -33,6 +37,10 @@ export const channel = <T>() => {
     iterator,
     push: (value: T) => {
       queued.push(value)
+      wake?.()
+    },
+    end: () => {
+      ended = true
       wake?.()
     },
   }
@@ -45,7 +53,7 @@ const unused = (): never => {
   throw new Error("not used here")
 }
 
-export const id = (n: number) => `00000000-0000-4000-8000-00000000000${n}`
+export const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 
 type Saved = { readonly id: string; readonly lastProcess: string }
 type Call = { readonly call: string; readonly input: unknown }
@@ -269,5 +277,209 @@ export const scripted = ({
     listing,
     commit,
     workspace: () => workspace,
+  }
+}
+
+// A runner's terminal stream the test writes into: a snapshot of the screen on attach,
+// then each write as output, until detached. Counts what reaches its reader.
+const scriptedAttachment = (
+  terminalId: string,
+  screen: string,
+  { taken, ended }: { taken: (event: TerminalEvent) => void; ended: () => void },
+) => {
+  const events = channel<TerminalEvent>()
+  let sequence = 0
+  let open = true
+  const end = (): void => {
+    if (!open) return
+    open = false
+    events.end()
+    ended()
+  }
+  const attached: AttachedTerminal = {
+    id: terminalId,
+    mode: "control",
+    [Symbol.asyncIterator]: () => attached,
+    next: async () => {
+      const result = await events.iterator.next()
+      if (result.done) end()
+      else taken(result.value)
+      return result
+    },
+    return: async () => {
+      end()
+      return { value: undefined, done: true }
+    },
+    write: async () => {},
+    resize: async () => {},
+    detach: async () => end(),
+  }
+  const stamp = () => ({ terminalId, sequence: (sequence += 1) })
+  events.push({ ...stamp(), type: "snapshot", data: screen, cols: 80, rows: 24, exit: null })
+  return {
+    attached,
+    write: (data: string) => {
+      if (open) events.push({ ...stamp(), type: "output", data })
+    },
+    open: () => open,
+  }
+}
+
+// How many rows of each terminal's output its runner screen keeps for a snapshot.
+const screenRows = 24
+const handles = "moth fox owl crow kite raven wren lark finch heron swift robin hawk".split(" ")
+const encoder = new TextEncoder()
+
+// A runner the whole app boots over: one project whose shown session holds `terminals`
+// Claude Code agents, every one running, laid out in Grid. The test reports changes to a
+// terminal through the runner's watch and writes output into its attached streams; the
+// runner counts the bytes those streams hand the UI and the streams open at once.
+export const scriptedRunner = ({ terminals: count }: { readonly terminals: number }) => {
+  const sessionId = id(100)
+  const terminalIds = Array.from({ length: count }, (_, index) => id(index + 1))
+  const summaries = new Map(
+    terminalIds.map((terminalId, index) => [
+      terminalId,
+      keptSummary(terminalId, sessionId, {
+        title: `Agent ${index + 1}`,
+        handle: handles[index] ?? `moth${index + 1}`,
+        started: true,
+        run: 1,
+        agentRan: true,
+        process: { name: "claude", argv: null },
+        agent: "claude",
+        activity: {
+          state: "working",
+          background: null,
+          attention: { pending: 0, kind: null, headline: null },
+          planning: false,
+          subagents: [],
+          lastTurn: null,
+        },
+        telemetry: {
+          context: { occupied: 0, capacity: 200_000 },
+          limits: [],
+          model: "Opus",
+          effort: null,
+        },
+      }),
+    ]),
+  )
+  const rows = new Map(terminalIds.map((terminalId) => [terminalId, [] as string[]]))
+  const attachments = new Map<string, ReturnType<typeof scriptedAttachment>[]>()
+  let bytes = 0
+  let written = 0
+  let streaming = 0
+  const changes = channel<TerminalWatchItem>()
+  for (const terminal of summaries.values()) changes.push({ type: "changed", terminal })
+  changes.push({ type: "synced" })
+  // Streams that never yield, for what the app follows but the script leaves alone.
+  const idle = () => channel<never>().iterator
+  const api = {
+    watch: () => {
+      const statuses = channel<RunnerStatus>()
+      statuses.push({ state: "connected", runnerId: "runner-1" })
+      return statuses.iterator
+    },
+    projects: { list: unused, create: unused, rename: unused, remove: unused },
+    sessions: { list: unused, create: unused, rename: unused, save: async () => {} },
+    settings: { get: unused, set: async () => {} },
+    agents: {
+      list: async () => [{ agent: "claude", available: true, connected: true }],
+      detail: idle,
+      transcript: idle,
+      prompt: unused,
+      interrupt: unused,
+      answer: unused,
+      set: unused,
+    },
+    terminals: {
+      list: unused,
+      watch: () => changes.iterator,
+      requests: idle,
+      create: unused,
+      close: unused,
+      rename: unused,
+      restart: unused,
+      attach: async (terminalId: string) => {
+        streaming += 1
+        const attachment = scriptedAttachment(terminalId, (rows.get(terminalId) ?? []).join(""), {
+          taken: (event) => {
+            if (event.type === "snapshot" || event.type === "output")
+              bytes += encoder.encode(event.data).length
+          },
+          ended: () => {
+            streaming -= 1
+          },
+        })
+        attachments.set(terminalId, [...(attachments.get(terminalId) ?? []), attachment])
+        return attachment.attached
+      },
+    },
+    companions: { list: unused, watch: idle, content: idle },
+    messages: { watch: idle, pause: unused, release: unused, stop: unused },
+    asks: { watch: idle },
+    voice: { watch: idle },
+    murmur: { watch: idle },
+  } as unknown as RunnerApi
+  const listing: RunnerListing = [
+    {
+      project: { id: "p", name: "P", cwd: "/tmp" },
+      sessions: [
+        {
+          session: {
+            id: sessionId,
+            projectId: "p",
+            name: "Agents",
+            state: encodeSession(
+              state(
+                terminalIds.map((terminalId) => ({ id: terminalId, lastProcess: "claude" })),
+                5,
+                sessionId,
+              ),
+              0,
+            ),
+          },
+          terminals: [...summaries.values()],
+        },
+      ],
+    },
+  ]
+  return {
+    terminalIds,
+    // A backend for the app, as connecting to the runner makes one.
+    createBackend: () =>
+      runnerBackend(api, listing, {
+        transcripts: true,
+        agents: [{ agent: "claude", available: true, connected: true }],
+        welcomed: true,
+      }).backend,
+    // Changes a terminal as the runner reports it, as a status-line tick does.
+    report: (
+      terminalId: string,
+      change: (summary: TerminalSummary) => Partial<TerminalSummary>,
+    ) => {
+      const current = summaries.get(terminalId)!
+      const terminal = { ...current, ...change(current) }
+      summaries.set(terminalId, terminal)
+      changes.push({ type: "changed", terminal })
+    },
+    // Writes output to the terminal's screen and every stream attached to it.
+    write: (terminalId: string, data: string) => {
+      written += encoder.encode(data).length
+      const kept = [...(rows.get(terminalId) ?? []), data]
+      rows.set(terminalId, kept.slice(-screenRows))
+      for (const attachment of attachments.get(terminalId) ?? []) attachment.write(data)
+      attachments.set(
+        terminalId,
+        (attachments.get(terminalId) ?? []).filter((attachment) => attachment.open()),
+      )
+    },
+    // The bytes the terminals' streams have handed the UI, snapshots included.
+    bytes: () => bytes,
+    // The bytes written to the terminals' screens, whoever streams them.
+    written: () => written,
+    // How many terminals' streams are attached now.
+    streaming: () => streaming,
   }
 }
