@@ -37,8 +37,12 @@ the build rules and the test sandbox. The app keeps the product.
   `/host`, `/server`, `/electron`, `/browser/host`). oxlint takes `no-restricted-imports` from the
   last matching override alone, and a `!` pattern in one group allows the name in every group, so
   each library's override repeats the bans they all share as plain lists, and
-  `scripts/harnesses/fence.test.ts` lints probe files with the real config to check what each
+  `scripts/libraries/fence.test.ts` lints probe files with the real config to check what each
   file ends up refusing.
+- **The package graph** (`scripts/libraries/graph.test.ts`): a library's package.json names no
+  workspace package but the libraries its design depends on, in any kind of dependency. pnpm's
+  isolated linker fails an import a package doesn't declare, so this holds for what the lint
+  can't see.
 - **The typecheck's `rootDir`**: a relative import that leaves the library's `src`, as
   `../../wire/src` into a sibling, names no folder the lint knows, and fails `tsc` instead, tests
   included.
@@ -57,7 +61,7 @@ pnpm install
 
 It writes `libraries/<name>` from `scripts/libraries/template.ts`: a `package.json` with its own
 dev tools, `tsconfig.json` on the shared `tsconfig.base.json`, a build config, a Vitest config and
-a README. Then fence it in: add it to `order` in `scripts/harnesses/fence.test.ts`, give it an
+a README. Then fence it in: add it to `order` in `scripts/libraries/order.ts`, give it an
 override in `.oxlintrc.json` like its neighbours', and add it to the list each other library's
 override refuses. The fence test fails until a folder here is in its order, and until each
 override refuses what the order says. The new library's `pnpm test` fails too until it has its

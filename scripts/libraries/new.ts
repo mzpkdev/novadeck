@@ -6,7 +6,7 @@ import { isLibraryName, template, type Versions } from "./template.ts"
 
 // `pnpm new:library <name> <description>`: writes a new library into libraries/<name> from
 // the template. The import fence doesn't know it yet: add it to the order in
-// scripts/harnesses/fence.test.ts and give it its override in .oxlintrc.json.
+// scripts/libraries/order.ts and give it its override in .oxlintrc.json.
 
 const root = join(import.meta.dirname, "..", "..")
 const [name, ...words] = process.argv.slice(2)

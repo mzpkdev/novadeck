@@ -1,0 +1,59 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+
+import { describe, expect, it } from "vitest"
+
+import { strayDependencies } from "./graph.ts"
+
+const root = join(import.meta.dirname, "..", "..")
+
+describe("a library's dependencies", () => {
+  it("may name the libraries its design depends on", () => {
+    expect(
+      strayDependencies("terminal", {
+        name: "@novadeck/terminal",
+        dependencies: { "@novadeck/emulator": "workspace:*", "@xterm/xterm": "6.0.0" },
+      }),
+    ).toEqual([])
+  })
+
+  it("may name no app package or other library, in any kind of dependency", () => {
+    expect(
+      strayDependencies("terminal", {
+        name: "@novadeck/terminal",
+        dependencies: { "@novadeck/protocol": "workspace:*" },
+        devDependencies: { "@novadeck/runner": "workspace:*" },
+        peerDependencies: { "@novadeck/wire": "workspace:*" },
+        optionalDependencies: { "@novadeck/harness-core": "workspace:*" },
+      }),
+    ).toEqual([
+      "dependencies @novadeck/protocol",
+      "devDependencies @novadeck/runner",
+      "peerDependencies @novadeck/wire",
+      "optionalDependencies @novadeck/harness-core",
+    ])
+  })
+
+  it("may name no workspace package at all for a library not in the order", () => {
+    expect(
+      strayDependencies("unlisted", {
+        name: "@novadeck/unlisted",
+        dependencies: { "@novadeck/emulator": "workspace:*" },
+      }),
+    ).toEqual(["dependencies @novadeck/emulator"])
+  })
+
+  it("stay inside the order for every library in libraries/", () => {
+    const folder = join(root, "libraries")
+    const strays = (existsSync(folder) ? readdirSync(folder) : [])
+      .filter((name) => existsSync(join(folder, name, "package.json")))
+      .flatMap((name) =>
+        strayDependencies(
+          name,
+          JSON.parse(readFileSync(join(folder, name, "package.json"), "utf8")),
+        ).map((stray) => `${name}: ${stray}`),
+      )
+
+    expect(strays).toEqual([])
+  })
+})
