@@ -1934,10 +1934,6 @@ export class Terminals {
           this.messaging.ring(terminalId, nonce)
         )
       },
-      busy: (terminalId) => {
-        const record = live(terminalId)
-        return record === undefined ? undefined : this.working(terminalId, record.activity)
-      },
       ringing: (terminalId) => this.messaging.ringing(terminalId),
       ready: (terminalId) => this.messaging.ready(terminalId),
       // Idle but not Ready by its state, with messages waiting: its screen is looked at.

@@ -85,7 +85,6 @@ const terminal = (
       ? undefined
       : setInterval(() => (rows[2] = `output ${Math.random()}`), options.streamMs)
   const host: DoorbellHost = {
-    busy: () => options.busy ?? false,
     stamp: () => String(stamp),
     ...(options.inputBox && {
       inputBox: () => options.inputBox![((boxReads += 1) - 1) % options.inputBox!.length]!,
@@ -111,7 +110,7 @@ const terminal = (
     settledSince: () => options.settledAt,
     ready: () => options.ready ?? false,
     ring: (_, nonce) => {
-      if (!ringable) return false
+      if (!ringable || options.busy) return false
       rings += 1
       ringable = false
       ringing = nonce
@@ -697,11 +696,11 @@ describe("the doorbell's word on every refusal and look", () => {
     doorbell.close()
   })
 
-  it("pastes nothing once the agent's activity says a turn runs", async () => {
-    const { host, written, failed, stop } = terminal({ busy: true })
+  it("pastes nothing when the ring is refused as the agent's activity says a turn runs", async () => {
+    const { host, written, stop } = terminal({ busy: true })
     const doorbell = new Doorbell(host, host.queue, recheck)
     doorbell.changed("t")
-    await vi.waitFor(() => expect(failed.length).toBeGreaterThan(0))
+    await sleep(250)
     expect(written).toEqual([])
     stop()
     doorbell.close()

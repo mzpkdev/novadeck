@@ -19,7 +19,10 @@ export type DoorbellHost = {
   readonly settledSince: (terminalId: string) => number | undefined
   /** Whether it is Ready: a session at its own prompt before its first turn, its box empty. */
   readonly ready: (terminalId: string) => boolean
-  /** Starts the ring with its nonce: the terminal is Ringing; false when it may not now. */
+  /**
+   * Starts the ring with its nonce: the terminal is Ringing; false when it may not now, as
+   * the agent's activity says a turn or subagents run (checked here, just before the paste).
+   */
   readonly ring: (terminalId: string, nonce: string) => boolean
   /** The nonce of the ring under way there, if any. */
   readonly ringing: (terminalId: string) => string | undefined
@@ -60,8 +63,6 @@ export type DoorbellHost = {
   readonly leftover: (terminalId: string, screen: ScreenText) => string | undefined
   /** Starts the submission of that line, under its nonce: the terminal is Ringing; false when it may not now. */
   readonly ringLeftover: (terminalId: string, nonce: string) => boolean
-  /** Whether the agent's activity says a turn or subagents run now; undefined where it is gone. */
-  readonly busy?: (terminalId: string) => boolean | undefined
   /** Writes to the terminal's shell; false once it is gone. */
   readonly write: (terminalId: string, data: string) => boolean
   /**
@@ -532,11 +533,6 @@ export class Doorbell {
       const before = await this.host.screen(terminalId)
       // The box is looked at again now, on every platform: a key of the person's or a view
       // since the calm may have left text in it or something else in its place.
-      if (before && this.host.busy?.(terminalId) === true) {
-        hold.settle()
-        this.failed(terminalId, nonce, false)
-        return
-      }
       if (before && this.boxCheck && this.host.inputBox?.(terminalId, before) === false) {
         hold.settle()
         this.failed(terminalId, nonce, false)
