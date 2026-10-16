@@ -118,9 +118,9 @@ export type DoorbellOptions = {
  */
 export const confirmMs = (platform: NodeJS.Platform): number => 5_000 + hookShellSlackMs(platform)
 
-// The longest a ring holds the person's input, in milliseconds: a safety cap, well beyond
-// its test paste.
-const inputCapMs = 3_000
+// How much longer than its test paste a ring holds the person's input, in milliseconds: a
+// safety cap, with room for the last looks and the Enter.
+const inputCapMs = 1_500
 
 // The longest it holds the app's resizes, in milliseconds: a safety cap beyond the wait for
 // the ring's prompt to confirm it.
@@ -167,8 +167,8 @@ export class Doorbell {
     string,
     { count: number; nonce: string; retryAt: number; stamp: string }
   >()
-  /** When each terminal's screen or messages last changed, as it was told. */
-  private readonly stirred = new Map<string, number>()
+  /** Before when a stalled terminal's screen is not looked at again, after one that was not calm. */
+  private readonly notBefore = new Map<string, number>()
   /** When each stalled terminal's screen was last looked at. */
   private readonly looked = new Map<string, number>()
   /** Each terminal's screen text as last seen, and since when. */
@@ -194,7 +194,10 @@ export class Doorbell {
   ) {
     this.now = options.now ?? Date.now
     this.pollMs = options.pollMs ?? 50
-    this.pasteMs = options.pasteMs ?? 1_500
+    // A loaded Windows runner stalls the runner for a second at a time (probed on CI), so
+    // the screen is looked at less often than the test paste's check needs: more time there.
+    this.pasteMs =
+      options.pasteMs ?? ((options.platform ?? process.platform) === "win32" ? 4_000 : 1_500)
     this.confirmMs = options.confirmMs ?? confirmMs(options.platform ?? process.platform)
     this.calmMs = options.calmMs ?? calmMs
     this.settleMs = options.settleMs ?? 6_000
@@ -208,7 +211,6 @@ export class Doorbell {
 
   /** The terminal's screen or messages changed: it is looked at again, once this tick. */
   changed(terminalId: string): void {
-    this.stirred.set(terminalId, this.now())
     this.poke(terminalId)
   }
 
@@ -233,7 +235,7 @@ export class Doorbell {
     this.failures.delete(terminalId)
     this.seen.delete(terminalId)
     this.looked.delete(terminalId)
-    this.stirred.delete(terminalId)
+    this.notBefore.delete(terminalId)
     this.starting.delete(terminalId)
     this.leftovers.delete(terminalId)
   }
@@ -304,14 +306,16 @@ export class Doorbell {
       this.host.blocked(terminalId, "failed")
       return undefined
     }
-    // A stalled terminal's screen is read at most once a calm window, and not while output
-    // streams: each change pushes the look back.
+    // A stalled terminal's screen is read at most once a calm window, and after one that was
+    // not calm, not before its growing wait is over: output that streams, or a terminal that
+    // keeps redrawing (Windows' console does), is looked at less and less, never starved of a
+    // look by the changes themselves.
     if (stalled && !again) {
       const quiet = Math.max(
-        this.looked.get(terminalId) ?? Number.NEGATIVE_INFINITY,
-        this.stirred.get(terminalId) ?? Number.NEGATIVE_INFINITY,
+        (this.looked.get(terminalId) ?? Number.NEGATIVE_INFINITY) + this.calmMs,
+        this.notBefore.get(terminalId) ?? Number.NEGATIVE_INFINITY,
       )
-      const wait = quiet + this.calmMs - this.now()
+      const wait = quiet - this.now()
       if (wait > 0) {
         this.later(terminalId, wait)
         return undefined
@@ -332,10 +336,11 @@ export class Doorbell {
     const calm = now - Math.max(still.since, this.host.resizedAt(terminalId))
     if (calm < this.calmMs) {
       // A stalled terminal whose screen keeps changing is looked at less and less often.
-      this.later(
-        terminalId,
-        stalled ? Math.max(this.calmMs - calm, this.nextWait(terminalId)) : this.calmMs - calm,
-      )
+      if (stalled) {
+        const wait = Math.max(this.calmMs - calm, this.nextWait(terminalId))
+        this.notBefore.set(terminalId, now + wait)
+        this.later(terminalId, wait)
+      } else this.later(terminalId, this.calmMs - calm)
       return undefined
     }
     if (stalled) {
@@ -525,7 +530,7 @@ export class Doorbell {
     const vanish = this.host.ready(terminalId)
     if (this.host.resizedAt(terminalId) > calmSince) return this.later(terminalId, this.calmMs)
     if (!this.host.ring(terminalId, nonce)) return
-    const hold = entry.hold({ inputMs: inputCapMs, sizeMs: sizeCapMs })
+    const hold = entry.hold({ inputMs: this.pasteMs + inputCapMs, sizeMs: sizeCapMs })
     let pressed = false
     // Whether the paste check accepted the line: then it is alone in the agent's box.
     let acceptedTwice = false
@@ -618,7 +623,7 @@ export class Doorbell {
     const screen = await this.host.screen(terminalId)
     if (!screen || this.host.leftover(terminalId, screen) !== nonce) return
     if (!this.host.ringLeftover(terminalId, nonce)) return
-    const hold = entry.hold({ inputMs: inputCapMs, sizeMs: sizeCapMs })
+    const hold = entry.hold({ inputMs: this.pasteMs + inputCapMs, sizeMs: sizeCapMs })
     let pressed = false
     try {
       pressed =

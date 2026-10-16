@@ -18,6 +18,8 @@ const terminal = (
     ringable?: boolean
     /** Idle but Drafting, Unknown or Fresh, not ringable by state: what its screen reads as. */
     stalled?: "empty" | "starting" | Waits
+    /** The pasted line shows only this long after it was written, in milliseconds. */
+    landMs?: number
     /** The agent's activity says a turn runs. */
     busy?: boolean
     /** Idle with the line a failed ring left in the box, all it holds: its nonce. */
@@ -145,7 +147,10 @@ const terminal = (
       // eslint-disable-next-line no-control-regex -- A bracketed paste's markers.
       const pasted = /^\x1b\[200~(.*)\x1b\[201~$/.exec(data)?.[1]
       if (pasted) pastedAt ??= Date.now()
-      if (pasted && options.takes !== "nothing") rows[6] = `> ${pasted}`
+      if (pasted && options.takes !== "nothing") {
+        if (options.landMs) setTimeout(() => (rows[6] = `> ${pasted}`), options.landMs)
+        else rows[6] = `> ${pasted}`
+      }
       if (pasted && options.takes === "elsewhere") rows[0] = "popup closed"
       if (pasted && options.logo) rows[2] = ""
       return true
@@ -611,7 +616,7 @@ describe("the doorbell's care with a terminal it looks at", () => {
     const changing = setInterval(() => doorbell.changed("t"), 5)
     await sleep(200)
     clearInterval(changing)
-    expect(screens()).toBeLessThanOrEqual(2)
+    expect(screens()).toBeLessThanOrEqual(5)
     stop()
     doorbell.close()
   })
@@ -729,6 +734,37 @@ describe("the doorbell's word on every refusal and look", () => {
     await sleep(700)
     clearInterval(changing)
     expect(screens()).toBeLessThanOrEqual(5)
+    stop()
+    doorbell.close()
+  })
+})
+
+describe("the doorbell on a slow runner, and on a console that keeps redrawing", () => {
+  const recheck = { ...fast, recheckMs: 20, recheckMaxMs: 40 }
+
+  it("gives a line more time to show on Windows than elsewhere, before failing the ring", async () => {
+    // Shown 250 ms after it was written: past the default elsewhere (here 100 ms), within Windows'.
+    const slowWindows = terminal({ landMs: 250 })
+    const win = new Doorbell(slowWindows.host, slowWindows.host.queue, {
+      calmMs: 30,
+      pollMs: 5,
+      confirmMs: 100,
+      watchMs: 10,
+      platform: "win32",
+    })
+    win.changed("t")
+    await vi.waitFor(() => expect(enters(slowWindows.written)).toBe(1), { timeout: 5_000 })
+    win.close()
+    slowWindows.stop()
+  })
+
+  it("still looks at a stalled terminal whose console redraws more often than a calm window", async () => {
+    const { host, blocks, stop } = terminal({ ringable: false, stalled: "draft" })
+    const doorbell = new Doorbell(host, host.queue, { ...recheck, calmMs: 100 })
+    // Told of a change every 10 ms, though its text never changes.
+    const redraws = setInterval(() => doorbell.changed("t"), 10)
+    await vi.waitFor(() => expect(blocks).toContain("draft"), { timeout: 3_000 })
+    clearInterval(redraws)
     stop()
     doorbell.close()
   })
