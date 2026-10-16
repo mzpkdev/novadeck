@@ -125,7 +125,6 @@ timing changed. All three pinned harnesses passed the corrected scenario locally
 as did typecheck, lint, formatting and independent review. Evidence and controls:
 `repair-validation/agy-chat/`. CI for this fixture follow-up is pending.
 
-
 The fixture follow-up's macOS Quality run then timed out in a trust integration
 fixture. A controlled schedule reproduced its call-count assumption: the initial
 Ready lookup can be superseded before it calls trust, leaving `/clear` as call one
