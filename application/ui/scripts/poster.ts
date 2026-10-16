@@ -7,7 +7,7 @@ import { chromium, type Browser } from "playwright"
 
 // `pnpm poster:try [dir]`: writes `poster-<scheme>-<width>.webp` into a built visitor demo
 // (`dist-try` unless a directory is given), for light and dark and for 1280 and 2560
-// pixels wide: screenshots of the demo at rest. Each width is captured at its own pixel
+// pixels wide: screenshots of the demo at rest, once Claude Code asks about its plan. Each width is captured at its own pixel
 // density rather than scaled down, so the text is drawn for that size. The website shows
 // them while the live demo loads, so the Try workflow makes them from the very build it
 // deploys. Needs the build and Playwright's Chromium (`playwright install chromium`).
@@ -121,6 +121,11 @@ const capture = async (
   await splash.waitFor({ state: "detached", timeout: bootTimeoutMs })
   await page
     .getByRole("radiogroup", { name: "Workspace layout" })
+    .first()
+    .waitFor({ state: "visible", timeout: bootTimeoutMs })
+  // At rest is with the plan asked: Claude Code reads for a few seconds first.
+  await page
+    .getByText("Claude has written up a plan")
     .first()
     .waitFor({ state: "visible", timeout: bootTimeoutMs })
   await page.evaluate(settle)

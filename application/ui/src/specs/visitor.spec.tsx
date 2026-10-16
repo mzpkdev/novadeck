@@ -227,6 +227,19 @@ describe("the visitor build", () => {
       }
     })
 
+    // The page around treats focus moving into the frame as the visitor's first click, so
+    // nothing the desk does by itself, reading and then asking, may take it.
+    it("reads before it asks for its plan, and takes no focus meanwhile", async () => {
+      await openWorkspace("/?visitor=on&readingMs=1500", { embedded: true })
+      await expect.element(terminalCount(4)).toBeVisible()
+      expect(page.getByText("Claude has written up a plan").query()).toBeNull()
+      await expect
+        .poll(() => tabDescription("Checkout implementation"), { timeout: 4000 })
+        .toBe("Plan ready for review")
+      await framesPass(10)
+      expect(document.activeElement).toBe(document.body)
+    })
+
     // True of the app anywhere; framed, it leaves the page around it its focus.
     it("takes no focus until the person uses it", async () => {
       await openEmbedded()

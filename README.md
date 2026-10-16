@@ -871,7 +871,7 @@ minutes.
 The Try workflow also writes four posters into the build before it deploys it, and
 `pnpm poster:try` does the same for a local build: `poster-light-1280.webp`,
 `poster-light-2560.webp`, `poster-dark-1280.webp` and `poster-dark-2560.webp`. Each is a
-screenshot of `?embed` at rest once the app has booted, in a 1280 × 640 window, captured
+screenshot of `?embed` at rest, once the app has booted and Claude Code has asked about its plan, in a 1280 × 640 window, captured
 at its own pixel density (1280 × 640 and 2560 × 1280 pixels) rather than scaled down, from
 `application/ui/scripts/poster.ts`. It needs Playwright's Chromium (`pnpm --filter
 @novadeck/ui exec playwright install chromium`). novadeck.dev's hero shows the one that
@@ -892,7 +892,12 @@ included.
 It runs the agents demo's storefront and its other projects as fixtures, with no debug
 panel, chat view, voice, murmur, agent connections, notices or updates, and no Welcome
 dialog; `backend/demo/visitor/` lists the backend's fields one by one, so nothing added to
-the agents demo reaches the page unasked. A strip above the header says the agents are
+the agents demo reaches the page unasked. The desk is never still: Claude Code reads for
+five seconds before it asks for its plan to be reviewed (`visitor/story.ts`), the dev server
+logs a hot update every 14 seconds and the tests rerun every 23, and Codex, reviewing, has
+subagents look into something for a few seconds now and then (`visitor/ambient.ts`). None
+of that asks for the visitor or marks a tab, it waits while the page is hidden, and where
+the visitor asked for less motion there is none of it and the plan waits from the start. A strip above the header says the agents are
 simulated and links to the download (`app/Visitor.tsx`); under 760 px wide a panel pointing
 to a desktop browser replaces the app, whose UI unmounts behind it and comes back on
 widening. Typing into a shell answers as a simulated one (`mockReply`). A page loaded
