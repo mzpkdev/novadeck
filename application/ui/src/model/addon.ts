@@ -7,3 +7,8 @@ export type Refusal = {
   readonly call: "install" | "cancel" | "uninstall" | "set"
   readonly message: string
 }
+
+// What a refused call says, with the call named for the addon (`name` as "voice input" or
+// "Murmur"): "Couldn't install voice input: …".
+export const refusalText = ({ call, message }: Refusal, name: string): string =>
+  `Couldn't ${{ install: `install ${name}`, cancel: "cancel the install", uninstall: `uninstall ${name}`, set: `change ${name}` }[call]}: ${message}`

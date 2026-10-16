@@ -1,6 +1,6 @@
 import { useState } from "react"
 
-import type { Refusal } from "../model/addon"
+import { refusalText, type Refusal } from "../model/addon"
 import { formatSize, stepLabel } from "../model/addon-format"
 import {
   MURMUR_NAME,
@@ -24,7 +24,6 @@ import {
   murmurDownloadNote,
   murmurInstallSize,
   murmurUncheckedText,
-  refusalText,
 } from "./murmur-addon"
 import { settingsCardClasses } from "./settings"
 
@@ -57,7 +56,7 @@ export const MurmurAddon = ({
   const { state, actions } = murmur
   const { installing, installed, check, unsupported } = state
   // What went wrong: the runner's word, or else the backend's refusal of a call.
-  const failure = state.failure ?? (state.refused ? refusalText(state.refused) : null)
+  const failure = state.failure ?? (state.refused ? refusalText(state.refused, MURMUR_NAME) : null)
   const recheck = unsupported?.source === "check"
   const owed = unchecked(state)
   if (!state.available)

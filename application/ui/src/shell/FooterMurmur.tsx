@@ -45,8 +45,12 @@ export const FooterMurmur = ({
   const [phase, setPhase] = useState<FooterPhase>("idle")
   // The refusal of an install call the person last answered: another, in the same words, is a
   // new one. And why the item failed, kept as the refusal itself goes with the next snapshot.
-  const [handled, setHandled] = useState<Refusal | null>(null)
+  // A refusal still there as this mounts is not news: it was seen, or cannot be shown stale.
+  const [handled, setHandled] = useState<Refusal | null>(() => murmur?.state.refused ?? null)
   const [why, setWhy] = useState("")
+  // The refusal the item last said, and whether the runner's failure (not a refusal) made it.
+  const [said, setSaid] = useState<Refusal | null>(null)
+  const [fromRunner, setFromRunner] = useState(false)
   const [open, setOpen] = useState(false)
   const chip = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLElement>(null)
@@ -58,14 +62,30 @@ export const FooterMurmur = ({
   const panelId = useId()
   // The verdict that stood as the install began.
   const [before, setBefore] = useState<string | null>(null)
-  const next = state ? footerPhase(phase, state, handled, before) : "idle"
+  const next = state ? footerPhase(phase, state, handled, before, fromRunner) : "idle"
   if (next === "installing" && phase !== "installing" && state)
     setBefore(state.unsupported?.reason ?? null)
   if (next !== phase) {
     setPhase(next)
-    if (next === "failed" && state) setWhy(state.failure ?? state.refused?.message ?? "")
+    if (next === "failed" && state) {
+      setWhy(state.failure ?? state.refused?.message ?? "")
+      setSaid(state.refused)
+      setFromRunner(state.failure !== null)
+    }
     // What went wrong, or can't be, is said once on its own; the rest opens when asked.
     setOpen(next === "failed" || next === "unavailable")
+  }
+  // Another refusal while it is failed (a Try again refused again) is said too, and opens the
+  // sheet again.
+  if (
+    phase === "failed" &&
+    next === "failed" &&
+    state?.refused?.call === "install" &&
+    state.refused !== said
+  ) {
+    setSaid(state.refused)
+    setWhy(state.refused.message)
+    setOpen(true)
   }
   useEffect(() => {
     if (phase !== "done") return undefined

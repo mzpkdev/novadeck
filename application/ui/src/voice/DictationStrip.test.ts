@@ -189,6 +189,22 @@ describe("voice input's setup in a terminal's strip", () => {
     view.unmount()
   })
 
+  it("keeps saying why an install failed once the refusal that told it is cleared", () => {
+    const each = controller()
+    ;(each.voice as MutableStore<VoiceState>).update((state) => ({
+      ...state,
+      refused: { call: "install", message: "Out of disk space." },
+    }))
+    setupOf(each, { kind: "failed", target: terminal })
+    const view = render(strip(each, true))
+    expect(view.container.textContent).toContain("Out of disk space.")
+    act(() => {
+      ;(each.voice as MutableStore<VoiceState>).update((state) => ({ ...state, refused: null }))
+    })
+    expect(view.container.textContent).toContain("Voice input didn't install: Out of disk space.")
+    view.unmount()
+  })
+
   it("shows a failure with Try again", () => {
     const each = controller()
     ;(each.voice as MutableStore<VoiceState>).update((state) => ({

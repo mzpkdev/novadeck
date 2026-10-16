@@ -1,5 +1,5 @@
 import { Check, Mic, TriangleAlert } from "lucide-react"
-import { useSyncExternalStore } from "react"
+import { useState, useSyncExternalStore } from "react"
 
 import { formatSize, stepLabel } from "../model/addon-format"
 import { installFailure, installSize } from "../model/voice"
@@ -53,6 +53,11 @@ export const VoiceSetupContent = ({
   readonly keys: readonly string[]
 }): React.JSX.Element => {
   const state = useSyncExternalStore(controller.voice.subscribe, controller.voice.getSnapshot)
+  // The last reason an install went wrong, kept for when the snapshot that clears a refusal
+  // comes before the strip is gone, so it never says "didn't install:" and nothing more.
+  const [reason, setReason] = useState("")
+  const now = installFailure(state)
+  if (now !== null && now !== reason) setReason(now)
   const { turnOn, noThanks, cancel } = controller.setupActions
   if (setup.kind === "offer")
     return (
@@ -122,7 +127,7 @@ export const VoiceSetupContent = ({
     )
   }
   // The backend's own words often name voice input already.
-  const told = installFailure(state) ?? ""
+  const told = now ?? reason
   const said = /voice input/i.test(told) ? told : `${failurePrefix} ${told}`
   return (
     <>

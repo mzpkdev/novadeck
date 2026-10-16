@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { stepLabel } from "../model/addon-format"
 import { murmurChecking, type MurmurState } from "../model/murmur"
-import { deviceText, murmurDownloadNote, murmurInstallSize, refusalText } from "./murmur-addon"
+import { deviceText, murmurDownloadNote, murmurInstallSize } from "./murmur-addon"
 
 const state: MurmurState = {
   available: true,
@@ -35,15 +35,6 @@ describe("murmur's card", () => {
         .join(" "),
     ).not.toMatch(/GPU/)
     expect(stepLabel("check", murmurChecking)).toBe("Checking this computer")
-  })
-
-  it("names the call a refusal was of", () => {
-    expect(refusalText({ call: "uninstall", message: "Disk busy." })).toBe(
-      "Couldn't uninstall: Disk busy.",
-    )
-    expect(refusalText({ call: "set", message: "Busy." })).toBe(
-      "Couldn't change the setting: Busy.",
-    )
   })
 
   it("names the device it runs on", () => {

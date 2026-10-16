@@ -120,6 +120,19 @@ describe("Murmur's footer item", () => {
     expect(footerPhase("installing", standing, null, "Another reason.")).toBe("unavailable")
   })
 
+  it("leaves a failed item once the runner's failure is cleared, but not one a refusal made", () => {
+    const failing = { ...idle, failure: "The download stopped." }
+    expect(footerPhase("failed", failing, null, null, true)).toBe("failed")
+    // A runner restart, an uninstall or No thanks cleared it.
+    expect(footerPhase("failed", idle, null, null, true)).toBe("idle")
+    // Another refusal keeps it too.
+    expect(footerPhase("failed", { ...idle, refused: refusal("install") }, null, null, true)).toBe(
+      "failed",
+    )
+    // The refusal's own is gone with the next snapshot, and the item waits to be answered.
+    expect(footerPhase("failed", idle, null, null, false)).toBe("failed")
+  })
+
   it("counts the download as one, the check as none", () => {
     expect(installPercent(installing("engine", 50))).toBe(13)
     expect(installPercent(installing("model", 150))).toBe(63)

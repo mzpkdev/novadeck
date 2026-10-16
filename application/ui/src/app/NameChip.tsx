@@ -112,7 +112,7 @@ export const NameChip = ({
             onClick={() => {
               commands.offerNameTo(null)
               setOpen(false)
-              murmur.install()
+              void murmur.install()
               back()
             }}
           >

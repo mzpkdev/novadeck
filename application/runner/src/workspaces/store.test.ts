@@ -1156,4 +1156,27 @@ describe("murmur's settings", () => {
     reopened.saveMurmurUnsupported(null)
     expect(reopened.murmurUnsupported()).toBeNull()
   })
+
+  it("reads a voice check an earlier build saved with more in it, and one that cannot be read as none", ({
+    directory,
+    store,
+  }) => {
+    const path = join(directory(), "workspace.sqlite")
+    const workspace = store(path)
+    expect(workspace.voiceCheck()).toBeNull()
+    workspace.close()
+    const database = new DatabaseSync(path)
+    const save = (value: string) =>
+      database
+        .prepare(
+          "INSERT INTO settings (key, value) VALUES ('voice.check', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        )
+        .run(value)
+    save(JSON.stringify({ model: "turbo", milliseconds: 2300, gpu: true, recommended: "turbo" }))
+    database.close()
+    const reopened = store(path)
+    expect(reopened.voiceCheck()).toEqual({ model: "turbo", milliseconds: 2300 })
+    reopened.saveVoiceCheck(null)
+    expect(reopened.voiceCheck()).toBeNull()
+  })
 })

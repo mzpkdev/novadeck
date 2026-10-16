@@ -1,6 +1,7 @@
 import { useState, type RefObject } from "react"
 
 import { dictationKeys } from "../interaction/shortcuts"
+import { refusalText } from "../model/addon"
 import { formatSize, stepLabel } from "../model/addon-format"
 import { installSize, type Voice, type VoiceState } from "../model/voice"
 import { Chord } from "../ui-toolkit/Chord"
@@ -17,7 +18,8 @@ export type VoiceAddon = {
 }
 
 // What the card says went wrong: the runner's failure, or the backend's refusal of any call.
-const told = (state: VoiceState): string | null => state.failure ?? state.refused?.message ?? null
+const told = (state: VoiceState): string | null =>
+  state.failure ?? (state.refused ? refusalText(state.refused, "voice input") : null)
 
 const rowClasses = addonRowClasses
 const noteClasses = addonNoteClasses

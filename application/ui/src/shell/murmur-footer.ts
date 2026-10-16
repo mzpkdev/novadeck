@@ -17,7 +17,9 @@ export const doneForMs = 4000
 // and each refusal is an event: `handled` is the one the person last answered, and another,
 // though in the same words, is a new one. What the runner reports of itself from rest (a device
 // that went away, an engine update that failed) is Addons'. A cancel is no failure: the runner
-// leaves the files with the check owed and no failure.
+// leaves the files with the check owed and no failure. A failed item the runner's failure made
+// goes when that failure clears (a runner restart, an uninstall, No thanks); one a refusal made
+// stays until it is answered, as the refusal itself goes with the next snapshot.
 export const footerPhase = (
   phase: FooterPhase,
   state: MurmurState,
@@ -25,6 +27,8 @@ export const footerPhase = (
   // The verdict that stood as the install began (a Check again keeps it until the new check
   // ends): only another is news of it.
   verdictBefore: string | null = null,
+  // Whether a failed item was made by the runner's failure, not by a refusal.
+  fromRunner = false,
 ): FooterPhase => {
   if (state.installing)
     return phase === "installing" || state.installing.origin === "person" ? "installing" : phase
@@ -37,6 +41,8 @@ export const footerPhase = (
   }
   if (phase === "idle")
     return state.refused?.call === "install" && state.refused !== handled ? "failed" : "idle"
+  if (phase === "failed" && fromRunner && state.failure === null && state.refused === null)
+    return "idle"
   return phase
 }
 

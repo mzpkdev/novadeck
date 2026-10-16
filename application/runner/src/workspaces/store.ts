@@ -1070,7 +1070,16 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, AskRecor
       | undefined
     if (row === undefined) return null
     try {
-      const parsed = voiceCheck.safeParse(JSON.parse(row.value))
+      // Read leniently: a check an earlier build saved carries more than the wire has now.
+      const saved: unknown = JSON.parse(row.value)
+      const parsed = voiceCheck.safeParse(
+        typeof saved === "object" && saved !== null
+          ? {
+              model: (saved as Record<string, unknown>).model,
+              milliseconds: (saved as Record<string, unknown>).milliseconds,
+            }
+          : saved,
+      )
       return parsed.success ? parsed.data : null
     } catch {
       return null
