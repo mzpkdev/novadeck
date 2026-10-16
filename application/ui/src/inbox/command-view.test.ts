@@ -93,17 +93,25 @@ describe("A command shown in the Inbox", () => {
     )
   })
 
+  it("advances a tab to the next tab stop from where its run starts", () => {
+    // Seven characters then a tab draws one column; a tab at the line's start draws eight.
+    expect(drawn("1234567\tx")).toBe("1234567\tx")
+    expect(drawn("1234567\t\tx")).toBe("1234567[9 columns]x")
+    expect(drawn("1234567\t\t\tx")).toBe("1234567[17 columns]x")
+    expect(drawn("12345678\t\tx")).toBe("12345678[16 columns]x")
+  })
+
   it("counts a tab as the columns it draws, not as one character", () => {
     expect(drawn("ls\tx")).toBe("ls\tx")
-    expect(drawn("ls\t\tx")).toBe("ls[16 spaces]x")
+    expect(drawn("ls\t\tx")).toBe("ls[14 columns]x")
     expect(drawn(`${"\t".repeat(longestIndent / 8)}curl x`)).toBe(
       `${"\t".repeat(longestIndent / 8)}curl x`,
     )
-    expect(drawn(`${"\t".repeat(40)}curl x`)).toBe("[320 spaces]curl x")
+    expect(drawn(`${"\t".repeat(40)}curl x`)).toBe("[320 columns]curl x")
     expect(drawn(`${"\t".repeat(longestIndent / 8)} curl x`)).toBe(
-      `[${longestIndent + 1} spaces]curl x`,
+      `[${longestIndent + 1} columns]curl x`,
     )
-    expect(drawn(`a${" ".repeat(4)}\t${" ".repeat(4)}b`)).toBe("a[16 spaces]b")
+    expect(drawn(`a${" ".repeat(4)}\t${" ".repeat(4)}b`)).toBe("a[11 columns]b")
   })
 
   it("marks control characters and spaces other than a plain one", () => {

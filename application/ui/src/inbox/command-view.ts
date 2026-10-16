@@ -17,8 +17,9 @@ export type CommandPart =
   // A run of blank lines, more than one.
   | { readonly type: "blank-lines"; readonly count: number }
   // A run of spaces or tabs longer than `longestSpace` columns, or `longestIndent` at a line's start;
-  // `count` is its columns, a tab being `tabColumns`.
-  | { readonly type: "spaces"; readonly count: number }
+  // `count` is its columns, a tab
+  // advancing to the next multiple of `tabColumns`; `tabs` says it holds one.
+  | { readonly type: "spaces"; readonly count: number; readonly tabs: boolean }
   // One character that draws as nothing, by its code point.
   | { readonly type: "invisible"; readonly code: string }
 
@@ -39,16 +40,20 @@ const lineParts = (line: string): CommandPart[] => {
     if (text) parts.push({ type: "text", text })
     text = ""
   }
+  // The column the next character draws at, tab stops every `tabColumns`.
+  let column = 0
   for (let index = 0; index < line.length;) {
     const char = line[index]!
     if (char === " " || char === "\t") {
       let end = index
       while (line[end] === " " || line[end] === "\t") end += 1
       const run = line.slice(index, end)
-      const columns = [...run].reduce((sum, each) => sum + (each === "\t" ? tabColumns : 1), 0)
+      const start = column
+      for (const each of run) column += each === "\t" ? tabColumns - (column % tabColumns) : 1
+      const columns = column - start
       if (columns > (index === 0 ? longestIndent : longestSpace)) {
         flush()
-        parts.push({ type: "spaces", count: columns })
+        parts.push({ type: "spaces", count: columns, tabs: run.includes("\t") })
       } else text += run
       index = end
       continue
@@ -58,6 +63,7 @@ const lineParts = (line: string): CommandPart[] => {
       flush()
       parts.push({ type: "invisible", code: codeOf(codePoint) })
     } else text += codePoint
+    column += 1
     index += codePoint.length
   }
   flush()
@@ -93,6 +99,6 @@ export const commandView = (command: string): CommandView => {
 // What a mark says, in the card and to a screen reader.
 export const markText = (part: Exclude<CommandPart, { type: "text" }>): string => {
   if (part.type === "blank-lines") return `${part.count} blank lines`
-  if (part.type === "spaces") return `${part.count} spaces`
+  if (part.type === "spaces") return `${part.count} ${part.tabs ? "columns" : "spaces"}`
   return part.code
 }
