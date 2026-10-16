@@ -33,7 +33,7 @@ describe("AGY approval capture boundaries", () => {
     expect(transformed.code).toContain("await __capture.finish()")
     expect(
       instrumentApproval(
-        original.replaceAll("\n", "\r\n"),
+        original.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n"),
         "/repo/application/runner/src/e2e/answers.e2e.ts",
         events,
         recorder,
