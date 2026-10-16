@@ -204,6 +204,21 @@ describe("installing from a portable copy", () => {
     ])
   })
 
+  it("goes on installing when telling a page throws", async () => {
+    const logged: string[] = []
+    const { host, calls } = hosting({
+      changed: () => {
+        throw new Error("gone")
+      },
+      log: (message) => void logged.push(message),
+    })
+    const installer = portableInstaller(host)
+    await installer.install()
+    expect(calls).toEqual(["install"])
+    expect(installer.state()).toMatchObject({ install: { phase: "installed" } })
+    expect(logged.length).toBeGreaterThan(0)
+  })
+
   it("tells the pages it is installing at once, before the platform reports a step", async () => {
     let release: () => void = () => {}
     const { host, states } = hosting({
@@ -506,16 +521,27 @@ describe("answering the app's pages", () => {
     expect(await ask(portableChannel)).toMatchObject({ install: { phase: "installed" } })
   })
 
-  it("logs, and does not reject, when telling a page throws", async () => {
-    const { ask, logged } = registered(true, {
-      changed: () => {
-        throw new Error("gone")
+  it("logs, and does not throw, when the installer throws", async () => {
+    const logged: string[] = []
+    const handlers = new Map<string, Handler>()
+    registerPortableIpc(
+      {
+        handle: () => {},
+        on: (channel, listener) => void handlers.set(channel, listener as Handler),
       },
-    })
-    expect(() => ask(installAppChannel)).not.toThrow()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(logged.length).toBeGreaterThan(0)
+      {
+        window: () => "window",
+        installer: {
+          state: () => ({ portable: false }),
+          install: () => {
+            throw new Error("gone")
+          },
+        },
+        log: (message) => void logged.push(message),
+      },
+    )
+    expect(() => handlers.get(installAppChannel)!({})).not.toThrow()
+    expect(logged).toEqual(["Installing failed."])
   })
 
   it("has no channel to open an installed copy", () => {

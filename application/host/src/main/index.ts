@@ -990,8 +990,13 @@ const launch = async (): Promise<void> => {
             ? installWindowsSetup(progress)
             : installAppImageOver(target, progress),
       changed: (state) => {
-        for (const page of appPages(BrowserWindow.getAllWindows()))
-          page.send(portableStateChannel, state)
+        for (const page of appPages(BrowserWindow.getAllWindows())) {
+          try {
+            page.send(portableStateChannel, state)
+          } catch (error) {
+            console.warn("The portable state was not sent to a window.", error)
+          }
+        }
       },
       stopping: () => stopping,
       log: (message, error) => console.warn(message, error),

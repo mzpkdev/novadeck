@@ -134,6 +134,7 @@ export const PortableInstall = ({
     requested.current = false
     opener.current = "auto"
     setLingering(null)
+    if (hosted.phase === "failed") setForgotten(true)
     card.onOpenChange(false)
     if (!inside) return
     if (back || !card.returnFocus()) chip.current?.focus()
@@ -158,8 +159,8 @@ export const PortableInstall = ({
   // Whether the host has said yet; a failure it says first happened before this page loaded,
   // so it counts as dismissed. One this page watches happen shows.
   const [known, setKnown] = useState(false)
-  // Whether the card was in view, to see a failed one leave it by any route.
-  const [shown, setShown] = useState(false)
+  // Whether the card was open, to see a failed one closed. Hiding or blocking it is not that.
+  const [wasOpen, setWasOpen] = useState(false)
   if (!known && portable) {
     setKnown(true)
     setSeen(phase)
@@ -171,9 +172,10 @@ export const PortableInstall = ({
       setLingering("finished")
     }
   }
-  if (shown !== visible) {
-    setShown(visible)
-    if (!visible && phase === "failed") setForgotten(true)
+  const open = card?.open ?? false
+  if (wasOpen !== open) {
+    setWasOpen(open)
+    if (!open && phase === "failed") setForgotten(true)
   }
   const was = useRef(phase)
   const onOpenChange = card?.onOpenChange

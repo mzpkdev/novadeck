@@ -538,10 +538,16 @@ describe("workspace footer", () => {
       })
 
       // The card as its parent holds it: open or not, with the install the host reports.
-      const held = (install: PortableInstall, open: boolean) =>
+      const held = (install: PortableInstall, open: boolean, aside = {}) =>
         createElement(WorkspaceFooter, {
           ...props("ok"),
-          portable: { ...props("ok").portable, open, portable: { ...portable, install } },
+          ...("hidden" in aside ? { hidden: aside.hidden as boolean } : {}),
+          portable: {
+            ...props("ok").portable,
+            open,
+            ...("blocked" in aside ? { blocked: aside.blocked as boolean } : {}),
+            portable: { ...portable, install },
+          },
         })
       const failed: PortableInstall = { phase: "failed", reason: "Disk full" }
 
@@ -570,6 +576,20 @@ describe("workspace footer", () => {
         page.rerender(held(failed, false))
         page.rerender(held(failed, true))
         expect(notice(page)!.textContent).toContain("Portable copy")
+      })
+
+      it("keeps a failure through the card being blocked or the footer hidden", () => {
+        const page = render(held({ phase: "installing" }, true))
+        mounted.push(page)
+        page.rerender(held(failed, true))
+        page.rerender(held(failed, true, { blocked: true }))
+        expect(notice(page)).toBeNull()
+        page.rerender(held(failed, true, { blocked: false }))
+        expect(notice(page)!.textContent).toContain("Disk full")
+        page.rerender(held(failed, true, { hidden: true }))
+        expect(notice(page)).toBeNull()
+        page.rerender(held(failed, true, { hidden: false }))
+        expect(notice(page)!.textContent).toContain("Disk full")
       })
 
       it("shows the idle card for a failure from before the page loaded", () => {

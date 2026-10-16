@@ -95,7 +95,12 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
   const set = (next: PortableInstall): void => {
     if (JSON.stringify(next) === JSON.stringify(install)) return
     install = next
-    host.changed(state())
+    // A page that cannot be told must not stop the install.
+    try {
+      host.changed(state())
+    } catch (error) {
+      host.log("The portable state was not sent.", error)
+    }
   }
 
   const run = async (): Promise<PortableInstall> => {
