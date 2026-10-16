@@ -83,7 +83,10 @@ build checks its own signature once at launch with `codesign`. See
   replaces) was offered, it is offered as `retrying` meanwhile, and the page drops the
   bar at once and shows nothing in its place: no chip either, since a copy that installs itself
   has nothing for the person to do, and the retry tries again. One that failed before any progress, with no
-  update waiting, goes untold, as a failed check does. A failed staging on macOS is an
+  update waiting, goes untold, as a failed check does. Should the early retry fail too, the
+  offer turns to `available`, so a copy whose downloads keep failing (a proxy, a full disk)
+  shows the chip rather than fall behind unseen; the four-hourly checks still try it, and a
+  download that gets going turns it back to `downloading`. A failed staging on macOS is an
   install failure: the version is marked failed, is not tried again, and the offer turns to
   `available`, for the person to fetch.
 - **A newer release** found while an update waits replaces it, so one quit lands on the
@@ -106,8 +109,9 @@ build checks its own signature once at launch with `codesign`. See
   would delete the running AppImage and install nothing.
 - **Telling** builds download nothing and keep checking, so a newer release replaces the
   offer. The offer is `available`: the person must fetch the release themselves. `available`
-  means that and nothing else (a tell-mode build, a portable copy, or an install that failed),
-  and the footer chip is for it; a failed download (`retrying`) shows nothing. An installed
+  means that and nothing else (a tell-mode build, a portable copy, an install that failed, or a
+  download whose early retry failed too), and the footer chip is for it; a failed download
+  that will be retried (`retrying`) shows nothing. An installed
   copy shows a quiet "Update available" chip in the footer (no panel or Later) whose press opens the release page,
   `https://github.com/<owner>/<repo>/releases/tag/v<version>`, in the browser. A portable
   copy has its install entry instead.

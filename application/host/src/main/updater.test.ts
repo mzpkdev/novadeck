@@ -653,6 +653,21 @@ describe("checking for updates", () => {
         expect(updater.downloads).toHaveLength(2)
       })
 
+      it("offers it as available once the early retry fails too, and as downloading again when one gets going", async () => {
+        const { updater, offered } = checking()
+        updater.downloadResult = () => Promise.reject(new Error("download failed"))
+        updater.emit("update-available", { version: "1.2.3" })
+        await vi.advanceTimersByTimeAsync(retryCheckMs)
+        expect(offered).toEqual([])
+        updater.emit("update-available", { version: "1.2.3" })
+        await vi.advanceTimersByTimeAsync(0)
+        expect(offered).toEqual([["available", "1.2.3"]])
+        updater.downloadResult = () => new Promise(() => {})
+        updater.emit("update-available", { version: "1.2.3" })
+        updater.emit("download-progress", { percent: 5 })
+        expect(offered.at(-1)).toEqual(["downloading", "1.2.3", 5])
+      })
+
       it("keeps a channel switch's check soon while a retry waits", async () => {
         const checks = checking()
         checks.updater.downloadResult = () => Promise.reject(new Error("download failed"))

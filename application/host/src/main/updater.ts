@@ -328,7 +328,8 @@ export type NativeUpdater = {
  * is tried again, once in a run, by a check `retryCheckMs` later; after that the schedule
  * tries it. Meanwhile it is offered as `retrying`, which the page shows nothing for, once
  * its progress or an update it replaces was offered; one that failed before either goes
- * untold, as a failed check does. The one
+ * untold, as a failed check does. Should the early retry fail too, it is offered as
+ * `available`, to fetch from the release page, until a download of it gets going. The one
  * exception is the release `failedVersion`
  * names, the version an earlier install failed on: it is only told of, as `available`,
  * and not downloaded again, so a failing install does not come back at every launch. A
@@ -456,8 +457,12 @@ export const checkForUpdates = (
           // the download where it is; a failed staging on macOS has been told of already.
           if (downloaded?.version === version) return !failed
           // The waiting file, if any, is likely gone with the failed download, so the
-          // page is told it is being retried, unless it has heard of neither.
-          if (current.percent >= 0 || downloaded !== undefined) offer("retrying", version)
+          // page is told it is being retried, unless it has heard of neither. Once the
+          // early retry failed too, the person is told to fetch it themselves, so a copy
+          // whose downloads keep failing does not fall behind unseen; the schedule still
+          // tries it, and a download that gets going takes the offer back.
+          if (retried.has(version)) offer("available", version)
+          else if (current.percent >= 0 || downloaded !== undefined) offer("retrying", version)
           downloaded = undefined
           if (!ended && !retried.has(version)) {
             retried.add(version)
