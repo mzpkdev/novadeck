@@ -40,7 +40,10 @@ describe("the Murmur offer's conditions", () => {
     ["declined", { wanted: false }],
     ["known not to run murmur", { unsupported: "No graphics device answered." }],
     ["without an engine for the platform", { available: false }],
-    ["installing", { installing: { step: "engine" as const, received: 0, total: 1 } }],
+    [
+      "installing",
+      { installing: { step: "engine" as const, received: 0, total: 1, engineOnly: false } },
+    ],
     ["after a failure", { failure: "Couldn't reach the download." }],
   ])("does not stand when %s", (_name, change) => {
     expect(offerable({ ...offered, ...change })).toBe(false)

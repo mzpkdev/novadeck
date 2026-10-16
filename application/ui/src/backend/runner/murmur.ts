@@ -1,7 +1,7 @@
 import type { MurmurState as WireMurmurState } from "@novadeck/protocol"
 import type { Runner } from "@novadeck/protocol/client"
 
-import type { Murmur, MurmurState } from "../../model/murmur"
+import { changeNames, type Murmur, type MurmurState } from "../../model/murmur"
 import { createStore } from "../../model/store"
 
 // The runner's murmur addon: its state as `murmur.watch` streams it, and installs and
@@ -80,15 +80,15 @@ export const createRunnerMurmur = (
   return {
     murmur: {
       state,
-      install: () => void change("install", () => calls.install()),
-      cancel: () => void change("cancel the install", () => calls.cancel()),
-      uninstall: () => change("uninstall", () => calls.uninstall()),
+      install: () => void change(changeNames.install, () => calls.install()),
+      cancel: () => void change(changeNames.cancel, () => calls.cancel()),
+      uninstall: () => change(changeNames.uninstall, () => calls.uninstall()),
       set: (settings) =>
         settings.offered
           ? // Only counted: a count that is not kept is no failure to show.
             void track(calls.set(settings)).catch(() => {})
-          : // Its failure begins `settingFailurePrefix`, which the footer's item leaves alone.
-            void change("change the setting", () => calls.set(settings)),
+          : // Its failure is not an install's, which the footer's item leaves alone.
+            void change(changeNames.set, () => calls.set(settings)),
       // Murmur is extra: a gist that can't be asked for leaves the reply as it was.
       gist: (terminalId, at) => void track(calls.gist(terminalId, at)).catch(() => {}),
     },

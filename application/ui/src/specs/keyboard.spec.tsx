@@ -1166,6 +1166,26 @@ describe("dictation", () => {
       expect(content.bottom).toBeLessThanOrEqual(strip.getBoundingClientRect().top + 1)
     })
 
+    it("fits in a short chat window, so the chat's box stays inside", async () => {
+      await page.viewport(900, 800)
+      localStorage.setItem("novadeck.preferences", JSON.stringify({ chatView: true }))
+      await openWithoutVoice("/?demo=agents&voice=uninstalled")
+      await terminalTab("Checkout implementation").click()
+      await terminal("Checkout implementation")
+        .getByRole("button", {
+          name: labelled("Set up voice input for ", "Checkout implementation"),
+        })
+        .click()
+      await expect.element(offer()).toBeVisible()
+
+      const strip = document.querySelector<HTMLElement>(".dictation-strip:not([hidden])")!
+      const host = strip.parentElement!.getBoundingClientRect()
+      const form = strip
+        .parentElement!.querySelector(".agent-command-form")!
+        .getBoundingClientRect()
+      expect(form.bottom).toBeLessThanOrEqual(host.bottom + 0.5)
+    })
+
     it("keeps its offer when the mic of another terminal is clicked in Grid, which selects it", async () => {
       await openWithoutVoice("/?demo=agents&voice=uninstalled")
       await chooseView("Grid")

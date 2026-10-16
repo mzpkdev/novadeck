@@ -221,6 +221,15 @@
   .dictation-short {
     display: none;
   }
+  /* The words sit together after the icon; the gap is before the buttons. */
+  .dictation-strip[data-phase="setup"] .dictation-text:not(.dictation-clamp),
+  .dictation-overlay[data-phase="setup"] .dictation-text:not(.dictation-clamp) {
+    flex: 0 1 auto;
+  }
+  .dictation-strip[data-phase="setup"] button:first-of-type,
+  .dictation-overlay[data-phase="setup"] button:first-of-type {
+    margin-inline-start: auto;
+  }
   /* In a narrow tile, the long words give way to short ones. */
   @container dictation-strip (max-width: 34rem) {
     .dictation-long {
@@ -238,6 +247,8 @@
      changes between the setup's states, so the terminal refits once per state, not per
      tick of progress. */
   .dictation-strip[data-phase="setup"] {
+    /* A row of one line's height, so a chat that cannot shrink further still fits. */
+    height: calc(var(--spacing) * 6);
     position: relative;
     inset: auto;
     flex: none;
@@ -279,7 +290,7 @@
   .dictation-strip .dictation-button,
   .dictation-overlay .dictation-button {
     flex: none;
-    height: calc(var(--spacing) * 6);
+    height: calc(var(--spacing) * 5);
     min-height: 0;
     padding: 0 calc(var(--spacing) * 2.5);
     font-size: var(--text-caption);

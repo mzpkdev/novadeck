@@ -26,6 +26,9 @@ export type MurmurState = {
     readonly step: "engine" | "model" | "check"
     readonly received: number
     readonly total: number
+    // The engine's own update, which the app starts for a murmur that is on, not an install the
+    // person asked for.
+    readonly engineOnly: boolean
   } | null
   // The device that passed the check after an install; null until one does.
   readonly check: {
@@ -47,9 +50,19 @@ export type MurmurState = {
   readonly offers: number
 }
 
-// How a backend's failure to change a setting begins, in `MurmurState.failure`: a refused
-// switch, never an install's.
-export const settingFailurePrefix = "Couldn't change the setting"
+// What a backend's call is called in the failure it shows in the state, `Couldn't ${name}: why`.
+export const changeNames = {
+  install: "install",
+  cancel: "cancel the install",
+  uninstall: "uninstall",
+  set: "change the setting",
+} as const
+
+// Whether a failure in the state is an install's, or the refusal of another call.
+export const isInstallFailure = (failure: string): boolean =>
+  ![changeNames.cancel, changeNames.uninstall, changeNames.set].some((name) =>
+    failure.startsWith(`Couldn't ${name}`),
+  )
 
 // What each step of an install is called.
 export const murmurStepTitles = {

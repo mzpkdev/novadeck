@@ -17,7 +17,12 @@ const idle: MurmurState = {
 }
 const installing = (step: "engine" | "model" | "check", received: number): MurmurState => ({
   ...idle,
-  installing: { step, received, total: step === "engine" ? 100 : step === "model" ? 300 : 0 },
+  installing: {
+    step,
+    received,
+    total: step === "engine" ? 100 : step === "model" ? 300 : 0,
+    engineOnly: false,
+  },
 })
 const checked: MurmurState = {
   ...idle,
@@ -70,29 +75,46 @@ describe("Murmur's footer item", () => {
     )
   })
 
-  it("shows nothing for an engine update the app starts, and something for a check the person retries", () => {
-    const update: MurmurState = {
-      ...checked,
-      installing: { step: "engine", received: 1, total: 100 },
-    }
-    expect(footerPhase("idle", update, null)).toBe("idle")
+  it("shows nothing for an engine update the runner says it runs, whatever the check holds", () => {
+    const engine = { step: "engine" as const, received: 1, total: 100, engineOnly: true }
+    // The check kept: the usual case.
+    expect(footerPhase("idle", { ...checked, installing: engine }, null)).toBe("idle")
+    // The check dropped, as when its device went away: still the engine's own update, so no
+    // item, and no failure of it opens a sheet by itself.
+    const dropped = { ...checked, check: null, installing: engine }
+    expect(footerPhase("idle", dropped, null)).toBe("idle")
+    expect(footerPhase("idle", { ...checked, check: null, failure: "Engine failed." }, null)).toBe(
+      "failed",
+    )
     // Ended, still no "done": it was never shown.
     expect(footerPhase("idle", checked, null)).toBe("idle")
-    // Installed but with no check, an install the person asked for runs the check again.
+  })
+
+  it("shows an install the person started, even over files that are there", () => {
     const retry: MurmurState = {
       ...checked,
       check: null,
-      installing: { step: "check", received: 0, total: 0 },
+      installing: { step: "check", received: 0, total: 0, engineOnly: false },
     }
     expect(footerPhase("idle", retry, null)).toBe("installing")
   })
 
-  it("leaves a refused switch to Addons, not turning it into a failed install", () => {
-    const refused = { ...idle, failure: "Couldn't change the setting: the runner is busy." }
+  it.each([
+    "Couldn't change the setting: the runner is busy.",
+    "Couldn't uninstall: Disk busy.",
+    "Couldn't cancel the install: the runner is busy.",
+  ])("leaves the refusal of another call to Addons: %s", (failure) => {
+    const refused = { ...idle, failure }
     expect(footerPhase("idle", refused, null)).toBe("idle")
     expect(footerPhase("installing", refused, null)).toBe("idle")
-    // A refused install is an install's.
+    expect(footerPhase("failed", refused, null)).toBe("idle")
+  })
+
+  it("shows a refused install, and a failure of the install itself", () => {
     expect(footerPhase("idle", { ...idle, failure: "Couldn't install: refused." }, null)).toBe(
+      "failed",
+    )
+    expect(footerPhase("installing", { ...idle, failure: "The download stopped." }, null)).toBe(
       "failed",
     )
   })

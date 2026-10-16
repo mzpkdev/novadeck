@@ -115,6 +115,7 @@ const installingAt = (step: "engine" | "model" | "check", received: number): Mur
   installing: {
     step,
     received,
+    engineOnly: false,
     total: step === "model" ? downloadSizes.model : step === "engine" ? downloadSizes.engine : 0,
   },
 })
@@ -158,7 +159,7 @@ export const createDemoMurmur = (
     const total = step === "engine" ? sizes.engine : step === "model" ? sizes.model : 1
     state.update((current) => ({
       ...current,
-      installing: { step, received: Math.round((total * part) / ticks), total },
+      installing: { step, received: Math.round((total * part) / ticks), total, engineOnly: false },
     }))
   }
   // With no device that works the check ends in Not available, as the runner's: the

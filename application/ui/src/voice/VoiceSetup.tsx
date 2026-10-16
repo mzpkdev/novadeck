@@ -78,7 +78,10 @@ export const VoiceSetupContent = ({
     return (
       <>
         <Mic size={14} className="dictation-icon" aria-hidden />
-        <span className="dictation-text">Setting up voice input</span>
+        <span className="dictation-text">
+          <span className="dictation-long">Setting up voice input</span>
+          <span className="dictation-short">Voice input</span>
+        </span>
         <span className="dictation-muted dictation-fixed" aria-hidden>
           {"· "}
           {installing === null ? (
@@ -114,14 +117,15 @@ export const VoiceSetupContent = ({
       </>
     )
   }
+  // The backend's own words often name voice input already.
+  const said = /voice input/i.test(state.failure ?? "")
+    ? (state.failure ?? "")
+    : `${failurePrefix} ${state.failure ?? ""}`
   return (
     <>
       <TriangleAlert size={14} className="dictation-icon" aria-hidden />
-      <span
-        className="dictation-text dictation-clamp"
-        title={`${failurePrefix} ${state.failure ?? ""}`}
-      >
-        {failurePrefix} {state.failure}
+      <span className="dictation-text dictation-clamp" title={said}>
+        {said}
       </span>
       <Action primary onPress={turnOn}>
         Try again

@@ -1,4 +1,4 @@
-import { murmurStepTitles, settingFailurePrefix, type MurmurState } from "../model/murmur"
+import { isInstallFailure, murmurStepTitles, type MurmurState } from "../model/murmur"
 import { formatSize } from "../model/voice-format"
 
 // What Murmur's footer item shows, as a plain function of the addon's state: an install's
@@ -15,22 +15,20 @@ export const doneForMs = 4000
 // download sizes.
 export const isSnapshot = (state: MurmurState): boolean => state.sizes.model > 0
 
-// Whether `state` is an engine update: the check kept, an install running over it. It is the
-// app's own doing, not the person's, so it shows nothing.
-const engineUpdate = (state: MurmurState): boolean => state.installed && state.check !== null
-
 // Where the item stands after `state`, given where it stood. `baseline` is the failure the
 // runner's first snapshot showed (a past run's), which is not an install's; before that
-// snapshot (`undefined`) nothing is judged. A refused switch (a decline that did not save) is
-// not an install's failure either.
+// snapshot (`undefined`) nothing is judged. The engine's own update, which the runner says it
+// is running, shows nothing, and the refusal of another call (a decline that did not save, an
+// uninstall or a cancel) is not an install's failure.
 export const footerPhase = (
   phase: FooterPhase,
   state: MurmurState,
   baseline: string | null | undefined,
 ): FooterPhase => {
   if (baseline === undefined) return phase
-  const failure = state.failure?.startsWith(settingFailurePrefix) ? null : state.failure
-  if (state.installing) return phase === "installing" || !engineUpdate(state) ? "installing" : phase
+  const failure = state.failure !== null && isInstallFailure(state.failure) ? state.failure : null
+  if (state.installing)
+    return phase === "installing" || !state.installing.engineOnly ? "installing" : phase
   if (phase === "installing") {
     // It ended: how, is for the state to say.
     if (state.unsupported !== null) return "unavailable"

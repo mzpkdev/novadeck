@@ -741,6 +741,9 @@ export const murmurInstall = z.strictObject({
   step: z.enum(["engine", "model", "check"]),
   received: z.int().nonnegative(),
   total: z.int().nonnegative(),
+  // Whether this is only the engine's update, which the app starts by itself for a murmur that
+  // is on, not an install the person asked for.
+  engineOnly: z.boolean(),
 })
 
 // The device that passed the check after an install: its name, whether it is an

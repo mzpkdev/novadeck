@@ -181,6 +181,14 @@ describe("voice input's setup in a terminal's strip", () => {
     setupOf(each, { kind: "failed", target: terminal })
     const view = render(strip(each, true))
     expect(view.container.textContent).toContain("Voice input didn't install: Out of disk space.")
+    // A failure that already names voice input is not prefixed again.
+    act(() => {
+      ;(each.voice as MutableStore<VoiceState>).update((state) => ({
+        ...state,
+        failure: "Couldn't install voice input: no network.",
+      }))
+    })
+    expect(view.container.textContent).not.toContain("didn't install: Couldn't")
     calls.length = 0
     act(() =>
       [...view.container.querySelectorAll("button")]

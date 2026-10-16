@@ -506,6 +506,19 @@ describe("dictation", () => {
       expect(kind(app)).toBe("installing")
     })
 
+    it("offers on another terminal when its mic is clicked, and only turns on for the offer's own", () => {
+      const app = setup(notInstalled)
+      const other = { ...target, terminalId: "t2" }
+      app.controller.dictation.press(target, "KeyM")
+
+      app.controller.dictation.toggle(other)
+
+      expect(app.calls).toEqual([])
+      expect(app.controller.setup.getSnapshot()).toEqual({ kind: "offer", target: other })
+      app.controller.dictation.toggle(other)
+      expect(app.calls).toEqual(["install"])
+    })
+
     it("clears the ready note and a failure as a clip starts, so its own result shows", () => {
       const app = setup(notInstalled)
       app.controller.dictation.press(target, "KeyM")

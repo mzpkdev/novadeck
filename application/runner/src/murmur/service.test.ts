@@ -564,6 +564,39 @@ describe("murmur's settings", () => {
   })
 })
 
+describe("what the running job is", () => {
+  it("says an install is not the engine's own update, and an update of the engine is", async ({
+    resources,
+  }) => {
+    const first = await setup(resources)
+    const installs: boolean[] = []
+    const watching = watchUntil(first.murmur, (state) => {
+      if (state.installing) installs.push(state.installing.engineOnly)
+      return state.installing === null && installs.length > 0
+    })
+    await sleep(50)
+    await first.murmur.install()
+    await watching
+    expect(installs.length).toBeGreaterThan(0)
+    expect(installs.every((engineOnly) => !engineOnly)).toBe(true)
+    await first.murmur.close()
+
+    // The next build brings another engine: the app fetches it alone for a murmur that is on.
+    const updates: boolean[] = []
+    const again = await setup(resources, {
+      store: first.store,
+      directory: first.directory,
+      engine: await llamaArchive(resources, "2"),
+    })
+    await watchUntil(again.murmur, (state) => {
+      if (state.installing) updates.push(state.installing.engineOnly)
+      return state.installing === null && updates.length > 0
+    })
+    expect(updates.length).toBeGreaterThan(0)
+    expect(updates.every(Boolean)).toBe(true)
+  })
+})
+
 describe("the one-time offer's count", () => {
   it("counts each session the app says it showed the offer in, and keeps it across a restart", async ({
     resources,

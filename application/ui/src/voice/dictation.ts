@@ -459,7 +459,10 @@ export const createDictation = (deps: DictationDeps): DictationController => {
       cancel: () => dispatch({ type: "cancel" }),
       // The mic, clicked while the offer shows, turns voice input on as the shortcut does.
       toggle: (target) => {
-        if (offering()) return turnOn()
+        // Only the mic of the terminal the offer is on means Turn on; another offers there.
+        const offer = setup.getSnapshot()
+        if (offering() && (!offer?.target || dictationKey(offer.target) === dictationKey(target)))
+          return turnOn()
         clearTold()
         dispatch({ type: "toggle", target, now: now(), readiness: ready() })
       },

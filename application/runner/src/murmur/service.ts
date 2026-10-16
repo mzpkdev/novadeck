@@ -265,7 +265,9 @@ export class Murmur implements Describer {
   private loading: Promise<void> = Promise.resolve()
   private updateFailedAt: number | undefined
   private uninstalling = false
-  private installing: MurmurInstall | null = null
+  private installing: Omit<MurmurInstall, "engineOnly"> | null = null
+  // Whether the job running is the engine's own update, which the app starts, not an install.
+  private engineOnlyRun = false
   private failure: string | null = null
   private running:
     | { readonly done: Promise<void>; readonly controller: AbortController }
@@ -397,7 +399,7 @@ export class Murmur implements Describer {
       enabled: this.settings.murmurSettings().enabled && installed,
       wanted: this.settings.murmurEnabledChoice() !== false,
       sizes: { engine: this.manifest?.size ?? 0, model: this.model.size },
-      installing: this.installing,
+      installing: this.installing && { ...this.installing, engineOnly: this.engineOnlyRun },
       check,
       unsupported: this.unsupported()?.reason ?? null,
       offers: this.settings.murmurOffers(),
@@ -510,6 +512,7 @@ export class Murmur implements Describer {
     // Installing it says the person wants it, whatever they chose before; an off from then
     // on, during the install too, still holds.
     if (!this.installed()) this.settings.saveMurmurSettings({ enabled: null })
+    this.engineOnlyRun = false
     this.installing = { step: "engine", received: 0, total: this.manifest.size }
     this.changed()
     this.running = { controller, done: this.run(this.manifest, controller.signal) }
@@ -534,6 +537,7 @@ export class Murmur implements Describer {
       return
     const controller = new AbortController()
     this.failure = null
+    this.engineOnlyRun = true
     this.installing = { step: "engine", received: 0, total: manifest.size }
     this.changed()
     this.running = { controller, done: this.run(manifest, controller.signal, true) }
@@ -648,7 +652,7 @@ export class Murmur implements Describer {
     return modelPathOf(this.directory, this.model)
   }
 
-  private progress(install: MurmurInstall, force = false): void {
+  private progress(install: Omit<MurmurInstall, "engineOnly">, force = false): void {
     this.installing = install
     this.watchers.progress(force)
   }
