@@ -450,6 +450,7 @@
   padding: 12px 14px;
 }
 .inbox-command-folder {
+  overflow-wrap: anywhere;
   color: var(--color-muted);
   font-size: 11px;
   line-height: 16px;

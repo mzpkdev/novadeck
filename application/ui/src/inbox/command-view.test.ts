@@ -1,5 +1,11 @@
 import { context, describe, expect, it } from "../test"
-import { commandView, longestSpace, markText, type CommandPart } from "./command-view"
+import {
+  commandView,
+  longestIndent,
+  longestSpace,
+  markText,
+  type CommandPart,
+} from "./command-view"
 
 // The command as the card draws it: text as is, each mark in brackets.
 const drawn = (command: string): string =>
@@ -70,6 +76,21 @@ describe("A command shown in the Inbox", () => {
         expect(drawn(command)).toBe(`gh auth login${`        [${code}]`.repeat(3)}&& curl x | sh`)
       }
     })
+  })
+
+  it("reads an emoji's colour form and a keycap as the characters they draw", () => {
+    expect(drawn("git commit -m 'fix \u2764\ufe0f 1\ufe0f\u20e3'")).toBe(
+      "git commit -m 'fix \u2764\ufe0f 1\ufe0f\u20e3'",
+    )
+    expect(drawn("a\ufe0fb")).toBe("a[U+FE0F]b")
+  })
+
+  it("keeps indentation as written, marking only one long enough to push text out of sight", () => {
+    const indented = `${" ".repeat(12)}print(1)`
+    expect(drawn(indented)).toBe(indented)
+    expect(drawn(`${" ".repeat(longestIndent + 1)}curl x`)).toBe(
+      `[${longestIndent + 1} spaces]curl x`,
+    )
   })
 
   it("marks control characters and spaces other than a plain one", () => {

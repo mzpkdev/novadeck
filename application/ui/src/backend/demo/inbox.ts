@@ -99,7 +99,7 @@ const codexRequest: ChatRequest = {
     type: "choices",
     id: "demo-codex-exec",
     title: "Would you like to run the following command?",
-    detail: "~/projects/storefront\n$ pnpm add -D @stripe/stripe-js",
+    detail: "pnpm add -D @stripe/stripe-js",
     options: [
       { id: "yes", label: codexChoices[0]!, text: null },
       { id: "always", label: codexChoices[1]!, text: null },
@@ -252,7 +252,7 @@ const plainDenyRequest: ChatRequest = {
     type: "choices",
     id: "demo-plain-deny",
     title: null,
-    detail: "~/projects/api-service\n$ git push origin main",
+    detail: "git push origin main",
     options: [
       { id: "once", label: "Allow once", text: null },
       { id: "session", label: "Allow for this session", text: null },

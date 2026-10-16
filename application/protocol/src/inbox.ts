@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 import { agentName, id } from "./schemas.js"
-import { hiddenCharacter, maxCommandLines } from "./text.js"
+import { hiddenIn, maxCommandLines } from "./text.js"
 
 const line = z
   .string()
@@ -40,7 +40,7 @@ export const askShape = z.discriminatedUnion("type", [
       .trim()
       .min(1)
       .max(4096)
-      .refine((text) => !hiddenCharacter.test(text), "Use only characters that show")
+      .refine((text) => hiddenIn(text) === undefined, "Use only characters that show")
       .refine((text) => text.split("\n").length <= maxCommandLines, "Keep the command short"),
     directory: line.max(1024).nullable(),
     doneLabel: line,

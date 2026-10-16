@@ -229,26 +229,6 @@ export const choicesOf = (options: readonly ChatDialogOption[]): Choices | null 
   }
 }
 
-// What a dialog shows of what it asks about: a folder over the command, where the first
-// line is a path and the next starts the command with `$ `, as the adapters write it. A
-// path line with no `$ ` after it is part of the command, never set small as its folder.
-export const splitDetail = (
-  detail: string,
-): { readonly folder: string | null; readonly command: string } => {
-  const lines = detail.split("\n")
-  const first = lines[0] ?? ""
-  if (
-    lines.length > 1 &&
-    /^(~|\/|[A-Za-z]:[\\/])\S*$/.test(first.trim()) &&
-    (lines[1] ?? "").startsWith("$ ")
-  )
-    return {
-      folder: first.trim(),
-      command: lines.slice(1).join("\n").replace(/^\$ /, ""),
-    }
-  return { folder: null, command: detail.replace(/^\$ /, "") }
-}
-
 // The agent's words for a limit's window: "usage" where its length is unknown (0), and
 // "weekly" and "daily" for the windows of those lengths.
 export const limitWindow = (minutes: number): string => {

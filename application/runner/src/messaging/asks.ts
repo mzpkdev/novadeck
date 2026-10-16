@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto"
 import {
   agentAsk,
   askAnswer,
-  hiddenCharacter,
+  hiddenIn,
+  inboxLetter,
   maxCommandLines,
   type AgentAsk,
   type AskAnswer,
@@ -82,10 +83,6 @@ const markdown = z.string().max(16_384)
 // sight: refused where it holds a character that draws as nothing, which could push the
 // rest past a run of blank rows, or more lines than the person reads before running it.
 // The Inbox marks long runs of blank lines and spaces where it shows one.
-const hiddenIn = (text: string): string | undefined => {
-  const found = hiddenCharacter.exec(text)?.[0]
-  return found && `U+${found.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`
-}
 const command = z
   .string()
   .transform((text) => cleanInboxText(text).trim())
@@ -214,7 +211,13 @@ export class Asks {
     private readonly now = Date.now,
     { sweepMs = askSweepMs }: { readonly sweepMs?: number } = {},
   ) {
-    for (const letter of records.letters()) this.keep(letter)
+    // A letter stored before the wire's rules tightened would fail every listing it is in,
+    // so one the wire refuses now is dropped, not kept.
+    const stale: string[] = []
+    for (const letter of records.letters())
+      if (inboxLetter.shape.content.safeParse(letter.content).success) this.keep(letter)
+      else stale.push(letter.id)
+    if (stale.length > 0) records.removeLetters(stale)
     this.prune()
     if (sweepMs > 0) {
       this.sweeper = setInterval(() => {

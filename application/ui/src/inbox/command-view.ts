@@ -3,16 +3,18 @@
 // character with no glyph) is set out as a mark that says what is there, never hidden
 // below the card's fold or past its edge. The command itself is never changed.
 
-import { hiddenCharacter } from "../model/command-text"
+import { hiddenAt } from "../model/command-text"
 
-// The longest run of spaces or tabs shown as itself.
+// The longest run of spaces or tabs shown as itself inside a line, and at its start, where
+// it is indentation (a heredoc's YAML or Python reads as written).
 export const longestSpace = 8
+export const longestIndent = 40
 
 export type CommandPart =
   | { readonly type: "text"; readonly text: string }
   // A run of blank lines, more than one.
   | { readonly type: "blank-lines"; readonly count: number }
-  // A run of spaces or tabs longer than `longestSpace`.
+  // A run of spaces or tabs longer than `longestSpace`, or `longestIndent` at a line's start.
   | { readonly type: "spaces"; readonly count: number }
   // One character that draws as nothing, by its code point.
   | { readonly type: "invisible"; readonly code: string }
@@ -40,7 +42,7 @@ const lineParts = (line: string): CommandPart[] => {
       let end = index
       while (line[end] === " " || line[end] === "\t") end += 1
       const run = line.slice(index, end)
-      if (run.length > longestSpace) {
+      if (run.length > (index === 0 ? longestIndent : longestSpace)) {
         flush()
         parts.push({ type: "spaces", count: run.length })
       } else text += run
@@ -48,7 +50,7 @@ const lineParts = (line: string): CommandPart[] => {
       continue
     }
     const codePoint = String.fromCodePoint(line.codePointAt(index)!)
-    if (hiddenCharacter.test(codePoint)) {
+    if (hiddenAt(line, index)) {
       flush()
       parts.push({ type: "invisible", code: codeOf(codePoint) })
     } else text += codePoint

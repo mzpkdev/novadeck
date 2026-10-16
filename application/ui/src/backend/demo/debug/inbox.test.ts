@@ -59,7 +59,7 @@ describe("the debug panel's Inbox group", () => {
     const [item] = inbox.state.getSnapshot().items
     expect(item?.kind === "request" && item.request.dialog?.type === "choices").toBe(true)
     if (item?.kind !== "request" || item.request.dialog?.type !== "choices") return
-    expect(item.request.dialog.detail).toBe(`~/projects/api-service\n$ ${demoHiddenCommand}`)
+    expect(item.request.dialog.detail).toBe(demoHiddenCommand)
   })
 
   it("makes the next answer fail", () => {

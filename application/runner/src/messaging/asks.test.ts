@@ -951,6 +951,44 @@ describe("Inbox history outcomes and safe instructions", () => {
     expect(asks.list()).toEqual([])
   })
 
+  it("takes emoji in a command as written, colour forms and keycaps too", ({ resources }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    const command = "git commit -m 'fix \u2764\ufe0f 1\ufe0f\u20e3 \u{1f680}'"
+    run.create({
+      subject: "Commit",
+      body: "Run it yourself",
+      shape: { type: "action", command, done_label: "Done" },
+    })
+    expect(run.asks.list()[0]?.content).toMatchObject({ ask: { shape: { command } } })
+  })
+
+  it("drops a stored ask the wire would now refuse, so the rest still list", () => {
+    const records = memoryAsks()
+    const first = setup(records)
+    first.create()
+    first.stop()
+    const [kept] = records.letters()
+    records.saveLetter({
+      ...kept!,
+      id: randomUUID(),
+      content: {
+        kind: "ask",
+        ask: {
+          subject: "Old",
+          body: "Stored before the rule",
+          details: null,
+          hardToUndo: null,
+          shape: { type: "action", command: "a\u2800b", directory: null, doneLabel: "Done" },
+        },
+      },
+    })
+    const second = setup(records)
+    expect(second.asks.list().map((each) => each.id)).toEqual([kept!.id])
+    expect(records.letters().map((each) => each.id)).toEqual([kept!.id])
+    second.stop()
+  })
+
   it("refuses a command longer than a person reads before running it", () => {
     const { asks } = setup()
     const command = Array.from({ length: maxCommandLines + 1 }, (_, index) => `echo ${index}`).join(

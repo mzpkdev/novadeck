@@ -142,7 +142,7 @@ export const inboxGroups = (inbox: DemoInbox | undefined): readonly DemoActionGr
                 subject: "gh auth status",
                 dialog: {
                   ...item.request.dialog,
-                  detail: `~/projects/api-service\n$ ${demoHiddenCommand}`,
+                  detail: demoHiddenCommand,
                 },
               },
             })
