@@ -35,7 +35,7 @@ import {
   withUsage,
 } from "./terminals"
 import type { DemoAction, DemoActionContext, DemoActionGroup, DemoStates } from "./types"
-import { createDemoUpdates, sampleNotes } from "./updates"
+import { createDemoUpdates } from "./updates"
 
 // How long an agent works before its turn ends, so the person can look elsewhere.
 const turnMs = 3000
@@ -309,10 +309,8 @@ const createNotificationActions = (verbs: DemoAgentVerbs): readonly [DemoAction,
 export const createDemoStates = (verbs: DemoAgentVerbs): DemoStates => {
   const { agents, openWelcome, failNext: failAgents, limitAntigravity } = createDemoAgents()
   const { notices, Notices } = createDemoNotices()
-  const { updates, offer, download, finish, failInstall } = createDemoUpdates()
-  // Each press offers a newer version than the last, so its notice comes up again.
-  let patch = 79
-  const nextVersion = (): string => `0.0.${(patch += 1)}`
+  const updateControls = createDemoUpdates()
+  const { updates, offer } = updateControls
   const { pickDirectory, failNext: failPick } = createDemoFolders()
   const chat = createDebugChat()
   const notificationActions = createNotificationActions(verbs)
@@ -568,54 +566,6 @@ export const createDemoStates = (verbs: DemoAgentVerbs): DemoStates => {
         },
       ],
     },
-    {
-      section: "App",
-      title: "Updates",
-      actions: [
-        {
-          label: "Download",
-          hint: "Bar counts up, says ready, then fades",
-          run: () => download(nextVersion(), sampleNotes),
-        },
-        {
-          label: "Download, held",
-          hint: "Bar stays at 40% to look at",
-          run: () =>
-            offer({ kind: "downloading", version: nextVersion(), notes: sampleNotes, percent: 40 }),
-        },
-        {
-          label: "Download failed",
-          hint: "Bar drops, the Update available chip shows; the host retries later",
-          run: failInstall,
-        },
-        {
-          label: "Release to fetch",
-          hint: "Footer chip, Update available; opens the release page",
-          run: () => offer({ kind: "available", version: nextVersion(), notes: sampleNotes }),
-        },
-        {
-          label: "Ready at launch",
-          hint: "No bar: downloaded before this run",
-          run: () => offer({ kind: "ready", version: nextVersion(), notes: sampleNotes }),
-        },
-        {
-          label: "Early builds on",
-          hint: "Shows in Preferences once reopened",
-          run: () => updates.channel?.set("early"),
-        },
-        {
-          label: "Early builds off",
-          hint: "Shows in Preferences once reopened",
-          run: () => updates.channel?.set("stable"),
-        },
-        {
-          label: "Finish restart",
-          reboots: true,
-          hint: "Reloads on the new version; update gone",
-          run: finish,
-        },
-      ],
-    },
   ]
   return {
     groups,
@@ -624,6 +574,7 @@ export const createDemoStates = (verbs: DemoAgentVerbs): DemoStates => {
     notices,
     updates,
     offer,
+    updateControls,
     pickDirectory,
     chat: chat.wrap,
     screens,

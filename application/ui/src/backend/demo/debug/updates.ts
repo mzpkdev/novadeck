@@ -1,5 +1,6 @@
 import type { UpdateChannel, UpdateOffer } from "../../../model/update"
-import type { DemoStates } from "./types"
+import type { DemoActionGroup, DemoStates } from "./types"
+import type { DemoLaunch } from "./with-debug"
 
 // The browser's stand-in for the desktop app's self-updates: `offer` has an update, which
 // listeners hear at once if they come later and again for each newer one. `finish` stands
@@ -87,3 +88,73 @@ export const sampleNotes: readonly string[] = [
   "Fixed a crash when an agent finished while the window was minimized.",
   "Faster startup on large workspaces.",
 ]
+
+// What the Updates group plays an installed copy's updates with.
+export type DemoUpdates = ReturnType<typeof createDemoUpdates>
+
+// Each press offers a newer version than the last, across boots too.
+let patch = 79
+const nextVersion = (): string => `0.0.${(patch += 1)}`
+
+// The panel's group for an installed copy's updates. On a portable copy, whose install
+// entry would stand in for them, each one boots the demo again as an installed copy and
+// plays there.
+export const updatesGroup = (launch: DemoLaunch, controls: DemoUpdates): DemoActionGroup => {
+  const installed = (play: (updates: DemoUpdates) => void) =>
+    launch.portable
+      ? { reboots: true as const, run: () => launch.bootInstalled(play) }
+      : { run: () => play(controls) }
+  return {
+    section: "App",
+    title: "Updates",
+    actions: [
+      {
+        label: "Download",
+        hint: "Bar counts up, says ready, then fades",
+        ...installed(({ download }) => download(nextVersion(), sampleNotes)),
+      },
+      {
+        label: "Download, held",
+        hint: "Bar stays at 40% to look at",
+        ...installed(({ offer }) =>
+          offer({ kind: "downloading", version: nextVersion(), notes: sampleNotes, percent: 40 }),
+        ),
+      },
+      {
+        label: "Download failed",
+        hint: "Bar drops, the Update available chip shows; the host retries later",
+        ...installed(({ failInstall }) => failInstall()),
+      },
+      {
+        label: "Release to fetch",
+        hint: "Footer chip, Update available; opens the release page",
+        ...installed(({ offer }) =>
+          offer({ kind: "available", version: nextVersion(), notes: sampleNotes }),
+        ),
+      },
+      {
+        label: "Ready at launch",
+        hint: "No bar: downloaded before this run",
+        ...installed(({ offer }) =>
+          offer({ kind: "ready", version: nextVersion(), notes: sampleNotes }),
+        ),
+      },
+      {
+        label: "Early builds on",
+        hint: "Shows in Preferences once reopened",
+        run: () => controls.updates.channel?.set("early"),
+      },
+      {
+        label: "Early builds off",
+        hint: "Shows in Preferences once reopened",
+        run: () => controls.updates.channel?.set("stable"),
+      },
+      {
+        label: "Finish restart",
+        reboots: true,
+        hint: "Reloads on the new version; update gone",
+        run: controls.finish,
+      },
+    ],
+  }
+}
