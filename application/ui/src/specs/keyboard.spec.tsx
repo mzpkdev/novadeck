@@ -1171,8 +1171,13 @@ describe("dictation", () => {
       localStorage.setItem("novadeck.preferences", JSON.stringify({ chatView: true }))
       await openWithoutVoice("/?demo=agents&voice=failing")
       await terminalTab("Checkout implementation").click()
-      const win = (): HTMLElement => document.querySelector<HTMLElement>("section.terminal-window")!
+      // Its own window, measured while it shows: a hidden one would measure 0 whatever happens.
+      const win = (): HTMLElement =>
+        terminal("Checkout implementation")
+          .element()
+          .closest<HTMLElement>("section.terminal-window")!
       const overflow = (): number => win().scrollHeight - win().clientHeight
+      expect(win().clientHeight).toBeGreaterThan(0)
       const without = overflow()
       await terminal("Checkout implementation")
         .getByRole("button", {
@@ -1180,7 +1185,7 @@ describe("dictation", () => {
         })
         .click()
       await expect.element(offer()).toBeVisible()
-      const strip = document.querySelector<HTMLElement>(".dictation-strip:not([hidden])")!
+      const strip = win().querySelector<HTMLElement>(".dictation-strip:not([hidden])")!
       const host = strip.parentElement!.getBoundingClientRect()
       const form = strip
         .parentElement!.querySelector(".agent-command-form")!
