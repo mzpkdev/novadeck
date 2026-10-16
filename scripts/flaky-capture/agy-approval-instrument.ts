@@ -23,13 +23,13 @@ export const instrumentApproval = (
       source,
       "  if (!object(payload)) return undefined",
       `  if (!object(payload)) return undefined
-  __approvalIngress({ stage: "raw-ingress", agent: agent.data, event: typeof value.event === "string" ? value.event : "", seq, payload, wireBytes: Buffer.byteLength(sent) })`,
+  __approvalIngress({ stage: "raw-ingress", agent: agent.data, event: typeof value.event === "string" ? value.event : "", seq, terminalId: value.terminalId, token: value.token, payload, wireBytes: Buffer.byteLength(sent) })`,
     )
     code = once(
       code,
       "  if (JSON.stringify(sized).length > maxReport) return undefined",
       `  if (JSON.stringify(sized).length > maxReport) return undefined
-  __approvalIngress({ stage: "sized-payload", agent: agent.data, event, seq, instance, firedAt, payload: sized.payload })`,
+  __approvalIngress({ stage: "sized-payload", agent: agent.data, event, seq, terminalId: value.terminalId, token: value.token, instance, firedAt, payload: sized.payload })`,
     )
     if (!source.includes("payload = JSON.parse(sent)"))
       throw new Error("AGY hook ingress no longer parses the original payload")

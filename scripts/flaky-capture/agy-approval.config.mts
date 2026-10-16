@@ -3,7 +3,9 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import original from "../../application/runner/vitest.e2e.config.ts"
 import { approvalTest, instrumentApproval } from "./agy-approval-instrument.ts"
+import ApprovalInventory from "./agy-approval-reporter.ts"
 
 const root = fileURLToPath(new URL("../../application/runner/", import.meta.url))
 const events = fileURLToPath(new URL("./agy-approval-events.ts", import.meta.url))
@@ -15,7 +17,9 @@ const output = process.env.NOVADECK_AGY_APPROVAL_OUTPUT
 if (!output || process.env.NOVADECK_AGY_APPROVAL_CAPTURE !== "1")
   throw new Error("Run AGY approval capture through scripts/flaky-capture/agy-approval.ts")
 mkdirSync(join(output, "transforms"), { recursive: true })
+const suite = process.env.NOVADECK_AGY_APPROVAL_SCOPE === "suite"
 export default {
+  ...original,
   root,
   plugins: [
     {
@@ -41,10 +45,14 @@ export default {
     },
   ],
   test: {
-    include: ["src/e2e/answers.e2e.ts"],
-    testNamePattern: `^Antigravity > ${approvalTest}$`,
-    testTimeout: 180_000,
-    hookTimeout: 600_000,
-    fileParallelism: false,
+    ...original.test,
+    ...(suite
+      ? {}
+      : {
+          include: ["src/e2e/answers.e2e.ts"],
+          testNamePattern: `^Antigravity > ${approvalTest}$`,
+        }),
+    reporters: ["default", "json", ...(suite ? [new ApprovalInventory()] : [])],
+    outputFile: { json: join(output, "tests.json") },
   },
 }

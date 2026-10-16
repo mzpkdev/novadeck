@@ -6,6 +6,7 @@ import type { Report } from "@novadeck/harness-core/report"
 import type { Terminal as Screen } from "@xterm/headless"
 
 import {
+  approvalSenderMatches,
   observationPairs,
   payloadMetadata,
   watchApprovalIngress,
@@ -26,6 +27,7 @@ type Process = {
   onData: (listen: (data: string) => void) => { dispose: () => void }
 }
 type Record = {
+  token: string
   process: Process
   screen: Screen
   chain: Promise<void>
@@ -132,8 +134,19 @@ export const startApprovalCapture = async (run: E2E) => {
     })
     throw error
   }
+  const inside = run.deck.terminals as unknown as Inside
+  const belongs = (incoming: { readonly terminalId?: unknown; readonly token?: unknown }) => {
+    const id = incoming.terminalId
+    const record = typeof id === "string" ? inside.records.get(id) : undefined
+    return (
+      typeof id === "string" &&
+      (!terminal || terminal.id === id) &&
+      approvalSenderMatches(incoming, record && { terminalId: id, token: record.token })
+    )
+  }
   const stopIngress = watchApprovalIngress((event) => {
-    if (event.agent !== "agy") return
+    if (event.agent !== "agy" || !belongs(event)) return
+    if (typeof event.token === "string") secrets.add(event.token)
     const key = `${event.event}:${event.seq}`
     const observed = event.stage === "raw-ingress" ? raw : sized
     if (observed.has(key)) duplicateStages += 1
@@ -147,7 +160,6 @@ export const startApprovalCapture = async (run: E2E) => {
       metadata: payloadMetadata(event.payload, event.wireBytes),
     })
   })
-  const inside = run.deck.terminals as unknown as Inside
   const priorReport = Object.getOwnPropertyDescriptor(inside, "report")
   const report = inside.report
   const adapter = harnesses.agy as { decode: typeof harnesses.agy.decode }
@@ -158,6 +170,7 @@ export const startApprovalCapture = async (run: E2E) => {
     throw new Error("The AGY approval capture report/decoder boundary changed")
   }
   inside.report = async function (incoming, deadline) {
+    if (!belongs(incoming)) return report.call(this, incoming, deadline)
     secrets.add(incoming.token)
     note("hook.report-enter", {
       event: hooks.has(incoming.event) ? incoming.event : "other",
@@ -196,6 +209,7 @@ export const startApprovalCapture = async (run: E2E) => {
   })
   adapter.decode = (incoming) => {
     const facts = decode(incoming)
+    if (!belongs(incoming)) return facts
     const key = `${incoming.event}:${incoming.seq}`
     if (decoded.has(key)) duplicateStages += 1
     if (decoded.size < 5_000) decoded.add(key)
@@ -406,7 +420,8 @@ export const startApprovalCapture = async (run: E2E) => {
         join(folder, "native-output.jsonl"),
         output.map((item) => serialize(item).replaceAll("\n", "")).join("\n") + "\n",
       )
-      if (!failed && !complete) throw new Error("The AGY approval capture was incomplete")
+      if (!failed && !complete && process.env.NOVADECK_AGY_APPROVAL_SCOPE !== "suite")
+        throw new Error("The AGY approval capture was incomplete")
     },
   }
 }

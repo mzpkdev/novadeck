@@ -88,6 +88,8 @@ export type Ingress = {
   readonly seq: number
   readonly instance?: string | null
   readonly firedAt?: number
+  readonly terminalId?: unknown
+  readonly token?: unknown
   readonly payload: unknown
   readonly wireBytes?: number
 }
@@ -111,3 +113,12 @@ export const watchApprovalIngress = (listen: (event: Ingress) => void) => {
     return errors
   }
 }
+
+/** Match in memory before inspecting metadata; sender secrets never enter artifacts. */
+export const approvalSenderMatches = (
+  incoming: { readonly terminalId?: unknown; readonly token?: unknown },
+  expected: { readonly terminalId: string; readonly token: string } | undefined,
+) =>
+  Boolean(
+    expected && incoming.terminalId === expected.terminalId && incoming.token === expected.token,
+  )
