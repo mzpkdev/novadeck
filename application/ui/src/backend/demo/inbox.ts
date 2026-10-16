@@ -24,7 +24,7 @@ export type DemoInbox = Inbox & {
   readonly add: (item: InboxItem) => void
   readonly clear: () => void
   // The next answer fails instead of taking, so the sheet shows why.
-  readonly failNext: () => void
+  readonly failNext: (reason?: string) => void
 }
 
 // Whether a backend's Inbox is the demo's, which the debug panel adds items to.
@@ -196,7 +196,7 @@ export const demoInboxIds = {
   held: "demo-held",
   webhook: "demo-webhook-ask",
   question: "demo-question",
-  secret: "demo-secret",
+  preview: "demo-preview-ask",
   login: "demo-login",
   limit: "demo-limit",
   limitManual: "demo-limit-manual",
@@ -477,7 +477,7 @@ const fixtures: readonly Fixture[] = [
     content: { kind: "request", request: questionRequest },
   },
   {
-    id: demoInboxIds.secret,
+    id: demoInboxIds.preview,
     project: "storefront",
     terminal: 1,
     agent: "claude",
@@ -486,11 +486,11 @@ const fixtures: readonly Fixture[] = [
     content: {
       kind: "ask",
       ask: {
-        subject: "Could you add a Stripe test key?",
-        body: "The payment step is in, behind the `PaymentProvider` interface, and all 41 unit tests pass. The e2e suite needs `STRIPE_SECRET_KEY` in test mode, and there isn't one in `.env.local` or the shell.\n\nOnce it's there I'll rerun e2e and open the PR. I'm building the address form in the meantime, so no rush.",
+        subject: "Should the preview show test or sample products?",
+        body: "The payment step is in and all 41 unit tests pass. Should the preview show the test catalog or a few sample products? I'm building the address form in the meantime, so no rush.",
         details: null,
         hardToUndo: null,
-        shape: { type: "secret", name: "STRIPE_SECRET_KEY", file: ".env.local" },
+        shape: { type: "text" },
       },
     },
   },
@@ -608,12 +608,17 @@ const resumed = (found: InboxItem, on: boolean): InboxItem =>
     ? { ...found, stopped: !on, trouble: { ...found.trouble, autoResume: on } }
     : found
 
-export const createDemoInbox = (now: number, items = demoInboxItems(now)): DemoInbox => {
+export const createDemoInbox = (
+  now: number,
+  items = demoInboxItems(now),
+  record: (item: InboxItem, answer?: InboxAnswer) => void = () => {},
+): DemoInbox => {
+  for (const each of items) record(each)
   const state = createStore<InboxState>({ ...emptyInbox, items })
   const change = (next: (current: InboxState) => InboxState): void => {
     state.update(next)
   }
-  let failing = false
+  let failing: string | null = null
   const find = (id: string): InboxItem | undefined =>
     state.getSnapshot().items.find((each) => each.id === id)
   return {
@@ -627,10 +632,11 @@ export const createDemoInbox = (now: number, items = demoInboxItems(now)): DemoI
           failed: { ...current.failed, [id]: "That answer isn't for this item." },
         }))
       if (failing) {
-        failing = false
+        const reason = failing
+        failing = null
         return change((current) => ({
           ...current,
-          failed: { ...current.failed, [id]: "The agent didn't take that answer. Try again." },
+          failed: { ...current.failed, [id]: reason },
         }))
       }
       // Auto-resume only changes how the agent goes on; the item stays.
@@ -647,15 +653,14 @@ export const createDemoInbox = (now: number, items = demoInboxItems(now)): DemoI
         answering: { ...current.answering, [id]: true },
         failed: withoutKey(current.failed, id),
       }))
-      setTimeout(
-        () =>
-          change((current) => ({
-            items: current.items.filter((each) => each.id !== id),
-            answering: withoutKey(current.answering, id) as Record<string, true>,
-            failed: current.failed,
-          })),
-        answerMs,
-      )
+      setTimeout(() => {
+        record(found, answer)
+        change((current) => ({
+          items: current.items.filter((each) => each.id !== id),
+          answering: withoutKey(current.answering, id) as Record<string, true>,
+          failed: current.failed,
+        }))
+      }, answerMs)
     },
     see: (id) =>
       change((current) =>
@@ -671,14 +676,16 @@ export const createDemoInbox = (now: number, items = demoInboxItems(now)): DemoI
         ...current,
         items: current.items.filter((each) => each.kind !== "update"),
       })),
-    add: (added) =>
+    add: (added) => {
+      record(added)
       change((current) => ({
         ...current,
         items: [...current.items.filter((each) => each.id !== added.id), added],
-      })),
+      }))
+    },
     clear: () => change(() => emptyInbox),
-    failNext: () => {
-      failing = true
+    failNext: (reason = "The agent didn't take that answer. Try again.") => {
+      failing = reason
     },
   }
 }

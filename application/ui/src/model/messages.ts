@@ -14,6 +14,8 @@ export type MessageState = "queued" | "leased" | "delivered" | "held" | "gone"
 
 export type AgentMessage = {
   readonly id: string
+  // Inbox letters and the person's replies share a thread with You.
+  readonly inbox?: "ask" | "tell" | "answer"
   // Its place in its thread, counted from 1.
   readonly hop: number
   // The sender's and recipient's handles, such as `moth`.

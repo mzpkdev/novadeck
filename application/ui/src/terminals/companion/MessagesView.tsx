@@ -20,6 +20,8 @@ const clock = (at: number): string => {
       })
 }
 
+const party = (handle: string): string => (handle === "you" ? "You" : handleText(handle))
+
 // Where a message is on its way, in a word or two.
 const stateText = (message: AgentMessage): string => {
   switch (message.state) {
@@ -59,9 +61,14 @@ const MessageItem = ({
         <span className="mail-message-direction">
           <Direction size={12} strokeWidth={1.75} aria-hidden />
           <span className="sr-only">
-            {sent ? `Sent to ${handleText(message.to)}` : `From ${handleText(message.from)}`}
+            {sent ? `Sent to ${party(message.to)}` : `From ${party(message.from)}`}
           </span>
         </span>
+        {message.inbox && (
+          <span>
+            {message.inbox === "ask" ? "Ask" : message.inbox === "tell" ? "Tell" : "Your reply"}
+          </span>
+        )}
         <time dateTime={new Date(message.sentAt).toISOString()}>{clock(message.sentAt)}</time>
         <Tooltip content={stateHint[message.state]}>
           <span
@@ -95,9 +102,11 @@ const ThreadItem = ({
   failure: string | undefined
   onRelease: () => void
 }): React.JSX.Element => {
-  const peer = peerName ?? handleText(thread.peer)
+  const peer = thread.peer === "you" ? "You" : (peerName ?? party(thread.peer))
   const label =
-    peerName === undefined ? handleText(thread.peer) : `${peerName} (${handleText(thread.peer)})`
+    thread.peer === "you" || peerName === undefined
+      ? party(thread.peer)
+      : `${peerName} (${party(thread.peer)})`
   const count = thread.messages.length
   const heading = useRef<HTMLHeadingElement>(null)
   const held = useRef(thread.held)
@@ -113,7 +122,7 @@ const ThreadItem = ({
         <h3 ref={heading} tabIndex={-1} className="mail-thread-peer">
           {peer}
         </h3>
-        {peerName !== undefined && <code>{handleText(thread.peer)}</code>}
+        {thread.peer !== "you" && peerName !== undefined && <code>{party(thread.peer)}</code>}
         <span className="mail-thread-count">
           {count} message{count === 1 ? "" : "s"}
         </span>

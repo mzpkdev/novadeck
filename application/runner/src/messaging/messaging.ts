@@ -403,6 +403,75 @@ export class Messaging {
     this.live.delete(terminalId)
   }
 
+  /** The exact agent session that an Inbox ask and its answer belong to. */
+  inboxOwner(terminalId: string):
+    | {
+        projectId: string
+        workspaceSessionId: string
+        terminalId: string
+        handle: string
+        agent: AgentName
+        sessionId: string
+      }
+    | undefined {
+    const live = this.live.get(terminalId)
+    if (!live?.root || this.closed) return undefined
+    return {
+      projectId: live.projectId,
+      workspaceSessionId: live.sessionId,
+      terminalId,
+      handle: live.handle,
+      agent: live.root.agent,
+      sessionId: live.root.sessionId,
+    }
+  }
+
+  /** Commits a person's answer before it becomes visible or deliverable. Not an agent operation. */
+  personReply(
+    terminalId: string,
+    askId: string,
+    subject: string,
+    text: string,
+    commit: (message: Message) => void,
+  ): void {
+    const owner = this.inboxOwner(terminalId)
+    if (!owner) throw new DomainError("CONFLICT", "The asking agent's session has ended.")
+    const message: Message = {
+      id: this.freshMessageId(),
+      projectId: owner.projectId,
+      thread: `t-${askId.replaceAll("-", "")}`,
+      hop: 2,
+      from: { terminalId: "you", handle: "you", agent: null, sessionId: null },
+      to: { terminalId, handle: owner.handle, agent: owner.agent, sessionId: owner.sessionId },
+      text: cleanText(text),
+      sentAt: this.now(),
+      state: this.paused ? "held" : "queued",
+      deliveredAt: null,
+      notified: true,
+      stopped: false,
+      fromLead: false,
+      toLead: false,
+      response: { askId, subject },
+    }
+    if (byteLength(message.text) > maxMessageBytes || deliveredBytes(message) > maxDeliveryBytes)
+      throw new DomainError(
+        "ANSWER_FAILED",
+        "That answer is too long once delivered. Shorten it and try again.",
+      )
+    if (
+      [...this.messages.values()].filter(
+        (each) => each.to.terminalId === terminalId && undelivered(each),
+      ).length >= maxUndelivered
+    )
+      throw new DomainError(
+        "RESOURCE_LIMIT",
+        "Too many messages are waiting for this agent. Try again once they arrive.",
+      )
+    commit(message)
+    this.messages.set(message.id, message)
+    this.changed(terminalId)
+  }
+
   /** The terminal's delivery state, while it runs. */
   delivery(terminalId: string): Delivery | undefined {
     return this.live.get(terminalId)?.delivery
@@ -1118,6 +1187,7 @@ export class Messaging {
           state: message.state,
           held: message.state === "held" ? this.holdOf(message) : null,
           deliveredAt: message.deliveredAt,
+          ...(message.response && { inbox: "answer" as const }),
         })),
       }
     })

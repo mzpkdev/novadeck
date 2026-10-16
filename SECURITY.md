@@ -186,3 +186,14 @@ never writes to the user's rc files or dotfiles. Only when the person connects a
 does it install Novadeck's plugin into that agent, through the agent's own plugin
 commands, and disconnecting removes it. The plugin's hook does nothing outside
 Novadeck's shells. On Linux and macOS its MCP server starts the launcher the terminal names in `NOVADECK_MCP`, as its hook starts `NOVADECK_HOOK`'s, and otherwise the launcher of the Novadeck that connected the agent; both are the user's own environment, so a process that changes them runs nothing it couldn't run already.
+
+Inbox asks and tells are authenticated terminal operations: an agent can create or
+withdraw only its own asks, and cannot name a sender or create a person response.
+Only the authenticated runner API used by the UI answers an ask. The runner binds the
+answer to the exact asking session and atomically saves it with the resolved ask before
+queuing delivery. Delivery says Novadeck relayed the response and adds a fresh person
+mark named by the outer note; agent text and quoted earlier marks are escaped data.
+Someone holding the runner's full token already has the UI's shell authority and can
+answer asks too; a terminal's report token cannot call that API. Asks, tells and replies
+remain in the workspace database as Messages history and can contain the person's
+words. Secret ask shapes and writing secrets into project files are unavailable.

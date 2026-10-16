@@ -26,7 +26,12 @@ const SheetBody = ({ item }: { readonly item: InboxItem }): React.JSX.Element =>
   const answered = sent[item.id]
   const failed = state.failed[item.id]
   // An answer that didn't take is no answer.
-  const confirmed = failed === undefined ? answered : undefined
+  const confirmed =
+    failed === undefined &&
+    !state.answering[item.id] &&
+    !state.items.some((each) => each.id === item.id)
+      ? answered
+      : undefined
   const type = inboxType(item)
   const Icon = confirmed ? CircleCheck : icons[type]
   const content: SheetContentProps = {

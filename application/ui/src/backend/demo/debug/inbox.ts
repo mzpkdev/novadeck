@@ -37,9 +37,9 @@ const kinds: readonly { readonly label: string; readonly name: Named; readonly h
     hint: "Ask row with Claude's question and its (Recommended) option",
   },
   {
-    label: "Secret request",
-    name: "secret",
-    hint: "Ask row asking for STRIPE_SECRET_KEY, written to .env.local",
+    label: "Ask while working",
+    name: "preview",
+    hint: "Ask row with a free-text answer while the agent keeps working",
   },
   {
     label: "Login request",
@@ -146,6 +146,11 @@ export const inboxGroups = (inbox: DemoInbox | undefined): readonly DemoActionGr
           label: "Fail the next answer",
           hint: "The next answer to any item fails and the sheet says so, leaving the item to answer again",
           run: () => inbox.failNext(),
+        },
+        {
+          label: "Stale next answer",
+          hint: "The next answer fails because its ask is no longer available, keeping the reply draft",
+          run: () => inbox.failNext("That ask is no longer available."),
         },
         {
           label: "A new item arrives",

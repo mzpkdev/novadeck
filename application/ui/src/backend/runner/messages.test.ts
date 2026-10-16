@@ -3,7 +3,7 @@ import { vi } from "vitest"
 
 import { companionKeyId } from "../../model/companion"
 import { context, describe, expect, it } from "../../test"
-import { createRunnerMessages, type MailStreams } from "./messages"
+import { createRunnerMessages, mailOf, type MailStreams } from "./messages"
 
 const key = { projectId: "p", workspaceSessionId: "s", terminalId: "a" }
 const id = companionKeyId(key)
@@ -322,5 +322,25 @@ describe("the runner's messages", () => {
         }),
       )
     })
+  })
+})
+
+it("keeps Inbox history's kind and You as the person", () => {
+  const example = listing()
+  const thread = example.threads[0]!
+  const message = thread.messages[0]!
+  const mail = mailOf({
+    ...example,
+    threads: [
+      {
+        ...thread,
+        peer: "you",
+        messages: [{ ...message, inbox: "answer", from: "you", fromAgent: null }],
+      },
+    ],
+  })
+  expect(mail.threads[0]).toMatchObject({
+    peer: "you",
+    messages: [{ inbox: "answer", from: "you" }],
   })
 })
