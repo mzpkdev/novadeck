@@ -33,16 +33,17 @@ const installedState: VoiceState = {
 }
 
 // Where the demo starts: installed (the try demo's), or not (the offer, and the Addons
-// card's Install).
-export type DemoVoiceStart = "installed" | "uninstalled"
+// card's Install), or not, and its first install fails.
+export type DemoVoiceStart = "installed" | "uninstalled" | "failing"
 
-// What a spec asks for in its address's hash: `&voice=uninstalled`.
+// What a spec asks for in its address's hash: `&voice=uninstalled`, or `&voice=failing`, not
+// installed with an install that fails.
 export const requestedVoice = (): DemoVoiceStart => {
   const asked =
     typeof window === "undefined"
       ? null
       : new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("voice")
-  return asked === "uninstalled" ? asked : "installed"
+  return asked === "uninstalled" || asked === "failing" ? asked : "installed"
 }
 
 // What the debug panel puts voice input in.
@@ -123,7 +124,7 @@ export const createDemoVoice = (
   let slowTurbo = false
   // How the next install ends instead of finishing: held at the model, half there, until
   // cancelled, or failing as a connection that drops.
-  let endsIn: "hold" | "failure" | undefined
+  let endsIn: "hold" | "failure" | undefined = start === "failing" ? "failure" : undefined
 
   const install = (): void => {
     if (state.getSnapshot().installing) {

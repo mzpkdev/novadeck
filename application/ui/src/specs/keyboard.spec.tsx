@@ -1166,24 +1166,35 @@ describe("dictation", () => {
       expect(content.bottom).toBeLessThanOrEqual(strip.getBoundingClientRect().top + 1)
     })
 
-    it("fits in a short chat window, so the chat's box stays inside", async () => {
+    it("fits in a short chat window, so nothing of it overflows, in each state of the setup", async () => {
       await page.viewport(900, 800)
       localStorage.setItem("novadeck.preferences", JSON.stringify({ chatView: true }))
-      await openWithoutVoice("/?demo=agents&voice=uninstalled")
+      await openWithoutVoice("/?demo=agents&voice=failing")
       await terminalTab("Checkout implementation").click()
+      const win = (): HTMLElement => document.querySelector<HTMLElement>("section.terminal-window")!
+      const overflow = (): number => win().scrollHeight - win().clientHeight
+      const without = overflow()
       await terminal("Checkout implementation")
         .getByRole("button", {
           name: labelled("Set up voice input for ", "Checkout implementation"),
         })
         .click()
       await expect.element(offer()).toBeVisible()
-
       const strip = document.querySelector<HTMLElement>(".dictation-strip:not([hidden])")!
       const host = strip.parentElement!.getBoundingClientRect()
       const form = strip
         .parentElement!.querySelector(".agent-command-form")!
         .getBoundingClientRect()
       expect(form.bottom).toBeLessThanOrEqual(host.bottom + 0.5)
+      expect(overflow()).toBe(without)
+      expect(overflow()).toBe(0)
+
+      await offer().getByRole("button", { name: "Turn on" }).click()
+      await expect.element(saying("Setting up voice input")).toBeVisible()
+      expect(overflow()).toBe(0)
+
+      await expect.element(saying("Voice input didn't install"), { timeout: 15_000 }).toBeVisible()
+      expect(overflow()).toBe(0)
     })
 
     it("keeps its offer when the mic of another terminal is clicked in Grid, which selects it", async () => {
