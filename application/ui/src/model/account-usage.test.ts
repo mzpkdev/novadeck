@@ -142,7 +142,7 @@ describe("the terminals that report to the account", () => {
   // A session whose first terminal runs Claude Code in `state`, beside a shell.
   const workspaceOf = (state: "running" | "idle"): Workspace => {
     const base = workspaceFixture()
-    const agent: TerminalMetadata =
+    const seat: TerminalMetadata =
       state === "running"
         ? {
             ...terminalFixture(1, "~/project"),
@@ -160,7 +160,7 @@ describe("the terminals that report to the account", () => {
           history: [
             {
               ...project!.history[0]!,
-              state: createTerminalState([agent, terminalFixture(2, "~/project")], "grid", "grid"),
+              state: createTerminalState([seat, terminalFixture(2, "~/project")], "grid", "grid"),
             },
           ],
         },
