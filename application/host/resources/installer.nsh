@@ -124,7 +124,7 @@
       ${EndIf}
       MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY +2
       Quit
-      IntOp $2 $6 + 1
+      IntOp $2 $6 + 2
     ${EndIf}
 
     ${If} $4 == 0
