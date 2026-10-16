@@ -1,7 +1,7 @@
 import { vi } from "vitest"
 
 import { describe, expect, it } from "../../test"
-import { beyond, give, tetherPoint } from "./tether"
+import { beyond, give, refuseDrop, tetherPoint } from "./tether"
 
 // jsdom has no resizes; dnd-kit, which the tether extends, asks for them as it loads.
 vi.hoisted(() => {
@@ -35,5 +35,24 @@ describe("a tethered icon", () => {
   it("gives the same either way", () => {
     expect(give(-30)).toBeCloseTo(-give(30))
     expect(give(0)).toBe(0)
+  })
+})
+
+describe("a refused drop", () => {
+  it("is marked on the root only as it flips, not on every move of the pointer", async () => {
+    const records: MutationRecord[] = []
+    const observer = new MutationObserver((found) => records.push(...found))
+    observer.observe(document.documentElement, { attributes: true })
+    refuseDrop(true)
+    refuseDrop(true)
+    refuseDrop(false)
+    refuseDrop(false)
+    await Promise.resolve()
+    observer.disconnect()
+    expect(records.map((record) => record.attributeName)).toEqual([
+      "data-drag-refused",
+      "data-drag-refused",
+    ])
+    expect(document.documentElement.hasAttribute("data-drag-refused")).toBe(false)
   })
 })
