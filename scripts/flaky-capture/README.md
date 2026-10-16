@@ -49,6 +49,8 @@ The output contains:
   case, including successful controls. Buffers retain the last 200 events and state
   total/dropped counts explicitly. They contain coordinates, scalar pointer properties,
   non-text DOM hit/target summaries, sortable indexes and before/after drop state.
+  Free-space drags also retain their planned point, view/window rectangles and viewport,
+  with the view rectangle measured again at native release.
 - `attempt-NN/attachments/` and `traces/`: failed screenshots and Playwright traces.
   These use visible directory names so the workflow need not upload unrelated hidden files.
 

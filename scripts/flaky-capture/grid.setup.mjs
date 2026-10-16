@@ -57,6 +57,7 @@ beforeEach((context) => {
   began = performance.now()
   events = []
   total = 0
+  let targetView
   const record = (type, value) => {
     total += 1
     events.push({ ms: Math.round(performance.now() - began), type, value })
@@ -64,7 +65,19 @@ beforeEach((context) => {
   }
   const pointer = (event) => {
     if (event.type === "pointermove" && event instanceof PointerEvent && !event.buttons) return
-    record(event.type, point(event))
+    record(event.type, { ...point(event), view: targetView?.getBoundingClientRect().toJSON() })
+  }
+  const planned = (event) => {
+    const { view, at, windows } = event.detail
+    targetView = view
+    const box = view.getBoundingClientRect()
+    record("planned", {
+      at,
+      view: box.toJSON(),
+      viewport: { width: innerWidth, height: innerHeight },
+      windows: windows.map((each) => each.toJSON()),
+      ...point(new MouseEvent("planned", { clientX: box.left + at.x, clientY: box.top + at.y })),
+    })
   }
   const dropped = (event) => {
     const { nativeEvent, before, after, ...detail } = event.detail
@@ -85,6 +98,7 @@ beforeEach((context) => {
   ])
     window.addEventListener(type, pointer, true)
   window.addEventListener("novadeck:test-bar-drop", dropped)
+  window.addEventListener("novadeck:test-bar-drag-target", planned)
   remove = () => {
     for (const type of [
       "pointerdown",
@@ -96,6 +110,7 @@ beforeEach((context) => {
     ])
       window.removeEventListener(type, pointer, true)
     window.removeEventListener("novadeck:test-bar-drop", dropped)
+    window.removeEventListener("novadeck:test-bar-drag-target", planned)
   }
 })
 afterEach(async () => {

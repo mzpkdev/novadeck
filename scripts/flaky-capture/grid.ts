@@ -148,6 +148,7 @@ const main = async (): Promise<void> => {
   const files = [
     "application/ui/src/specs/companions.spec.tsx",
     "application/ui/src/specs/support/companions.tsx",
+    "application/ui/src/specs/support/bar-drag.ts",
     "application/ui/src/terminals/companion/use-bar-drag.ts",
     "application/ui/src/terminals/drag-session.ts",
     "application/ui/src/layouts/grid/Grid.tsx",
