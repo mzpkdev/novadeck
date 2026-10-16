@@ -80,15 +80,22 @@ describe("the demo's voice input", () => {
     const voice = createDemoVoice({ step: 100, transcribe: 10 })
     voice.show("declined")
     expect(voice.state.getSnapshot()).toMatchObject({ installed: [], wanted: false })
+    // Each arms the next install, which the offer's Turn on starts.
     voice.show("network-failure")
+    voice.install()
+    await vi.advanceTimersByTimeAsync(300)
     expect(voice.state.getSnapshot()).toMatchObject({
       installed: [],
       wanted: true,
+      installing: null,
       failure: expect.stringContaining("connection dropped"),
     })
     voice.show("installing")
+    voice.install()
+    await vi.advanceTimersByTimeAsync(1000)
     expect(voice.state.getSnapshot().installing).toMatchObject({ step: "model" })
     voice.show("install-and-finish")
+    voice.install()
     await vi.advanceTimersByTimeAsync(400)
     expect(voice.state.getSnapshot()).toMatchObject({ installed: ["turbo"], enabled: true })
     voice.show("uninstalled")

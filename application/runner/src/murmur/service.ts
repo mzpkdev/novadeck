@@ -46,6 +46,8 @@ export type MurmurSettingsStore = {
   murmurCheck(): MurmurCheck | null
   saveMurmurCheck(check: MurmurCheck | null): void
   /** Why an install found this computer can't run murmur; `null` when it never did. */
+  murmurOffers(): number
+  saveMurmurOffers(offers: number): void
   murmurUnsupported(): MurmurVerdict | null
   saveMurmurUnsupported(verdict: MurmurVerdict | null): void
 }
@@ -398,6 +400,7 @@ export class Murmur implements Describer {
       installing: this.installing,
       check,
       unsupported: this.unsupported()?.reason ?? null,
+      offers: this.settings.murmurOffers(),
       recheck: this.unsupported()?.recheck ?? false,
       failure:
         this.failure ??
@@ -595,11 +598,16 @@ export class Murmur implements Describer {
     }
   }
 
-  async set(change: MurmurSettingsChange): Promise<void> {
+  async set({
+    offered,
+    ...change
+  }: MurmurSettingsChange & { readonly offered?: true | undefined }): Promise<void> {
     this.assertOpen()
     await this.ready()
     this.assertOpen()
     if (this.uninstalling) throw new DomainError("CONFLICT", "Murmur is being removed.")
+    // The one-time offer was put in front of the person in a session: counted.
+    if (offered) this.settings.saveMurmurOffers(this.settings.murmurOffers() + 1)
     const wasOn = this.settings.murmurSettings().enabled
     // Turned on before any install, it is wanted, and the install that follows turns it on.
     if (change.enabled === true && !this.installed())

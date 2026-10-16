@@ -105,6 +105,41 @@ describe("the demo's murmur", () => {
       })
     })
 
+    it("walks an install to done, and to Not available, as the footer item follows", async () => {
+      const murmur = createDemoMurmur()
+      murmur.show("done")
+      expect(murmur.state.getSnapshot().installing).toMatchObject({ step: "check" })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(murmur.state.getSnapshot()).toMatchObject({ installed: true, installing: null })
+
+      murmur.show("unavailable-after-check")
+      expect(murmur.state.getSnapshot().installing).toMatchObject({ step: "check" })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(murmur.state.getSnapshot()).toMatchObject({
+        installed: false,
+        unsupported: expect.any(String),
+      })
+    })
+
+    it("asks the app to offer the chip, from a computer where it is not installed", () => {
+      const murmur = createDemoMurmur()
+      const before = murmur.offer.getSnapshot()
+      murmur.show("offer")
+      expect(murmur.offer.getSnapshot()).toBe(before + 1)
+      expect(murmur.state.getSnapshot()).toMatchObject({ installed: false, wanted: true })
+    })
+
+    it("counts the sessions the offer was shown in, and keeps the count through every scenario", () => {
+      const murmur = createDemoMurmur(undefined, "uninstalled")
+      murmur.set({ offered: true })
+      murmur.set({ offered: true })
+      expect(murmur.state.getSnapshot().offers).toBe(2)
+      murmur.show("installing")
+      murmur.show("network-failure")
+      expect(murmur.state.getSnapshot().offers).toBe(2)
+      expect(createDemoMurmur(undefined, "offered-out").state.getSnapshot().offers).toBe(3)
+    })
+
     it("shows the host's software-rendering verdict with nothing to check again", () => {
       const murmur = createDemoMurmur()
       murmur.show("unsupported-host")

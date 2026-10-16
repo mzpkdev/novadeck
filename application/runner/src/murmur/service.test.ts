@@ -564,6 +564,24 @@ describe("murmur's settings", () => {
   })
 })
 
+describe("the one-time offer's count", () => {
+  it("counts each session the app says it showed the offer in, and keeps it across a restart", async ({
+    resources,
+  }) => {
+    const { murmur, store, directory, manifest } = await setup(resources)
+    expect(murmur.state().offers).toBe(0)
+
+    await murmur.set({ offered: true })
+    await murmur.set({ offered: true })
+
+    expect(murmur.state().offers).toBe(2)
+    expect(murmur.state().wanted).toBe(true)
+    await murmur.close()
+    const again = await setup(resources, { store, directory, engine: manifest })
+    expect(again.murmur.state().offers).toBe(2)
+  })
+})
+
 describe("uninstalling murmur", () => {
   it("removes the engine and model and turns murmur off", async ({ resources }) => {
     const { murmur, store, directory } = await installed(resources)

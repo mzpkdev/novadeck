@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 
+import { FooterMurmur, type FooterMurmurProps } from "./FooterMurmur"
 import { FooterSandbox, type FooterSandboxProps } from "./FooterSandbox"
 import { FooterUpdate, type FooterUpdateProps } from "./FooterUpdate"
 
@@ -31,6 +32,7 @@ export const WorkspaceFooter = ({
   onRetry,
   update,
   sandbox,
+  murmur,
   usage,
 }: {
   readonly hidden: boolean
@@ -47,6 +49,8 @@ export const WorkspaceFooter = ({
   // Set while the app runs without its security sandbox: a chip beside the update's
   // opens the notice that says so.
   readonly sandbox?: FooterSandboxProps | undefined
+  // Murmur's install under way or just ended, beside the update's chip.
+  readonly murmur?: FooterMurmurProps | undefined
   // The account's subscriptions, at its end before the status.
   readonly usage?: ReactNode
 }): React.JSX.Element => {
@@ -88,6 +92,7 @@ export const WorkspaceFooter = ({
       <span className="flex items-center gap-4">
         {usage}
         <FooterSandbox sandbox={sandbox} hidden={hidden} />
+        <FooterMurmur murmur={murmur} hidden={hidden} />
         <FooterUpdate update={update} hidden={hidden} />
         <span className="footer-status flex items-center gap-1.5 font-bold">
           <span role="status" aria-live={current?.tone === "danger" ? "assertive" : "polite"}>

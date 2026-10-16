@@ -217,3 +217,9 @@ export const matchesShortcut = (event: ShortcutInput, shortcut: Shortcut): boole
   event.metaKey === shortcut.meta &&
   event.shiftKey === shortcut.shift &&
   event.altKey === Boolean(shortcut.alt)
+
+// The keys the person holds to dictate, when the shortcut list names them.
+export const dictationKeys = (): readonly string[] | undefined => {
+  const bindings: Partial<Record<string, Shortcut>> = shortcutBindings(currentPlatform())
+  return bindings["voice"]?.display
+}

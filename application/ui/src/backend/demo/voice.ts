@@ -121,6 +121,9 @@ export const createDemoVoice = (
   // Whether the next install finds turbo too slow, as the runner's does on a computer
   // without a GPU: it goes on to small, and turbo goes.
   let slowTurbo = false
+  // How the next install ends instead of finishing: held at the model, half there, until
+  // cancelled, or failing as a connection that drops.
+  let endsIn: "hold" | "failure" | undefined
 
   const install = (): void => {
     if (state.getSnapshot().installing) {
@@ -156,10 +159,29 @@ export const createDemoVoice = (
         total: sizeOf(aim, steps[0]!.step),
       },
     }))
+    const held = endsIn === "hold" ? steps.findIndex(({ step }) => step === "model") : -1
+    const failing = endsIn === "failure" ? steps.findIndex(({ step }) => step === "model") : -1
     steps.forEach(({ model, step }, index) => {
-      for (let part = 0; part <= ticks; part += 1)
+      // Held: the model's download stops half way, and nothing follows.
+      const last = index === held || index === failing ? ticks / 2 : ticks
+      if ((held >= 0 && index > held) || (failing >= 0 && index > failing)) return
+      for (let part = 0; part <= last; part += 1)
         later(() => progress(model, step, part), (index + part / ticks) * timing.step)
     })
+    if (held >= 0) return
+    if (failing >= 0) {
+      endsIn = undefined
+      later(
+        () =>
+          state.update((current) => ({
+            ...current,
+            installing: null,
+            failure: "The download stopped: the connection dropped.",
+          })),
+        (failing + 0.5) * timing.step,
+      )
+      return
+    }
     later(() => finish(aim === "turbo" && slowTurbo ? "small" : aim), steps.length * timing.step)
   }
 
@@ -167,40 +189,31 @@ export const createDemoVoice = (
     stop()
     choice = undefined
     slowTurbo = false
+    endsIn = undefined
     if (scenario === "installed") state.update(() => installedState)
     else if (scenario === "uninstalled") state.update(() => demoVoiceState)
     else if (scenario === "declined") {
       // As the runner after No thanks: off by choice, nothing installed.
       choice = false
       state.update(() => ({ ...demoVoiceState, wanted: false }))
-    } else if (scenario === "installing")
-      // Held at the model, half there, until cancelled.
-      state.update(() => ({
-        ...demoVoiceState,
-        installing: {
-          model: "turbo",
-          step: "model",
-          received: demoVoiceState.sizes.turbo / 2,
-          total: demoVoiceState.sizes.turbo,
-        },
-      }))
-    else if (scenario === "install-and-finish") {
+    } else if (scenario === "installing") {
+      // The next install is held at the model, half there, until cancelled.
       state.update(() => demoVoiceState)
-      install()
-    } else if (scenario === "install-fallback") {
+      endsIn = "hold"
+    } else if (scenario === "install-and-finish") state.update(() => demoVoiceState)
+    else if (scenario === "install-fallback") {
       // Turbo downloads and checks, and is too slow here: small follows, and turbo goes.
       state.update(() => demoVoiceState)
       slowTurbo = true
-      install()
     } else if (scenario === "software-graphics")
       // As the runner where the host saw only software rendering: small is what installs,
       // and what the offer quotes.
       state.update(() => ({ ...demoVoiceState, aim: "small" }))
-    else
-      state.update(() => ({
-        ...demoVoiceState,
-        failure: "The download stopped: the connection dropped.",
-      }))
+    else {
+      // The next install fails as a connection that drops.
+      state.update(() => demoVoiceState)
+      endsIn = "failure"
+    }
   }
 
   return {

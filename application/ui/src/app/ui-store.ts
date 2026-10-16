@@ -72,8 +72,9 @@ export type UiState = {
   // Whether an addon offer (voice input, murmur) came up in this run of the app: each run
   // offers at most one unasked; never persisted.
   readonly addonOfferShown: boolean
-  // Voice input's offer is open: the person reached for the mic and it is not installed.
-  readonly voiceOffer: boolean
+  // The terminal Murmur's offer chip sits on, by session context and id: the first whose
+  // agent finished a turn, until the offer is answered; never persisted.
+  readonly nameOffer: { readonly context: string; readonly id: string } | null
   // How many crashes the backend reports while its far side keeps crashing; 0 otherwise.
   readonly crashLoop: number
   // The update the desktop app last told of: downloaded, or to fetch from its release page.
@@ -141,7 +142,7 @@ export const initialUi = ({
   closing: null,
   crashLoopDismissed: false,
   addonOfferShown: false,
-  voiceOffer: false,
+  nameOffer: null,
   crashLoop: 0,
   update: null,
   updateOpen: false,

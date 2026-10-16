@@ -26,7 +26,7 @@ import {
   type TerminalSummary,
   type RequestAnswer,
   type TranscriptChange,
-  type MurmurSettings,
+  type MurmurChange,
   type MurmurState,
   type VoiceChange,
   type VoiceState,
@@ -423,7 +423,7 @@ export type Runner = {
     /** Removes the engine and the model, and turns murmur off. */
     uninstall(): Promise<void>
     /** Changes the settings given; the others stay. */
-    set(settings: Partial<MurmurSettings>): Promise<void>
+    set(settings: MurmurChange): Promise<void>
     /**
      * Asks murmur to write the gist of the reply that ended the terminal's turn at `at`,
      * which the client shows unread; it arrives in the terminal's activity. Does nothing

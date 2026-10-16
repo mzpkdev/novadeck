@@ -1,6 +1,12 @@
 import { createStore, type MutableStore, type Store } from "../model/store"
 import type { TerminalKey } from "../model/types"
-import { maxClipSeconds, type Voice, type VoiceClip, type VoiceState } from "../model/voice"
+import {
+  changeFailurePrefix,
+  maxClipSeconds,
+  type Voice,
+  type VoiceClip,
+  type VoiceState,
+} from "../model/voice"
 import type { Capture, CaptureHandlers } from "./capture"
 import type { Dictation } from "./dictation-control"
 import {
@@ -80,8 +86,8 @@ const quiet: DictationView = {
 
 export type DictationDeps = {
   readonly voice: Voice
-  // Offers to install voice input, as the person reached for it before it is installed.
-  readonly offer: () => void
+  // Notes that voice input was offered, as the person reached for it before it is installed.
+  readonly offered: () => void
   readonly typeInto: (key: TerminalKey, text: string) => boolean
   readonly startCapture: (handlers: CaptureHandlers) => Promise<Capture>
   readonly now: () => number
@@ -92,8 +98,34 @@ export type DictationDeps = {
 // the microphone lets the last words in, which a bump of `generation` would cut.
 type Recording = { open: boolean; appended: number }
 
+// Voice input's setup, shown in the strip of the terminal the person reached from, or in the
+// overlay where there is none on screen: the offer, the install, how it ended.
+export type VoiceSetup = {
+  readonly kind: "offer" | "installing" | "ready" | "failed"
+  readonly target: TerminalKey | null
+}
+
+// How long an ignored offer waits, and how long its ready and failure notes stay.
+export const offerMilliseconds = 15_000
+export const readyMilliseconds = 6000
+export const failureMilliseconds = 12_000
+
 export type DictationController = {
   readonly dictation: Dictation
+  // The backend voice's state, for the setup's progress and failure.
+  readonly voice: Store<VoiceState>
+  readonly setup: Store<VoiceSetup | null>
+  readonly setupActions: {
+    readonly turnOn: () => void
+    // Off by choice: the mic goes and the shortcut is the terminal's again.
+    readonly noThanks: () => void
+    readonly cancel: () => void
+    // Ignoring the offer: gone for now, offered again by the next press.
+    readonly dismiss: () => void
+    readonly close: () => void
+  }
+  // Starts following the backend voice, for the setup's story; returns what ends it.
+  readonly start: () => () => void
   readonly view: Store<DictationView>
   // The microphone's loudness, apart from the view because it changes many times a second.
   readonly level: Store<number>
@@ -117,7 +149,7 @@ const wordCount = (text: string): string => {
 // at once, so the engine warms up while the person speaks, streaming audio into it, and
 // pasting what comes back into the terminal it began in.
 export const createDictation = (deps: DictationDeps): DictationController => {
-  const { voice, offer, typeInto, startCapture, now, after } = deps
+  const { voice, offered: noteOffered, typeInto, startCapture, now, after } = deps
   const view: MutableStore<DictationView> = createStore(quiet)
   const level: MutableStore<number> = createStore(0)
   const docks: MutableStore<ReadonlyMap<string, number>> = createStore<ReadonlyMap<string, number>>(
@@ -301,7 +333,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
         abortDrain = null
         return
       case "offer":
-        return offer()
+        return showOffer(effect.target ?? null)
       case "hint":
         return notify(effect.text, "hint", effect.target ?? null, effect.setup)
     }
@@ -314,8 +346,94 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     step.effects.forEach(run)
   }
 
+  const setup: MutableStore<VoiceSetup | null> = createStore<VoiceSetup | null>(null)
+  let cancelSetup: (() => void) | null = null
+  // An install this setup followed was seen under way, so its end is told.
+  let seen = false
+  const setSetup = (next: VoiceSetup | null): void => {
+    const current = setup.getSnapshot()
+    if (current?.kind === next?.kind && current?.target === next?.target) return
+    cancelSetup?.()
+    cancelSetup = null
+    setup.update(() => next)
+    const wait =
+      next?.kind === "offer"
+        ? offerMilliseconds
+        : next?.kind === "ready"
+          ? readyMilliseconds
+          : next?.kind === "failed"
+            ? failureMilliseconds
+            : 0
+    if (wait) cancelSetup = after(wait, () => setSetup(null))
+  }
+  const showOffer = (target: TerminalKey | null): void => {
+    seen = false
+    setSetup(null)
+    setSetup({ kind: "offer", target })
+    noteOffered()
+  }
+  // The strip's story follows the backend: progress while it installs, the ready note once
+  // an install it saw is done, the failure, and nothing after a cancel or a no thanks.
+  const sync = (): void => {
+    const current = setup.getSnapshot()
+    if (!current) return
+    const backend = voice.state.getSnapshot()
+    const isReady = voiceReady(backend)
+    if (!backend.wanted) return setSetup(null)
+    if (current.kind === "offer") {
+      if (isReady) return setSetup(null)
+      if (backend.installing) {
+        seen = true
+        setSetup({ kind: "installing", target: current.target })
+      }
+      return
+    }
+    if (current.kind === "ready") return
+    if (backend.installing && !isReady) {
+      seen = true
+      return setSetup({ kind: "installing", target: current.target })
+    }
+    if (isReady) return seen ? setSetup({ kind: "ready", target: current.target }) : setSetup(null)
+    if (backend.failure !== null && !backend.failure.startsWith(changeFailurePrefix))
+      return setSetup({ kind: "failed", target: current.target })
+    // Under way once and gone with nothing to show: cancelled.
+    if (seen && current.kind === "installing") setSetup(null)
+  }
+  const turnOn = (): void => {
+    const current = setup.getSnapshot()
+    seen = false
+    setSetup({ kind: "installing", target: current?.target ?? null })
+    voice.install()
+    sync()
+  }
+  const setupActions = {
+    turnOn,
+    noThanks: (): void => {
+      setSetup(null)
+      voice.set({ enabled: false })
+    },
+    cancel: (): void => {
+      setSetup(null)
+      voice.cancel()
+    },
+    dismiss: (): void => {
+      if (setup.getSnapshot()?.kind === "offer") setSetup(null)
+    },
+    close: (): void => setSetup(null),
+  }
   const ready = (): Readiness => readiness(voice.state.getSnapshot())
   return {
+    voice: voice.state,
+    setup,
+    setupActions,
+    start: () => {
+      const unwatch = voice.state.subscribe(sync)
+      return () => {
+        unwatch()
+        cancelSetup?.()
+        cancelSetup = null
+      }
+    },
     view,
     level,
     docks,
@@ -323,8 +441,11 @@ export const createDictation = (deps: DictationDeps): DictationController => {
       recording: () => state.kind === "recording",
       active: () => state.kind !== "idle",
       claims: () => state.kind !== "idle" || voiceClaimed(voice.state.getSnapshot()),
+      // Pressed again while its offer shows, the shortcut turns voice input on.
       press: (target, code) =>
-        dispatch({ type: "press", code, target, now: now(), readiness: ready() }),
+        setup.getSnapshot()?.kind === "offer" && state.kind === "idle"
+          ? turnOn()
+          : dispatch({ type: "press", code, target, now: now(), readiness: ready() }),
       release: (code) => dispatch({ type: "release", code, now: now() }),
       blur: () => dispatch({ type: "blur" }),
       cancel: () => dispatch({ type: "cancel" }),

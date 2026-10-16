@@ -72,6 +72,8 @@ export type WindowShellProps = {
   onRenameCancel: () => void
   // The window's own actions, on its header's right-click, as on its sidebar tab's.
   menu?: ContextMenuItem[]
+  // Beside the title, as Murmur's offer chip: it keeps its size while the name truncates.
+  titleExtra?: ReactNode
 }
 
 // The window every terminal shares, whatever program runs in it.
@@ -100,6 +102,7 @@ export const WindowShell = ({
   onRenameSave,
   onRenameCancel,
   menu,
+  titleExtra,
 }: WindowShellProps): React.JSX.Element => {
   const resizeLabel = large
     ? resizeView === "grid"
@@ -259,6 +262,7 @@ export const WindowShell = ({
               </Tooltip>
             )}
           </span>
+          {!renaming && titleExtra}
           {rename && (
             <TerminalRenameInput
               id={terminal.id}

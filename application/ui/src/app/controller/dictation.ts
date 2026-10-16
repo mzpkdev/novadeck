@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 
 import type { TerminalKey } from "../../backend/port"
-import type { TerminalMetadata } from "../../model/types"
+import type { TerminalMetadata, Workspace } from "../../model/types"
 import { chatDraftOf, chatShown, setChatDraft } from "../../terminals/chat/mode-state"
 import type { DictationControls } from "../../terminals/WindowShell"
 import { isAgentTerminal } from "../../voice/agent-terminal"
@@ -13,8 +13,8 @@ import {
   voiceReady,
   type DictationController,
 } from "../../voice/dictation"
+import { currentContext, currentState } from "../selectors"
 import type { UiStore } from "../ui-store"
-import { offerVoice } from "../voice-offer"
 import { useWorkspaceServices, type WorkspaceServices } from "./context"
 import { domEffects } from "./effects"
 
@@ -47,6 +47,10 @@ export const dictateInto =
     return true
   }
 
+// The terminal the person is at, whose change ends an offer made there.
+const placeOf = (snapshot: Workspace): string =>
+  `${currentContext(snapshot)}/${currentState(snapshot).selected}`
+
 // Dictation for this App, once, where its backend transcribes and can type into a
 // terminal; undefined where it can't. A hold in progress ends with the App.
 export const useDictationController = ({
@@ -61,7 +65,10 @@ export const useDictationController = ({
       typeInto &&
       createDictation({
         voice,
-        offer: () => offerVoice(ui),
+        offered: () =>
+          ui.update((state) =>
+            state.addonOfferShown ? state : { ...state, addonOfferShown: true },
+          ),
         typeInto: dictateInto(ui, typeInto, (key) =>
           backend.conversations
             ? workspace
@@ -78,6 +85,29 @@ export const useDictationController = ({
     [voice, typeInto, backend.conversations, workspace, ui],
   )
   useEffect(() => () => controller?.dictation.cancel(), [controller])
+  useEffect(() => controller?.start(), [controller])
+  // An offer that is ignored goes: once the person types, or goes to another terminal.
+  useEffect(() => {
+    if (!controller) return undefined
+    const typed = (event: KeyboardEvent): void => {
+      const modifier = ["Control", "Shift", "Alt", "Meta", "AltGraph"].includes(event.key)
+      // The shortcut itself, pressed again, turns voice input on.
+      const chord = event.ctrlKey && event.shiftKey && event.code === "KeyM"
+      if (!modifier && !chord) controller.setupActions.dismiss()
+    }
+    let place = placeOf(workspace.getSnapshot())
+    const stopWorkspace = workspace.subscribe(() => {
+      const next = placeOf(workspace.getSnapshot())
+      if (next === place) return
+      place = next
+      controller.setupActions.dismiss()
+    })
+    window.addEventListener("keydown", typed, true)
+    return () => {
+      window.removeEventListener("keydown", typed, true)
+      stopWorkspace()
+    }
+  }, [controller, workspace])
   return controller
 }
 

@@ -20,15 +20,13 @@ import type { UninstallValue } from "../preferences/UninstallApp"
 import type { VoiceAddon } from "../preferences/VoiceInput"
 import { WelcomeDialog } from "../preferences/WelcomeDialog"
 import { CrashLoopDialog } from "../shell/CrashLoopDialog"
-import { useNoticeShown } from "../shell/notice-visibility"
 import { CloseTerminalDialog } from "../terminals/CloseTerminalDialog"
 import { visibleSwitcher } from "../terminals/recent"
 import { TerminalSwitcher } from "../terminals/TerminalSwitcher"
-import { CornerCardStack } from "../ui-toolkit/CornerCard"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
 import { useRouteDialog, type RouteDialog } from "./controller/useRouteDialog"
 import { Preferences, TerminalSearch } from "./deferred-views"
-import { MurmurOffer } from "./MurmurOffer"
+import { NameOffer } from "./NameOffer"
 import {
   closeQuestion,
   crashLoopQuestion,
@@ -37,7 +35,6 @@ import {
   sameItems,
   shallowEqual,
 } from "./selectors"
-import { VoiceOffer } from "./VoiceOffer"
 
 // Rendered beside a deferred dialog, so it mounts only once the dialog's view has loaded.
 const Loaded = ({
@@ -196,7 +193,7 @@ const useUninstall = (
 
 // Dialogs and the terminal switcher, above the workspace.
 export const WorkspaceOverlays = memo((): React.JSX.Element => {
-  const { backend, commands, navigation, workspace: workspaceStore } = useWorkspaceServices()
+  const { backend, commands, navigation } = useWorkspaceServices()
   const transcripts = useTranscripts(backend.transcripts)
   const agents = useAgents(backend.agents)
   const voice = useVoice(backend.voice)
@@ -230,12 +227,6 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
     }),
     shallowEqual,
   )
-  // A footer notice (update or sandbox) holds the corner's right edge while it is on screen.
-  const noticeOpen = useNoticeShown()
-  const returnFocus = (): void => {
-    const { selected, view: shown } = currentState(workspaceStore.getSnapshot())
-    if (selected) commands.setKeyboardFocus({ id: selected, view: shown })
-  }
   const searchLabel = view === "canvas" ? "Canvas" : view === "grid" ? "Grid" : "Focus"
   const { searching, settings, onExitComplete, onLoaded } = useRouteDialog(dialog, context)
   const updates = useEarlyBuilds(backend.updates?.channel, settings)
@@ -274,11 +265,7 @@ export const WorkspaceOverlays = memo((): React.JSX.Element => {
           terminalElement(id)?.querySelector<HTMLElement>("[data-terminal-input]") ?? null
         }
       />
-      {/* Offers that arrive by themselves, calm and non-modal, in the corner. */}
-      <CornerCardStack beside={noticeOpen} returnFocus={returnFocus}>
-        <MurmurOffer />
-        <VoiceOffer />
-      </CornerCardStack>
+      <NameOffer />
       {switcher && (
         <TerminalSwitcher
           mode={switcher.mode}

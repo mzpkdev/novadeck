@@ -11,7 +11,14 @@ import {
 } from "../model/voice"
 import { context, describe, expect, it } from "../test"
 import type { Capture, CaptureHandlers } from "./capture"
-import { createDictation, voiceReady, type DictationController } from "./dictation"
+import {
+  createDictation,
+  failureMilliseconds,
+  offerMilliseconds,
+  readyMilliseconds,
+  voiceReady,
+  type DictationController,
+} from "./dictation"
 
 const target: TerminalKey = { projectId: "p", workspaceSessionId: "s", terminalId: "t1" }
 
@@ -41,12 +48,13 @@ type FakeClip = VoiceClip & {
 // timers the test turns by hand.
 const setup = (state: VoiceState = installed) => {
   const clips: FakeClip[] = []
+  const calls: string[] = []
   const voice: Voice = {
     state: createStore(state),
-    install: () => {},
-    cancel: () => {},
+    install: () => void calls.push("install"),
+    cancel: () => void calls.push("cancel"),
     uninstall: () => {},
-    set: () => {},
+    set: (change) => void calls.push(`set ${JSON.stringify(change)}`),
     record: () => {
       const clip: FakeClip = {
         appended: [],
@@ -86,7 +94,7 @@ const setup = (state: VoiceState = installed) => {
   const offers: string[] = []
   const controller: DictationController = createDictation({
     voice,
-    offer: () => void offers.push("offer"),
+    offered: () => void offers.push("offer"),
     typeInto: (key, text) => {
       if (terminal.open) typed.push({ key, text })
       return terminal.open
@@ -104,6 +112,7 @@ const setup = (state: VoiceState = installed) => {
       return () => void timers.delete(id)
     },
   })
+  controller.start()
   const advance = (milliseconds: number): void => {
     now += milliseconds
     for (const [id, timer] of timers)
@@ -127,7 +136,19 @@ const setup = (state: VoiceState = installed) => {
     await Promise.resolve()
     microphone.handlers.at(-1)!.onSamples(new Int16Array(Math.round(seconds * 16_000)))
   }
-  return { controller, clips, typed, terminal, microphone, capture, advance, speak, voice, offers }
+  return {
+    controller,
+    clips,
+    typed,
+    terminal,
+    microphone,
+    capture,
+    advance,
+    speak,
+    voice,
+    offers,
+    calls,
+  }
 }
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
@@ -394,6 +415,107 @@ describe("dictation", () => {
       const app = setup({ ...notInstalled, wanted: false })
       app.controller.dictation.press(target, "KeyM")
       expect(app.offers).toEqual([])
+    })
+  })
+
+  context("voice input's setup in the strip", () => {
+    const notInstalled = { ...installed, installed: [], enabled: false }
+    const update = (app: ReturnType<typeof setup>, change: Partial<VoiceState>): void => {
+      ;(app.voice.state as MutableStore<VoiceState>).update((state) => ({ ...state, ...change }))
+    }
+    const kind = (app: ReturnType<typeof setup>) => app.controller.setup.getSnapshot()?.kind
+
+    it("offers on the terminal reached from, and notes that it was offered", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.controller.setup.getSnapshot()).toEqual({ kind: "offer", target })
+      expect(app.offers).toEqual(["offer"])
+    })
+
+    it("offers on no terminal where none was chosen", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(undefined, "KeyM")
+      expect(app.controller.setup.getSnapshot()).toEqual({ kind: "offer", target: null })
+    })
+
+    it("turns voice input on when the shortcut is pressed again, never recording", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.calls).toEqual(["install"])
+      expect(kind(app)).toBe("installing")
+      expect(app.clips).toHaveLength(0)
+    })
+
+    it("ignores the offer after a while, which is not an answer", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.advance(offerMilliseconds)
+      expect(kind(app)).toBeUndefined()
+      expect(app.calls).toEqual([])
+      app.controller.dictation.press(target, "KeyM")
+      expect(kind(app)).toBe("offer")
+    })
+
+    it("dismisses the offer as typing or another terminal asks, not a decline", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.setupActions.dismiss()
+      expect(kind(app)).toBeUndefined()
+      expect(app.calls).toEqual([])
+    })
+
+    it("declines on No thanks, by turning voice input off", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.setupActions.noThanks()
+      expect(app.calls).toEqual(['set {"enabled":false}'])
+      expect(kind(app)).toBeUndefined()
+    })
+
+    it("follows the install to the ready note, which goes by itself", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.setupActions.turnOn()
+      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      expect(kind(app)).toBe("installing")
+      update(app, { ...installed, installing: null })
+      expect(kind(app)).toBe("ready")
+      app.advance(readyMilliseconds)
+      expect(kind(app)).toBeUndefined()
+    })
+
+    it("shows an install's failure, not as a decline, and drops it after a while", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.setupActions.turnOn()
+      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      update(app, { installing: null, failure: "Out of disk space." })
+      expect(kind(app)).toBe("failed")
+      app.advance(failureMilliseconds)
+      expect(kind(app)).toBeUndefined()
+      expect(app.voice.state.getSnapshot().wanted).toBe(true)
+    })
+
+    it("shows nothing after a cancel, and nothing for a refused setting", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.setupActions.turnOn()
+      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      update(app, { installing: null })
+      expect(kind(app)).toBeUndefined()
+
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.setupActions.turnOn()
+      update(app, { failure: "Couldn't change voice input: no." })
+      expect(kind(app)).toBe("installing")
+    })
+
+    it("drops the setup once voice input is declined elsewhere", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      update(app, { wanted: false })
+      expect(kind(app)).toBeUndefined()
     })
   })
 

@@ -5,7 +5,14 @@ import { createWorkspaceStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
 import { context, describe, expect, it } from "../test"
 import { workspaceFixture } from "../test/fixtures"
-import { offerable, offerText, offerView, watchAgentFinishes, workingText } from "./murmur-offer"
+import {
+  offerable,
+  offerDue,
+  offerSessions,
+  offerText,
+  plainTitle,
+  watchAgentFinishes,
+} from "./murmur-offer"
 
 const offered: MurmurState = {
   available: true,
@@ -17,19 +24,14 @@ const offered: MurmurState = {
   check: null,
   unsupported: null,
   recheck: false,
+  offers: 0,
   failure: null,
 }
 
-const checked: MurmurState = {
-  ...offered,
-  installed: true,
-  enabled: true,
-  check: { device: "Intel Arc Graphics", integrated: true, milliseconds: 5000 },
-}
-
 describe("the Murmur offer's conditions", () => {
-  it("is made to a computer with the engine, no install, and no refusal", () => {
+  it("stands for a computer with the engine, no install, and no refusal", () => {
     expect(offerable(offered)).toBe(true)
+    expect(offerDue(offered)).toBe(true)
   })
 
   it.each([
@@ -39,55 +41,34 @@ describe("the Murmur offer's conditions", () => {
     ["without an engine for the platform", { available: false }],
     ["installing", { installing: { step: "engine" as const, received: 0, total: 1 } }],
     ["after a failure", { failure: "Couldn't reach the download." }],
-  ])("is not made when %s", (_name, change) => {
+  ])("does not stand when %s", (_name, change) => {
     expect(offerable({ ...offered, ...change })).toBe(false)
+  })
+
+  it("is due until it was shown in three sessions, though it still stands", () => {
+    expect(offerDue({ ...offered, offers: offerSessions - 1 })).toBe(true)
+    expect(offerable({ ...offered, offers: offerSessions })).toBe(true)
+    expect(offerDue({ ...offered, offers: offerSessions })).toBe(false)
   })
 })
 
-describe("what the open Murmur card shows", () => {
-  it("offers until Turn on, then shows the install as it goes", () => {
-    expect(offerView(offered, false)).toBe("offer")
-    expect(offerView(offered, true)).toBe("working")
-    expect(
-      offerView({ ...offered, installing: { step: "model", received: 5, total: 9 } }, true),
-    ).toBe("working")
+describe("which titles the chip is offered beside", () => {
+  it("takes the plain name of the agent or program, not one anyone gave", () => {
+    expect(plainTitle({})).toBe(true)
+    expect(plainTitle({ titleSource: { kind: "default" } })).toBe(true)
+    expect(plainTitle({ titleSource: { kind: "person" } })).toBe(false)
+    expect(plainTitle({ titleSource: { kind: "agent", by: "claude" } })).toBe(false)
+    expect(plainTitle({ titleSource: { kind: "murmur" } })).toBe(false)
   })
+})
 
-  it("ends in done only for an install the card started", () => {
-    expect(offerView(checked, true)).toBe("done")
-    expect(offerView(checked, false)).toBe("gone")
-  })
-
-  it("shows a failure, with the way to try again", () => {
-    expect(offerView({ ...offered, failure: "The download stopped." }, true)).toBe("failed")
-  })
-
-  it("leaves for good when the computer can't run it", () => {
-    expect(offerView({ ...offered, unsupported: "No graphics device answered." }, true)).toBe(
-      "gone",
-    )
-    expect(offerView({ ...offered, installing: null, unsupported: "x" }, false)).toBe("gone")
-  })
-
-  it("says in the compact note that it runs here, with the size", () => {
-    expect(offerText.size(offered)).toBe("Runs on this computer \u00b7 1.2 GB")
-  })
-
-  it("says what the step under way is, never GPU", () => {
-    expect(workingText(offered)).toBe("Starting…")
-    expect(
-      workingText({
-        ...offered,
-        installing: { step: "model", received: 1024 ** 2, total: 2 * 1024 ** 2 },
-      }),
-    ).toBe("Downloading model · 1 MB of 2 MB")
-    expect(workingText({ ...offered, installing: { step: "check", received: 0, total: 0 } })).toBe(
-      "Checking this computer",
+describe("what the offer says", () => {
+  it("names the chip, and the popover's download size, never GPU", () => {
+    expect(offerText.chip).toBe("Name it for me")
+    expect(offerText.body(offered)).toBe(
+      "A small model on this computer reads the agent's work and names each terminal. 1.2 GB once.",
     )
     expect(JSON.stringify(offerText)).not.toMatch(/GPU/)
-    expect(offerText.body(offered)).toBe(
-      "A small model on this computer reads what agents are doing and names each terminal. Downloads 1.2 GB once.",
-    )
   })
 })
 
@@ -107,19 +88,28 @@ describe("watching for the first finished turn", () => {
       })
     status("02", { working: true })
     let finishes = 0
-    const stop = watchAgentFinishes(workspace, () => (finishes += 1), 100)
+    let last: { context: string; id: string } | undefined
+    const stop = watchAgentFinishes(
+      workspace,
+      (terminal) => {
+        finishes += 1
+        last = terminal
+      },
+      100,
+    )
     const end = (at: number, outcome: "completed" | "failed" | "interrupted" = "completed") =>
       status("02", { working: false, lastTurn: { outcome, reply: "Done.", at } })
-    return { workspace, status, end, finishes: () => finishes, stop }
+    return { workspace, status, end, finishes: () => finishes, last: () => last, stop }
   }
 
   context("when an agent's turn ends complete", () => {
-    it("tells once the end still stands after the grace", async () => {
-      const { end, finishes, stop } = setup()
+    it("tells once, with the terminal and its session, after the grace", async () => {
+      const { end, finishes, last, stop } = setup()
       end(10)
       expect(finishes()).toBe(0)
       await vi.advanceTimersByTimeAsync(150)
       expect(finishes()).toBe(1)
+      expect(last()).toEqual({ context: "project/initial", id: "02" })
       stop()
     })
 

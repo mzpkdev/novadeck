@@ -98,6 +98,8 @@ export type WorkspaceCommands = ShellCommands &
     readonly dismissCrashLoop: () => void
     // Notes that an addon offer came up in this run, so no other offers itself unasked.
     readonly markAddonOfferShown: () => void
+    // Puts Murmur's offer chip on a terminal, or takes it away (null).
+    readonly offerNameTo: (target: { readonly context: string; readonly id: string } | null) => void
     // Opens or closes the update's notice, which the footer's chip reopens after Later.
     readonly setUpdateOpen: (open: boolean) => void
     // Opens or closes the sandbox notice; opening it closes the update's, which shares its place.
@@ -500,6 +502,7 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       crashLoop?.retry()
     },
     dismissCrashLoop: () => ui.update((state) => ({ ...state, crashLoopDismissed: true })),
+    offerNameTo: (nameOffer) => ui.update((state) => ({ ...state, nameOffer })),
     markAddonOfferShown: () =>
       ui.update((state) => (state.addonOfferShown ? state : { ...state, addonOfferShown: true })),
     setUpdateOpen: (updateOpen) =>

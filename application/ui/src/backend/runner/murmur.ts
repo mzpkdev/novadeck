@@ -29,6 +29,7 @@ export const noMurmur: MurmurState = {
   check: null,
   unsupported: null,
   recheck: false,
+  offers: 0,
   failure: null,
 }
 
@@ -82,7 +83,11 @@ export const createRunnerMurmur = (
       install: () => void change("install", () => calls.install()),
       cancel: () => void change("cancel the install", () => calls.cancel()),
       uninstall: () => change("uninstall", () => calls.uninstall()),
-      set: (settings) => void change("change the setting", () => calls.set(settings)),
+      set: (settings) =>
+        settings.offered
+          ? // Only counted: a count that is not kept is no failure to show.
+            void track(calls.set(settings)).catch(() => {})
+          : void change("change the setting", () => calls.set(settings)),
       // Murmur is extra: a gist that can't be asked for leaves the reply as it was.
       gist: (terminalId, at) => void track(calls.gist(terminalId, at)).catch(() => {}),
     },

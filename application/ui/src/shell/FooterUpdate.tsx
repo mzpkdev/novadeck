@@ -5,7 +5,6 @@ import type { InstallResult } from "../model/portable"
 import { updateKey, type UpdateOffer } from "../model/update"
 import { Progress } from "../ui-toolkit/Progress"
 import { KeepFocus, useRecoverFocus } from "./notice-focus"
-import { useReportNotice } from "./notice-visibility"
 
 // The release-note lines the notice shows; the release page has the rest.
 export const shownNotes = 5
@@ -272,7 +271,6 @@ export const FooterUpdate = ({
   const overlay = useOverlayOpen(wanted)
   const blocked = (update?.blocked ?? false) || overlay
   const visible = (update?.open ?? false) && !hidden && !blocked && !installing
-  useReportNotice(visible)
   const onShown = update?.onShown
   useEffect(() => {
     if (visible && key !== undefined) onShown?.(key)

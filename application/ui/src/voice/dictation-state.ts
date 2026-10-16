@@ -57,8 +57,8 @@ export type DictationEvent =
 
 export type DictationEffect =
   | { readonly kind: "start"; readonly target: TerminalKey }
-  // Offers to install voice input, which the person reached for.
-  | { readonly kind: "offer" }
+  // Offers to install voice input, which the person reached for, on `target` where there is one.
+  | { readonly kind: "offer"; readonly target?: TerminalKey }
   // Ends the recording and transcribes it.
   | { readonly kind: "stop"; readonly target: TerminalKey }
   | { readonly kind: "discard" }
@@ -84,7 +84,8 @@ const begin = (
   now: number,
   readiness: Readiness,
 ): Step => {
-  if (!readiness.ready && "offer" in readiness) return { state: idle, effects: [{ kind: "offer" }] }
+  if (!readiness.ready && "offer" in readiness)
+    return { state: idle, effects: [{ kind: "offer", ...(target && { target }) }] }
   if (!readiness.ready)
     return {
       state: idle,

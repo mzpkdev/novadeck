@@ -1084,53 +1084,74 @@ describe("dictation", () => {
       const skip = page.getByRole("button", { name: "Skip for now" })
       if (await skip.query()) await skip.click()
     }
-    const offer = (): Locator => page.getByRole("dialog", { name: "Voice input" })
+    // The offer, and the rest of voice input's setup, live in the terminal's dictation strip.
+    const offer = (): Locator => saying("Talk to your agents")
 
-    it("offers it when the shortcut is pressed, without recording or downloading", async () => {
+    it("offers it in the strip when the shortcut is pressed, without recording or downloading", async () => {
       await openWithoutVoice()
       await commandInput("Checkout implementation").click()
 
       await press(`${dictateKeys}${releaseKeys}`)
 
       await expect.element(offer()).toBeVisible()
-      await expect
-        .element(offer().getByText(/or click the mic and talk to your agents/))
-        .toBeVisible()
-      await expect.element(offer().getByText(/downloads \d+ MB once\./)).toBeVisible()
-      await expect
-        .element(offer().getByText("Preferences → Addons", { exact: false }))
-        .toBeVisible()
+      await expect.element(offer().getByText(/runs on this computer/)).toBeVisible()
+      await expect.element(offer().getByText(/\d+ MB once/)).toBeVisible()
       await expect.element(offer().getByRole("button", { name: "Turn on" })).toBeVisible()
       await expect.element(offer().getByRole("button", { name: "No thanks" })).toBeVisible()
       expect(microphone.live()).toBe(0)
       expect(page.getByText("Setting up voice input").query()).toBeNull()
+      // Typing stays in the terminal: the strip took no focus.
+      expect(document.activeElement).toBe(commandInput("Checkout implementation").element())
     })
 
-    it("offers it again after Esc, which is not an answer", async () => {
+    it("offers it again after it was ignored: typing hides it, which is not an answer", async () => {
+      await openWithoutVoice()
+      await commandInput("Checkout implementation").click()
+      await press(`${dictateKeys}${releaseKeys}`)
+      await expect.element(offer()).toBeVisible()
+
+      await press("x")
+      await expect.element(offer()).not.toBeInTheDocument()
+      await press(`${dictateKeys}${releaseKeys}`)
+
+      await expect.element(offer()).toBeVisible()
+    })
+
+    it("leaves Esc to the terminal while the offer shows", async () => {
       await openWithoutVoice()
       await commandInput("Checkout implementation").click()
       await press(`${dictateKeys}${releaseKeys}`)
       await expect.element(offer()).toBeVisible()
 
       await press("{Escape}")
-      await expect.element(offer()).not.toBeInTheDocument()
-      await commandInput("Checkout implementation").click()
-      await press(`${dictateKeys}${releaseKeys}`)
 
+      // The offer is only ignored, never answered by Esc.
+      await press(`${dictateKeys}${releaseKeys}`)
       await expect.element(offer()).toBeVisible()
     })
 
-    it("installs on Turn on, shows it in a corner card, and does not start recording", async () => {
+    it("installs on Turn on, shows it in the strip, and does not start recording", async () => {
       await openWithoutVoice()
       await commandInput("Checkout implementation").click()
       await press(`${dictateKeys}${releaseKeys}`)
 
       await offer().getByRole("button", { name: "Turn on" }).click()
 
-      await expect.element(offer()).not.toBeInTheDocument()
       await expect.element(saying("Setting up voice input")).toBeVisible()
-      await expect.element(saying("Voice input ready"), { timeout: 15_000 }).toBeVisible()
-      await expect.element(page.getByText(/to talk\./).first()).toBeVisible()
+      await expect.element(saying("Voice input is ready."), { timeout: 15_000 }).toBeVisible()
+      await expect.element(saying("Voice input is ready.").getByText(/to talk\./)).toBeVisible()
+      expect(microphone.live()).toBe(0)
+    })
+
+    it("turns on when the shortcut is pressed again while the offer shows", async () => {
+      await openWithoutVoice()
+      await commandInput("Checkout implementation").click()
+      await press(`${dictateKeys}${releaseKeys}`)
+      await expect.element(offer()).toBeVisible()
+
+      await press(`${dictateKeys}${releaseKeys}`)
+
+      await expect.element(saying("Setting up voice input")).toBeVisible()
       expect(microphone.live()).toBe(0)
     })
 

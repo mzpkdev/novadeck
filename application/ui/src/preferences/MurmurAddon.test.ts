@@ -16,6 +16,7 @@ const unchecked: MurmurState = {
   check: null,
   unsupported: null,
   recheck: false,
+  offers: 0,
   failure: "Murmur is installed but has not passed its check on this computer yet.",
 }
 

@@ -13,6 +13,7 @@ const state: MurmurState = {
   check: null,
   unsupported: null,
   recheck: false,
+  offers: 0,
   failure: null,
 }
 

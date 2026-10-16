@@ -1,11 +1,10 @@
 import type { DemoMurmur } from "../murmur"
 import type { DemoActionGroup } from "./types"
 
-// The panel's Murmur group: the states of Preferences' Addons card, which shows each at once,
-// and of the one-time offer card. The offer comes up on its own at the next agent finish
-// (Agents > Completes) while Murmur is not installed, once per page load; once it is open it
-// follows the states below (installing, failure, Not available), so set Not installed, finish
-// a turn, then pick them.
+// The panel's Murmur group: the states of Murmur's one-time offer (a chip beside a terminal's
+// title, with its popover), of its install in the footer (a ring and "Murmur 42%", with a
+// sheet), and of Preferences' Addons card. The chip also comes up on its own at the next agent
+// finish (Agents > Completes) while Murmur is not installed, once per page load.
 export const murmurGroups = (murmur: DemoMurmur | undefined): readonly DemoActionGroup[] =>
   murmur
     ? [
@@ -15,32 +14,52 @@ export const murmurGroups = (murmur: DemoMurmur | undefined): readonly DemoActio
           actions: [
             {
               label: "Installed",
-              hint: "On, Runs on Intel Arc Graphics; no offer",
+              hint: "On, Runs on Intel Arc Graphics; no chip, nothing in the footer",
               run: () => murmur.show("installed"),
             },
             {
               label: "Not installed",
-              hint: "Offer card at the next agent finish (once per page load); Addons shows Install",
+              hint: "Addons shows Install; the chip comes up at the next agent finish, once per page load",
               run: () => murmur.show("uninstalled"),
             },
             {
+              label: "Offer the chip now",
+              hint: "Not installed; the chip sits beside the selected terminal's title (icon alone in a narrow Grid tile or window); click it for the popover with No thanks and Turn on",
+              run: () => murmur.show("offer"),
+            },
+            {
               label: "Installing",
-              hint: "Addons, and the offer card once open, show Downloading model, half there, with Cancel",
+              hint: "Footer: ring and Murmur 63%; click it for the step, the bar and Cancel. Addons shows the same",
               run: () => murmur.show("installing"),
             },
             {
+              label: "Checking this computer",
+              hint: "Footer: a turning ring and Murmur, no percent; the sheet's bar moves with no end",
+              run: () => murmur.show("checking"),
+            },
+            {
+              label: "Install done",
+              hint: "Footer: checking, then Terminals name themselves now for a few seconds, then it leaves",
+              run: () => murmur.show("done"),
+            },
+            {
               label: "Install fails (network)",
-              hint: "Addons, and the offer card once open, show the failure with Try again, not a decline",
+              hint: "Footer item turns danger and its sheet opens once, with Try again and Not now (hides it, no decline)",
               run: () => murmur.show("network-failure"),
             },
             {
               label: "Install ends Not available",
-              hint: "Not installed; the next Turn on or Install ends in Not available (the card leaves)",
+              hint: "Footer: checking, then its sheet says Not available on this computer, with Details; the item leaves with it",
+              run: () => murmur.show("unavailable-after-check"),
+            },
+            {
+              label: "Next install ends Not available",
+              hint: "Not installed; the next Turn on or Install ends in Not available",
               run: () => murmur.show("unsupported-after-install"),
             },
             {
               label: "Not available",
-              hint: "Addons shows Not available on this computer, with Details and Check again; no offer",
+              hint: "Addons shows Not available on this computer, with Details and Check again; no chip",
               run: () => murmur.show("unsupported"),
             },
             {

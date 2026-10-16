@@ -43,11 +43,23 @@ export type MurmurState = {
   // Whether that came from an install and "Check again" (an install) asks anew; the host's
   // word is not, and an engine of another build forgets an install's by itself.
   readonly recheck: boolean
+  // In how many sessions of the app the one-time offer was shown; it stops after three.
+  readonly offers: number
 }
+
+// What each step of an install is called.
+export const murmurStepTitles = {
+  engine: "Downloading engine",
+  model: "Downloading model",
+  check: "Checking this computer",
+} as const
 
 export type MurmurSettings = {
   readonly enabled: boolean
 }
+
+// What a backend is told of murmur: its on or off, or that the one-time offer was shown.
+export type MurmurChange = Partial<MurmurSettings> & { readonly offered?: true }
 
 export type Murmur = {
   readonly state: Store<MurmurState>
@@ -56,7 +68,10 @@ export type Murmur = {
   readonly cancel: () => void
   // Settles when the removal ended, whether it worked or failed (`state` shows which).
   readonly uninstall: () => Promise<void>
-  readonly set: (settings: Partial<MurmurSettings>) => void
+  readonly set: (settings: MurmurChange) => void
+  // A backend may ask the app to offer murmur now, on the selected terminal, where the demo's
+  // debug panel does: each bump is a request.
+  readonly offer?: Store<number>
   // Asks for the gist of the reply that ended the terminal's turn at `at`, which the person
   // hasn't seen; it arrives with the terminal's agent status. Fire and forget.
   readonly gist?: (terminalId: string, at: number) => void

@@ -1177,6 +1177,22 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, AskRecor
       `
   }
 
+  /** In how many sessions of the app the one-time offer was shown. */
+  murmurOffers(): number {
+    const row = this.queries.get`SELECT value FROM settings WHERE key = 'murmur.offers'` as
+      | { value: string }
+      | undefined
+    const offers = Number(row?.value)
+    return Number.isInteger(offers) && offers > 0 ? offers : 0
+  }
+
+  saveMurmurOffers(offers: number): void {
+    void this.queries.run`
+      INSERT INTO settings (key, value) VALUES ('murmur.offers', ${String(offers)})
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    `
+  }
+
   /** Saves what is given; `enabled: null` forgets the choice. */
   saveMurmurSettings(settings: MurmurSettingsChange): void {
     for (const [key, value] of Object.entries(settings)) {

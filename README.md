@@ -793,22 +793,18 @@ App:
   window reset, offering Continue now. "A new item arrives" adds the next kind not there
   yet, and "Clear the Inbox" empties it.
 - **Murmur:** the demo starts with it installed and on, as the try demo shows it, and never
-  offers it; `&murmur=uninstalled` or `&murmur=unsupported` in the address starts it
-  without. The actions set Installed, Not installed (the one-time offer card comes up at
-  the next agent finish, once per page load, and Addons shows Install), Installing (held at
-  the model, half there, with Cancel), Install fails (network) (the failure with Try again,
-  no decline), Install ends Not available (the next Turn on or Install runs the check and
-  lands in Not available), Not available, files left (the files stay beside the verdict: Details and Check again by Uninstall, no switch) and Not available (Addons shows it with Details, and no offer).
-- **Voice input:** the demo starts with it installed and on, as the try demo shows it, and
-  never offers it; `&voice=uninstalled` in the address starts it without. The actions set
-  Installed, Not installed (the mic of an agent's terminal, or Ctrl+Shift+M, opens the
-  offer; Esc or a click outside offers again the next time), Offer dialog (opens it at once),
-  Software rendering (the offer quotes small's size, as where the host saw no graphics
-  hardware), Install, turbo too slow (the card goes on to small's model and check), Installing (the corner card at
-  the model, half there, with Cancel), Install, then ready (the card follows the steps, then
-  says Voice input ready for a few seconds), Install fails (network) (the card shows the
-  failure with Try again, not a decline) and Declined (no mic, Ctrl+Shift+M reaches the
-  terminal, and Addons still offers it).
+  offers it; `&murmur=uninstalled`, `unsupported`, `no-device` or `offered-out` (the offer
+  already shown in three sessions) in the address starts it otherwise. The offer is a chip,
+  "Name it for me", beside the title of the first terminal whose agent finishes a turn (or the
+  selected one, from "Offer the chip now"); in a narrow window or Grid tile it shrinks to its
+  icon. Its popover has No thanks and Turn on. Turn on leads to a footer item, beside the
+  update's: a ring and "Murmur 42%", and a sheet with the step, the bar and Cancel. The actions
+  set Installed, Not installed, Offer the chip now, Installing, Checking this computer (a
+  turning ring), Install done ("Terminals name themselves now", then it leaves), Install fails
+  (network) (a danger item whose sheet opens once, with Try again and Not now, which only
+  hides it), Install ends Not available (the sheet says so, with Details), Next install ends
+  Not available, Not available, Not available, files left (Details and Check again by
+  Uninstall, no switch) and Not available (software rendering) (no Check again).
 - **Startup:** "Hold the splash" keeps it until you press Escape; "Slow attach" counts
   terminals attaching over about 3 s; "Welcome dialog" opens the first-run dialog for
   connecting agents again (no reboot).

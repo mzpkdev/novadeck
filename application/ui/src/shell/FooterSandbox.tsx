@@ -2,7 +2,6 @@ import { useEffect, useId, useRef, useState } from "react"
 
 import { useOverlayOpen } from "./FooterUpdate"
 import { KeepFocus, useRecoverFocus } from "./notice-focus"
-import { useReportNotice } from "./notice-visibility"
 
 const copiedMs = 1500
 
@@ -85,7 +84,6 @@ export const FooterSandbox = ({
   const wanted = (sandbox?.open ?? false) && !hidden && !sandbox?.blocked
   const overlay = useOverlayOpen(wanted)
   const visible = wanted && !overlay
-  useReportNotice(visible)
   const lost = useRecoverFocus((sandbox?.blocked ?? false) || overlay || hidden, chip)
   useEffect(() => {
     if (!visible || !requested.current) return

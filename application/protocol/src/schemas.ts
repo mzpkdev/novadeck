@@ -771,6 +771,9 @@ export const murmurState = z.strictObject({
   // the model (the downloads are then removed). Null while nothing says it can't. Nothing
   // installs while it is set, and it is no failure to try again.
   unsupported: z.string().max(1024).nullable(),
+  // In how many sessions of the app the one-time offer was shown; the app stops offering after
+  // three, whether or not they answered.
+  offers: z.int().nonnegative(),
   // Whether `unsupported` came from an install and can be asked again (an install clears
   // it and checks anew); the host's word about software rendering is not, it is read at
   // each start. An engine of another build forgets an install's verdict by itself.
@@ -785,6 +788,13 @@ export const murmurState = z.strictObject({
 
 export const murmurSettings = z.strictObject({
   enabled: z.boolean(),
+})
+
+// What the person or the app changes of murmur: its on or off, or that the one-time offer
+// of it was put in front of them in a session of the app (`offered`), which the runner counts.
+export const murmurChange = z.strictObject({
+  enabled: z.boolean().optional(),
+  offered: z.literal(true).optional(),
 })
 
 /**
@@ -964,6 +974,7 @@ export type MurmurInstall = z.infer<typeof murmurInstall>
 export type MurmurCheck = z.infer<typeof murmurCheck>
 export type MurmurState = z.infer<typeof murmurState>
 export type MurmurSettings = z.infer<typeof murmurSettings>
+export type MurmurChange = z.infer<typeof murmurChange>
 export type MessageState = z.infer<typeof messageState>
 export type DeliveryState = z.infer<typeof deliveryState>
 export type AgentMessage = z.infer<typeof agentMessage>

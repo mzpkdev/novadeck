@@ -1,155 +1,211 @@
 import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { page, type Locator } from "vitest/browser"
 
-import { notification, openWorkspace, sidebarPanel } from "./support/workspace"
+import { notification, openWorkspace, sidebarPanel, chooseView } from "./support/workspace"
 
-// The agents demo: a moment after it opens, design-system's agent finishes its turn while
-// the person looks at storefront. Murmur's offer rides on that first finish.
+// The agents demo: a moment after it opens, design-system's agent finishes its turn while the
+// person looks at storefront. Murmur's offer is a chip beside that terminal's title, so the
+// specs go to it from the notification.
 const openAgents = async (murmur: string): Promise<void> => {
   await openWorkspace(`/?demo=agents&murmur=${murmur}`)
   const skip = page.getByRole("button", { name: "Skip for now" })
   if (await skip.query()) await skip.click()
 }
 
-// Murmur's card in the corner, whatever the offer has turned into: the offer, the install
-// under way, the done note, or the failure.
-const card = (): Locator =>
-  page
-    .getByRole("region")
-    .filter({ hasText: /name themselves|Getting Murmur ready|turn on Murmur/ })
+const chip = (): Locator => page.getByRole("button", { name: "Name it for me" })
+const popover = (): Locator =>
+  page.getByRole("dialog", { name: "Name terminals from what they do" })
+const footerItem = (): Locator => page.getByRole("button", { name: /Setting up Murmur/ })
+const doneItem = (): Locator => page.getByRole("button", { name: "Terminals name themselves now" })
 
-const offer = (): Locator => card().filter({ hasText: /Want your terminals/ })
-
-const finished = async (): Promise<void> => {
+// Goes to the terminal whose agent finished, where the chip waits.
+const goToFinished = async (): Promise<void> => {
   await sidebarPanel("Notifications").click()
   await expect.element(notification("design-system"), { timeout: 10_000 }).toBeVisible()
   // Past the moment an Escape could still turn the finish into an interruption.
   await new Promise((resolve) => setTimeout(resolve, 1200))
+  await notification("design-system")
+    .getByRole("button", { name: /^Go to / })
+    .click()
+}
+
+const preferencesMurmur = async (): Promise<Locator> => {
+  await page.getByRole("button", { name: "Workspace preferences" }).click()
+  await page.getByRole("tab", { name: "Addons" }).click()
+  return page.getByRole("region", { name: "Murmur" })
 }
 
 describe("Murmur's one-time offer", () => {
   context("when the first agent finishes and Murmur is not on the computer", () => {
-    it("comes up in the corner without taking focus, saying what it downloads", async () => {
+    it("puts a chip beside that terminal's title, with no ×", async () => {
       await openAgents("uninstalled")
+      await goToFinished()
 
+      await expect.element(chip()).toBeVisible()
+      await expect.element(chip()).toHaveTextContent("Name it for me")
+      // Ignoring it is fine: it has no close of its own.
       await expect
-        .element(offer().getByText("Want your terminals to name themselves?"), { timeout: 10_000 })
-        .toBeVisible()
-      await expect
-        .element(offer().getByText(/A small model on this computer .* Downloads 1\.2 GB once\./))
-        .toBeVisible()
-      await expect.element(offer().getByText(/Preferences → Addons/)).toBeVisible()
-      await expect.element(offer().getByText(/GPU/)).not.toBeInTheDocument()
-      expect(offer().element().contains(document.activeElement)).toBe(false)
+        .element(page.getByRole("button", { name: /^Close Name it/ }))
+        .not.toBeInTheDocument()
     })
 
-    it("turns on with progress, says it is done, and goes by itself", async () => {
+    it("opens a popover with the size and the answers, and Esc only dismisses it", async () => {
       await openAgents("uninstalled")
-      await offer().getByRole("button", { name: "Turn on" }).click({ timeout: 10_000 })
+      await goToFinished()
+      await chip().click()
 
-      await expect.element(card().getByRole("progressbar")).toBeVisible()
-      await expect.element(card().getByText(/Downloading/)).toBeVisible()
+      await expect.element(popover()).toBeVisible()
       await expect
-        .element(card().getByText("Your terminals name themselves now."), { timeout: 10_000 })
+        .element(
+          popover().getByText(
+            "A small model on this computer reads the agent's work and names each terminal. 1.2 GB once.",
+          ),
+        )
         .toBeVisible()
+      await expect.element(popover().getByText(/Preferences → Addons/)).toBeVisible()
+      await expect.element(popover().getByRole("button", { name: "No thanks" })).toBeVisible()
+      await expect.element(popover().getByRole("button", { name: "Turn on" })).toBeVisible()
+
+      await page.getByRole("dialog", { name: "Name terminals from what they do" }).click()
+      await document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+      await expect.element(popover()).not.toBeInTheDocument()
+      // A dismiss, not a decline: the chip stays and Murmur is still wanted.
+      await expect.element(chip()).toBeVisible()
+      const card = await preferencesMurmur()
       await expect
-        .element(card().getByText("Your terminals name themselves now."), { timeout: 10_000 })
-        .not.toBeInTheDocument()
+        .element(card.getByRole("switch", { name: "Enabled" }))
+        .toHaveAttribute("aria-checked", "true")
+    })
+
+    it("turns on into the footer item, then says it is done, and the chip is gone", async () => {
+      await openAgents("uninstalled")
+      await goToFinished()
+      await chip().click()
+      await popover().getByRole("button", { name: "Turn on" }).click()
+
+      await expect.element(popover()).not.toBeInTheDocument()
+      await expect.element(chip()).not.toBeInTheDocument()
+      await expect.element(footerItem()).toBeVisible()
+      await expect.element(doneItem(), { timeout: 12_000 }).toBeVisible()
+      await expect.element(doneItem(), { timeout: 10_000 }).not.toBeInTheDocument()
+    })
+
+    it("opens the item's sheet with the step, the bar and Cancel", async () => {
+      await openAgents("uninstalled")
+      await goToFinished()
+      await chip().click()
+      await popover().getByRole("button", { name: "Turn on" }).click()
+      await footerItem().click()
+
+      const sheet = page.getByRole("region", { name: "Setting up Murmur" })
+      await expect.element(sheet.getByText(/Downloading/)).toBeVisible()
+      await expect.element(sheet.getByRole("progressbar")).toBeVisible()
+      await sheet.getByRole("button", { name: "Cancel" }).click()
+      await expect.element(footerItem()).not.toBeInTheDocument()
     })
 
     it("turns Murmur down for good on No thanks, and Preferences shows it off", async () => {
       await openAgents("uninstalled")
-      await offer().getByRole("button", { name: "No thanks" }).click({ timeout: 10_000 })
-      await expect.element(offer()).not.toBeInTheDocument()
+      await goToFinished()
+      await chip().click()
+      await popover().getByRole("button", { name: "No thanks" }).click()
+      await expect.element(chip()).not.toBeInTheDocument()
 
-      await page.getByRole("button", { name: "Workspace preferences" }).click()
-      await page.getByRole("tab", { name: "Addons" }).click()
-      const murmurCard = page.getByRole("region", { name: "Murmur" })
+      const card = await preferencesMurmur()
       await expect
-        .element(murmurCard.getByRole("switch", { name: "Enabled" }))
+        .element(card.getByRole("switch", { name: "Enabled" }))
         .toHaveAttribute("aria-checked", "false")
     })
 
-    it("turns Murmur down for good on its close button too", async () => {
+    it("shrinks to its icon in a narrow Grid tile, and the name stays", async () => {
       await openAgents("uninstalled")
-      await offer().getByRole("button", { name: "Close" }).click({ timeout: 10_000 })
-      await expect.element(offer()).not.toBeInTheDocument()
+      await goToFinished()
+      await chooseView("Grid")
 
-      await page.getByRole("button", { name: "Workspace preferences" }).click()
-      await page.getByRole("tab", { name: "Addons" }).click()
+      await expect.element(chip()).toBeVisible()
+      await expect.element(page.getByText("Name it for me", { exact: true })).not.toBeVisible()
       await expect
-        .element(
-          page.getByRole("region", { name: "Murmur" }).getByRole("switch", { name: "Enabled" }),
-        )
-        .toHaveAttribute("aria-checked", "false")
+        .element(page.getByRole("heading", { name: /Checkout implementation/ }).first())
+        .toBeVisible()
     })
   })
 
-  context("on a page narrower than 1400px, where it must stay clear of the composer", () => {
-    afterEach(async () => {
-      await page.viewport(1440, 900)
+  context("when the install fails on the network", () => {
+    it("turns the footer item to danger and opens its sheet once, with Try again", async () => {
+      await openAgents("network-down")
+      await goToFinished()
+      await chip().click()
+      await popover().getByRole("button", { name: "Turn on" }).click()
+
+      const sheet = page.getByRole("region", { name: "Couldn't turn on Murmur" })
+      await expect.element(sheet, { timeout: 12_000 }).toBeVisible()
+      await expect.element(sheet.getByText(/connection dropped/)).toBeVisible()
+      await expect.element(sheet.getByRole("button", { name: "Not now" })).toBeVisible()
+
+      // Try again installs afresh, and the second goes through to done.
+      await sheet.getByRole("button", { name: "Try again" }).click()
+      await expect.element(doneItem(), { timeout: 15_000 }).toBeVisible()
     })
 
-    it("keeps to a short card that still says it runs here and what it downloads", async () => {
-      await page.viewport(1200, 900)
-      await openAgents("uninstalled")
+    it("hides the item on Not now, and it is no decline", async () => {
+      await openAgents("network-down")
+      await goToFinished()
+      await chip().click()
+      await popover().getByRole("button", { name: "Turn on" }).click()
+      const sheet = page.getByRole("region", { name: "Couldn't turn on Murmur" })
+      await sheet.getByRole("button", { name: "Not now" }).click({ timeout: 12_000 })
 
-      await expect.element(offer().getByText("Runs on this computer \u00b7 1.2 GB")).toBeVisible()
-      await expect.element(offer().getByText(/Downloads 1\.2 GB once/)).not.toBeVisible()
-      await expect.element(offer().getByRole("button", { name: "Turn on" })).toBeVisible()
-    })
-
-    it("keeps its buttons at the right edge on every card, as on the install's", async () => {
-      await page.viewport(1200, 900)
-      await openAgents("uninstalled")
-      await offer().getByRole("button", { name: "Turn on" }).click({ timeout: 10_000 })
-
-      const cancel = card().getByRole("button", { name: "Cancel" })
-      await expect.element(cancel).toBeVisible()
-      const box = card().element().getBoundingClientRect()
-      const button = cancel.element().getBoundingClientRect()
-      // Its right edge is the card's, less the padding.
-      expect(box.right - button.right).toBeLessThan(24)
-    })
-  })
-
-  context("when the footer's update notice is open", () => {
-    it("sits beside it, not over it", async () => {
-      await openAgents("uninstalled&update=ready")
-      await expect.element(offer(), { timeout: 10_000 }).toBeVisible()
-      const notice = page.getByText("Novadeck 0.0.80 is ready")
-      await expect.element(notice).toBeVisible()
-
-      const cardBox = offer().element().getBoundingClientRect()
-      const panel = notice.element().closest(".update-panel")!.getBoundingClientRect()
-      expect(cardBox.right).toBeLessThanOrEqual(panel.left)
+      await expect.element(sheet).not.toBeInTheDocument()
+      const card = await preferencesMurmur()
+      await expect
+        .element(card.getByRole("switch", { name: "Enabled" }))
+        .toHaveAttribute("aria-checked", "true")
     })
   })
 
   context("when the computer can't run Murmur", () => {
-    it("never comes up when it is known not to", async () => {
+    it("never offers it when it is known not to", async () => {
       await openAgents("unsupported")
-      await finished()
+      await goToFinished()
 
-      await expect.element(offer()).not.toBeInTheDocument()
+      await expect.element(chip()).not.toBeInTheDocument()
     })
 
-    it("leaves for good when Turn on finds the computer can't", async () => {
+    it("says so in the footer's sheet when Turn on finds it can't, and the item leaves", async () => {
       await openAgents("no-device")
-      await offer().getByRole("button", { name: "Turn on" }).click({ timeout: 10_000 })
+      await goToFinished()
+      await chip().click()
+      await popover().getByRole("button", { name: "Turn on" }).click()
 
-      await expect.element(card().getByRole("progressbar")).toBeVisible()
-      await expect.element(card(), { timeout: 10_000 }).not.toBeInTheDocument()
-      await expect.element(page.getByText("Couldn't turn on Murmur")).not.toBeInTheDocument()
+      const sheet = page.getByRole("region", { name: "Not available on this computer" })
+      await expect.element(sheet, { timeout: 12_000 }).toBeVisible()
+      await sheet.getByText("Details").click()
+      await expect.element(sheet.getByText(/graphics device/)).toBeVisible()
+      await sheet.getByRole("button", { name: "Close" }).click()
+      await expect.element(sheet).not.toBeInTheDocument()
+      await expect
+        .element(page.getByRole("button", { name: /Murmur isn't available/ }))
+        .not.toBeInTheDocument()
     })
   })
 
-  context("when Murmur is already on the computer", () => {
-    it("never comes up", async () => {
-      await openAgents("installed")
-      await finished()
+  context("when Murmur is already on the computer, or the offer was shown three times", () => {
+    afterEach(async () => {
+      await page.viewport(1440, 900)
+    })
 
-      await expect.element(offer()).not.toBeInTheDocument()
+    it("never offers it when it is installed", async () => {
+      await openAgents("installed")
+      await goToFinished()
+
+      await expect.element(chip()).not.toBeInTheDocument()
+    })
+
+    it("stops offering it after three sessions", async () => {
+      await openAgents("offered-out")
+      await goToFinished()
+
+      await expect.element(chip()).not.toBeInTheDocument()
     })
   })
 })

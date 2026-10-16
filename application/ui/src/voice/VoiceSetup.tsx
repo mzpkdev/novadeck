@@ -1,0 +1,120 @@
+import { Check, Mic, TriangleAlert } from "lucide-react"
+import { useSyncExternalStore } from "react"
+
+import { formatSize, installSize, stepLabels } from "../model/voice-format"
+import { Chord } from "../ui-toolkit/Chord"
+import { Progress } from "../ui-toolkit/Progress"
+import type { DictationController, VoiceSetup } from "./dictation"
+
+const preferencesNote = "You can turn it on later in Preferences → Addons."
+
+// A button of the strip or the overlay: it takes the pointer but never focus, so typing
+// stays in the terminal.
+const Action = ({
+  primary = false,
+  title,
+  onPress,
+  children,
+}: {
+  readonly primary?: boolean
+  readonly title?: string
+  readonly onPress: () => void
+  readonly children: React.ReactNode
+}): React.JSX.Element => (
+  <button
+    type="button"
+    className={primary ? "button primary dictation-button" : "dictation-link"}
+    {...(title && { title })}
+    onMouseDown={(event) => event.preventDefault()}
+    // Its own click, not its window's, which Canvas would also select.
+    onClick={(event) => {
+      event.stopPropagation()
+      onPress()
+    }}
+  >
+    {children}
+  </button>
+)
+
+// What voice input's setup says: the offer, the install's progress, that it is ready, or why
+// it failed. Both the strip of a terminal and the overlay at the app's foot show it. The
+// progress numbers stay out of the live region, which reads a stable summary instead.
+export const VoiceSetupContent = ({
+  controller,
+  setup,
+  keys,
+}: {
+  readonly controller: DictationController
+  readonly setup: VoiceSetup
+  // The dictation shortcut's keys, said once voice input is ready.
+  readonly keys: readonly string[]
+}): React.JSX.Element => {
+  const state = useSyncExternalStore(controller.voice.subscribe, controller.voice.getSnapshot)
+  const { turnOn, noThanks, cancel } = controller.setupActions
+  if (setup.kind === "offer")
+    return (
+      <>
+        <Mic size={14} className="dictation-icon" aria-hidden />
+        <span className="dictation-text" title={preferencesNote}>
+          Talk to your agents. Voice input runs on this computer
+          <span className="dictation-muted"> · {formatSize(installSize(state))} once</span>
+        </span>
+        <Action title={preferencesNote} onPress={noThanks}>
+          No thanks
+        </Action>
+        <Action primary onPress={turnOn}>
+          Turn on
+        </Action>
+      </>
+    )
+  if (setup.kind === "installing") {
+    const { installing } = state
+    const indeterminate = installing === null || installing.step === "check"
+    return (
+      <>
+        <Mic size={14} className="dictation-icon" aria-hidden />
+        <span className="dictation-text">
+          Setting up voice input
+          <span className="dictation-muted" aria-hidden>
+            {" · "}
+            {installing === null
+              ? "Starting…"
+              : installing.step === "check"
+                ? "Checking…"
+                : `${stepLabels[installing.step]} ${formatSize(installing.received)} of ${formatSize(installing.total)}`}
+          </span>
+        </span>
+        <span className="dictation-progress" aria-hidden>
+          <Progress
+            label="Voice input setup"
+            value={installing?.step === "check" ? 0 : (installing?.received ?? 0)}
+            max={installing?.total ?? 1}
+            indeterminate={indeterminate}
+          />
+        </span>
+        <Action onPress={cancel}>Cancel</Action>
+      </>
+    )
+  }
+  if (setup.kind === "ready") {
+    return (
+      <>
+        <Check size={14} className="dictation-icon" aria-hidden />
+        <span className="dictation-text">
+          Voice input is ready. Hold <Chord keys={keys} /> to talk.
+        </span>
+      </>
+    )
+  }
+  return (
+    <>
+      <TriangleAlert size={14} className="dictation-icon" aria-hidden />
+      <span className="dictation-text dictation-clamp" title={state.failure ?? undefined}>
+        {state.failure}
+      </span>
+      <Action primary onPress={turnOn}>
+        Try again
+      </Action>
+    </>
+  )
+}
