@@ -890,6 +890,11 @@ export class Messaging {
     return live?.delivery.state === "ready" && !live.viaScreen
   }
 
+  /** Whether the terminal is idle by its screen's word alone, not a Stop's or a session start's. */
+  byScreen(terminalId: string): boolean {
+    return this.live.get(terminalId)?.viaScreen === true
+  }
+
   /**
    * A mark that changes with each root turn event (a delivery epoch) and each key
    * of the person's.
@@ -1761,8 +1766,10 @@ export class Messaging {
     if (live.delivery === before) return
     const { state } = live.delivery
     live.viaScreen =
-      (event.type === "emptied" && state === "ready") ||
-      (live.viaScreen && state === "ready" && live.delivery.epoch === before.epoch)
+      (event.type === "emptied" && (state === "ready" || state === "settled")) ||
+      (live.viaScreen &&
+        (state === "ready" || state === "settled") &&
+        live.delivery.epoch === before.epoch)
     // The doorbell's last word on why it can't ring is about an idle agent only.
     if (state === "working" || state === "ringing" || state === "unbound" || live.viaScreen)
       live.waits = null

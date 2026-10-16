@@ -1898,6 +1898,17 @@ export class Terminals {
     if (this.applyFact(record, fact)) this.publishAgent(record, false)
   }
 
+  /**
+   * Whether the activity says a turn or subagents run, where that outweighs what messaging
+   * knows: a Settled or Ready terminal made so by a Stop or a session's start stands against
+   * an activity that lingers; every other, and any made so by the screen alone, does not.
+   */
+  private working(terminalId: string, activity: Parameters<typeof busy>[0]): boolean {
+    const state = this.messaging.delivery(terminalId)?.state
+    const known = (state === "settled" || state === "ready") && !this.messaging.byScreen(terminalId)
+    return !known && busy(activity)
+  }
+
   /** What the doorbell asks of the terminals and messaging. */
   private ringHost(): DoorbellHost {
     const live = (terminalId: string) => this.live(terminalId)
@@ -1909,7 +1920,7 @@ export class Terminals {
         return (
           record !== undefined &&
           (record.activity?.pending.length ?? 0) === 0 &&
-          !busy(record.activity) &&
+          !this.working(terminalId, record.activity) &&
           !this.stopping &&
           this.messaging.ringable(terminalId)
         )
@@ -1918,12 +1929,14 @@ export class Terminals {
       ring: (terminalId, nonce) => {
         const record = live(terminalId)
         return (
-          record !== undefined && !busy(record.activity) && this.messaging.ring(terminalId, nonce)
+          record !== undefined &&
+          !this.working(terminalId, record.activity) &&
+          this.messaging.ring(terminalId, nonce)
         )
       },
       busy: (terminalId) => {
         const record = live(terminalId)
-        return record === undefined ? undefined : busy(record.activity)
+        return record === undefined ? undefined : this.working(terminalId, record.activity)
       },
       ringing: (terminalId) => this.messaging.ringing(terminalId),
       ready: (terminalId) => this.messaging.ready(terminalId),
@@ -1932,7 +1945,7 @@ export class Terminals {
       // for a Settled or Ready one only to say a request waits on the person.
       stalled: (terminalId) => {
         const record = live(terminalId)
-        if (!record || busy(record.activity)) return false
+        if (!record || this.working(terminalId, record.activity)) return false
         return (
           this.messaging.stalled(terminalId) ||
           ((record.activity?.pending.length ?? 0) > 0 && this.messaging.idleWaiting(terminalId))
@@ -1946,7 +1959,7 @@ export class Terminals {
         const record = live(terminalId)
         if (!record) return "dialog"
         if ((record.activity?.pending.length ?? 0) > 0) return "asking"
-        if (busy(record.activity)) return "draft"
+        if (this.working(terminalId, record.activity)) return "draft"
         const profile = this.boxOf(record)
         const box = profile?.read(screen)
         if (!profile || profile.overlay(screen)) return "dialog"
@@ -1971,7 +1984,7 @@ export class Terminals {
       emptied: (terminalId, readAt) => {
         const delivery = this.messaging.delivery(terminalId)
         const record = live(terminalId)
-        if (delivery && record && !busy(record.activity))
+        if (delivery && record && !this.working(terminalId, record.activity))
           this.messaging.emptied(terminalId, delivery.epoch, readAt)
       },
       blocked: (terminalId, waits) => this.messaging.blocked(terminalId, waits),
