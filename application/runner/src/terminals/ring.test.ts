@@ -359,6 +359,22 @@ describe("the doorbell's test paste where a line of history goes as the box take
     expect(checkPaste(was, more, line)).toEqual({ accepted: false, reason: "elsewhere" })
   })
 
+  it("rejects a list above the box that lost one item, with more of its items below", () => {
+    const list = (items: readonly string[]) => [
+      "  Mentions",
+      ...items,
+      ...Array<string>(8 - items.length).fill(""),
+      "› box",
+      "  fake-model default",
+      "  ? for shortcuts",
+    ]
+    const wasList = list(["  item a", "  item b", "  item c", "  item d"])
+    const afterList = list(["  item a", "  item c", "  item d"])
+    afterList[8] = `› ${line}`
+    afterList[10] = ""
+    expect(checkPaste(wasList, afterList, line)).toEqual({ accepted: false, reason: "elsewhere" })
+  })
+
   it("rejects it when a line was added or changed far above", () => {
     const added = [...after]
     added[5] = "popup"

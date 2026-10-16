@@ -951,9 +951,9 @@ export class Messaging {
   }
 
   /** The ring with that nonce failed: the terminal is Unknown, and its messages wait. */
-  ringFailed(terminalId: string, nonce: string): void {
+  ringFailed(terminalId: string, nonce: string, ours = false): void {
     const live = this.live.get(terminalId)
-    if (live) this.step(live, { type: "ring-failed", nonce })
+    if (live) this.step(live, { type: "ring-failed", nonce, ...(ours && { ours: true as const }) })
   }
 
   /**

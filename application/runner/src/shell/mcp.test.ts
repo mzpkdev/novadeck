@@ -797,6 +797,7 @@ describe("Novadeck's MCP server", () => {
         expect(description).toContain("new in every delivery")
         expect(description).toContain("decisions and requirements it says the user made included")
         expect(description).toContain("Approvals of actions stay the user's")
+        expect(description).toContain("or ask them with the ask tool, whose marked reply is theirs")
         expect(description).toContain(
           "Questions meant for the user, decisions and requirements too, go to your lead",
         )

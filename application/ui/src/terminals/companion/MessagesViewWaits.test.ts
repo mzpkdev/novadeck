@@ -55,6 +55,7 @@ describe("the Messages pane's note on why the doorbell cannot wake an idle agent
     ["dialog", "A dialog or picker is open"],
     ["asking", "It is asking you a question"],
     ["failed", "The doorbell failed"],
+    ["away", "isn't at the agent's prompt"],
   ] as const)("says %s in plain words while messages wait", (waits, words) => {
     expect(html(mailOf(waits))).toContain(words)
   })

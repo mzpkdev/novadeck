@@ -1909,12 +1909,22 @@ export class Terminals {
         return (
           record !== undefined &&
           (record.activity?.pending.length ?? 0) === 0 &&
+          !busy(record.activity) &&
           !this.stopping &&
           this.messaging.ringable(terminalId)
         )
       },
       settledSince: (terminalId) => this.messaging.settledSince(terminalId),
-      ring: (terminalId, nonce) => this.messaging.ring(terminalId, nonce),
+      ring: (terminalId, nonce) => {
+        const record = live(terminalId)
+        return (
+          record !== undefined && !busy(record.activity) && this.messaging.ring(terminalId, nonce)
+        )
+      },
+      busy: (terminalId) => {
+        const record = live(terminalId)
+        return record === undefined ? undefined : busy(record.activity)
+      },
       ringing: (terminalId) => this.messaging.ringing(terminalId),
       ready: (terminalId) => this.messaging.ready(terminalId),
       // Idle but not Ready by its state, with messages waiting: its screen is looked at.
@@ -1965,7 +1975,7 @@ export class Terminals {
           this.messaging.emptied(terminalId, delivery.epoch, readAt)
       },
       blocked: (terminalId, waits) => this.messaging.blocked(terminalId, waits),
-      ringFailed: (terminalId, nonce) => this.messaging.ringFailed(terminalId, nonce),
+      ringFailed: (terminalId, nonce, ours) => this.messaging.ringFailed(terminalId, nonce, ours),
       screen: (terminalId) => this.screenOf(terminalId),
       // The agent's box must show, empty and taking a prompt, as a prompt's must: on Windows
       // a TUI that reads the console's keys gets a bracketed paste as keys, and everywhere a

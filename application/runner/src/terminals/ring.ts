@@ -140,6 +140,11 @@ const reflowed = (
   const was = lines(before)
   const now = lines(after)
   if (was.length - now.length !== 1) return undefined
+  // The line gone sits at the foot of the history, as a Tip does, with at most one line of
+  // text under it: a list that lost an item has more of its items below.
+  let gone = 0
+  while (gone < now.length && was[gone] === now[gone]) gone += 1
+  if (was.length - 1 - gone > 1) return undefined
   // Every line left is one of `before`'s, in order.
   let at = 0
   for (const row of now) {

@@ -49,13 +49,14 @@ export type MessageThread = {
 // Why the doorbell can't wake an idle agent whose messages wait, as its screen shows: text
 // in its box (`draft`), a dialog or picker over it (`dialog`), or a question it waits on
 // the person for (`asking`). The pane says so in plain words.
-export type MailWaits = "draft" | "dialog" | "asking" | "failed"
+export type MailWaits = "draft" | "dialog" | "asking" | "failed" | "away"
 
 export const waitsText: Readonly<Record<MailWaits, string>> = {
   draft: "There's text in its box, so they wait. They arrive once the box is empty.",
   dialog: "A dialog or picker is open in its terminal, so they wait. They arrive once it closes.",
   asking: "It is asking you a question, so they wait. They arrive once you answer.",
   failed: "The doorbell failed three times, so they wait. They arrive at its next prompt.",
+  away: "Its terminal isn't at the agent's prompt, so they wait. They arrive once it is.",
 }
 
 // A terminal's messages: its own handle, whether an agent is there to take them, why the

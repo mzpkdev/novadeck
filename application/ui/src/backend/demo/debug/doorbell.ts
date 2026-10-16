@@ -28,6 +28,11 @@ const states: readonly {
     hint: "Messages pane says the doorbell failed three times, so its messages wait",
   },
   {
+    label: "Terminal away from the prompt",
+    waits: "away",
+    hint: "Messages pane says the terminal isn't at the agent's prompt, so its messages wait",
+  },
+  {
     label: "Doorbell can ring",
     waits: null,
     hint: "The pane's note goes: nothing keeps the doorbell from ringing the agent",

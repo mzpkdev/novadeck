@@ -272,7 +272,12 @@ export type DeliveryEvent =
       /** Submits the line a failed ring left in the box (`Box.ours`), pasting nothing. */
       readonly leftover?: true
     }
-  | { readonly type: "ring-failed"; readonly nonce: string }
+  | {
+      readonly type: "ring-failed"
+      readonly nonce: string
+      /** The paste check had accepted its line, which is alone in the box: Novadeck's own. */
+      readonly ours?: true
+    }
 
 /** A box nothing is known to be in: as a session binds. */
 const emptyBox: Box = {
@@ -716,7 +721,7 @@ export const transition = (delivery: Delivery, event: DeliveryEvent, slackMs = 0
       return delivery.state === "ringing" && delivery.nonce === event.nonce
         ? {
             ...counts(delivery),
-            box: { ...box, ours: !delivery.touched },
+            box: { ...box, ours: event.ours === true && !delivery.touched },
             state: "unknown",
           }
         : delivery
@@ -858,7 +863,7 @@ export const waitsIn = (delivery: Delivery): boolean =>
  * dialog, picker or screen that isn't the agent's prompt (`dialog`), or a question it
  * waits on the person for (`asking`).
  */
-export type Waits = "draft" | "dialog" | "asking" | "failed"
+export type Waits = "draft" | "dialog" | "asking" | "failed" | "away"
 
 /** What `send` and the Messages pane say of each, plainly. */
 export const waitReasons: Readonly<Record<Waits, string>> = {
@@ -866,6 +871,7 @@ export const waitReasons: Readonly<Record<Waits, string>> = {
   dialog: "waits: a dialog or picker is open in its terminal, rung once it closes",
   asking: "waits: it is asking the user a question, rung once answered",
   failed: "waits: its doorbell failed three times, rung again at its next prompt or key",
+  away: "waits: its terminal is not at the agent's prompt, rung once it is",
 }
 
 /**

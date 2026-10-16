@@ -590,3 +590,25 @@ describe("a view is told by the rows under the box, never by the conversation ab
     ).toBe(false)
   })
 })
+
+describe("a view's hint under a box with a long status line", () => {
+  const rule = "─".repeat(60)
+  it("is still found, as the rows from the box down are read, not the last four", () => {
+    const view = screenWith({
+      rows: [
+        "● Warmed up.",
+        rule,
+        "❯ describe a task for a new session",
+        rule,
+        "  enter to return · space to reply · ctrl+x to delete",
+        "  status one",
+        "  status two",
+        "  status three",
+        "  status four",
+        "  status five",
+      ],
+      cursor: { row: 2, column: 2 },
+    })
+    expect(claude.overlay(view)).toBe(true)
+  })
+})

@@ -245,12 +245,19 @@ export const agreeing = (box: InputBox | undefined, shell: boolean): InputBox | 
   box && !(shell && box.mode === "prompt") ? box : undefined
 
 /**
- * The last `count` rows of a screen that show anything: the box's footer and what a view
- * draws under it, where a harness says which view it is in (`BoxProfile.overlay`), never
- * the conversation above.
+ * The rows of a screen that show anything, from the one the cursor is on (in the box, or the
+ * field of a view) down, and at least the last `count` of them: the box's footer and what a
+ * view draws under it, where a harness says which view it is in (`BoxProfile.overlay`),
+ * however many rows a status line takes; never the conversation above. A cursor far above
+ * the foot (more than `reach` rows) is no anchor.
  */
-export const footerRows = (screen: ScreenText, count = 4): readonly string[] =>
-  screen.rows.filter((row) => row.trim() !== "").slice(-count)
+export const footerRows = (screen: ScreenText, count = 4, reach = 12): readonly string[] => {
+  const shown = screen.rows.map((row, at) => ({ row, at })).filter(({ row }) => row.trim() !== "")
+  const below = shown.filter(({ at }) => at >= screen.cursor.row)
+  const near = screen.rows.length - screen.cursor.row <= reach
+  const last = shown.slice(-count)
+  return (near && below.length > last.length ? below : last).map(({ row }) => row)
+}
 
 /** Whether a row is a horizontal rule. */
 export const rule = (row: string | undefined): boolean => /^─{8,}$/.test((row ?? "").trim())
