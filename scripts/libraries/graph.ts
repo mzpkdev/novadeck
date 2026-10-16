@@ -41,7 +41,7 @@ export const strayDependencies = (folder: string, manifest: Manifest): readonly 
   return kinds.flatMap((kind) =>
     Object.entries(manifest[kind] ?? {})
       .filter(([key, spec]) => {
-        if (/^(?:link:|file:|portal:|workspace:[./~]|[./~])/.test(spec)) return true
+        if (/^(?:link:|file:|portal:|workspace:(?:\.|\/|~\/)|\.|\/|~\/)/.test(spec)) return true
         const name = installed(key, spec)
         return name.startsWith("@novadeck/") && !allowed.has(name)
       })

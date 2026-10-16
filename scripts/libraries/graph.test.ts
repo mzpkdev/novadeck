@@ -13,7 +13,8 @@ describe("a library's dependencies", () => {
       strayDependencies("terminal", {
         name: "@novadeck/terminal",
         dependencies: { "@novadeck/emulator": "workspace:^0.0.0", "@xterm/xterm": "6.0.0" },
-        devDependencies: { "@novadeck/emulator": "workspace:*" },
+        devDependencies: { "@novadeck/emulator": "workspace:*", "@xterm/headless": "~6.0.0" },
+        peerDependencies: { "@novadeck/emulator": "workspace:~" },
       }),
     ).toEqual([])
   })
@@ -64,6 +65,7 @@ describe("a library's dependencies", () => {
           v: "portal:./vendor",
           w: "workspace:../../application/runner",
           b: "../../application/host",
+          home: "~/novadeck/application/ui",
         },
       }),
     ).toEqual([
@@ -72,6 +74,7 @@ describe("a library's dependencies", () => {
       "devDependencies v",
       "devDependencies w",
       "devDependencies b",
+      "devDependencies home",
     ])
   })
 
