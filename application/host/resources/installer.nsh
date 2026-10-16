@@ -116,7 +116,7 @@
     IntOp $2 $2 + 1
 
     ${If} $2 > 6
-      # Still there after six rounds of closing it. Probably running with more rights than this setup, or locked by something else.
+      # Still there at round 7, after the rounds of closing it. Probably running with more rights than this setup, or locked by something else.
       ${If} $4 == 1
       ${OrIf} ${Silent}
         SetErrorLevel 3

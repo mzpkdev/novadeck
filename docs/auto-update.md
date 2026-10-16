@@ -388,7 +388,8 @@ keeps the workspace.
     environment variables the queries read are cleared once the check passes.
   - Closing is by PowerShell, only processes whose path starts with `<install folder>\`,
     separator included, never this setup itself, so never by name. Without PowerShell
-    nothing is closed: a silent installer run ends at once; an interactive run shows the
+    nothing is closed: a silent install that is not a self-update ends at once, a silent
+    self-update or uninstaller ends with exit code 3 at round 7; an interactive run shows the
     "click OK to close it" box but closes nothing, and offers Retry at round 7 for the
     person to close Novadeck by hand.
   - `install-windows.test.ts` pins that the builder in use still reaches the hook from the
