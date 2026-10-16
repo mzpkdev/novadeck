@@ -99,7 +99,31 @@ The rebuilt production UI contains no diagnostic event string.
 Independent review reproduced and caught two additional cases: foreground exit
 while trust was pending, and same-harness PID reuse. Both regressions now pass.
 Validation logs, review boundaries and source hashes are indexed in
-`repair-validation/README.md`. Native Windows CI remains pending; P2 is unresolved.
+`repair-validation/README.md`. P2 remains unresolved.
+
+### CI follow-up and chat fixture
+
+At repair commit `4032c1d2`, all Quality jobs passed on Linux, macOS and Windows,
+as did every Codex, Claude, Windows-quirks and mixed-agent E2E job. Antigravity
+passed on Windows and macOS. These are post-sample validation results, not another
+audit round or proof of the historical failure causes.
+
+[Antigravity on Linux](https://github.com/novadeck-org/novadeck/actions/runs/38859631322/job/116838841760)
+failed the back-to-back chat scenario: the final prompt was pasted just after
+Stop, appeared queued, and never reached the model before the existing deadline.
+The trace does not establish whether the harness or runner caused the delivery
+failure. One original-scenario control and one direct-PTY input control each
+passed locally, leaving that end-of-turn occurrence unresolved.
+
+The queued-input fixture now holds each first reply until the second prompt is
+visibly queued or accepted as steering. Between pairs, it requires the current
+Settled state, an empty prompt and no queued input. Sequential and simultaneous
+submission variants remain, and all six prompts and replies are checked. This
+establishes the intended mid-turn queue precondition; it is not a production
+repair for the end-of-turn delivery observation. No timeout or production input
+timing changed. All three pinned harnesses passed the corrected scenario locally,
+as did typecheck, lint, formatting and independent review. Evidence and controls:
+`repair-validation/agy-chat/`. CI for this fixture follow-up is pending.
 
 ## Sample identity and method
 
