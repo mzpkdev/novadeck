@@ -25,6 +25,7 @@ const captures = (): UninstallCapture[] =>
   Array.from({ length: 11 }, (_, index) => ({
     name: index === 0 ? uninstallTarget : `case ${index}`,
     dropped: 0,
+    sourceDropped: 0,
     events: [1, 2].flatMap((attempt) => [
       { stage: "confirm" },
       { stage: "fixture-scheduled", attempt, delayMs: 1500 },

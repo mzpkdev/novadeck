@@ -66,9 +66,18 @@ export default {
               uninstallCapture: async ({ page }, capture) => {
                 if (!Number.isInteger(capture.index) || capture.index < 1 || capture.index > 100)
                   throw new Error("Invalid uninstall capture case index")
+                const { sources, ...record } = capture
                 await writeFile(
                   join(output, `case-${String(capture.index).padStart(2, "0")}.json`),
-                  JSON.stringify(capture, null, 2) + "\n",
+                  JSON.stringify(
+                    { ...record, sourceTotal: sources.total, sourceDropped: sources.dropped },
+                    null,
+                    2,
+                  ) + "\n",
+                )
+                await writeFile(
+                  join(output, "source-events.json"),
+                  JSON.stringify(sources, null, 2) + "\n",
                 )
                 await writeFile(
                   join(output, "browser.json"),
@@ -77,6 +86,12 @@ export default {
                     null,
                     2,
                   ) + "\n",
+                )
+              },
+              uninstallSourceTimeline: async (_, sources) => {
+                await writeFile(
+                  join(output, "source-events.json"),
+                  JSON.stringify(sources, null, 2) + "\n",
                 )
               },
             },

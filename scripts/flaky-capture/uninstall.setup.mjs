@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, onTestFailed, onTestFinished } from "vitest"
+import { afterAll, afterEach, beforeEach, onTestFailed, onTestFinished } from "vitest"
 import { commands } from "vitest/browser"
 
-import { setCase } from "./uninstall-events.mjs"
+import { setCase, timeline } from "./uninstall-events.mjs"
 
 let index = 0
 let save = async () => {}
@@ -91,6 +91,7 @@ beforeEach((context) => {
       events,
       total,
       dropped: total - events.length,
+      sources: timeline(),
     })
   save = persist
   onTestFailed(async () => {
@@ -111,4 +112,7 @@ beforeEach((context) => {
 })
 afterEach(async () => {
   await save()
+})
+afterAll(async () => {
+  await commands.uninstallSourceTimeline(timeline())
 })
