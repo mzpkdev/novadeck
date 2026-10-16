@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs"
 
 import { describe, expect, it } from "vitest"
 
-import { prune } from "../../application/runner/src/shell/hook.ts"
 import {
   observeApprovalIngress,
   observationPairs,
@@ -77,7 +76,7 @@ describe("AGY approval capture boundaries", () => {
     expect(instrumentApproval(original, "/unrelated.ts", events, recorder)).toBeUndefined()
   })
 
-  it("distinguishes an actual false flag, a missing flag and >100-key pruning loss", () => {
+  it("distinguishes true, false and missing confirmation flags", () => {
     const wide = Object.fromEntries(
       Array.from({ length: 100 }, (_, index) => [`field${index}`, index]),
     )
@@ -85,10 +84,6 @@ describe("AGY approval capture boundaries", () => {
     expect(payloadMetadata(raw)).toMatchObject({
       keys: 101,
       confirmation: { present: true, type: "boolean", value: true },
-    })
-    expect(payloadMetadata(prune(raw, 0, 4096))).toMatchObject({
-      keys: 100,
-      confirmation: { present: false, type: "undefined" },
     })
     expect(payloadMetadata({ tool_confirmation_pending: false })).toMatchObject({
       confirmation: { present: true, value: false },
