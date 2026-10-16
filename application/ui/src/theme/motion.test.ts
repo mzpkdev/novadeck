@@ -1,7 +1,8 @@
 // An animation that never ends keeps running for as long as its element is on screen, so
 // it must be one the compositor can run alone: its keyframes change only `transform`,
 // `translate`, `rotate`, `scale`, `opacity` or `filter`. Anything else, as `content` or
-// `background-position`, repaints on the main thread every frame.
+// `background-position`, repaints on the main thread every frame. An animation counted as `infinite` in so many
+// words is what it reads; a count held in a variable is beyond it.
 
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -30,7 +31,7 @@ const blockAt = (css: string, open: number): string => {
 // Every `@keyframes` in the stylesheets, with the properties its frames set.
 const definitions = stylesheets.flatMap((file) => {
   const css = read(file)
-  return [...css.matchAll(/@keyframes\s+([\w-]+)\s*\{/g)].map((match) => {
+  return [...css.matchAll(/@(?:-webkit-)?keyframes\s+([\w-]+)\s*\{/g)].map((match) => {
     const body = blockAt(css, match.index + match[0].length - 1)
     const properties = new Set(
       [...body.matchAll(/([\w-]+)\s*:[^;{}]*[;}]/g)]
@@ -51,7 +52,9 @@ const keywords = new Set(
 // A layer's name, or where none is written out, the variable that holds it; a variable
 // among the times and easings is no name.
 const nameOf = (tokens: readonly string[]): string | undefined => {
-  const words = tokens.filter((token) => !keywords.has(token) && !/^-?[\d.]/.test(token))
+  const words = tokens.filter(
+    (token) => !keywords.has(token.toLowerCase()) && !/^-?[\d.]/.test(token),
+  )
   return (
     words.find((token) => !token.includes("(")) ?? words.find((token) => token.startsWith("var("))
   )
@@ -73,18 +76,19 @@ const layers = (value: string): string[] => {
   return [...found, value.slice(start)]
 }
 
-// The keyframes each `animation` layer that repeats forever runs, with where it is set.
+// The keyframes each `animation` layer that repeats forever runs, with where it is set, its
+// `-webkit-` form included. Keywords are read in any case, names as written, as CSS does.
 // Functions but `var()` are dropped before the layer is split into tokens, so `steps(1)` is
 // no name, while a name kept in a variable shows as one no keyframes define.
 const infinite = stylesheets.flatMap((file) =>
-  [...read(file).matchAll(/(?:^|[\s;{])animation\s*:([^;{}]+)/g)].flatMap((match) =>
+  [...read(file).matchAll(/(?:^|[\s;{])(?:-webkit-)?animation\s*:([^;{}]+)/g)].flatMap((match) =>
     layers(match[1]!).flatMap((layer) => {
       const tokens = layer
-        .toLowerCase()
         .replace(/(?<![\w-])(?!var\()[\w-]*\([^()]*(?:\([^()]*\)[^()]*)*\)/g, " ")
         .trim()
         .split(/\s+/)
-      const name = tokens.includes("infinite") ? nameOf(tokens) : undefined
+      const repeats = tokens.some((token) => token.toLowerCase() === "infinite")
+      const name = repeats ? nameOf(tokens) : undefined
       return name ? [{ file, name }] : []
     }),
   ),
@@ -97,9 +101,11 @@ describe("animations that never end", () => {
 
   it("are set with the `animation` shorthand, which this check reads", () => {
     const longhands = stylesheets.flatMap((file) =>
-      [...read(file).matchAll(/(?:^|[\s;{])(animation-(?:name|iteration-count))\s*:/g)].map(
-        (match) => `${file}: ${match[1]}`,
-      ),
+      [
+        ...read(file).matchAll(
+          /(?:^|[\s;{])((?:-webkit-)?animation-(?:name|iteration-count))\s*:/g,
+        ),
+      ].map((match) => `${file}: ${match[1]}`),
     )
     expect(longhands).toEqual([])
   })
