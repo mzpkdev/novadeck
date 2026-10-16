@@ -971,6 +971,7 @@ const launch = async (): Promise<void> => {
   // while this copy keeps running, and is told how the install goes.
   registerPortableIpc(ipcMain, {
     window: (event) => appWindow(event)?.webContents,
+    log: (message, error) => console.warn(message, error),
     installer: portableInstaller({
       portable,
       version: app.getVersion(),

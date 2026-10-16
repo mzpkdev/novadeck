@@ -348,7 +348,7 @@ describe("a host's portable copy", () => {
     expect(heard).toEqual([
       { ...run, install: { phase: "downloading", percent: 40 } },
       { ...run, install: { phase: "installing" } },
-      { ...run, install: { phase: "failed", reason: "Something went wrong." } },
+      { ...run, install: { phase: "failed", reason: "Disk full" } },
     ])
   })
 

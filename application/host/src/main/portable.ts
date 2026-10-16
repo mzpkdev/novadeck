@@ -70,8 +70,9 @@ const failure = (reason: string): PortableInstall => ({ phase: "failed", reason 
 /**
  * Installs the app from a portable copy while it keeps running; nothing is restarted,
  * quit or started. The installer holds the run's `PortableInstall`, starting `idle`, and
- * tells `changed` the whole `PortableState` at each change: `downloading` with each new
- * whole percent (Windows only), `installing`, then how it ended. `install` first looks at
+ * tells `changed` the whole `PortableState` at each change: `installing` as soon as a
+ * request is taken, `downloading` with each new whole percent (Windows only, then
+ * `installing` again once the setup runs), then how it ended. `install` first looks at
  * the installed copies: one newer than this copy is left alone, since this copy would
  * replace it with an older app that could not open the data the newer one may have
  * upgraded, and the end is `newer`. An installed copy that could not be looked at is not
@@ -123,6 +124,9 @@ export const portableInstaller = (host: PortableHost): PortableInstaller => {
     install: () => {
       if (!host.portable || under !== undefined) return Promise.resolve()
       if (install.phase === "installed" || install.phase === "newer") return Promise.resolve()
+      // The page hears at once that its request was taken, whatever the platform does
+      // first, and a failure after a retry is then a change that always reaches it.
+      set({ phase: "installing" })
       if (host.stopping()) {
         set(failure(quitting))
         return Promise.resolve()
@@ -266,16 +270,24 @@ export const registerPortableIpc = <Window>(
   {
     window,
     installer,
+    log,
   }: {
     readonly window: (event: IpcMainEvent | IpcMainInvokeEvent) => Window | undefined
     readonly installer: PortableInstaller
+    readonly log: (message: string, error: unknown) => void
   },
 ): void => {
   ipc.handle(portableChannel, (event): PortableState =>
     window(event) === undefined ? { portable: false } : installer.state(),
   )
   ipc.on(installAppChannel, (event) => {
-    if (window(event) !== undefined) void installer.install()
+    if (window(event) === undefined) return
+    // Telling a page can throw; nothing waits on the request, so it is logged here.
+    try {
+      installer.install().catch((error: unknown) => log("Installing failed.", error))
+    } catch (error) {
+      log("Installing failed.", error)
+    }
   })
 }
 

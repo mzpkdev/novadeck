@@ -199,9 +199,13 @@ const bridge = {
   installApp: () => {
     ipcRenderer.send(installAppChannel)
   },
-  // Only a valid state comes back, as `portable()` gives it.
+  // Only a valid state is passed on; a broken push is dropped, so it never hides a card
+  // mid-install the way `portable()`'s fallback would.
   onPortableState: (listener) => {
-    const relay = (_event: unknown, value: unknown): void => listener(portableStateOf(value))
+    const relay = (_event: unknown, value: unknown): void => {
+      const state = parsePortableState(value)
+      if (state) listener(state)
+    }
     ipcRenderer.on(portableStateChannel, relay)
     return () => {
       ipcRenderer.removeListener(portableStateChannel, relay)

@@ -189,8 +189,8 @@ export type PortableInstall =
 /** What a run's name may be, as the host reports it: a UUID. */
 export const portableRunPattern = /^[0-9A-Fa-f-]{1,64}$/
 
-/** The longest reason a failed install gives the page: a short line. */
-export const installReasonLength = 200
+/** The longest reason a failed install shows; a longer one is cut short with an ellipsis. */
+export const installReasonLength = 300
 
 /** What the page shows for a failed install whose reason it cannot show. */
 export const unknownInstallReason = "Something went wrong."
@@ -229,8 +229,6 @@ export type UpdateOffer =
   | { readonly kind: "downloading"; readonly version: string; readonly percent: number }
   | { readonly kind: "ready" | "retrying" | "available"; readonly version: string }
 
-export type UpdateOfferKind = UpdateOffer["kind"]
-
 /** Whether `value` is how far along a download is: a whole percent from 0 to 100. */
 export const isUpdatePercent = (value: unknown): value is number =>
   Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 100
@@ -264,22 +262,31 @@ export const parseUpdateOffer = (value: unknown): UpdateOffer | undefined => {
 }
 
 /**
- * How an install stands when it is one the contract allows, else undefined. A failure
- * whose reason is not one short plain line keeps failing, with `unknownInstallReason`.
+ * A failed install's reason as one plain line the page can show: control, format and
+ * separator characters become spaces, runs of space collapse, and a reason longer than
+ * `installReasonLength` is cut short with an ellipsis. One left empty is
+ * `unknownInstallReason`.
  */
+const reasonLine = (reason: unknown): string => {
+  if (typeof reason !== "string") return unknownInstallReason
+  const line = reason.replace(new RegExp(unwanted.source, "gu"), " ").replace(/\s+/g, " ").trim()
+  if (line === "") return unknownInstallReason
+  const points = Array.from(line)
+  if (points.length <= installReasonLength) return line
+  return `${points
+    .slice(0, installReasonLength - 1)
+    .join("")
+    .trimEnd()}…`
+}
+
+/** How an install stands when it is one the contract allows, else undefined. */
 export const parsePortableInstall = (value: unknown): PortableInstall | undefined => {
   if (!isRecord(value)) return undefined
   const { phase, percent, version, reason } = value
   if (phase === "idle" || phase === "installing" || phase === "installed") return { phase }
   if (phase === "downloading") return isUpdatePercent(percent) ? { phase, percent } : undefined
   if (phase === "newer") return isVersion(version) ? { phase, version } : undefined
-  if (phase !== "failed") return undefined
-  const line =
-    typeof reason === "string" &&
-    reason.trim() !== "" &&
-    reason.length <= installReasonLength &&
-    !unwanted.test(reason)
-  return { phase, reason: line ? reason.trim() : unknownInstallReason }
+  return phase === "failed" ? { phase, reason: reasonLine(reason) } : undefined
 }
 
 /**

@@ -65,17 +65,18 @@ export const createDemoPortable = ({
           : Promise.resolve(state()),
       install: () => {
         if (install.phase !== "idle" && install.phase !== "failed") return
+        // Installing at once, as the host answers the click before anything else.
+        step({ phase: "installing" })
         if (progress) {
-          step({ phase: "downloading", percent: 0 })
           // A download in five steps over the first two thirds of the wait, then the install.
-          for (let at = 1; at <= 5; at += 1) {
+          for (let at = 0; at <= 5; at += 1) {
             setTimeout(
               () => step({ phase: "downloading", percent: at * 20 }),
               (installAfterMs * 2 * at) / 15,
             )
           }
           setTimeout(() => step({ phase: "installing" }), (installAfterMs * 2) / 3)
-        } else step({ phase: "installing" })
+        }
         if (ends !== "never") setTimeout(() => step(ends), installAfterMs)
       },
     },

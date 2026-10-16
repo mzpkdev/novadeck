@@ -46,7 +46,7 @@ describe("demo portable copy", () => {
     expect(phases(stuck)).toEqual(["installing"])
   })
 
-  it("reports a download, then the install, before it ends, where it is told to", async () => {
+  it("answers the click with installing, then reports a download and the install, where it is told to", async () => {
     vi.useFakeTimers()
     const { portable } = createDemoPortable({
       ends: { phase: "installed" },
@@ -59,11 +59,12 @@ describe("demo portable copy", () => {
     await vi.advanceTimersByTimeAsync(3000)
     stop()
     expect(phases(heard)).toEqual([
+      "installing",
       ...Array<string>(6).fill("downloading"),
       "installing",
       "installed",
     ])
-    expect(heard[5]).toMatchObject({ install: { phase: "downloading", percent: 100 } })
+    expect(heard[6]).toMatchObject({ install: { phase: "downloading", percent: 100 } })
   })
 
   it("ignores an install while under way or once done, and starts over after a failure", async () => {

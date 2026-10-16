@@ -33,10 +33,18 @@ const requestedUpdate = (): UpdateScenario | undefined => {
     : undefined
 }
 
-const demoWithUpdate = (scenario: UpdateScenario): ReturnType<typeof createDemoBackend> => {
+// The updates a spec asks for: an explicit `?update=` wins, else the release a portable
+// scenario has waiting (as the debug panel offers it).
+const demoWithUpdate = (
+  scenario: UpdateScenario | undefined,
+  portable: DemoPortable | undefined,
+  demo: ReturnType<typeof createDemoBackend>,
+): ReturnType<typeof createDemoBackend> => {
+  if (!scenario && !portable?.offer) return demo
   const controls = createDemoUpdates()
-  scenario.play(controls, "0.0.80")
-  return { ...createDemoBackend(), updates: controls.updates }
+  if (scenario) scenario.play(controls, "0.0.80")
+  else if (portable?.offer) controls.offer(portable.offer)
+  return { ...demo, updates: controls.updates }
 }
 
 // Specs open the demo on a host running without its security sandbox with `?sandbox=off`,
@@ -115,7 +123,7 @@ export const createSpecBackend = (): ReturnType<typeof createDemoBackend> => {
   const update = requestedUpdate()
   const sandbox = requestedSandbox()
   const portable = requestedPortable()
-  const demo = requestedVersion(update ? demoWithUpdate(update) : createDemoBackend())
+  const demo = requestedVersion(demoWithUpdate(update, portable, createDemoBackend()))
   const uninstall = requestedUninstall()
   const withSandbox = sandbox ? { ...demo, sandbox: createDemoSandbox(sandbox) } : demo
   const withUninstall = uninstall ? { ...withSandbox, uninstall } : withSandbox

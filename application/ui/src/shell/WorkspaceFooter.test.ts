@@ -527,13 +527,56 @@ describe("workspace footer", () => {
       })
 
       it("says why an install failed, and offers to try again", () => {
-        const page = render(installing({ phase: "failed", reason: "Disk full" }))
+        const page = render(installing({ phase: "installing" }))
         mounted.push(page)
+        page.rerender(installing({ phase: "failed", reason: "Disk full" }))
         expect(notice(page)!.textContent).toContain("Couldn't install")
         expect(notice(page)!.textContent).toContain("Disk full")
         expect(notice(page)!.querySelector(".update-card-foot button")!.textContent).toBe(
           "Try again",
         )
+      })
+
+      // The card as its parent holds it: open or not, with the install the host reports.
+      const held = (install: PortableInstall, open: boolean) =>
+        createElement(WorkspaceFooter, {
+          ...props("ok"),
+          portable: { ...props("ok").portable, open, portable: { ...portable, install } },
+        })
+      const failed: PortableInstall = { phase: "failed", reason: "Disk full" }
+
+      it("shows the idle card for a failure the person dismissed, and a repeat of it again", () => {
+        const page = render(held({ phase: "installing" }, true))
+        mounted.push(page)
+        page.rerender(held(failed, true))
+        expect(notice(page)!.textContent).toContain("Couldn't install")
+        act(() => notice(page)!.querySelector<HTMLButtonElement>("[aria-label=Dismiss]")!.click())
+        page.rerender(held(failed, false))
+        act(() => chip(page).click())
+        page.rerender(held(failed, true))
+        expect(notice(page)!.textContent).toContain("Portable copy")
+        expect(notice(page)!.querySelector(".update-card-foot button")!.textContent).toBe("Install")
+        // Install again; the same failure comes back and shows.
+        page.rerender(held({ phase: "installing" }, true))
+        page.rerender(held(failed, true))
+        expect(notice(page)!.textContent).toContain("Couldn't install")
+        expect(notice(page)!.textContent).toContain("Disk full")
+      })
+
+      it("counts a failed card closed by the parent as dismissed", () => {
+        const page = render(held({ phase: "installing" }, true))
+        mounted.push(page)
+        page.rerender(held(failed, true))
+        page.rerender(held(failed, false))
+        page.rerender(held(failed, true))
+        expect(notice(page)!.textContent).toContain("Portable copy")
+      })
+
+      it("shows the idle card for a failure from before the page loaded", () => {
+        const page = render(held(failed, true))
+        mounted.push(page)
+        expect(notice(page)!.textContent).toContain("Portable copy")
+        expect(notice(page)!.textContent).not.toContain("Couldn't install")
       })
 
       it("reports a newer installed copy as the outcome", () => {

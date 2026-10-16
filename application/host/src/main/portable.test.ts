@@ -102,6 +102,7 @@ describe("installing from a portable copy", () => {
     })
     await portableInstaller(host).install()
     expect(phases(states)).toEqual([
+      { phase: "installing" },
       { phase: "downloading", percent: 0 },
       { phase: "downloading", percent: 50 },
       { phase: "installing" },
@@ -180,7 +181,38 @@ describe("installing from a portable copy", () => {
     expect(installer.state()).toMatchObject({ install: { phase: "failed", reason: "No." } })
     await installer.install()
     expect(installer.state()).toMatchObject({ install: { phase: "installed" } })
-    expect(phases(states)).toEqual([{ phase: "failed", reason: "No." }, { phase: "installed" }])
+    expect(phases(states)).toEqual([
+      { phase: "installing" },
+      { phase: "failed", reason: "No." },
+      { phase: "installing" },
+      { phase: "installed" },
+    ])
+  })
+
+  it("tells the pages again when a retry fails for the same reason", async () => {
+    const { host, states } = hosting({
+      install: async () => ({ kind: "failed", reason: "No." }),
+    })
+    const installer = portableInstaller(host)
+    await installer.install()
+    await installer.install()
+    expect(phases(states)).toEqual([
+      { phase: "installing" },
+      { phase: "failed", reason: "No." },
+      { phase: "installing" },
+      { phase: "failed", reason: "No." },
+    ])
+  })
+
+  it("tells the pages it is installing at once, before the platform reports a step", async () => {
+    let release: () => void = () => {}
+    const { host, states } = hosting({
+      find: () => new Promise((resolve) => (release = () => resolve([]))),
+    })
+    const done = portableInstaller(host).install()
+    expect(phases(states)).toEqual([{ phase: "installing" }])
+    release()
+    await done
   })
 
   it("leaves a newer installed copy alone and says which version it is, then does nothing more", async () => {
@@ -188,14 +220,14 @@ describe("installing from a portable copy", () => {
     const installer = portableInstaller(host)
     await installer.install()
     await installer.install()
-    expect(phases(states)).toEqual([{ phase: "newer", version: "1.1.0" }])
+    expect(phases(states)).toEqual([{ phase: "installing" }, { phase: "newer", version: "1.1.0" }])
     expect(calls).toEqual([])
   })
 
   it("passes on a newer copy the platform found while installing, writing nothing here", async () => {
     const { host, states } = hosting({ install: async () => ({ kind: "newer", version: "1.2.0" }) })
     await portableInstaller(host).install()
-    expect(phases(states)).toEqual([{ phase: "newer", version: "1.2.0" }])
+    expect(phases(states)).toEqual([{ phase: "installing" }, { phase: "newer", version: "1.2.0" }])
   })
 
   it("passes a failure's reason through, and keeps running", async () => {
@@ -204,6 +236,7 @@ describe("installing from a portable copy", () => {
     })
     await portableInstaller(host).install()
     expect(phases(states)).toEqual([
+      { phase: "installing" },
       { phase: "failed", reason: "There is no space left on the disk." },
     ])
   })
@@ -215,7 +248,10 @@ describe("installing from a portable copy", () => {
       log: (message) => void logged.push(message),
     })
     await portableInstaller(host).install()
-    expect(phases(states)).toEqual([{ phase: "failed", reason: "Something went wrong." }])
+    expect(phases(states)).toEqual([
+      { phase: "installing" },
+      { phase: "failed", reason: "Something went wrong." },
+    ])
     expect(logged).toEqual(["Installing failed."])
   })
 
@@ -233,7 +269,7 @@ describe("installing from a portable copy", () => {
       log: (message) => void logged.push(message),
     })
     await portableInstaller(host).install()
-    const [end] = phases(states)
+    const end = phases(states).at(-1)
     expect(end).toMatchObject({ phase: "failed" })
     expect(end?.phase === "failed" && end.reason).toContain("could not be checked")
     expect(end?.phase === "failed" && end.reason).toContain("install.sh")
@@ -252,7 +288,10 @@ describe("installing from a portable copy", () => {
     it("installs nothing and says so", async () => {
       const { host, calls, states } = hosting({ stopping: () => true })
       await portableInstaller(host).install()
-      expect(phases(states)).toEqual([{ phase: "failed", reason: "Novadeck is quitting." }])
+      expect(phases(states)).toEqual([
+        { phase: "installing" },
+        { phase: "failed", reason: "Novadeck is quitting." },
+      ])
       expect(calls).toEqual([])
     })
   })
@@ -268,7 +307,10 @@ describe("installing from a portable copy", () => {
         stopping: () => quitting,
       })
       await portableInstaller(host).install()
-      expect(phases(states)).toEqual([{ phase: "failed", reason: "Novadeck is quitting." }])
+      expect(phases(states)).toEqual([
+        { phase: "installing" },
+        { phase: "failed", reason: "Novadeck is quitting." },
+      ])
       expect(calls).toEqual([])
     })
   })
@@ -429,20 +471,25 @@ describe("the note of a redirect", () => {
 
 describe("answering the app's pages", () => {
   type Handler = (event: unknown) => unknown
-  const registered = (known: boolean) => {
+  const registered = (known: boolean, overrides: Partial<PortableHost> = {}) => {
     const handlers = new Map<string, Handler>()
-    const { host, calls, states } = hosting()
+    const logged: string[] = []
+    const { host, calls, states } = hosting(overrides)
     const installer = portableInstaller(host)
     registerPortableIpc(
       {
         handle: (channel, listener) => void handlers.set(channel, listener as Handler),
         on: (channel, listener) => void handlers.set(channel, listener as Handler),
       },
-      { window: () => (known ? "window" : undefined), installer },
+      {
+        window: () => (known ? "window" : undefined),
+        installer,
+        log: (message) => void logged.push(message),
+      },
     )
     const ask = (channel: string): unknown =>
       handlers.get(channel)!({} as IpcMainEvent & IpcMainInvokeEvent)
-    return { ask, calls, states, handlers, installer }
+    return { ask, calls, states, handlers, installer, logged }
   }
 
   it("tells the app's own page whether the copy is portable and how the install stands, and installs for it", async () => {
@@ -457,6 +504,18 @@ describe("answering the app's pages", () => {
     await vi.waitFor(() => expect(phases(states).at(-1)).toEqual({ phase: "installed" }))
     expect(calls[0]).toBe("install")
     expect(await ask(portableChannel)).toMatchObject({ install: { phase: "installed" } })
+  })
+
+  it("logs, and does not reject, when telling a page throws", async () => {
+    const { ask, logged } = registered(true, {
+      changed: () => {
+        throw new Error("gone")
+      },
+    })
+    expect(() => ask(installAppChannel)).not.toThrow()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(logged.length).toBeGreaterThan(0)
   })
 
   it("has no channel to open an installed copy", () => {

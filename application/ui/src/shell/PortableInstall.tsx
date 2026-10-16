@@ -134,7 +134,6 @@ export const PortableInstall = ({
     requested.current = false
     opener.current = "auto"
     setLingering(null)
-    if (hosted.phase === "failed") setForgotten(true)
     card.onOpenChange(false)
     if (!inside) return
     if (back || !card.returnFocus()) chip.current?.focus()
@@ -149,18 +148,32 @@ export const PortableInstall = ({
     if (!portable || !card || running) return
     // The button pressed goes with the card's words; focus stays in the card.
     if (panel.current?.contains(document.activeElement)) panel.current.focus()
+    setForgotten(false)
     portable.onInstall()
   }
   // An install this card saw run ends: a finished one lingers as the update bar does, and
   // the card comes back with the outcome, without taking focus from where the person is.
   const phase = hosted.phase
   const [seen, setSeen] = useState(phase)
-  if (seen !== phase) {
+  // Whether the host has said yet; a failure it says first happened before this page loaded,
+  // so it counts as dismissed. One this page watches happen shows.
+  const [known, setKnown] = useState(false)
+  // Whether the card was in view, to see a failed one leave it by any route.
+  const [shown, setShown] = useState(false)
+  if (!known && portable) {
+    setKnown(true)
+    setSeen(phase)
+    if (phase === "failed") setForgotten(true)
+  } else if (seen !== phase) {
     setSeen(phase)
     setForgotten(false)
     if (phase === "installed" && (seen === "downloading" || seen === "installing")) {
       setLingering("finished")
     }
+  }
+  if (shown !== visible) {
+    setShown(visible)
+    if (!visible && phase === "failed") setForgotten(true)
   }
   const was = useRef(phase)
   const onOpenChange = card?.onOpenChange

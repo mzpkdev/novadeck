@@ -351,14 +351,22 @@ describe("whether this copy is portable", () => {
     expect(await Promise.all(states)).toEqual(installs.map(portableState))
   })
 
-  it("shows a failure whose reason is no short plain line as an unknown one", async () => {
-    const states = [undefined, "", "bell\u0007", "x".repeat(201)].map((reason) => {
+  it("cleans a failure's reason into one short plain line, or shows an unknown one", async () => {
+    const reasons = [undefined, "", "  \n ", "bell\u0007 ring\nagain", "x".repeat(400)]
+    const states = reasons.map((reason) => {
       electron.answer = portableState({ phase: "failed", reason })
       return electron.exposed.portable!()
     })
-    expect(await Promise.all(states)).toEqual(
-      states.map(() => portableState({ phase: "failed", reason: "Something went wrong." })),
+    const reasonsSeen = (await Promise.all(states)).map((state) =>
+      state.portable && state.install.phase === "failed" ? state.install.reason : undefined,
     )
+    expect(reasonsSeen).toEqual([
+      "Something went wrong.",
+      "Something went wrong.",
+      "Something went wrong.",
+      "bell ring again",
+      `${"x".repeat(299)}…`,
+    ])
   })
 
   it("is not portable when the host answers anything else", async () => {
@@ -394,7 +402,7 @@ describe("installing the app from a portable copy", () => {
 })
 
 describe("the portable state, pushed", () => {
-  it("passes on a valid state until the page stops, and a broken one as not portable", () => {
+  it("passes on a valid state until the page stops, and drops a broken one", () => {
     const seen: unknown[] = []
     const stop = electron.exposed.onPortableState!((state) => seen.push(state))
     const downloading = portableState({ phase: "downloading", percent: 40 })
@@ -405,7 +413,7 @@ describe("the portable state, pushed", () => {
     electron.renderer.emit(portableStateChannel, {}, portableState({ phase: "downloading" }))
     stop()
     electron.renderer.emit(portableStateChannel, {}, installed)
-    expect(seen).toEqual([downloading, installed, { portable: false }, { portable: false }])
+    expect(seen).toEqual([downloading, installed])
   })
 })
 

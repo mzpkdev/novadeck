@@ -221,7 +221,7 @@ describe("a portable copy's install card", () => {
 
 describe("a portable copy with a release waiting", () => {
   it("turns the chip to Update available and raises the card with Install", async () => {
-    await openWorkspace("/?portable=no-release&update=available")
+    await openWorkspace("/?portable=update")
     await expect.element(offered()).toBeVisible()
     await expect.element(offered().getByText("This copy can't update itself.")).toBeVisible()
     await expect.element(primary(offered())).toBeVisible()
@@ -232,11 +232,11 @@ describe("a portable copy with a release waiting", () => {
   })
 
   it("raises the card once per launch, then only from the chip", async () => {
-    await openWorkspace("/?portable=no-release&update=available")
+    await openWorkspace("/?portable=update")
     await expect.element(offered()).toBeVisible()
     await dismiss(offered()).click()
     await cleanup()
-    await openWorkspace("/?portable=no-release&update=available")
+    await openWorkspace("/?portable=update")
     await expect.element(update()).toBeVisible()
     await expectStaysAbsent(offered())
     await update().click()
