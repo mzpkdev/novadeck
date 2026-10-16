@@ -196,38 +196,32 @@ describe("the visitor build", () => {
     })
 
     // The page around the app is still tilted and not the visitor's yet: its wheel is that
-    // page's, until the page says the visitor engaged the app. Nothing in the app takes it,
-    // and nothing cancels it, so the browser scrolls the page with it.
+    // page's, until the page says the visitor engaged the app. Nothing in the app takes it or
+    // scrolls with it, not even a terminal with history above, and nothing cancels it, so
+    // the browser scrolls the page with it.
     it("leaves the wheel to the page around it until that page engages it", async () => {
       expect(window.parent).not.toBe(window)
-      const post = vi.spyOn(window.parent, "postMessage")
-      try {
-        await openEmbedded()
-        const target = document.querySelector("[data-terminal-content]")!
-        const reached = vi.fn<() => void>()
-        target.addEventListener("wheel", reached)
-        const wheel = (): WheelEvent => {
-          const event = new WheelEvent("wheel", { deltaY: 60, cancelable: true, bubbles: true })
-          target.dispatchEvent(event)
-          return event
-        }
-        expect(wheel().defaultPrevented).toBe(false)
-        expect(reached).not.toHaveBeenCalled()
-        window.dispatchEvent(
-          new MessageEvent("message", {
-            data: { type: "novadeck:engaged" },
-            source: window.parent,
-          }),
-        )
-        wheel()
-        expect(reached).toHaveBeenCalled()
-        expect(post).not.toHaveBeenCalledWith(
-          expect.objectContaining({ type: "novadeck:wheel" }),
-          "*",
-        )
-      } finally {
-        post.mockRestore()
+      await openEmbedded()
+      const target = document.querySelector<HTMLElement>("[data-terminal-content]")!
+      const reached = vi.fn<() => void>()
+      target.addEventListener("wheel", reached)
+      const wheel = (): WheelEvent => {
+        const event = new WheelEvent("wheel", { deltaY: 60, cancelable: true, bubbles: true })
+        target.dispatchEvent(event)
+        return event
       }
+      expect(wheel().defaultPrevented).toBe(false)
+      expect(reached).not.toHaveBeenCalled()
+      expect(getComputedStyle(target).overflowY).toBe("hidden")
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "novadeck:engaged" },
+          source: window.parent,
+        }),
+      )
+      wheel()
+      expect(reached).toHaveBeenCalled()
+      expect(getComputedStyle(target).overflowY).toBe("auto")
     })
 
     it("tells the page of its first click once, and keeps the wheel once pressed in", async () => {

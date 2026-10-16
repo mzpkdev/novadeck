@@ -42,7 +42,9 @@ export const holdInputUntilEngaged = (held: HeldInput, frame: Window = window): 
   const parent = frame.parent
   if (parent === frame) return () => {}
   if (!held.wheel && !held.clicked) return () => {}
+  const root = frame.document.documentElement
   const dropWheel = (): void => {
+    delete root.dataset["wheelHeld"]
     frame.removeEventListener("wheel", onWheel, { capture: true })
     frame.removeEventListener("pointerdown", onPointerDown, { capture: true })
   }
@@ -73,6 +75,9 @@ export const holdInputUntilEngaged = (held: HeldInput, frame: Window = window): 
   }
   // The wheel comes before the app's own, and is passive: its default, the scroll, stays.
   if (held.wheel) {
+    // Marks the hold for what would scroll by the wheel inside, such as a terminal with
+    // history above, so it doesn't take the page's scroll first.
+    root.dataset["wheelHeld"] = ""
     frame.addEventListener("wheel", onWheel, { capture: true, passive: true })
     frame.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true })
   }

@@ -62,6 +62,15 @@ describe("holdInputUntilEngaged", () => {
     expect(posted).not.toHaveBeenCalled()
   })
 
+  it("marks the app as holding the wheel, until it lets it go", () => {
+    const { held, app, parent } = framed()
+    const root = app.document.documentElement
+    holdInputUntilEngaged(held, app)
+    expect(root.dataset["wheelHeld"]).toBe("")
+    engage(app, parent)
+    expect(root.dataset["wheelHeld"]).toBeUndefined()
+  })
+
   it("lets the app have the wheel for good once its page engages it", () => {
     const { held, app, parent, posted } = framed()
     holdInputUntilEngaged(held, app)
