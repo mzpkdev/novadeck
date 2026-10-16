@@ -17,6 +17,7 @@ import {
   installedEnvironment,
   leaveForNewerInstalled,
   portableInstaller,
+  redirectMarker,
   registerPortableIpc,
   startAppImage,
   type InstalledCopyCheck,
@@ -347,6 +348,64 @@ describe("a launch of a portable copy", () => {
     })
     expect(await leaveForNewerInstalled(check)).toBe(false)
     expect(logged).toHaveLength(1)
+  })
+})
+
+describe("the note of a redirect", () => {
+  const noting = () => {
+    let at: number | undefined
+    let clock = 1_000
+    const marker = redirectMarker(
+      "/data/redirected-at",
+      30_000,
+      {
+        modified: () => {
+          if (at === undefined) throw new Error("ENOENT")
+          return at
+        },
+        write: () => void (at = clock),
+        remove: () => void (at = undefined),
+      },
+      () => clock,
+      () => {},
+    )
+    return { marker, tick: (ms: number) => void (clock += ms) }
+  }
+
+  it("is recent within the window after a redirect, and not before one", () => {
+    const { marker, tick } = noting()
+    expect(marker.recent()).toBe(false)
+    marker.mark()
+    tick(10_000)
+    expect(marker.recent()).toBe(true)
+    tick(25_000)
+    expect(marker.recent()).toBe(false)
+  })
+
+  it("is cleared when the installed copy starts, so a relaunch of the portable redirects again", () => {
+    const { marker } = noting()
+    marker.mark()
+    marker.clear()
+    expect(marker.recent()).toBe(false)
+  })
+
+  it("does not fail when the files cannot be written or removed", () => {
+    const marker = redirectMarker(
+      "/x",
+      30_000,
+      {
+        modified: () => 0,
+        write: () => {
+          throw new Error("EACCES")
+        },
+        remove: () => {
+          throw new Error("EACCES")
+        },
+      },
+      () => 1,
+      () => {},
+    )
+    expect(() => (marker.mark(), marker.clear())).not.toThrow()
   })
 })
 

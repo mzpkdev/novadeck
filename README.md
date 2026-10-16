@@ -842,8 +842,9 @@ App:
   `failed`, `stopped`, `trash`, `windows`, `windows-failed` or `no-data` for specs.
 - **Updates:** Download counts the floating progress bar above the footer's right end up in
   steps, shows it ready for a few seconds, then fades it; Download, held stops it at 40% to
-  look at. Download failed drops a running bar at once and shows the footer's Update
-  available chip, as a failed download does. Release to fetch shows that chip alone, which
+  look at. Download failed holds the bar at 40% for a moment, or fails one already running, and
+  drops it with nothing in the footer: a copy that updates itself shows only the bar, as the
+  host tries again by itself. Release to fetch shows that chip alone, which
   opens the release page (counted, since a browser has none). Ready at
   launch offers an update downloaded before this run, which shows nothing, as at a launch.
   Finish restart reloads the demo, as the app comes back on the new version. Early builds on

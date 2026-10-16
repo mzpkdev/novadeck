@@ -186,6 +186,52 @@ export const leaveForNewerInstalled = async (check: InstalledCopyCheck): Promise
   return true
 }
 
+/** The files a redirect marker uses. */
+export type MarkerFiles = {
+  /** When the file was last written, in ms since the epoch; throws where there is none. */
+  readonly modified: (file: string) => number
+  readonly write: (file: string) => void
+  readonly remove: (file: string) => void
+}
+
+/**
+ * The note a portable copy leaves in the data folder when it redirects to an installed copy
+ * of the same version, which the installed copy clears as it starts: `recent` is true
+ * only if a redirect was made within `windowMs` and the installed copy has not started
+ * since. So a launch that follows a redirect the installed copy never answered stays in
+ * the portable copy, and one after the installed copy ran and was quit redirects again.
+ * Failures to read, write or clear are not fatal: the note is then absent or stale.
+ */
+export const redirectMarker = (
+  file: string,
+  windowMs: number,
+  files: MarkerFiles,
+  now: () => number,
+  log: (message: string, error: unknown) => void,
+) => ({
+  recent: (): boolean => {
+    try {
+      return now() - files.modified(file) < windowMs
+    } catch {
+      return false
+    }
+  },
+  mark: (): void => {
+    try {
+      files.write(file)
+    } catch (error) {
+      log("The redirect was not noted.", error)
+    }
+  },
+  clear: (): void => {
+    try {
+      files.remove(file)
+    } catch (error) {
+      log("The redirect note was not cleared.", error)
+    }
+  },
+})
+
 type PortableIpc = {
   on(channel: string, listener: (event: IpcMainEvent) => void): unknown
   handle(channel: string, listener: (event: IpcMainInvokeEvent) => unknown): unknown

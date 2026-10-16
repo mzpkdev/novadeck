@@ -46,16 +46,25 @@ describe("installing the app bundle", () => {
 
   // A machine with the given paths present and writable; steps are recorded in order.
   const machine = (
-    options: { present?: string[]; unwritable?: string[]; failAt?: string } = {},
+    options: {
+      present?: string[]
+      unwritable?: string[]
+      failAt?: string
+      failCode?: string
+      versions?: Record<string, string>
+    } = {},
   ) => {
     const present = new Set(options.present ?? [])
     const steps: string[] = []
     const step = async (name: string): Promise<void> => {
       steps.push(name)
-      if (options.failAt === name) throw new Error("it broke")
+      if (options.failAt === name)
+        throw Object.assign(new Error("it broke"), { code: options.failCode })
     }
     const host: BundleInstallHost = {
       running,
+      version: "1.0.0",
+      versionOf: (path) => Promise.resolve(options.versions?.[path]),
       packaged: "novadeck.app",
       applications: "/Applications",
       userApplications: "/Users/me/Applications",
@@ -178,6 +187,41 @@ describe("installing the app bundle", () => {
     expect(await installBundle(existing, host)).toMatchObject({ kind: "installed" })
     expect(steps[0]).toBe(`rename ${aside} ${existing}`)
     expect(steps).toContain("rm /Applications/.novadeck 2.app.new")
+  })
+
+  it("says plainly that macOS did not allow replacing the installed copy on EPERM", async () => {
+    const existing = "/Applications/novadeck.app"
+    const { host, steps } = machine({
+      present: [existing],
+      failAt: `rename ${existing} /Applications/.novadeck.app.old`,
+      failCode: "EPERM",
+      versions: { [existing]: "0.9.0" },
+    })
+    expect(await installBundle(existing, host)).toEqual({
+      kind: "failed",
+      reason:
+        "macOS didn't allow replacing the installed Novadeck. Remove it yourself and try again.",
+    })
+    expect(steps.at(-1)).toBe("rm /Applications/.novadeck.app.new")
+  })
+
+  it("replaces an older installed copy", async () => {
+    const existing = "/Applications/novadeck.app"
+    const { host } = machine({ present: [existing], versions: { [existing]: "0.9.0" } })
+    expect(await installBundle(existing, host)).toEqual({ kind: "installed", image: existing })
+  })
+
+  it("leaves an installed copy of the same version alone, writing nothing", async () => {
+    const existing = "/Applications/novadeck.app"
+    const { host, steps } = machine({ present: [existing], versions: { [existing]: "1.0.0" } })
+    expect(await installBundle(existing, host)).toEqual({ kind: "installed", image: existing })
+    expect(steps).toEqual([])
+  })
+
+  it("never replaces the bundle it runs from", async () => {
+    const { host, steps } = machine({ present: [running] })
+    expect(await installBundle(running, host)).toEqual({ kind: "installed", image: running })
+    expect(steps).toEqual([])
   })
 
   it("fails and writes nothing for an existing copy that belongs to another account", async () => {

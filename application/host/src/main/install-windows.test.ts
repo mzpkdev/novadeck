@@ -21,6 +21,9 @@ import {
   reportPercents,
   runSetup,
   setupArguments,
+  SetupBusyError,
+  setupResult,
+  setupRunningReason,
   setupName,
   sha512Of,
   sizeOf,
@@ -704,5 +707,51 @@ describe("the installer's PowerShell checks", () => {
       "utf8",
     )
     for (const command of powershellChecks) expect(template).toContain(`-C "${command}"`)
+  })
+})
+
+describe("what the install answers once the setup has run", () => {
+  const found = { image: "C:\\novadeck\\novadeck.exe", version: "1.2.0", unchecked: false }
+
+  it("is the copy it left, whatever way the setup ended", () => {
+    for (const ran of ["exited", "timeout"] as const)
+      expect(setupResult(ran, found)).toEqual({ kind: "installed", image: found.image })
+  })
+
+  it("says the installer is still running when the wait ended with no copy", () => {
+    expect(setupResult("timeout", undefined)).toEqual({
+      kind: "failed",
+      reason: setupRunningReason,
+    })
+    expect(setupRunningReason).toContain("still running")
+  })
+
+  it("says it did not finish when it exited with no copy, and that it did not run when it never started", () => {
+    expect(setupResult("exited", undefined)).toMatchObject({
+      reason: "The installer did not finish installing Novadeck.",
+    })
+    expect(setupResult("failed", found)).toMatchObject({ kind: "failed" })
+    expect((setupResult("failed", found) as { reason: string }).reason).toContain("did not run")
+  })
+})
+
+describe("a retry while the earlier setup still runs", () => {
+  it("answers that it is still running, not that the person is offline", async () => {
+    const downloads = {
+      latest: "https://github.com/o/r/releases/latest/download/",
+      own: undefined,
+    }
+    const outcome = await prepareSetup({
+      downloads,
+      version: "1.0.0",
+      text: async () => latest(sha("setup")),
+      download: async () => {
+        throw new SetupBusyError("in use")
+      },
+      remove: async () => {},
+      progress: () => {},
+      log: () => {},
+    })
+    expect(outcome).toEqual({ kind: "failed", reason: setupRunningReason })
   })
 })

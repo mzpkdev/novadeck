@@ -139,8 +139,8 @@ describe("a portable copy's install card", () => {
       await expect.element(done(), { timeout: 8000 }).not.toBeInTheDocument()
       await installedChip().click()
       await expect.element(done()).toBeVisible()
-      // Opened by the person, it stays, rather than fading as the first showing does.
-      await new Promise((resolve) => setTimeout(resolve, 5000))
+      // Opened by the person, it stays past where the first showing faded (4 s and a fade).
+      await new Promise((resolve) => setTimeout(resolve, 4500))
       await expect.element(done()).toBeVisible()
       await dismiss(done()).click()
       await expect.element(done()).not.toBeInTheDocument()
@@ -154,6 +154,14 @@ describe("a portable copy's install card", () => {
       await expect.element(installing().getByText("Downloading…")).toBeVisible()
       await expect.element(installing().getByText(/^\d+%$/)).toBeVisible()
       await expect.element(installing().getByText("Keeps your workspace")).toBeVisible()
+      // Nothing to measure now: the bar has no value, rather than a stale percent.
+      expect(installing().element().querySelector("[role=progressbar]")).not.toBeNull()
+      expect(
+        installing().element().querySelector("[role=progressbar]")!.getAttribute("data-state"),
+      ).toBe("indeterminate")
+      expect(
+        installing().element().querySelector("[role=progressbar]")!.hasAttribute("aria-valuenow"),
+      ).toBe(false)
       await expect.element(done()).toBeVisible()
     })
   })

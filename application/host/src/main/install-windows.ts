@@ -298,6 +298,37 @@ export const reportPercents = (
   }
 }
 
+/** What the person is told while an earlier setup is still running. */
+export const setupRunningReason = "The installer is still running. Try again in a few minutes."
+
+/**
+ * Thrown by a download that cannot clear the setup folder because an earlier setup still
+ * runs from it (its file is locked), which is no sign of a network problem.
+ */
+export class SetupBusyError extends Error {}
+
+/**
+ * What the install answers once the setup has run: `failed` when it never started, the
+ * copy it left when one of the release's version or newer is there, and otherwise, for a
+ * setup that was still running when the wait ended, a plain statement of that; a setup that
+ * exited without leaving the copy did not finish.
+ */
+export const setupResult = (
+  ran: SetupRun,
+  installed: InstalledCopy | undefined,
+):
+  | { readonly kind: "installed"; readonly image: string }
+  | { readonly kind: "failed"; readonly reason: string } => {
+  if (ran === "failed")
+    return {
+      kind: "failed",
+      reason: "Windows did not run the installer. Download Novadeck again from its Releases page.",
+    }
+  if (installed !== undefined) return { kind: "installed", image: installed.image }
+  if (ran === "timeout") return { kind: "failed", reason: setupRunningReason }
+  return { kind: "failed", reason: "The installer did not finish installing Novadeck." }
+}
+
 /** How getting the setup ready went: the file, or why not. */
 export type SetupOutcome =
   | { readonly kind: "ready"; readonly setup: string; readonly version: string }
@@ -389,6 +420,7 @@ export const prepareSetup = async (host: SetupHost): Promise<SetupOutcome> => {
     )
   } catch (error) {
     host.log("The installer could not be downloaded.", error)
+    if (error instanceof SetupBusyError) return { kind: "failed", reason: setupRunningReason }
     return { kind: "failed", reason: "The installer could not be downloaded. Are you online?" }
   }
   if (downloaded.sha512 !== expected) {

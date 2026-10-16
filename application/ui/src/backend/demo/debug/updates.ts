@@ -19,6 +19,9 @@ export const createDemoUpdates = (
   // The download in progress, or the install on quit, failed: the update is offered as one
   // to fetch from its release page.
   readonly failInstall: () => void
+  // A download fails: the one running, or, with none, one started and held at 40% that
+  // fails shortly after, so the bar and its drop both show.
+  readonly failDownload: (version: string, notes: readonly string[]) => void
   readonly channel: () => UpdateChannel
   readonly pagesOpened: () => number
 } => {
@@ -72,6 +75,18 @@ export const createDemoUpdates = (
       const { percent: _, ...offer } = waiting
       tell({ ...offer, kind: "available" })
     },
+    failDownload: (version, notes) => {
+      const fail = (): void => {
+        if (waiting?.kind !== "downloading") return
+        stop()
+        const { percent: _, ...offer } = waiting
+        tell({ ...offer, kind: "available" })
+      }
+      if (waiting?.kind === "downloading") return fail()
+      stop()
+      tell({ kind: "downloading", version, notes, percent: 40 })
+      setTimeout(fail, failAfterMs)
+    },
     channel: () => channel,
     pagesOpened: () => pages,
   }
@@ -80,6 +95,8 @@ export const createDemoUpdates = (
 // How often a demo download advances, and by how many percent.
 export const downloadMs = 300
 export const downloadStep = 10
+// How long a download held for failing stays at 40% first.
+export const failAfterMs = 1500
 
 // Release notes as a release's might read: a handful of lines.
 export const sampleNotes: readonly string[] = [
@@ -122,8 +139,8 @@ export const updatesGroup = (launch: DemoLaunch, controls: DemoUpdates): DemoAct
       },
       {
         label: "Download failed",
-        hint: "Bar drops, the Update available chip shows; the host retries later",
-        ...installed(({ failInstall }) => failInstall()),
+        hint: "Bar stands at 40% for a moment, then drops and nothing shows; the host retries later",
+        ...installed(({ failDownload }) => failDownload(nextVersion(), sampleNotes)),
       },
       {
         label: "Release to fetch",

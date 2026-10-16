@@ -13,3 +13,14 @@ export type UpdateOffer = {
 
 // Which releases the desktop app follows: stable ones, or every release as it is published.
 export type UpdateChannel = "stable" | "early"
+
+// The release a copy shows its footer chip for, to fetch by hand: an `available` offer, unless
+// this page saw that version downloading (`downloaded`), as a copy that updates itself does
+// before its download fails. That copy shows only its bar, as the host tries again by itself;
+// the chip is for a copy that only tells (a release it can't install) and for an install on
+// quit that failed, which a launch reports.
+export const offerToFetch = (
+  offer: UpdateOffer | null,
+  downloaded: string | null,
+): UpdateOffer | undefined =>
+  offer?.kind === "available" && offer.version !== downloaded ? offer : undefined

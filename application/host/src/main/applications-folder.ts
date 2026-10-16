@@ -48,6 +48,10 @@ export type BundleInstall =
 export type BundleInstallHost = {
   /** The running bundle, which is copied. */
   readonly running: string
+  /** The running app's version. */
+  readonly version: string
+  /** The version the bundle at `path` names, when it can be read. */
+  readonly versionOf: (path: string) => Promise<string | undefined>
   /** The bundle name the app is installed under, `novadeck.app`, whatever the running one is called. */
   readonly packaged: string
   /** The system Applications folder and the person's own, in the order a new copy is put. */
@@ -131,7 +135,8 @@ export const recoverBundles = async (host: BundleRecoveryHost): Promise<string |
  * would take itself for a portable one), and then swapped in: the old copy is renamed
  * aside, the new one renamed into place, the old one removed. Should the second rename
  * fail, the old copy is put back. A copy the person cannot write to belongs to another
- * account, and nothing is written. The running bundle is left where it is. Unlike
+ * account, and nothing is written. An installed copy of the same version as this one, or
+ * this very bundle, is left alone and counts as installed. The running bundle is left where it is. Unlike
  * Electron's `moveToApplicationsFolder`, nothing here quits or relaunches the app.
  */
 export const installBundle = async (
@@ -143,6 +148,10 @@ export const installBundle = async (
   existing ??= restored
   let target: string
   if (existing !== undefined) {
+    // Never replace the bundle this app runs from, as a translocated copy of the one in
+    // Applications is: it names the same version, and there is nothing to install.
+    if (existing === host.running || (await host.versionOf(existing)) === host.version)
+      return { kind: "installed", image: existing }
     target = existing
     if (!(await host.writable(existing)) || !(await host.writable(dirname(existing))))
       return failed(
@@ -185,6 +194,13 @@ export const installBundle = async (
   } catch (error) {
     host.log("The copy could not be put in place.", error)
     await host.remove(staged).catch(() => {})
+    // macOS 13 and later let an app replace another only with the person's consent
+    // (App Management), refusing with EPERM.
+    const code = (error as NodeJS.ErrnoException | undefined)?.code
+    if (code === "EPERM" || code === "EACCES")
+      return failed(
+        "macOS didn't allow replacing the installed Novadeck. Remove it yourself and try again.",
+      )
     return failed(reasonOf(error))
   }
   await host

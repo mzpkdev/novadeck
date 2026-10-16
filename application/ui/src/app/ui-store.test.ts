@@ -470,6 +470,17 @@ describe("a waiting update", () => {
     expect(listening()).toBe(false)
   })
 
+  it("remembers the version it saw downloading, and not one only told of", () => {
+    const { updates, report } = updateHost()
+    const ui = createUiStore(initial())
+    watchUpdates(updates, ui)
+    report(offered("0.0.80", "available"))
+    expect(ui.getSnapshot().downloaded).toBeNull()
+    report({ kind: "downloading", version: "0.0.81", notes: [], percent: 10 })
+    report(offered("0.0.81", "available"))
+    expect(ui.getSnapshot().downloaded).toBe("0.0.81")
+  })
+
   it("raises no notice on a copy that updates itself, whatever it is offered", async () => {
     const { updates, report } = updateHost()
     const ui = createUiStore(initial())

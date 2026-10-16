@@ -2,7 +2,7 @@ import { afterEach, vi } from "vitest"
 
 import type { UpdateOffer } from "../../../model/update"
 import { describe, expect, it } from "../../../test"
-import { createDemoUpdates, downloadMs, downloadStep } from "./updates"
+import { createDemoUpdates, downloadMs, failAfterMs, downloadStep } from "./updates"
 
 const ready = (version: string): UpdateOffer => ({
   kind: "ready",
@@ -89,6 +89,22 @@ describe("demo updates", () => {
     vi.advanceTimersByTime(downloadMs * 20)
     expect(heard.at(-1)).toEqual({ kind: "available", version: "0.0.80", notes: [] })
     expect(heard).toHaveLength(2)
+  })
+
+  it("fails a held download of its own when none is running, and the running one otherwise", () => {
+    vi.useFakeTimers()
+    const { updates, download, failDownload } = createDemoUpdates()
+    const heard: string[] = []
+    updates.onOffer((each) =>
+      heard.push(`${each.kind} ${each.version} ${each.percent ?? ""}`.trim()),
+    )
+    failDownload("0.0.80", [])
+    expect(heard).toEqual(["downloading 0.0.80 40"])
+    vi.advanceTimersByTime(failAfterMs)
+    expect(heard).toEqual(["downloading 0.0.80 40", "available 0.0.80"])
+    download("0.0.81", [])
+    failDownload("0.0.82", [])
+    expect(heard.at(-1)).toBe("available 0.0.81")
   })
 
   it("counts the release pages it was asked to open", () => {

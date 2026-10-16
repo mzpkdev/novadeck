@@ -81,7 +81,8 @@ build checks its own signature once at launch with `codesign`. See
 - **A failed download** is tried again by a check five minutes later, once per release in a
   run; after that the four-hourly checks try it. Once its progress (or an update it
   replaces) was offered, it is offered as `available` meanwhile, and the page drops the
-  bar at once and shows nothing in its place. One that failed before any progress, with no
+  bar at once and shows nothing in its place: no chip either, since a copy that installs itself
+  has nothing for the person to do, and the retry tries again. One that failed before any progress, with no
   update waiting, goes untold, as a failed check does. A failed staging on macOS (an
   install failure) turns the offer to `available` the same way, quietly.
 - **A newer release** found while an update waits replaces it, so one quit lands on the
@@ -103,7 +104,8 @@ build checks its own signature once at launch with `codesign`. See
   waiting file: were the folder emptied while the updater still names the file, quitting
   would delete the running AppImage and install nothing.
 - **Telling** builds download nothing and keep checking, so a newer release replaces the
-  offer. The offer is `available`, and an installed copy shows a quiet "Update available"
+  offer. The offer is `available`, and the footer chip is for copies that cannot install
+  themselves: these, and a copy told at launch that its install failed. An installed copy shows a quiet "Update available"
   chip in the footer (no panel, notes or Later) whose press opens the release page,
   `https://github.com/<owner>/<repo>/releases/tag/v<version>`, in the browser. A portable
   copy has its install entry instead.
@@ -246,7 +248,7 @@ removes the old one; should the second rename fail, the old copy is put back. A 
 person cannot write to belongs to another account, and nothing is written: "Novadeck in
 Applications belongs to another account on this Mac. Remove it and try again." The portable
 bundle is left where it is, and nothing is renamed for the person. An installed copy newer
-than this one is not replaced: the answer is `newer`. An install interrupted by a quit, or a
+than this one is not replaced: the answer is `newer`. One of the same version, or this very bundle (a translocated copy of the one in Applications), is left alone and the answer is `installed`. On macOS 13 and later, replacing an existing copy in `/Applications` may need the person's consent (App Management) when the copy was installed by another app or the build is unsigned or ad hoc: the swap then fails with EPERM, and the reason says plainly that macOS didn't allow replacing the installed Novadeck. Manual check: install over an older `/Applications/novadeck.app` with an unsigned build, with App Management denied and allowed. An install interrupted by a quit, or a
 rollback that itself failed, can leave the only installed copy renamed aside, or a large
 half-made copy; `recoverBundles` runs before each install and at the launch of a portable
 copy, in both Applications folders: it restores an aside whose copy is missing, and removes
@@ -273,8 +275,8 @@ cannot be checked, or is absent lets the launch carry on; so does a failure to l
 copies. If the installed copy will not start and is the same version, the failure is logged
 and the launch carries on in the portable copy, which can open the same workspace; if it is
 newer, a dialog says it did not start and the app quits, since this copy might not open the
-data the newer one upgraded. A same-version redirect writes `redirected-at` in the data folder first; a launch within 30
-seconds of it carries on in the portable copy instead, so an installed copy the system starts
+data the newer one upgraded. A same-version redirect writes `redirected-at` in the data folder first, and the installed copy clears it as it starts (`redirectMarker`); a launch within 30
+seconds of it that the installed copy never answered carries on in the portable copy instead, so an installed copy the system starts
 and ends at once (a quarantined or damaged bundle) cannot make every launch open nothing. A
 newer copy is never skipped this way. The lock is let go before the installed copy is
 spawned, since the child must take it, and taken back (`requestSingleInstanceLock`) when the
@@ -349,7 +351,9 @@ keeps the workspace.
   with `/S` alone (never `shell.openPath`, which goes through SmartScreen), while this copy
   keeps running, holds its lock and exits nothing. There is no `--force-run`, so the setup
   starts nothing when done; `--updated` is left off too. The host waits for the setup to exit,
-  up to five minutes (it is not killed at the timeout), and then trusts nothing about how it
+  up to five minutes (it is not killed at the timeout; if no copy is found then, the answer is
+  "The installer is still running. Try again in a few minutes.", and a retry that cannot clear
+  the locked setup folder says the same), and then trusts nothing about how it
   ended: `findInstalledWindows` must find a copy of the release's version or newer with its
   executable, and only then is the answer `installed`; otherwise `failed`. The setup folder is
   deleted afterwards. If Windows refuses to start the setup, the answer is `failed`.
@@ -370,7 +374,7 @@ keeps the workspace.
   copy in a sibling such as `...\Programs\novadeck-portable` is refused too; one anywhere
   else is ignored. The
   single-instance lock excludes a running installed copy, so the check kills nothing of the
-  person's. Residual risk: the setup also stops any process running from the install folder,
+  person's. Residual risks: the installer runs its own PowerShell check again when it starts; if that fails transiently after the host's probe passed, it falls back to stopping every `novadeck.exe` by name (`taskkill`), which would close the portable copy. And the setup also stops any process running from the install folder,
   such as an older installed copy's relay, which the person might notice.
 - **Limits.** Only a real Windows run proves this end to end. Smart App Control blocks an
   unsigned installer and, once signing is in place, SmartScreen may still warn about a fresh

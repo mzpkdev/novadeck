@@ -73,6 +73,9 @@ export type UiState = {
   readonly crashLoop: number
   // The update the desktop app last told of: downloaded, or to fetch from its release page.
   readonly update: UpdateOffer | null
+  // The version of the last update this page saw downloading or downloaded, so one that fails
+  // is not taken for a release to fetch by hand (`offerToFetch`).
+  readonly downloaded: string | null
   // Whether its notice is open, or waits to open once the footer shows.
   readonly updateOpen: boolean
   // Whether the desktop app runs in its security sandbox, as the host said at startup; null
@@ -133,6 +136,7 @@ export const initialUi = ({
   crashLoopDismissed: false,
   crashLoop: 0,
   update: null,
+  downloaded: null,
   updateOpen: false,
   sandbox: null,
   sandboxOpen: false,
@@ -268,7 +272,12 @@ export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => v
   updates?.onOffer((update) => {
     const { portable } = ui.getSnapshot()
     const raise = portable?.portable === true && !raisedThisRun(portable)
-    ui.update((current) => ({ ...current, update, updateOpen: current.updateOpen || raise }))
+    ui.update((current) => ({
+      ...current,
+      update,
+      downloaded: update.kind === "available" ? current.downloaded : update.version,
+      updateOpen: current.updateOpen || raise,
+    }))
   }) ?? (() => {})
 
 // Notes that the portable copy's card showed, for the rest of the run.

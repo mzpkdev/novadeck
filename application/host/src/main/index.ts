@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { accessSync, existsSync, realpathSync, statSync, writeFileSync } from "node:fs"
+import { accessSync, existsSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import {
   access,
   constants,
@@ -47,6 +47,7 @@ import {
 } from "../bridge.js"
 import { keepAppearance, registerAppearanceIpc } from "./appearance.js"
 import {
+  bundleVersionOf,
   findInstalledApps,
   installBundle,
   recoverBundles,
@@ -71,6 +72,8 @@ import {
   readInstallRecord,
   reportPercents,
   runSetup,
+  SetupBusyError,
+  setupResult,
   setupName,
   startDetached,
   type InstallRecord,
@@ -83,6 +86,7 @@ import {
   installedEnvironment,
   leaveForNewerInstalled,
   portableInstaller,
+  redirectMarker,
   registerPortableIpc,
   type PortableInstall,
   startAppImage,
@@ -569,6 +573,9 @@ const installMacBundle = async (
   return installBundle(target, {
     ...bundleMachine(),
     running: bundleOf(app.getPath("exe")),
+    version: app.getVersion(),
+    versionOf: (path) =>
+      readFile(join(path, "Contents", "Info.plist"), "utf8").then(bundleVersionOf, () => undefined),
     writable: canWrite,
     mkdir: async (folder) => void (await mkdir(folder, { recursive: true })),
     ditto: (source, destination) => runTool("/usr/bin/ditto", [source, destination]),
@@ -677,7 +684,15 @@ const downloadSetup = async (
   progress: (percent: number) => void,
 ): Promise<{ file: string; sha512: string }> => {
   const folder = setupFolder()
-  await rm(folder, { recursive: true, force: true })
+  try {
+    await rm(folder, { recursive: true, force: true })
+  } catch (error) {
+    // An earlier setup still runs from the folder.
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === "EBUSY" || code === "EPERM" || code === "EACCES")
+      throw new SetupBusyError("The setup folder is in use.", { cause: error })
+    throw error
+  }
   await mkdir(folder, { recursive: true })
   const file = join(folder, setupName)
   // Through Electron's network stack, which honours the system and PAC proxies as the
@@ -786,15 +801,9 @@ const installWindowsSetup = async (
     ran === "failed"
       ? undefined
       : installedAtLeast(await installedCopies().catch(() => []), outcome.version)
-  await rm(setupFolder(), { recursive: true, force: true }).catch(() => {})
-  if (ran === "failed")
-    return {
-      kind: "failed",
-      reason: "Windows did not run the installer. Download Novadeck again from its Releases page.",
-    }
-  if (installed === undefined)
-    return { kind: "failed", reason: "The installer did not finish installing Novadeck." }
-  return { kind: "installed", image: installed.image }
+  // A setup still running at the timeout holds its folder; the next try says so.
+  if (ran !== "timeout") await rm(setupFolder(), { recursive: true, force: true }).catch(() => {})
+  return setupResult(ran, installed)
 }
 
 // Reads the versions of installed AppImages with the environment they are started with.
@@ -842,14 +851,26 @@ const installAppImageOver = (
   )
 }
 
-// Where a launch notes that it redirected to the installed copy, and how long that holds.
-const redirectMarker = (): string => join(app.getPath("userData"), "redirected-at")
+// The note a portable launch leaves when it redirects to the installed copy, and how long it holds.
 const redirectWindowMs = 30_000
+const redirect = redirectMarker(
+  join(app.getPath("userData"), "redirected-at"),
+  redirectWindowMs,
+  {
+    modified: (file) => statSync(file).mtimeMs,
+    write: (file) => writeFileSync(file, ""),
+    remove: (file) => rmSync(file, { force: true }),
+  },
+  Date.now,
+  (message, error) => console.warn(message, error),
+)
 
 const launch = async (): Promise<void> => {
   // The signature is not asked here: it takes a moment, and a portable copy is told
   // without it.
   const portable = portableOf({ ...(await baseBuild()), signed: false })
+  // An installed copy that starts answers a redirect: a later portable launch redirects again.
+  if (!portable) redirect.clear()
   // An install interrupted on macOS may have left the only installed copy renamed aside,
   // and a half-made one; tidy before looking for installed copies.
   if (portable && process.platform === "darwin")
@@ -864,20 +885,8 @@ const launch = async (): Promise<void> => {
       find: installedCopies,
       start: startInstalledCopy,
       alert: alertNotStarted,
-      recentRedirect: () => {
-        try {
-          return Date.now() - statSync(redirectMarker()).mtimeMs < redirectWindowMs
-        } catch {
-          return false
-        }
-      },
-      markRedirect: () => {
-        try {
-          writeFileSync(redirectMarker(), "")
-        } catch (error) {
-          console.warn("The redirect was not noted.", error)
-        }
-      },
+      recentRedirect: redirect.recent,
+      markRedirect: redirect.mark,
       quit: () => app.exit(0),
       log: (message, error) => console.warn(message, error),
     })
