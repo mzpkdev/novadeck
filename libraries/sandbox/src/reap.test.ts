@@ -10,6 +10,7 @@ import {
   parseDarwinProcesses,
   reap,
   sandboxed,
+  endTree,
   sandboxProcesses,
 } from "./reap.js"
 
@@ -80,40 +81,70 @@ describe.skipIf(process.platform !== "win32")("reap on Windows", () => {
     expect(other.exitCode).toBeNull()
     expect(await reap(sandbox)).toEqual([])
   }, 60_000)
+})
 
-  it("ends forcibly through the tree reader it's given, and taskkill where it reads none", async () => {
-    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "sandbox-reaped-")))
-    onTestFinished(() => rmSync(root, { recursive: true, force: true, maxRetries: 5 }))
-    const sandbox = { root, home: join(root, "home"), started: Date.now() }
-    // Deaf to the first ask, so only a forcible end ends it.
-    const child = spawn(
-      process.execPath,
-      ["-e", "process.on('SIGTERM', () => {}); setTimeout(() => {}, 60_000)"],
-      { cwd: root, env: { SystemRoot: process.env.SystemRoot }, stdio: "ignore" },
-    )
-    onTestFinished(() => {
-      child.kill()
-    })
-    await vi.waitFor(
-      async () =>
-        expect((await sandboxProcesses(sandbox)).map((one) => one.pid)).toContain(child.pid),
-      { timeout: 30_000 },
-    )
-    const read: number[] = []
+// A pid no process has, so a tree of it reads as ended at once: above Linux's pid_max, and a
+// multiple of 4, as Windows reads a pid without its two low bits.
+const gone = 2 ** 22 + 8
 
-    await reap(sandbox, {
+describe("ending a Windows process's tree", () => {
+  const reader = (tree: readonly { pid: number; startedAt: number }[] | undefined) => {
+    const calls = { read: [] as number[], end: [] as unknown[] }
+    return {
+      calls,
       trees: {
-        read: async (pid) => {
-          read.push(pid)
-          return undefined
+        read: async (pid: number) => {
+          calls.read.push(pid)
+          return tree
         },
-        end: async () => {},
+        end: async (members: readonly unknown[]) => {
+          calls.end.push(members)
+        },
       },
+    }
+  }
+
+  it("ends the tree its reader reads, rooted at the process found", async () => {
+    const tree = [
+      { pid: gone, startedAt: 100 },
+      { pid: gone + 1, startedAt: 101 },
+    ]
+    const { calls, trees } = reader(tree)
+    const killed: number[] = []
+
+    await endTree({ pid: gone, start: 100 }, trees, async (pid) => {
+      killed.push(pid)
     })
 
-    expect(read).toContain(child.pid)
-    expect(await sandboxProcesses(sandbox)).toEqual([])
-  }, 60_000)
+    expect(calls.read).toEqual([gone])
+    expect(calls.end).toEqual([tree])
+    expect(killed).toEqual([])
+  })
+
+  it("ends nothing where the root is a later process given the same pid", async () => {
+    const { calls, trees } = reader([{ pid: gone, startedAt: 200 }])
+    const killed: number[] = []
+
+    await endTree({ pid: gone, start: 100 }, trees, async (pid) => {
+      killed.push(pid)
+    })
+
+    expect(calls.end).toEqual([])
+    expect(killed).toEqual([])
+  })
+
+  it("ends it by recorded parents where its reader can't read the tree, or there is none", async () => {
+    const { trees } = reader(undefined)
+    const killed: number[] = []
+    const kill = async (pid: number) => {
+      killed.push(pid)
+    }
+
+    await endTree({ pid: gone, start: 100 }, trees, kill)
+    await endTree({ pid: gone, start: 100 }, undefined, kill)
+
+    expect(killed).toEqual([gone, gone])
+  })
 })
 
 describe.skipIf(process.platform !== "darwin")("reap on macOS", () => {

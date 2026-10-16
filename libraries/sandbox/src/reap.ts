@@ -276,18 +276,33 @@ const windows = (trees: Trees | undefined): Table => ({
       }
       return
     }
-    const tree = await trees?.read(one.pid)
-    // Where it can't be read, taskkill ends the tree, awaited: only the root is checked,
-    // just before, by its start.
-    if (tree === undefined) return taskkillTree(one.pid).catch(() => {})
-    if (tree[0]?.startedAt !== one.start) return
-    await trees!.end(tree)
-    const deadline = Date.now() + 30_000
-    while (anyRunning(tree) && Date.now() < deadline)
-      // eslint-disable-next-line no-await-in-loop -- Waits for them to end.
-      await new Promise((resolve) => setTimeout(resolve, 50))
+    await endTree(one, trees)
   },
 })
+
+/**
+ * Ends a Windows process and what it started (see the Windows table's `end`): the tree
+ * `trees` reads, only should its root still be the process found, by its start, and waited
+ * for; where it can't be read, the tree `kill` ends by recorded parent pids, taskkill unless
+ * a test gives another. Exported for its tests, as no process on Windows outlives the first
+ * ask long enough to reach it there.
+ */
+export const endTree = async (
+  one: { readonly pid: number; readonly start: number },
+  trees: Trees | undefined,
+  kill: (pid: number) => Promise<void> = taskkillTree,
+): Promise<void> => {
+  const tree = await trees?.read(one.pid)
+  // Where it can't be read, the tree is ended by recorded parents, awaited: only the root is
+  // checked, just before, by its start.
+  if (tree === undefined) return kill(one.pid).catch(() => {})
+  if (tree[0]?.startedAt !== one.start) return
+  await trees!.end(tree)
+  const deadline = Date.now() + 30_000
+  while (anyRunning(tree) && Date.now() < deadline)
+    // eslint-disable-next-line no-await-in-loop -- Waits for them to end.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+}
 
 /**
  * Parses `ps -o pid=,ppid=,pgid=,stat=,lstart=,comm=` in the C locale: each process's pid,
