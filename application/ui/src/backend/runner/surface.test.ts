@@ -1,4 +1,4 @@
-import type { TerminalEvent } from "@novadeck/protocol"
+import type { TerminalEvent, TerminalExit } from "@novadeck/protocol"
 import { RunnerError, type AttachedTerminal } from "@novadeck/protocol/client"
 import { Terminal } from "@xterm/xterm"
 import { act, createElement, type ReactNode } from "react"
@@ -1014,10 +1014,11 @@ describe("runner terminal surface", () => {
 })
 
 describe("typing into a terminal's screen", () => {
-  // A running shell whose first screen is `data`, recording what is written to it. Each
-  // attachment draws that screen, then stays open until detached, as a live shell's.
-  const running = (data: string) => {
-    const { runtime } = starting()
+  // A running shell whose first screen is `data`, or one that exited as `exit` says,
+  // recording what is written to it. Each attachment draws that screen, then stays open
+  // until detached, as a live shell's.
+  const running = (data: string, exit: TerminalExit | null = null) => {
+    const { runtime, connection } = starting()
     const written: string[] = []
     const attachments: AttachedTerminal[] = []
     const attachmentOf = (): AttachedTerminal => {
@@ -1036,7 +1037,7 @@ describe("typing into a terminal's screen", () => {
             return { value: undefined, done: true as const }
           }
           drawn = true
-          const event = { terminalId: "01", sequence: 1, cols: 80, rows: 24, data, exit: null }
+          const event = { terminalId: "01", sequence: 1, cols: 80, rows: 24, data, exit }
           return { value: { ...event, type: "snapshot" as const }, done: false }
         },
         return: async () => ({ value: undefined, done: true as const }),
@@ -1090,13 +1091,30 @@ describe("typing into a terminal's screen", () => {
         vi.useRealTimers()
       }
     }
-    return { screens, written, ready, park, showAgain, attachments }
+    return { screens, written, ready, park, showAgain, attachments, connection }
   }
 
   it("types nothing into a terminal out of sight long enough to stop following it", async () => {
     const { screens, written, ready, park } = running("$ ")
     await ready()
     park()
+    expect(screens.typeInto(key, "run the tests")).toBe(false)
+    expect(written).toEqual([])
+  })
+
+  it("types nothing into a shell that exited and waits for Enter", async () => {
+    const { screens, written, ready } = running("$ exit 1", { code: 1, signal: null, ranMs: 5_000 })
+    await ready()
+    expect(screens.typeInto(key, "run the tests")).toBe(false)
+    expect(written).toEqual([])
+  })
+
+  it("types nothing while the runner is out of reach", async () => {
+    const { screens, written, ready, connection } = running("$ ")
+    await ready()
+    connection.update(() => "reconnecting")
+    expect(screens.typeInto(key, "run the tests")).toBe(false)
+    connection.update(() => "unavailable")
     expect(screens.typeInto(key, "run the tests")).toBe(false)
     expect(written).toEqual([])
   })

@@ -19,8 +19,8 @@ export type Screen = {
   // with whether it waits for Enter to start again.
   readonly exited: (waiting: boolean) => void
   // Whether a stream is drawing the current shell: true once its screen arrived, false
-  // once the stream ended, or while it takes up again after a reconnection
-  // (`resuming`). Input goes nowhere in between.
+  // once a park let go of the stream or it ended, or while it takes up again after a
+  // reconnection (`resuming`). Input goes nowhere in between.
   readonly live: (live: boolean, resuming?: boolean) => void
 }
 
@@ -82,7 +82,8 @@ export const followTerminal = (
       screen.resize(event)
       sent = `${event.cols}x${event.rows}`
       await screen.write(event.data)
-      screen.live(true)
+      // A park that came while it drew has let go of this stream already.
+      if (!unparked) screen.live(true)
       runtime.screen(key, "shown")
       if (event.exit) {
         runtime.exited(key, event.exit)
@@ -180,7 +181,8 @@ export const followTerminal = (
   const resume = async (attached: AttachedTerminal): Promise<void> => {
     const turn = (resumes += 1)
     screen.live(false, true)
-    const current = (): boolean => !stopped && attachment === attached && turn === resumes
+    const current = (): boolean =>
+      !stopped && !unparked && attachment === attached && turn === resumes
     while (current()) {
       const size = runtime.entry(key)?.size ?? screen.fit()
       try {
