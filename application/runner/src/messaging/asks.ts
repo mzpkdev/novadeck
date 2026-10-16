@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto"
 import {
   agentAsk,
   askAnswer,
+  hiddenCharacter,
+  maxCommandLines,
   type AgentAsk,
   type AskAnswer,
   type InboxLetter,
@@ -76,29 +78,36 @@ const subject = z
       .refine((text) => !/[\r\n\x00-\x1f]/.test(text), "Use one line for the subject"),
   )
 const markdown = z.string().max(16_384)
-/** The most lines an action's command may hold. */
-export const commandLines = 40
-// What an agent could use to hide part of a command it asks the person to run: characters
-// that draw as nothing, the other kinds of space, and runs of blank lines or spaces.
-const fillers = /[\u00ad\u115f\u1160\u2800\u3164\uffa0]/g
-const spaces = /[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g
-/**
- * An action's command as the person is asked to run it, everything in it in sight: with no
- * character that draws as nothing, no run of more than one blank line, no long run of
- * spaces, and no trailing blanks. The Inbox marks whatever draws as nothing in a command
- * it shows anyway (`ui/src/inbox/command-view.ts`), as a harness's permission prompt, which
- * Novadeck shows verbatim.
- */
-export const commandText = (text: string): string =>
-  cleanInboxText(text)
-    .replace(fillers, "")
-    .replace(spaces, " ")
-    .replace(/[ \t]{9,}/g, " ")
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim()
+// A command an agent asks the person to run, kept as written, with every part of it in
+// sight: refused where it holds a character that draws as nothing, which could push the
+// rest past a run of blank rows, or more lines than the person reads before running it.
+// The Inbox marks long runs of blank lines and spaces where it shows one.
+const hiddenIn = (text: string): string | undefined => {
+  const found = hiddenCharacter.exec(text)?.[0]
+  return found && `U+${found.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`
+}
+const command = z
+  .string()
+  .transform((text) => cleanInboxText(text).trim())
+  .pipe(
+    z
+      .string()
+      .min(1)
+      .max(4096)
+      .superRefine((text, context) => {
+        const hidden = hiddenIn(text)
+        if (hidden)
+          context.addIssue({
+            code: "custom",
+            message: `The command holds a character that draws as nothing (${hidden}); use only characters that show`,
+          })
+        if (text.split("\n").length > maxCommandLines)
+          context.addIssue({
+            code: "custom",
+            message: `Keep the command to ${maxCommandLines} lines or fewer`,
+          })
+      }),
+  )
 const option = z.strictObject({
   label: subject,
   summary: z.string().transform(cleanInboxText).pipe(z.string().max(2048)).nullable().optional(),
@@ -114,23 +123,20 @@ const requestedShape = z.discriminatedUnion("type", [
   }),
   z.strictObject({
     type: z.literal("action"),
-    command: z
-      .string()
-      .transform(commandText)
-      .pipe(
-        z
-          .string()
-          .min(1)
-          .max(4096)
-          .refine(
-            (text) => text.split("\n").length <= commandLines,
-            `Keep the command to ${commandLines} lines or fewer`,
-          ),
-      ),
+    command,
     directory: z
       .string()
       .transform(cleanInboxText)
-      .pipe(z.string().max(4096))
+      .pipe(
+        z
+          .string()
+          .max(1024)
+          // One line: the rule for what draws as nothing covers every control but a line feed.
+          .refine(
+            (text) => !text.includes("\n") && !hiddenIn(text),
+            "Use one plain line for the folder",
+          ),
+      )
       .nullable()
       .optional(),
     done_label: subject,

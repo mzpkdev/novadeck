@@ -3,10 +3,7 @@
 // character with no glyph) is set out as a mark that says what is there, never hidden
 // below the card's fold or past its edge. The command itself is never changed.
 
-// Characters that draw as nothing, or as a plain space, though they are not one: an agent
-// could use them to push the rest of a command out of sight.
-const invisible =
-  /[\u00a0\u00ad\u115f\u1160\u2000-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3000\u3164\ufeff\uffa0]/
+import { hiddenCharacter } from "../model/command-text"
 
 // The longest run of spaces or tabs shown as itself.
 export const longestSpace = 8
@@ -51,7 +48,7 @@ const lineParts = (line: string): CommandPart[] => {
       continue
     }
     const codePoint = String.fromCodePoint(line.codePointAt(index)!)
-    if (invisible.test(codePoint)) {
+    if (hiddenCharacter.test(codePoint)) {
       flush()
       parts.push({ type: "invisible", code: codeOf(codePoint) })
     } else text += codePoint
@@ -62,7 +59,8 @@ const lineParts = (line: string): CommandPart[] => {
 }
 
 export const commandView = (command: string): CommandView => {
-  const lines = command.split(/\r\n|\r|\n/)
+  // Only a line feed ends a line, as for the shell; a CR shows as a mark, as it runs.
+  const lines = command.split("\n")
   // Each row as shown: a line's parts, an empty row for one blank line, or one mark for more.
   const rows: CommandPart[][] = []
   let blank = 0
@@ -72,7 +70,7 @@ export const commandView = (command: string): CommandView => {
     blank = 0
   }
   for (const line of lines) {
-    if (line.trim() === "" && !invisible.test(line)) {
+    if (/^[ \t]*$/.test(line)) {
       blank += 1
       continue
     }

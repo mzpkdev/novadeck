@@ -355,6 +355,13 @@ describe("What a dialog shows of what it asks", () => {
     })
   })
 
+  it("never sets a path line small as the folder unless the command follows it with $", () => {
+    expect(splitDetail("/tmp/payload.sh\necho done")).toEqual({
+      folder: null,
+      command: "/tmp/payload.sh\necho done",
+    })
+  })
+
   it("keeps a detail with no folder as it is", () => {
     expect(splitDetail("The plan")).toEqual({ folder: null, command: "The plan" })
   })

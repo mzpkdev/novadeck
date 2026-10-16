@@ -609,8 +609,8 @@ const ask: Tool<{ readonly id: string; readonly withdrawn?: boolean }> = {
                 type: "string",
                 maxLength: 4096,
                 description:
-                  "What the user runs themselves, up to 40 lines. Novadeck removes runs of blank " +
-                  "lines and spaces, and characters that draw as nothing, so all of it shows.",
+                  "What the user runs themselves, up to 40 lines, in characters that show: " +
+                  "Novadeck refuses one holding a character that draws as nothing.",
               },
               directory: { type: "string", maxLength: 4096 },
               done_label: { type: "string", maxLength: 256 },
