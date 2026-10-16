@@ -108,6 +108,7 @@
   }
   .corner-card-actions {
     align-self: stretch;
+    justify-content: flex-end;
     margin-top: 0;
   }
 }
@@ -119,6 +120,7 @@
 }
 .corner-stack[data-beside] .corner-card-actions {
   align-self: stretch;
+  justify-content: flex-end;
   margin-top: 0;
 }
 @keyframes corner-card-in {

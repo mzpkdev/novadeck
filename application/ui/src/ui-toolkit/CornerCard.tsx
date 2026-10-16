@@ -124,7 +124,7 @@ export const CornerCard = ({
       )}
       {children && <div className="corner-card-body">{children}</div>}
       {progress && <Progress {...progress} />}
-      {actions && (
+      {(actions || note) && (
         <div className="corner-card-actions">
           {note && <span className="corner-card-note">{note}</span>}
           {actions}

@@ -177,7 +177,7 @@ describe("murmur's card before an install", () => {
 })
 
 describe("murmur's card when a verdict stands beside files", () => {
-  it("keeps the installed card with Uninstall, not Not available, and shows no Try again", () => {
+  it("says Not available with Details beside Uninstall, with no switch and no Try again", () => {
     const { container, unmount } = render(
       createElement(MurmurAddon, {
         murmur: {
@@ -191,10 +191,32 @@ describe("murmur's card when a verdict stands beside files", () => {
         },
       }),
     )
-    expect(container.textContent).not.toMatch(/Not available on this computer/)
-    expect(container.querySelector("[role=switch]")).not.toBeNull()
+    expect(container.textContent).toMatch(/Not available on this computer/)
+    expect(container.querySelector("details")?.textContent).toMatch(/software rendering/)
+    expect(container.querySelector("[role=switch]")).toBeNull()
     expect(button("Uninstall", container)).toBeDefined()
     expect(button("Try again", container)).toBeUndefined()
+    unmount()
+  })
+
+  it("keeps the switch for an install that passed its check, whatever the host says", () => {
+    const { container, unmount } = render(
+      createElement(MurmurAddon, {
+        murmur: {
+          state: {
+            ...unchecked,
+            enabled: true,
+            check: { device: "Intel Arc Graphics", integrated: true, milliseconds: 900 },
+            failure: null,
+            unsupported: "This computer reports only software rendering.",
+            recheck: false,
+          },
+          actions: actions(),
+        },
+      }),
+    )
+    expect(container.querySelector("[role=switch]")).not.toBeNull()
+    expect(container.textContent).not.toMatch(/Not available/)
     unmount()
   })
 })

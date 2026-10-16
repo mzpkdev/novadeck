@@ -389,7 +389,7 @@ describe("installing voice input", () => {
     expect(voice.state().enabled).toBe(false)
   })
 
-  it("gives up on a check too slow to finish, keeping the model to turn on", async ({
+  it("gives up on a check too slow to finish, keeping the model for another try", async ({
     resources,
   }) => {
     const { voice } = await setup(resources, {
@@ -409,11 +409,63 @@ describe("installing voice input", () => {
       installing: null,
     })
     expect(voice.state().enabled).toBe(false)
+    // Turning it on without a passed check only says it is wanted.
     await expect(voice.set({ enabled: true })).resolves.toBeUndefined()
-    expect(voice.state().enabled).toBe(true)
+    expect(voice.state()).toMatchObject({ enabled: false, wanted: true })
+    expect(voice.state().failure).not.toBeNull()
+  })
 
-    // Turning it on, as the failure suggests, settles it.
-    expect(voice.state().failure).toBeNull()
+  it("never turns on a model that did not pass its check, even from a restart", async ({
+    resources,
+  }) => {
+    const { voice, store } = await setup(resources, {
+      catalog: await modelCatalog(resources, { small: "small slow" }),
+      checkMs: 300,
+    })
+    await voice.install()
+    await voice.settled()
+    await voice.set({ enabled: false })
+    expect(voice.state().wanted).toBe(false)
+
+    await voice.set({ enabled: true })
+
+    expect(voice.state()).toMatchObject({ enabled: false, wanted: true })
+    expect(store.voiceEnabledChoice()).toBeUndefined()
+  })
+
+  it("keeps turbo, and blames the engine, when neither model starts", async ({ resources }) => {
+    const { voice, directory } = await setup(resources, {
+      catalog: await modelCatalog(resources, { turbo: "turbo badload", small: "small badload" }),
+    })
+
+    await voice.install()
+    await voice.settled()
+
+    expect(voice.state().failure).toContain("voice engine could not start")
+    expect(voice.state()).toMatchObject({ model: "turbo", aim: "turbo", enabled: false })
+    expect(voice.state().installed).toContain("turbo")
+    expect((await readdir(`${directory}/models`)).some((file) => file.includes("turbo"))).toBe(true)
+  })
+
+  it("forgets small on an uninstall, so a reinstall aims for turbo again", async ({
+    resources,
+  }) => {
+    const { voice } = await installed(resources)
+    expect(voice.state().aim).toBe("small")
+
+    await voice.uninstall()
+
+    expect(voice.state().aim).toBe("turbo")
+  })
+
+  it("aims for small after an uninstall where the host saw only software rendering", async ({
+    resources,
+  }) => {
+    const { voice } = await setup(resources, { softwareGraphics: true })
+    await voice.install()
+    await voice.settled()
+    await voice.uninstall()
+    expect(voice.state().aim).toBe("small")
   })
 
   it("turns voice input on for a first install, but leaves a later one's switch as it was", async ({

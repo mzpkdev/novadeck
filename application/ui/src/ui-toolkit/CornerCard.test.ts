@@ -89,4 +89,12 @@ describe("a corner card", () => {
     expect(event.defaultPrevented).toBe(true)
     unmount()
   })
+
+  it("shows its note even with no actions", () => {
+    const { container, unmount } = render(
+      createElement(CornerCard, { title: "Ready", note: "Runs on this computer" }),
+    )
+    expect(container.querySelector(".corner-card-note")?.textContent).toBe("Runs on this computer")
+    unmount()
+  })
 })

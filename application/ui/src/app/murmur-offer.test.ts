@@ -69,6 +69,10 @@ describe("what the open Murmur card shows", () => {
     expect(offerView({ ...offered, installing: null, unsupported: "x" }, false)).toBe("gone")
   })
 
+  it("says in the compact note that it runs here, with the size", () => {
+    expect(offerText.size(offered)).toBe("Runs on this computer \u00b7 1.2 GB")
+  })
+
   it("says what the step under way is, never GPU", () => {
     expect(workingText(offered)).toBe("Starting…")
     expect(

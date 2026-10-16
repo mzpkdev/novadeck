@@ -1,4 +1,4 @@
-import { describe as context, describe, expect, it } from "vitest"
+import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { page, type Locator } from "vitest/browser"
 
 import { notification, openWorkspace, sidebarPanel } from "./support/workspace"
@@ -82,6 +82,34 @@ describe("Murmur's one-time offer", () => {
           page.getByRole("region", { name: "Murmur" }).getByRole("switch", { name: "Enabled" }),
         )
         .toHaveAttribute("aria-checked", "false")
+    })
+  })
+
+  context("on a page narrower than 1400px, where it must stay clear of the composer", () => {
+    afterEach(async () => {
+      await page.viewport(1440, 900)
+    })
+
+    it("keeps to a short card that still says it runs here and what it downloads", async () => {
+      await page.viewport(1200, 900)
+      await openAgents("uninstalled")
+
+      await expect.element(offer().getByText("Runs on this computer \u00b7 1.2 GB")).toBeVisible()
+      await expect.element(offer().getByText(/Downloads 1\.2 GB once/)).not.toBeVisible()
+      await expect.element(offer().getByRole("button", { name: "Turn on" })).toBeVisible()
+    })
+
+    it("keeps its buttons at the right edge on every card, as on the install's", async () => {
+      await page.viewport(1200, 900)
+      await openAgents("uninstalled")
+      await offer().getByRole("button", { name: "Turn on" }).click({ timeout: 10_000 })
+
+      const cancel = card().getByRole("button", { name: "Cancel" })
+      await expect.element(cancel).toBeVisible()
+      const box = card().element().getBoundingClientRect()
+      const button = cancel.element().getBoundingClientRect()
+      // Its right edge is the card's, less the padding.
+      expect(box.right - button.right).toBeLessThan(24)
     })
   })
 

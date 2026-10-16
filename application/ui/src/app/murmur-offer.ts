@@ -37,7 +37,7 @@ export const offerText = {
   body: (state: MurmurState): string =>
     `A small model on this computer reads what agents are doing and names each terminal. Downloads ${formatSize(state.sizes.engine + state.sizes.model)} once.`,
   size: (state: MurmurState): string =>
-    `${formatSize(state.sizes.engine + state.sizes.model)} download`,
+    `Runs on this computer \u00b7 ${formatSize(state.sizes.engine + state.sizes.model)}`,
   quiet: "It stays in Preferences → Addons.",
   accept: "Turn on",
   decline: "No thanks",

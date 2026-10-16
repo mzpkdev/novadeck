@@ -113,6 +113,16 @@ const softwareOnly = "This computer reports only software rendering; no graphics
 const linuxHint =
   process.platform === "linux" ? " On Linux, check that a Vulkan driver is installed." : ""
 
+// An exit that says a library the engine needs is not there: "error while loading shared
+// libraries" or "cannot open shared object file" on Linux, STATUS_DLL_NOT_FOUND (0xC0000135)
+// on Windows.
+const missingLibrary = (
+  run: { readonly code: number | null },
+  printed: string | undefined,
+): boolean =>
+  run.code === 0xc0_00_01_35 ||
+  /error while loading shared libraries|cannot open shared object file/i.test(printed ?? "")
+
 const unavailable = (message: string): DomainError => new DomainError("CONFLICT", message)
 
 const explain = (error: unknown): string => {
@@ -742,9 +752,14 @@ export class Murmur implements Describer {
     const devices = parseDevices(`${run.stdout}\n${run.stderr}`)
     if (devices.length === 0 && (run.failure !== undefined || run.code !== 0)) {
       const last = run.stderr.split(/\r?\n/).findLast((text) => text.trim() !== "")
-      const why = last?.trim() ?? run.failure ?? `it exited with code ${run.code}`
-      // It did not get to say what it sees (a failed start, a timeout): a failure to retry.
-      throw new EngineError(`The engine could not list graphics devices: ${why.slice(0, 300)}.`)
+      const why = (last?.trim() ?? run.failure ?? `it exited with code ${run.code}`)
+        .slice(0, 300)
+        .replace(/\.+$/, "")
+      // An engine that can't load a library it needs will fail the same way every time: that
+      // is this computer's, with the hint. Any other failed start, or a timeout, is retried.
+      if (missingLibrary(run, last))
+        throw new Unsupported(`The engine could not list graphics devices: ${why}.${linuxHint}`)
+      throw new EngineError(`The engine could not list graphics devices: ${why}.${linuxHint}`)
     }
     return devices
   }
@@ -792,8 +807,9 @@ export class Murmur implements Describer {
     try {
       body = (await response.json()) as typeof body
     } catch (error) {
-      // An answer cut off by the time limit is a stuck engine, as much as no answer.
-      if (limit.aborted) throw error
+      // An answer cut off, by the time limit or by a crash, is the engine failing; it is never
+      // a reply that said nothing usable, which is what can condemn a device.
+      throw limit.aborted ? error : new EngineError("The engine's answer was cut off.")
     }
     const content = body?.choices?.[0]?.message?.content
     // The model is held to what it was shown: a text that copies an example is refused. A

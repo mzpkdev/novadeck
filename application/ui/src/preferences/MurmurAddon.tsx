@@ -104,17 +104,32 @@ export const MurmurAddon = ({
       </div>
     )
   const busy = removing !== null
+  // Files beside a verdict and no passed check: it can't run, so no switch that looks as if it did.
+  const blocked = unsupported !== null && check === null
   return (
     <>
       <div className={settingsCardClasses}>
-        <AddonRow scope="murmur" id="enabled" label="Enabled">
-          <Switch
-            checked={state.enabled}
-            onChange={(enabled) => actions.set({ enabled })}
-            disabled={busy}
-            labelledBy="murmur-enabled"
-          />
-        </AddonRow>
+        {blocked ? (
+          <>
+            <div className={addonRowClasses}>
+              <span className={addonNoteClasses}>Not available on this computer</span>
+            </div>
+            <AddonDetails
+              {...(recheck && { action: { label: "Check again", onClick: actions.install } })}
+            >
+              {unsupported}
+            </AddonDetails>
+          </>
+        ) : (
+          <AddonRow scope="murmur" id="enabled" label="Enabled">
+            <Switch
+              checked={state.enabled}
+              onChange={(enabled) => actions.set({ enabled })}
+              disabled={busy}
+              labelledBy="murmur-enabled"
+            />
+          </AddonRow>
+        )}
         {check && (
           <div className={addonRowClasses}>
             <span className={addonNoteClasses}>{deviceText(check)}</span>

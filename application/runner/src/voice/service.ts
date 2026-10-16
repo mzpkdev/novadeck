@@ -64,6 +64,10 @@ export type VoiceOptions = {
 // one for this computer, so an install aiming for turbo goes on to small.
 class UnfitModel extends EngineError {}
 
+// The engine did not start with a model: that model's fault, or the engine's own (a missing
+// library, a blocked program), which only another model starting settles.
+class StartFailure extends EngineError {}
+
 const unavailable = (reason: VoiceUnavailable["reason"], message: string): DomainError =>
   new DomainError("VOICE_UNAVAILABLE", message, { reason })
 
@@ -110,7 +114,6 @@ export class Voice {
   private gpu: boolean | undefined
   private failure: string | null = null
   // The model whose install the failure is of; none for an engine update's.
-  private failureModel: VoiceModel | undefined
   private running:
     | { readonly done: Promise<void>; readonly controller: AbortController }
     | undefined
@@ -335,6 +338,9 @@ export class Voice {
         await this.load()
       }
       this.settings.saveVoiceCheck(null)
+      // The model chosen for this computer is forgotten with it: a reinstall tries turbo again.
+      this.settings.saveVoiceSettings({ model: "turbo" })
+      this.gpu = undefined
       this.failure = null
     } finally {
       this.uninstalling = false
@@ -357,11 +363,13 @@ export class Voice {
     }
     if (change.enabled === true && !this.installed.includes(model))
       throw new DomainError("CONFLICT", `The ${model} model is not installed.`)
-    // A check that ran out of time says to turn voice input on to try dictating anyway,
-    // which is the end of that failure; another model's, or the engine's, stays.
-    if (change.enabled === true && this.failure !== null && this.failureModel === model) {
-      this.failure = null
-      this.failureModel = undefined
+    // A model that never passed its check is not turned on: it is wanted, and the install
+    // that follows checks it.
+    const checked = this.settings.voiceCheck()?.model === model
+    if (change.enabled === true && !checked) {
+      this.settings.saveVoiceSettings({ ...change, enabled: null })
+      this.changed()
+      return
     }
     this.settings.saveVoiceSettings(change)
     this.changed()
@@ -540,6 +548,9 @@ export class Voice {
     // whether anything was installed then.
     const before = { settings: this.settings.voiceSettings() }
     let model = aim
+    // Whether small has been chosen for this computer, which only a turbo rejected for its
+    // own sake, or small passing where turbo would not start, settles.
+    let committed = false
     try {
       const folder = engineFolder(this.directory, manifest.sha256)
       if (!(await exists(join(folder, engineProgram)))) {
@@ -564,12 +575,23 @@ export class Voice {
         await this.refresh()
       }
       if (engineOnly) return
-      let check = await this.fetchAndCheck(model, manifest, signal, model === "turbo")
-      if (check === undefined || (model === "turbo" && check.recommended === "small")) {
+      let check: VoiceCheck | undefined
+      let startFailure: StartFailure | undefined
+      try {
+        check = await this.fetchAndCheck(model, manifest, signal, model === "turbo")
+      } catch (error) {
+        if (model !== "turbo" || !(error instanceof StartFailure) || signal.aborted) throw error
+        startFailure = error
+      }
+      if (
+        startFailure === undefined &&
+        (check === undefined || (model === "turbo" && check.recommended === "small"))
+      ) {
         // Turbo is rejected: small is this computer's model from here, so a failure or a
         // cancel in what follows leaves small chosen, off until it passes, with no turbo
         // beside it, and Try again resumes with small.
         model = "small"
+        committed = true
         await this.engine.stop()
         this.settings.saveVoiceSettings({
           model,
@@ -578,6 +600,18 @@ export class Voice {
         await pruneModels(this.directory, [this.modelPath(model), this.vadPath()])
         await this.load()
         check = await this.fetchAndCheck(model, manifest, signal, false)
+      } else if (startFailure !== undefined) {
+        // Turbo did not start, which may be the engine's doing: turbo stays, and nothing is
+        // chosen, until small starts where it did not.
+        model = "small"
+        try {
+          check = await this.fetchAndCheck(model, manifest, signal, false)
+        } catch (error) {
+          // Neither starts: the engine is the problem, not a model.
+          if (error instanceof StartFailure) throw startFailure
+          throw error
+        }
+        committed = true
       }
       if (check === undefined) throw new EngineError("The voice model could not be checked.")
       // The other model is of no use now.
@@ -595,7 +629,6 @@ export class Voice {
       // Cancelling is the person's choice, not a failure.
       if (!signal.aborted && !aborted(error)) {
         this.failure = explain(error).slice(0, 1024)
-        this.failureModel = engineOnly ? undefined : model
         this.updateFailedAt = engineOnly ? this.clock() : undefined
       }
       // What finished stays: a model that downloaded shows as installed, to turn on or
@@ -610,7 +643,7 @@ export class Voice {
       if (
         !engineOnly &&
         this.installed.includes(model) &&
-        (!this.installed.includes(chosen) || model !== aim)
+        (!this.installed.includes(chosen) || (model !== aim && committed))
       )
         this.settings.saveVoiceSettings({
           model,
@@ -691,7 +724,7 @@ export class Voice {
     try {
       await engine.start(config).catch((error: unknown) => {
         signal.throwIfAborted()
-        throw new UnfitModel(`The ${model} model could not start. (${explain(error)})`)
+        throw new StartFailure(`The voice engine could not start. (${explain(error)})`)
       })
       // Cancelling may come while the engine starts, which nothing interrupts.
       signal.throwIfAborted()
@@ -706,7 +739,7 @@ export class Voice {
           throw new UnfitModel(
             `The ${model} model did not transcribe a short test clip within ` +
               `${Math.round(timeoutMs / 1000)} s. ` +
-              `Turn voice input on to try dictating anyway. (${explain(error)})`,
+              `(${explain(error)})`,
           )
         })
       // The first run loads the voice model and warms up the GPU, which later clips do not pay for.

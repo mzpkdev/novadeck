@@ -1263,27 +1263,68 @@ describe("an engine failure shown on the card", () => {
 })
 
 describe("what a failed install says", () => {
-  it("fails with the engine's own words when it cannot list the devices", async ({ resources }) => {
+  // A launch whose --list-devices prints `message` and exits with `code`, as an engine that
+  // cannot start does.
+  const failingList = (message: string, code: number): Launch => {
     const base = fakeLaunch([arc])
-    const { murmur } = await setup(resources, {
-      launch: (program, args) =>
-        args.includes("--list-devices")
-          ? {
-              command: process.execPath,
-              args: [
-                "-e",
-                "console.error('libvulkan.so.1: cannot open shared object'); process.exit(127)",
-              ],
-            }
-          : base(program, args),
+    return (program, args) =>
+      args.includes("--list-devices")
+        ? {
+            command: process.execPath,
+            args: ["-e", `console.error(${JSON.stringify(message)}); process.exit(${code})`],
+          }
+        : base(program, args)
+  }
+
+  it("lands in Not available, with the Linux hint, when the engine cannot load a library", async ({
+    resources,
+  }) => {
+    const { murmur, store } = await setup(resources, {
+      launch: failingList(
+        "error while loading shared libraries: libvulkan.so.1: cannot open shared object file.",
+        127,
+      ),
     })
 
     await murmur.install()
     await murmur.settled()
 
-    // The engine did not get to say what it sees: a failure to try again, not a verdict.
-    expect(murmur.state().failure).toMatch(/could not list graphics devices: libvulkan/)
-    expect(murmur.state()).toMatchObject({ unsupported: null })
+    // The same on every try: this computer's, not a failure to retry.
+    expect(murmur.state()).toMatchObject({ installed: false, failure: null, recheck: true })
+    expect(murmur.state().unsupported).toMatch(/could not list graphics devices: error while/)
+    expect(murmur.state().unsupported).not.toMatch(/\.\./)
+    if (process.platform === "linux") expect(murmur.state().unsupported).toMatch(/Vulkan driver/)
+    expect(store.murmurUnsupported()).not.toBeNull()
+  })
+
+  it("fails with the engine's own words, and the hint, when it cannot list the devices for another reason", async ({
+    resources,
+  }) => {
+    const { murmur, store } = await setup(resources, {
+      launch: failingList("something odd happened.", 1),
+    })
+
+    await murmur.install()
+    await murmur.settled()
+
+    // It did not get to say what it sees, and may next time: a failure to try again.
+    expect(murmur.state().failure).toMatch(
+      /could not list graphics devices: something odd happened\./,
+    )
+    expect(murmur.state().failure).not.toMatch(/\.\./)
+    if (process.platform === "linux") expect(murmur.state().failure).toMatch(/Vulkan driver/)
+    expect(murmur.state().unsupported).toBeNull()
+    expect(store.murmurUnsupported()).toBeNull()
+  })
+
+  it("keeps an answer cut off by a crash an engine failure, never a verdict", async ({
+    resources,
+  }) => {
+    const { murmur, store } = await installed(resources, { behaviour: "truncate" })
+
+    expect(murmur.state()).toMatchObject({ installed: true, check: null, unsupported: null })
+    expect(murmur.state().failure).not.toBeNull()
+    expect(store.murmurUnsupported()).toBeNull()
   })
 
   it("fails when the worker that prepares digests cannot start", async ({ resources }) => {

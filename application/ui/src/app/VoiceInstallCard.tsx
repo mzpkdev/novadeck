@@ -61,7 +61,11 @@ export const VoiceInstallCard = ({
         {...(step !== "check" && {
           progress: { label: stepLabels[step], value: received, max: total },
         })}
-        note={step === "check" ? "Checking" : `${formatSize(received)} of ${formatSize(total)}`}
+        note={
+          step === "check"
+            ? stepLabels.check
+            : `${stepLabels[step]} · ${formatSize(received)} of ${formatSize(total)}`
+        }
         onClose={() => setHidden(true)}
         actions={
           <button
@@ -88,7 +92,7 @@ export const VoiceInstallCard = ({
     return (
       <CornerCard
         title="Voice input didn't install"
-        note="Download failed"
+        note="Couldn't set up"
         urgent
         onClose={() => setClosed(failure)}
         actions={
@@ -113,7 +117,7 @@ export const VoiceInstallCard = ({
           </>
         }
       >
-        <p className="corner-card-error corner-card-detail">{failure}</p>
+        <p className="corner-card-error">{failure}</p>
       </CornerCard>
     )
   if (showsReady)
