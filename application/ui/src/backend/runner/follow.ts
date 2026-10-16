@@ -151,10 +151,11 @@ export const followTerminal = (
     while (running()) {
       const entry = runtime.entry(key)
       if (!entry || entry.closed) return
-      // Taken first, so a fresh shell started while this one attaches is not missed.
-      const { revived } = entry
       // eslint-disable-next-line no-await-in-loop -- Parked, it attaches once shown again.
       if (unparked) await Promise.race([unparked, halted])
+      // Taken before attaching, so a fresh shell started meanwhile is not missed; and after
+      // a park, so one started while parked, which it attaches to, doesn't count again.
+      const { revived } = entry
       // eslint-disable-next-line no-await-in-loop -- The shell must exist first.
       const ready = await Promise.race([entry.ready, halted])
       // Parked while it started: it attaches once shown.
