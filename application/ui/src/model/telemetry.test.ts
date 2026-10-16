@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../test"
-import { noTelemetry, setUsage, dropContext, dropTerminal } from "./telemetry"
+import { dropContext, dropProject, dropTerminal, noTelemetry, setUsage } from "./telemetry"
 import type { AgentUsage } from "./types"
 
 const usage = (occupied: number): AgentUsage => ({
@@ -44,6 +44,19 @@ describe("agent telemetry", () => {
     expect(dropTerminal(held, "p/s", "2")).toBe(held)
     expect(dropTerminal(held, "p/other", "1")).toBe(held)
     expect(dropContext(held, "p/other")).toBe(held)
+  })
+
+  it("drops every session of a project, and no other project's", () => {
+    const held = setUsage(
+      setUsage(setUsage(noTelemetry, "p/a", "1", usage(1)), "p/b", "2", usage(2)),
+      "pp/a",
+      "3",
+      usage(3),
+    )
+    const next = dropProject(held, "p")
+    expect(next).toEqual({ "pp/a": { "3": usage(3) } })
+    expect(next["pp/a"]).toBe(held["pp/a"])
+    expect(dropProject(held, "none")).toBe(held)
   })
 
   it("drops a whole session", () => {

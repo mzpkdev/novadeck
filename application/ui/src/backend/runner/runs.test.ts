@@ -296,6 +296,41 @@ describe("an agent's telemetry", () => {
     app.stop()
   })
 
+  it("comes with a terminal another client created", async () => {
+    const app = scripted(summary({}))
+    await flush()
+    const other = "00000000-0000-4000-8000-000000000002"
+    app.changes.push({ type: "changed", terminal: { ...codex(3_000), id: other } })
+    await vi.waitFor(() =>
+      expect(app.received.map((action) => action.type)).toContain("terminal/add"),
+    )
+    // The terminal joins the workspace, and its agent's usage shows with it.
+    const added = app.received.find((action) => action.type === "terminal/add")!
+    const seeded = workspaceFromSeed(app.backend.seed, {
+      view: "grid",
+      windowedView: "grid",
+      now: 1,
+    })
+    app.backend.commit(workspaceReducer(seeded, added as never), [added as never])
+    expect(app.backend.telemetry.getSnapshot()["p/s"]?.[other]).toEqual(telemetry(3_000))
+    app.stop()
+  })
+
+  it("is forgotten once its terminal is closed", async () => {
+    const app = scripted(codex(1_000))
+    await flush()
+    const target = { projectId: "p", workspaceSessionId: "s" }
+    const close = { type: "terminal/close" as const, target, terminalId }
+    const seeded = workspaceFromSeed(app.backend.seed, {
+      view: "grid",
+      windowedView: "grid",
+      now: 1,
+    })
+    app.backend.commit(workspaceReducer(seeded, close), [close])
+    expect(usageOf(app)).toBeUndefined()
+    app.stop()
+  })
+
   it("is forgotten once the terminal's agent exits", async () => {
     const app = scripted(codex(1_000))
     await flush()

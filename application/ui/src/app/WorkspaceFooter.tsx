@@ -1,8 +1,15 @@
-import { memo, useEffect, useMemo, useState, useSyncExternalStore } from "react"
+import { memo, useCallback, useEffect, useState, useSyncExternalStore } from "react"
 
 import type { Backend, BackendConnectionState } from "../backend/port"
-import { accountUsage, movedOrder, nextAccountReset, type AgentSeat } from "../model/account-usage"
-import type { Workspace } from "../model/types"
+import {
+  accountUsage,
+  movedOrder,
+  nextAccountReset,
+  runningSeats,
+  sameAccounts,
+  sameSeats,
+} from "../model/account-usage"
+import type { Telemetry } from "../model/telemetry"
 import { readSubscriptionOrder, writeSubscriptionOrder } from "../shell/shell-storage"
 import { SubscriptionUsage } from "../shell/SubscriptionUsage"
 import { WorkspaceFooter as Footer, type FooterStatus } from "../shell/WorkspaceFooter"
@@ -16,28 +23,6 @@ const useConnection = (connection: Backend["connection"]): BackendConnectionStat
   useSyncExternalStore(
     connection?.subscribe ?? always,
     () => connection?.getSnapshot() ?? "connected",
-  )
-
-// Every running terminal in every session: subscriptions are the account's, whichever
-// reports them.
-const runningSeats = (workspace: Workspace): readonly AgentSeat[] =>
-  workspace.projects.flatMap((project) =>
-    project.history.flatMap((session) =>
-      session.state.roster.terminals.flatMap((terminal) =>
-        terminal.state === "running"
-          ? [{ context: `${project.id}/${session.id}`, id: terminal.id, program: terminal.process }]
-          : [],
-      ),
-    ),
-  )
-
-const sameSeats = (a: readonly AgentSeat[], b: readonly AgentSeat[]): boolean =>
-  a.length === b.length &&
-  a.every(
-    (seat, index) =>
-      seat.context === b[index]!.context &&
-      seat.id === b[index]!.id &&
-      seat.program === b[index]!.program,
   )
 
 // The footer wired to the workspace's counts, the account's subscriptions and the
@@ -82,15 +67,15 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
     }
   }, shallowEqual)
   const seats = useWorkspaceState(runningSeats, sameSeats)
-  const telemetry = useStoreSelector(backend.telemetry, (held) => held)
   // The order the person left the subscriptions in, kept for their next visit.
   const [order, setOrder] = useState(readSubscriptionOrder)
   // The time windows are measured against, moved on as the soonest one resets, so it
   // drops out then though no agent reports anything new.
   const [now, setNow] = useState(Date.now)
-  const accounts = useMemo(
-    () => accountUsage(seats, telemetry, now, order),
-    [seats, telemetry, now, order],
+  const accounts = useStoreSelector(
+    backend.telemetry,
+    useCallback((held: Telemetry) => accountUsage(seats, held, now, order), [seats, now, order]),
+    sameAccounts,
   )
   const nextReset = nextAccountReset(accounts)
   useEffect(() => {

@@ -67,7 +67,8 @@ const statusOf = (terminal: TerminalMetadata | undefined): AgentStatus | undefin
 export const demoTurns = (turnMs = demoTurnMs) => {
   let sink: BackendSink | undefined
   const watchers = new Set<(event: TurnEvent) => void>()
-  // What the demo agents say of their tokens and quotas, which the seeds fill and `usage` sets.
+  // What the demo agents say of their tokens and quotas, which the seeds fill and `usage`
+  // sets.
   const telemetry = createStore<Telemetry>(noTelemetry)
   // The timers of each turn in flight, by terminal.
   const active = new Map<string, Timers>()
@@ -261,8 +262,9 @@ export const demoTurns = (turnMs = demoTurnMs) => {
         return
       const program = terminal && isAgentProgram(terminal.process) ? undefined : "claude"
       telemetry.update((held) => setUsage(held, contextOf(key), key.terminalId, usage))
-      // Only a terminal that was no agent needs a status; an agent's stays as it was.
-      if (program) status(key, agent ?? { working: false }, program)
+      // Only a terminal that is no running agent needs a status; an agent's stays as it was.
+      if (program || terminal?.state !== "running")
+        status(key, agent ?? { working: false }, program)
     },
     release: (key) => {
       cancel(terminalKeyId(key))

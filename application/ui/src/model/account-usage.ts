@@ -1,6 +1,7 @@
 import { windowName } from "./agent-usage"
 import { harnesses } from "./harnesses"
 import type { Telemetry } from "./telemetry"
+import type { Workspace } from "./types"
 
 // The agents whose subscriptions Novadeck hears of, by program name, as people call them.
 const agentNames: Readonly<Record<string, string>> = Object.fromEntries(
@@ -37,6 +38,28 @@ export type AgentSeat = {
   readonly id: string
   readonly program: string
 }
+
+// Every running terminal in every session: subscriptions are the account's, whichever
+// reports them.
+export const runningSeats = (workspace: Workspace): readonly AgentSeat[] =>
+  workspace.projects.flatMap((project) =>
+    project.history.flatMap((session) =>
+      session.state.roster.terminals.flatMap((terminal) =>
+        terminal.state === "running"
+          ? [{ context: `${project.id}/${session.id}`, id: terminal.id, program: terminal.process }]
+          : [],
+      ),
+    ),
+  )
+
+export const sameSeats = (a: readonly AgentSeat[], b: readonly AgentSeat[]): boolean =>
+  a.length === b.length &&
+  a.every(
+    (seat, index) =>
+      seat.context === b[index]!.context &&
+      seat.id === b[index]!.id &&
+      seat.program === b[index]!.program,
+  )
 
 // Where an agent's subscription stands among the others until the person moves it: in
 // this order, then any other agent after them.
@@ -103,6 +126,11 @@ export const accountUsage = (
     })
     .toSorted((a, b) => rank(a.program, order) - rank(b.program, order))
 }
+
+// Whether two readings of the accounts say the same, so a report that moves nothing the
+// footer shows leaves it as it was.
+export const sameAccounts = (a: readonly AgentAccount[], b: readonly AgentAccount[]): boolean =>
+  JSON.stringify(a) === JSON.stringify(b)
 
 // The order after the person moves the subscription shown `from` to `to`: the ones shown,
 // as they now stand, then those not shown now, as they were left.

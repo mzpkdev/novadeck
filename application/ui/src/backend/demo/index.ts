@@ -4,7 +4,7 @@ import { emptyCompanions } from "../../model/companion"
 import type { Conversations } from "../../model/conversation"
 import type { WorkspaceSeed } from "../../model/seed"
 import { createStore } from "../../model/store"
-import { dropTerminal, noTelemetry } from "../../model/telemetry"
+import { dropProject, dropTerminal, noTelemetry } from "../../model/telemetry"
 import type { TerminalMetadata, TitleSource, Workspace } from "../../model/types"
 import type {
   AgentConnection,
@@ -267,8 +267,8 @@ export const withConversations = (
     commit: (workspace, actions) => {
       backend.commit(workspace, actions)
       chat.observe(workspace)
-      // A closed terminal's agent says no more.
-      for (const action of actions)
+      // A closed terminal's agent says no more, nor those of a removed project.
+      for (const action of actions) {
         if (action.type === "terminal/close")
           turns.telemetry.update((held) =>
             dropTerminal(
@@ -277,6 +277,13 @@ export const withConversations = (
               action.terminalId,
             ),
           )
+        // The reducer keeps the last project, so only one gone from the workspace is dropped.
+        if (
+          action.type === "project/remove" &&
+          !workspace.projects.some((project) => project.id === action.projectId)
+        )
+          turns.telemetry.update((held) => dropProject(held, action.projectId))
+      }
     },
     start: (sink) => {
       const stopTurns = turns.start(sink)

@@ -54,7 +54,8 @@ export type DemoAgentVerbs = {
     usage: AgentUsage,
   ) => void
   // Lets the terminal go, saying nothing of it: what its agent had pending is called off
-  // and its usage forgotten, as before the panel sets its state some other way (an exit, a shell, a fixture).
+  // and its usage forgotten, as before the panel sets its state some other way (an exit, a
+  // shell, a fixture).
   readonly release: (key: TerminalKey) => void
 }
 

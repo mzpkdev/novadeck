@@ -123,8 +123,8 @@ export type Backend = {
   // Created once per backend instance so its identity is stable across renders.
   readonly TerminalSurface: ComponentType<TerminalSurfaceProps>
   // What the agents in its terminals say of their tokens and quotas, by session and
-  // terminal. Apart from the terminals' metadata, since an agent reports it often and
-  // only the windows that show it should render for a report.
+  // terminal. Apart from the terminals' metadata, since an agent reports it often and a
+  // report should reach only what reads the telemetry, not every subscriber of the roster.
   readonly telemetry: Store<Telemetry>
   // Optional. Called from an effect after the app mounts, never on an instance
   // StrictMode discarded, with the sink for events the backend reports; returns stop.

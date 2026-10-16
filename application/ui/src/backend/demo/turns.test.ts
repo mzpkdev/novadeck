@@ -507,6 +507,14 @@ describe("demo turns", () => {
       expect(reported(turns, "06")).toBeUndefined()
     })
 
+    it("shows an agent that ended as running again", () => {
+      const { turns, held, agent } = open()
+      const ended = { ...held(key("06"))!, state: "exited" as const, exitCode: 1, signal: null }
+      turns.usage(key("06"), ended, usageOf("u1"))
+      expect(agent(key("06"))).toEqual({ working: false })
+      expect(held(key("06"))?.state).toBe("running")
+    })
+
     it("changes the agent's status only to make a shell Claude Code", () => {
       const { turns, held, agent } = open()
       turns.usage(key("02"), held(key("02")), usageOf("u1"))

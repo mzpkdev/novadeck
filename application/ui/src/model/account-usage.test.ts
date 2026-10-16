@@ -1,5 +1,14 @@
 import { describe, expect, it } from "../test"
-import { accountUsage, movedOrder, nextAccountReset, resetText } from "./account-usage"
+import { workspaceFixture } from "../test/fixtures"
+import {
+  accountUsage,
+  movedOrder,
+  nextAccountReset,
+  resetText,
+  runningSeats,
+  sameAccounts,
+  sameSeats,
+} from "./account-usage"
 import type { AgentUsage } from "./types"
 
 const hour = 3_600_000
@@ -125,5 +134,69 @@ describe("the account's subscription usage", () => {
       "codex",
       "claude",
     ])
+  })
+})
+
+describe("the terminals that report to the account", () => {
+  const process = (state: "running" | "idle") =>
+    workspaceFixture().projects.map((project) => ({
+      ...project,
+      history: project.history.map((session) => ({
+        ...session,
+        state: {
+          ...session.state,
+          roster: {
+            ...session.state.roster,
+            terminals: session.state.roster.terminals.map((terminal, index) =>
+              index === 0
+                ? ({ ...terminal, process: "claude", state } as typeof terminal)
+                : ({ ...terminal, state: "idle", process: "zsh" } as typeof terminal),
+            ),
+          },
+        },
+      })),
+    }))
+
+  it("are the running ones, by the session that holds them", () => {
+    const workspace = { ...workspaceFixture(), projects: process("running") }
+    const [project] = workspace.projects
+    const [session] = project!.history
+    expect(runningSeats(workspace)).toContainEqual({
+      context: `${project!.id}/${session!.id}`,
+      id: session!.state.roster.terminals[0]!.id,
+      program: "claude",
+    })
+    expect(runningSeats(workspace).every((seat) => seat.program === "claude")).toBe(true)
+  })
+
+  it("leave out terminals that are not running, whatever they once reported", () => {
+    const workspace = { ...workspaceFixture(), projects: process("idle") }
+    expect(runningSeats(workspace)).toEqual([])
+  })
+
+  it("are the same when each says the same, though read again", () => {
+    const seat = { context: "p/s", id: "1", program: "claude" }
+    expect(sameSeats([seat], [{ ...seat }])).toBe(true)
+    expect(sameSeats([seat], [{ ...seat, program: "codex" }])).toBe(false)
+    expect(sameSeats([seat], [])).toBe(false)
+  })
+
+  it("leave the accounts as they were when a report moves nothing they show", () => {
+    const reading = (occupied: number) =>
+      accountUsage(
+        [{ context: "p/s", id: "1", program: "claude" }],
+        {
+          "p/s": {
+            "1": {
+              context: { occupied, capacity: 200_000 },
+              limits: [{ minutes: 300, used: 0.4, resetsAt: hour }],
+              model: null,
+              effort: null,
+            },
+          },
+        },
+        0,
+      )
+    expect(sameAccounts(reading(1), reading(2))).toBe(true)
   })
 })
