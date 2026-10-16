@@ -1051,7 +1051,10 @@ one run by its full path without `--no-daemon` runs its hooks in Codex's shared 
 which can't tell the terminal, so nothing of messaging reaches it. A Codex whose
 app-server can't answer `hooks/list` (it can't start, or takes over 10 s) has hooks of
 unknown trust: its prompt doesn't count, so nothing binds before its first prompt, but a
-`send` to it waits rather than being refused, and it is asked again a minute later. Only
+`send` to it waits rather than being refused. A failed answer is not cached. The same
+Ready observation is checked at most three times, one second apart, while its title,
+input, process and delivery epoch stay current. The foreground is checked again before
+the result applies, where the platform can identify it. Only
 a definite answer that Novadeck's hooks aren't trusted, for a title still current, makes
 `send` refuse it. Trusting them later in Codex's `/hooks` sets no new title (probed with
 0.159.3), so while they are untrusted each pause in the person's keys there asks again,

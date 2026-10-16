@@ -1,6 +1,7 @@
 import { afterEach, describe as context, describe, expect, it } from "vitest"
 import { page, userEvent } from "vitest/browser"
 
+import { watchBarDrag } from "./support/bar-drag"
 import { boxOf, canvasView, dragBackground, settled, viewBox } from "./support/canvas"
 import {
   cancelPointerOver,
@@ -591,6 +592,7 @@ describe("Undocking an item into a window of its own", () => {
 
   context("when dragged onto the Grid's free space", () => {
     it("opens a window there", async () => {
+      watchBarDrag()
       await openShowcase()
       await dragIconToFreeSpace("Refactor auth", "Plan: refactor-auth.md", gridView())
       await expect.element(terminal("refactor-auth.md")).toBeVisible()
@@ -603,6 +605,7 @@ describe("Undocking an item into a window of its own", () => {
 
   context("when dropped on the Grid's free space by the move that starts the drag", () => {
     it("opens a window there", async () => {
+      watchBarDrag()
       await openShowcase()
       await dragIconToFreeSpace("Refactor auth", "Plan: refactor-auth.md", gridView(), {
         one: true,

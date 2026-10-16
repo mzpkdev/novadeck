@@ -33,6 +33,7 @@ import { Terminals, type TerminalOptions } from "../terminals/index.js"
 import { Latest } from "../terminals/latest.js"
 import { readyReturnMs } from "../terminals/manager.js"
 import type { TerminalRecords } from "../terminals/records.js"
+import { Trees } from "../terminals/trees.js"
 import { describe, expect, it as base } from "../test.js"
 import { FakeDescriber } from "../testing/describer.js"
 import { WorkspaceStore } from "../workspaces/store.js"
@@ -784,6 +785,223 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))("bash shell i
     await new Promise((resolve) => setTimeout(resolve, 500))
     expect(manager.reportedSession(terminal.id, "claude")).toBe("one")
   })
+
+  it.for(["agy", "claude"] as const)(
+    "accepts a replacement of %s once Windows proves the old pid names a newer process",
+    async (agent, { shell }) => {
+      const instance = String(process.pid)
+      const bin = reporter(shell.home, [
+        { agent, sessionId: "old", seq: 1, source: "startup", instance },
+        {
+          agent: "claude",
+          sessionId: "replacement",
+          seq: 300,
+          source: "startup",
+          instance: agent === "claude" ? instance : String(process.ppid),
+          wait: 200,
+        },
+      ])
+      const manager = shell.manager({
+        platform: "win32",
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      })
+      const terminal = await create(manager, shell)
+      const inside = manager as unknown as {
+        records: Map<string, { agents: { [name: string]: { seq: number } | undefined } }>
+        trees: Trees
+      }
+      let reads = 0
+      // The relay's actual wire shape, simulating reuse: kill(pid, 0) succeeds, but
+      // Windows says that process began after the old binding was observed.
+      inside.trees = new Trees(
+        async () => "relay.exe",
+        async (_relay, args) => {
+          reads += 1
+          expect(args).toEqual(["tree", instance])
+          const observed = inside.records.get(terminal.id)!.agents[agent]!.seq
+          return JSON.stringify({
+            root: instance,
+            processes: [{ pid: process.pid, startedAt: observed + 100 }],
+          })
+        },
+      )
+      manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+      await shell.until(manager, terminal.id, "reports sent")
+      await expect.poll(() => manager.reportedSession(terminal.id, "claude")).toBe("replacement")
+      expect(manager.get(terminal.id).agent).toBe("claude")
+      expect(reads).toBe(1)
+    },
+  )
+
+  it("reads no Windows process start for another report of the bound session", async ({
+    shell,
+  }) => {
+    const instance = String(process.pid)
+    const bin = reporter(shell.home, [
+      { agent: "claude", sessionId: "root", seq: 1, source: "startup", instance },
+      { agent: "claude", sessionId: "root", seq: 300, source: "resume", instance, wait: 200 },
+    ])
+    const manager = shell.manager({
+      platform: "win32",
+      env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+    })
+    const terminal = await create(manager, shell)
+    const inside = manager as unknown as { trees: Trees; reports: Map<string, Promise<void>> }
+    let reads = 0
+    inside.trees = new Trees(
+      async () => "relay.exe",
+      async () => {
+        reads += 1
+        return ""
+      },
+    )
+    manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+    await shell.until(manager, terminal.id, "reports sent")
+    await inside.reports.get(terminal.id)
+    expect(manager.reportedSession(terminal.id, "claude")).toBe("root")
+    expect(manager.get(terminal.id).agent).toBe("claude")
+    expect(reads).toBe(0)
+  })
+
+  it.for(["older", "same", "rounded", "missing", "child", "unknown"] as const)(
+    "keeps a live nested agent out when Windows' process start is %s",
+    async (start, { shell }) => {
+      const instance = String(process.pid)
+      const bin = reporter(shell.home, [
+        { agent: "agy", sessionId: "root", seq: 1, source: "", instance },
+        {
+          agent: "claude",
+          sessionId: "nested",
+          seq: 300,
+          source: "startup",
+          instance: String(process.ppid),
+          wait: 200,
+        },
+      ])
+      const manager = shell.manager({
+        platform: "win32",
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      })
+      const terminal = await create(manager, shell)
+      const inside = manager as unknown as {
+        records: Map<string, { agents: { agy?: { seq: number } } }>
+        trees: Trees
+      }
+      let reads = 0
+      inside.trees = new Trees(
+        async () => (start === "unknown" ? undefined : "relay.exe"),
+        async (_relay, args) => {
+          reads += 1
+          expect(args).toEqual(["tree", instance])
+          const observed = inside.records.get(terminal.id)!.agents.agy!.seq
+          return JSON.stringify({
+            root: instance,
+            processes:
+              start === "missing"
+                ? []
+                : [
+                    {
+                      pid: start === "child" ? process.pid + 1 : process.pid,
+                      startedAt:
+                        observed +
+                        (start === "rounded"
+                          ? 50
+                          : start === "same"
+                            ? 0
+                            : start === "child"
+                              ? 100
+                              : -1_000),
+                    },
+                  ],
+          })
+        },
+      )
+      manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+      await shell.until(manager, terminal.id, "reports sent")
+      // This PID really remains alive throughout; a later start must be proven before
+      // another harness is allowed to replace it.
+      expect(() => process.kill(process.pid, 0)).not.toThrow()
+      expect(manager.get(terminal.id).agent).toBe("agy")
+      expect(manager.reportedSession(terminal.id, "claude")).toBeNull()
+      expect(reads).toBe(start === "unknown" ? 0 : 1)
+    },
+  )
+
+  it.for(["binding", "process", "exit", "disconnection"] as const)(
+    "drops a Windows reuse check once the terminal's %s changes while it reads",
+    async (change, { shell }) => {
+      const instance = String(process.pid)
+      const bin = reporter(shell.home, [
+        { agent: "agy", sessionId: "root", seq: 1, source: "", instance },
+        {
+          agent: "claude",
+          sessionId: "replacement",
+          seq: 300,
+          source: "startup",
+          instance: String(process.ppid),
+          wait: 200,
+        },
+      ])
+      const manager = shell.manager({
+        platform: "win32",
+        env: { HOME: shell.home, PS1: "$ ", PATH: `${bin}:${process.env.PATH}` },
+      })
+      const terminal = await create(manager, shell)
+      const inside = manager as unknown as {
+        records: Map<
+          string,
+          {
+            agents: { agy?: { seq: number } }
+            binding: { agent: string; sessionId: string; instance: string | null } | null
+            process: object
+            exitQueued: boolean
+          }
+        >
+        trees: Trees
+        reports: Map<string, Promise<void>>
+        disconnections: Map<string, number>
+      }
+      let started!: () => void
+      let release!: () => void
+      const reading = new Promise<void>((resolve) => {
+        started = resolve
+      })
+      const released = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      inside.trees = new Trees(
+        async () => "relay.exe",
+        async () => {
+          started()
+          await released
+          const observed = inside.records.get(terminal.id)!.agents.agy!.seq
+          return JSON.stringify({
+            root: instance,
+            processes: [{ pid: process.pid, startedAt: observed + 100 }],
+          })
+        },
+      )
+      manager.write({ terminalId: terminal.id, data: "report\r" }, "owner")
+      await reading
+      const record = inside.records.get(terminal.id)!
+      const original = { binding: record.binding, process: record.process }
+      const switched = { agent: "codex", sessionId: "new-root", instance: null }
+      if (change === "binding") record.binding = switched
+      if (change === "process") record.process = { ...record.process }
+      if (change === "exit") record.exitQueued = true
+      if (change === "disconnection") inside.disconnections.set("claude", 1)
+      release()
+      try {
+        await inside.reports.get(terminal.id)
+        expect(record.binding).toBe(change === "binding" ? switched : original.binding)
+        expect(manager.reportedSession(terminal.id, "claude")).toBeNull()
+      } finally {
+        record.binding = original.binding
+        record.process = original.process
+        record.exitQueued = false
+      }
+    },
+  )
 
   it("takes no other conversation from a report that can't tell its process mid-turn", async ({
     shell,
@@ -4495,6 +4713,9 @@ process.on("SIGUSR1", () => turn("background result", false))
 process.on("SIGUSR2", () => process.exit(0))
 // It shows a thread it just started and locked other than its root, as a spawned agent's.
 process.on("SIGURG", () => {
+  // A title changed without a hook or key, as when Codex stops showing its prompt.
+  if (fs.existsSync(raw + ".title"))
+    return process.stdout.write("\x1b]0;" + fs.readFileSync(raw + ".title", "utf8") + "\x07")
   const agent = "0a6e0700" + current.slice(8)
   if (process.env.CODEX_HOME) {
     fs.mkdirSync(process.env.CODEX_HOME + "/thread-writer-locks", { recursive: true })
@@ -4668,6 +4889,8 @@ const ringing = async (
   hooksTrusted: boolean | (() => Promise<boolean | undefined>) = true,
   // A command the idle terminal runs first, as a nested shell.
   first?: string,
+  // A command it runs after the TUI exits, with no shell prompt between them.
+  after?: string,
 ) => {
   const bin = standIn(shell.home)
   standInTui(shell.home)
@@ -4691,7 +4914,7 @@ const ringing = async (
   const type = (data: string) => manager.write({ terminalId: idle.id, data }, "owner")
   if (first) type(`${first}\r`)
   type(
-    `${program} ${agent} ${session} '${received}' '${raw}' ${mode}${mode === "bg" ? " &" : ""}\r`,
+    `${program} ${agent} ${session} '${received}' '${raw}' ${mode}${mode === "bg" ? " &" : ""}${after ? `; ${after}` : ""}\r`,
   )
   await shell.until(manager, idle.id, `${agent} ready`)
   const finished = () =>
@@ -4721,6 +4944,10 @@ const ringing = async (
     back,
     // It shows another thread it just started, as a spawned agent's.
     spawn: () => process.kill(Number(readFileSync(`${raw}.pid`, "utf8")), "SIGURG"),
+    title: (title: string) => {
+      writeFileSync(`${raw}.title`, title)
+      process.kill(Number(readFileSync(`${raw}.pid`, "utf8")), "SIGURG")
+    },
     // The person's own first prompt, which settles it.
     first: async () => {
       const turns = finished()
@@ -5291,6 +5518,109 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
       expect(answer).toMatchObject({ ok: false })
       expect(JSON.stringify(answer)).not.toContain("/hooks")
     })
+
+    it("reads the same Codex prompt again after an unknown trust answer recovers", async ({
+      shell,
+    }) => {
+      let checks = 0
+      const trust = () => Promise.resolve(++checks === 1 ? undefined : true)
+      const tui = await ringing(shell, "shown", "named", "codex", "01a0f932-a824", trust)
+      await expect.poll(tui.delivery, { timeout: 5_000 }).toBe("ready")
+      expect(checks).toBe(2)
+      expect(await tui.send("Review a.ts")).toMatchObject({ ok: true })
+      await vi.waitFor(() => expect(tui.received()).toHaveLength(1), { timeout: 10_000 })
+      expect(tui.received()[0]!.printed).toContain(">Review a.ts</message>")
+    })
+
+    it("stops asking about an unchanged Codex prompt after three unknown answers", async ({
+      shell,
+    }) => {
+      let checks = 0
+      const tui = await ringing(shell, "shown", "named", "codex", "01a0f932-a824", () => {
+        checks += 1
+        return Promise.resolve(undefined)
+      })
+      await vi.waitFor(() => expect(checks).toBe(3), { timeout: 5_000 })
+      await quiet()
+      expect(checks).toBe(3)
+      expect(tui.delivery()).toBe("unbound")
+      expect(JSON.stringify(await tui.send("Review a.ts"))).not.toContain("/hooks")
+    })
+
+    for (const replacement of ["sleep", "codex"] as const)
+      it(`drops a recovered trust answer after Codex exits into ${replacement} without retitling`, async ({
+        shell,
+      }) => {
+        let checks = 0
+        let checking!: () => void
+        const pending = new Promise<void>((resolve) => {
+          checking = resolve
+        })
+        let answer!: (trusted: boolean) => void
+        const reply = new Promise<boolean>((resolve) => {
+          answer = resolve
+        })
+        const tui = await ringing(
+          shell,
+          "shown",
+          "named",
+          "codex",
+          "01a0f932-a824",
+          () => {
+            if (++checks === 1) return Promise.resolve(undefined)
+            checking()
+            return reply
+          },
+          undefined,
+          replacement === "sleep"
+            ? "echo replacement-'running'; sleep 30"
+            : `'${join(shell.home, "named", "codex")}' -c "echo replacement-'running'; sleep 30; :"`,
+        )
+        await pending
+        tui.leave()
+        await shell.until(tui.manager, tui.idle.id, "replacement-running")
+        expect(tui.delivery()).toBe("unbound")
+        answer(true)
+        await quiet()
+        expect(tui.delivery()).toBe("unbound")
+        expect(tui.received()).toHaveLength(0)
+      })
+
+    it("stops retrying once Codex confirms that its hooks aren't trusted", async ({ shell }) => {
+      let checks = 0
+      const tui = await ringing(shell, "shown", "named", "codex", "01a0f932-a824", () =>
+        Promise.resolve(++checks === 1 ? undefined : false),
+      )
+      await expect
+        .poll(async () => (await tui.send("Review a.ts")) as unknown, { timeout: 5_000 })
+        .toMatchObject({ ok: false, reason: expect.stringContaining("/hooks") })
+      await quiet()
+      expect(checks).toBe(2)
+      expect(tui.delivery()).toBe("unbound")
+    })
+
+    for (const changed of ["title", "draft", "session", "process", "terminal"] as const)
+      it(`drops an unknown Codex trust retry after its ${changed} changes`, async ({ shell }) => {
+        let checks = 0
+        const tui = await ringing(shell, "shown", "named", "codex", "01a0f932-a824", () => {
+          checks += 1
+          return Promise.resolve(undefined)
+        })
+        await vi.waitFor(() => expect(checks).toBe(1))
+        if (changed === "title") tui.title("Working | 01a0f932-a824")
+        else if (changed === "draft") {
+          tui.type("my own draft")
+          await shell.until(tui.manager, tui.idle.id, "> my own draft")
+        } else if (changed === "session") await tui.first()
+        else if (changed === "process") {
+          tui.leave()
+          await shell.until(tui.manager, tui.idle.id, "$ ")
+          tui.type("sleep 10\r")
+        } else await tui.manager.close({ terminalId: tui.idle.id })
+        await quiet()
+        expect(checks).toBe(1)
+        expect(tui.received()).toHaveLength(changed === "session" ? 1 : 0)
+      })
 
     it("marks no terminal untrusted by an answer that came after its agent left", async ({
       shell,

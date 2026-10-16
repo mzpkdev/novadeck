@@ -79,6 +79,8 @@ type Bound = {
 const whose = ({ sessionId, instance }: Bound): string =>
   `${sessionId?.slice(0, 8) ?? "?"}/${instance ?? "-"}`
 type Runner = {
+  readonly records: ReadonlyMap<string, Titled>
+  readonly disconnections: ReadonlyMap<string, number>
   queue: <T>(terminalId: string, work: () => Promise<T>, fallback: T) => Promise<T>
   report: (report: Report, deadline?: number) => Promise<unknown>
   connected: (agent: string | undefined) => Promise<boolean>
@@ -93,8 +95,10 @@ type Runner = {
   ) => Promise<{ where: Install; group: readonly number[] } | null>
   promptTrust: (record: Titled, agent: string, where?: Install) => Promise<string>
   showPrompt: (record: Titled, shown: PromptShown, replaced?: string) => void
+  endExited: (record: Titled) => boolean
 }
 type Titled = Traced & {
+  readonly agents: Readonly<Record<string, { readonly seq: number } | undefined>>
   readonly process: object
   readonly titles?: number
   readonly submitted: boolean
@@ -108,6 +112,12 @@ type TitleProbe = {
   readonly record: Titled
   readonly child: object
   readonly binding: Bound | null
+}
+type ReportProbe = {
+  readonly report: Report
+  readonly record: Titled | undefined
+  readonly child: object | undefined
+  readonly disconnected: number | undefined
 }
 
 // A screen's box as a profile reads it, and the rows around it (all it shows of a screen).
@@ -152,6 +162,24 @@ export const startTrace = (name: string, model: FakeModel) => {
   let active = true
   let titled = 0
   const titles = new AsyncLocalStorage<TitleProbe>()
+  const reports = new AsyncLocalStorage<ReportProbe>()
+  const reportState = (runner: Runner, probe: ReportProbe) => {
+    const record = runner.records.get(probe.report.terminalId)
+    return brief(
+      {
+        bound: record?.binding,
+        observedAt: record?.binding?.agent ? record.agents[record.binding.agent]?.seq : undefined,
+        left: record?.left,
+        sameRecord: record === probe.record,
+        sameProcess: record?.process === probe.child,
+        exitQueued: record?.exitQueued,
+        submitted: record?.submitted,
+        promptedAt: record?.promptedAt,
+        disconnected: runner.disconnections.get(probe.report.agent) !== probe.disconnected,
+      },
+      600,
+    )
+  }
   const titleState = ({ runner, record, child, binding }: TitleProbe) => {
     const delivery = runner.messaging.delivery(record.summary.id)
     return brief(
@@ -346,6 +374,7 @@ export const startTrace = (name: string, model: FakeModel) => {
     "harnessIn",
     "promptTrust",
     "showPrompt",
+    "endExited",
   ])
   const {
     queue,
@@ -357,7 +386,17 @@ export const startTrace = (name: string, model: FakeModel) => {
     harnessIn,
     promptTrust,
     showPrompt,
+    endExited,
   } = runner
+  runner.endExited = function (record) {
+    const before = record.binding
+    const ended = endExited.call(this, record)
+    if (reports.getStore())
+      add(
+        `binding ${named(record.summary.id)} endExited: ${brief(before, 240)}; ended ${ended}; after ${brief(record.binding, 240)}`,
+      )
+    return ended
+  }
   runner.screenTitled = function (record, child, title) {
     const probe = { id: ++titled, runner: this, record, child, binding: record.binding }
     titles.run(probe, () => {
@@ -426,7 +465,13 @@ export const startTrace = (name: string, model: FakeModel) => {
   runner.connected = async function (agent) {
     const began = Date.now()
     try {
-      return await connected.call(this, agent)
+      const result = await connected.call(this, agent)
+      const probe = reports.getStore()
+      if (probe)
+        add(
+          `admission ${named(probe.report.terminalId)} ${agent ?? "no agent"} connected: ${result}`,
+        )
+      return result
     } finally {
       const took = Date.now() - began
       if (took > 100) add(`slow: whether ${agent ?? "no agent"} is connected took ${took} ms`)
@@ -454,10 +499,23 @@ export const startTrace = (name: string, model: FakeModel) => {
     ) as Promise<T>
   }
   runner.report = function (report, deadline) {
+    const record = this.records.get(report.terminalId)
+    const probe = {
+      report,
+      record,
+      child: record?.process,
+      disconnected: this.disconnections.get(report.agent),
+    }
     add(
-      `handling ${named(report.terminalId)} ${report.agent} ${report.event} (hook started ${at(report.seq)})`,
+      `handling ${named(report.terminalId)} ${report.agent} ${report.event} (hook started ${at(report.seq)}); admission ${reportState(this, probe)}`,
     )
-    return handle.call(this, report, deadline)
+    return reports.run(probe, async () => {
+      try {
+        return await handle.call(this, report, deadline)
+      } finally {
+        add(`admission ${named(report.terminalId)} finished; ${reportState(this, probe)}`)
+      }
+    })
   }
 
   // An interrupt, as it reads the agent's box before and after Escape, when `settled` gave
@@ -662,6 +720,7 @@ export const startTrace = (name: string, model: FakeModel) => {
     stop: () => {
       active = false
       titles.disable()
+      reports.disable()
       clearInterval(calls)
       Object.assign(treeing, { read: readTree, end: endTree })
       Object.assign(closing, { kill })
@@ -678,6 +737,7 @@ export const startTrace = (name: string, model: FakeModel) => {
         harnessIn,
         promptTrust,
         showPrompt,
+        endExited,
       })
       for (const restore of restoreTitles) restore()
       for (const [agent, decode] of decoders)

@@ -3,8 +3,9 @@
 The rebased, repaired branch completed an opening CI round and **20 complete reruns**.
 Eighteen reruns passed every job. Rerun 2 failed a Windows Grid undocking test;
 rerun 12 failed a Windows cross-agent replacement test. The separate opening round
-failed a Windows Codex folder-trust test. All three observations remain unresolved.
-No source repair was made during this sample.
+failed a Windows Codex folder-trust test. All three observations were unresolved at the end of sampling.
+No source repair was made during this sample. Subsequent repairs and their limits
+are recorded below.
 
 The original plan was 30 reruns. While rerun 20 was running, the user reduced the
 sample to 20. Rerun 20 finished successfully and its results were archived before
@@ -12,6 +13,93 @@ the collector stopped. Rerun 21 was not launched. The original 30-round audit an
 repair validation remain in [the previous report](FLAKY_RAPORT.md).
 
 Completed reruns: **20 / 20**.
+
+## Repairs after sampling
+
+The completed audit remains unchanged. The user subsequently requested repairs for
+P1–P3 on this task branch.
+
+### P1: recover an unknown trust lookup
+
+A new real-terminal regression reproduced the lost recovery: after one Unknown
+answer, an unchanged Ready title stayed Unbound even when the helper could answer
+again. The repair retains no failed helper answer and checks the same observation
+at most three times, one second apart. The helper's ten-second deadline is unchanged.
+Each attempt and the queued readiness update check the foreground again, retaining
+the same harness PID where the platform supplies it; a new title, actual key input, process,
+terminal closure or delivery epoch invalidates the pending observation. Confirmed
+Untrusted stops immediately. Unknown never grants readiness.
+
+On Windows, helper cleanup now attempts to end the command wrapper and its
+app-server descendants before another query starts, using bounded tree cleanup.
+The adapter's prior wrapper-only kill could leave the app-server running. Transport
+checks cover completion races and wrappers already exited before cleanup.
+
+Eleven focused real-terminal tests and all 105 Codex adapter tests passed locally.
+The recovery regression failed before the repair. This fixes the demonstrated
+recovery gap; the original Windows helper failure is still unidentified, and three
+failed attempts still leave readiness unknown. Evidence:
+`evidence-postfix-30/investigations/P1/REPAIR.md` and its adjacent logs.
+
+### P3: distinguish a reused Windows PID
+
+A binding previously treated any live process with its recorded PID as its agent.
+The repair uses the existing Windows relay tree reader when a different process or
+harness reports a session, or the same PID reports a different startup session. A process start more than 50 ms after the last accepted
+binding observation proves that PID now names another process. Only that proof
+clears the stale binding. An old start, missing root or unreadable tree preserves
+the nested-agent gate. After the asynchronous read, the terminal process, binding
+and disconnection state must still be current.
+
+The deterministic reuse regression fails with the new check disabled and passes
+with it enabled. Sixteen targeted integration cases cover reuse, live and unknown
+processes, clock boundaries and changes while the read waits. The real Antigravity
+to Claude replacement and Antigravity nested-agent control pass on Linux. E2E
+traces now retain connection admission and binding state around report handling.
+Evidence: `repair-validation/p3/` and `repair-validation/p3-review/`.
+
+This repairs a demonstrated stale-binding mechanism. The archived Windows trace
+contains no process start identity at hook arrival, so PID reuse remains an
+unproven explanation for P3. A later stale accepted hook can also make the timestamp
+comparison inconclusive; the check then preserves the binding.
+
+### P2: retain the next failed gesture
+
+The undocking failure did not reproduce in 20 focused ordinary drags or two
+complete 30-case companion runs, including one with Chromium's CPU slowdown set
+to six times. Successful drags also reorder the taskbar, disproving that reorder
+alone explains the screenshot.
+
+The ordinary and one-move Grid cases now retain failure-only diagnostics: native
+release coordinates and hit-test stack, sortable indexes, cancellation, and the
+app's drop state before and after its release-point update. The gesture,
+assertions and deadlines are unchanged. The source event is guarded by test mode;
+the collector is confined to these specs and removes its listeners after each test.
+A deliberately failed probe verified the output, and the final three focused
+undocking cases passed. P2 remains unresolved. Evidence:
+`fix-validation/p2-repair/REPORT.md`.
+
+The later report-publication commit `2676eabb` also failed the ordinary Grid drag
+on macOS ([job 116832231400](https://github.com/novadeck-org/novadeck/actions/runs/38857528547/job/116832231400)),
+while its one-move sibling passed. This was outside the frozen sample and before
+these repairs. Its final accessibility tree again shows Messages before the still
+docked Plan, with no release trace; it adds a platform observation, not a cause.
+The log is retained at `repair-validation/baseline-macos.log`.
+
+### Integrated local validation
+
+Build, typecheck, lint and formatting passed. The full runner suite passed 3,022
+tests with 35 skipped; repository tests passed 196 with four skipped. The full UI
+suite passed 2,881 tests with three skipped and found one forbidden type import
+in the new diagnostic helper. Replacing that erased import with a local type
+left runtime code unchanged; all seven architecture checks and three affected
+undocking checks then passed, as did UI typecheck and scoped lint/format.
+The rebuilt production UI contains no diagnostic event string.
+
+Independent review reproduced and caught two additional cases: foreground exit
+while trust was pending, and same-harness PID reuse. Both regressions now pass.
+Validation logs, review boundaries and source hashes are indexed in
+`repair-validation/README.md`. Native Windows CI remains pending; P2 is unresolved.
 
 ## Sample identity and method
 
