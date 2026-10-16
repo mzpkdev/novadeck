@@ -43,6 +43,7 @@ describe("a library's browser subpaths", () => {
         exports: {
           "./view": ["./src/view.ts"],
           "./pty": { development: { node: "./src/pty.ts" }, default: "./dist/pty.js" },
+          "./host": { browser: null, default: "./dist/host.js" },
         },
       }),
     ).toEqual([

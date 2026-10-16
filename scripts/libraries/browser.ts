@@ -26,18 +26,18 @@ export type Problem = {
 const conditions = new Set(["development", "browser", "module", "import", "default"])
 
 /**
- * The file a target resolves to for the browser, or none where only Node may import it: the
- * first of its fallbacks, and the first matching condition that leads to a file, as a
- * bundler moves on past one that leads nowhere.
+ * The file a target resolves to for the browser, null where it's left unexported, or
+ * undefined where nothing in it matches: the first of its fallbacks that gives a file, and
+ * the first matching condition that gives an answer, as resolution moves on past a nested
+ * one that matches nothing but stops at a `null`.
  */
-const browserFile = (target: Target): string | undefined => {
-  if (typeof target === "string") return target
-  if (!target) return undefined
+const browserFile = (target: Target): string | null | undefined => {
+  if (typeof target === "string" || target === null) return target
   if (Array.isArray(target)) return target.map(browserFile).find(Boolean)
   return Object.entries(target as { readonly [condition: string]: Target })
     .filter(([condition]) => conditions.has(condition))
     .map(([, next]) => browserFile(next))
-    .find(Boolean)
+    .find((file) => file !== undefined)
 }
 
 /**
@@ -109,7 +109,12 @@ const checkEntry = async (folder: string, entry: Entry): Promise<readonly string
 export const checkLibrary = async (folder: string): Promise<readonly Problem[]> => {
   const manifest = JSON.parse(readFileSync(join(folder, "package.json"), "utf8")) as Manifest
   // Without exports nothing tells its browser subpaths from its Node ones.
-  if (manifest.exports === undefined)
+  const { exports } = manifest
+  if (
+    exports === undefined ||
+    exports === null ||
+    (typeof exports === "object" && Object.keys(exports).length === 0)
+  )
     return [{ library: manifest.name, subpath: ".", problem: "package.json has no exports" }]
   const results = await Promise.all(
     browserEntries(manifest).map(async (entry) =>
