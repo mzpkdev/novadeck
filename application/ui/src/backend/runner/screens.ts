@@ -114,8 +114,6 @@ type Entry = {
   users: number
   timer?: ReturnType<typeof setTimeout> | undefined
   parking?: ReturnType<typeof setTimeout> | undefined
-  // Parked: its screen follows no stream until a surface shows it again.
-  parked?: boolean
 }
 
 // How often a screen nobody shows checks whether to go: often enough for the next view
@@ -390,7 +388,6 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       entry.timer = undefined
       clearTimeout(entry.parking)
       entry.parking = undefined
-      entry.parked = false
       entry.screen ??= open(key, entry, options)
       entry.screen.followed.unpark()
       return entry.screen
@@ -404,22 +401,20 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       clearTimeout(entry.parking)
       entry.parking = setTimeout(() => {
         entry.parking = undefined
-        if (entry.users > 0 || !entry.screen) return
-        entry.parked = true
-        entry.screen.followed.park()
+        if (entry.users === 0) entry.screen?.followed.park()
       }, parkMs)
     },
     // Pastes text into the terminal's screen as the person's own paste: bracketed when its
     // program asked for that, and never followed by Enter. Dictation targets a terminal the
-    // person is looking at, so a terminal with no open screen, or one parked out of sight,
-    // has nothing to type into and gets nothing: opening a second attachment to write behind a screen that is not there,
+    // person is looking at, so a terminal with no open screen, or one whose stream isn't
+    // drawing it (parked out of sight, or taking up again), has nothing to type into and
+    // gets nothing: opening a second attachment to write behind a screen that is not there,
     // for a paste with no brackets, would run the text as typed commands. Says whether it
     // pasted. Line breaks and other control characters become spaces first: outside
     // bracketed paste xterm turns a newline into Enter, which would submit what was said.
     typeInto: (key: TerminalKey, text: string): boolean => {
-      const entry = entries.get(id(key))
-      const screen = entry?.parked ? undefined : entry?.screen
-      if (!screen) return false
+      const screen = entries.get(id(key))?.screen
+      if (!screen?.stream.getSnapshot().live) return false
       // oxlint-disable-next-line no-control-regex -- Control characters are what this removes.
       const plain = text.replaceAll(/[\u0000-\u001f\u007f-\u009f]+/g, " ").trim()
       if (!plain) return false

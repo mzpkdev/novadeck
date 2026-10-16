@@ -229,6 +229,43 @@ describe("following a runner terminal", () => {
       followed.stop()
     })
 
+    it("attaches once to a shell restarted while parked, after it exits", async () => {
+      let revive: () => void = () => {}
+      const entry = {
+        ready: Promise.resolve(true),
+        revived: new Promise<void>((resolve) => {
+          revive = resolve
+        }),
+        closed: false,
+        size: { cols: 80, rows: 24 },
+      }
+      const exit = { code: 1, signal: null, ranMs: 5_000 }
+      const first = streaming([snapshot("$ before")])
+      const attach = vi
+        .fn<SurfaceRuntime["attach"]>()
+        .mockResolvedValueOnce(first.attached)
+        .mockResolvedValue(replaying([snapshot("$ fresh exited", exit)]))
+      const drawn: string[] = []
+      const followed = followTerminal(runtimeWith(attach, entry), key, drawing(drawn))
+      await vi.waitFor(() => expect(drawn).toEqual(["reset", "$ before"]))
+      followed.park()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      // A fresh shell while parked: its revival resolves and the next one takes its place.
+      const revived = revive
+      entry.revived = new Promise<void>((resolve) => {
+        revive = resolve
+      })
+      revived()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      followed.unpark()
+      await vi.waitFor(() =>
+        expect(drawn).toEqual(["reset", "$ before", "reset", "$ fresh exited"]),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(attach).toHaveBeenCalledTimes(2)
+      followed.stop()
+    })
+
     it("holds a fresh shell started out of sight until shown", async () => {
       let revive: () => void = () => {}
       const entry = {
