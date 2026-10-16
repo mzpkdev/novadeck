@@ -458,10 +458,7 @@ export class Messaging {
     }
     const size = deliveredBytes(message)
     if (message.text.length > 4096 || size > maxDeliveryBytes)
-      throw new DomainError(
-        "ANSWER_FAILED",
-        `That answer is too long once delivered (${size} encoded bytes; at most ${maxDeliveryBytes}). Replies allow up to 4096 characters, but escaping and Unicode also have to fit that delivery budget. Shorten it and try again.`,
-      )
+      throw new DomainError("ANSWER_FAILED", "That reply is too long. Shorten it and try again.")
     if (
       [...this.messages.values()].filter(
         (each) =>

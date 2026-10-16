@@ -312,7 +312,7 @@ restarts: waiting agent-to-agent messages are held, and wait in order again once
 Person replies to Inbox asks bypass the pause and have their own fifty-reply waiting
 capacity, independent of the fifty waiting peer messages. The person's note allows up
 to 4096 characters and must also fit the 8192-byte encoded delivery budget; a size error
-reports that budget and leaves the ask answerable.
+asks the person to shorten the reply and leaves the ask answerable.
 `messages.release(threadId)` lets a held thread's messages wait to be delivered and
 allows it 12 more hops, and a stopped thread no longer stopped; an unknown thread is
 `NOT_FOUND`. `messages.stop(threadId)` stops a thread: its messages not yet delivered or

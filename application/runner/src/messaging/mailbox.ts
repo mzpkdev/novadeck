@@ -128,10 +128,10 @@ export const cleanText = (text: string): string =>
   // eslint-disable-next-line no-control-regex -- These are the characters it removes.
   text.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "")
 
-/** Agent-written Inbox labels and action instructions cannot hide terminal controls or direction changes. */
+/** Agent-written Inbox labels and action instructions cannot hide terminal controls, invisible separators or direction changes. */
 export const cleanInboxText = (text: string): string =>
   cleanText(stripVTControlCharacters(text)).replace(
-    /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,
+    /[\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060\u2066-\u2069\ufeff]/g,
     "",
   )
 

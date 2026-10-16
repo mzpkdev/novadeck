@@ -192,10 +192,13 @@ withdraw only its own asks, and cannot name a sender or create a person response
 Only the authenticated runner API used by the UI answers an ask. The runner binds the
 answer to the exact asking session and atomically saves it with the resolved ask before
 queuing delivery. Delivery says Novadeck relayed the response and adds a fresh person
-mark named by the outer note, distinct from its lead mark. The approval exception is
-present only with that person mark. Agent-written questions and choice/action labels
+mark named by the outer note, distinct from its lead mark. The standing rules recognize
+only an Inbox response carrying that delivery's person mark as an approval exception;
+a delivery wrapper states the exception only when its person mark is present.
+Agent-written questions and choice/action labels
 are quoted separately from the person's own words; earlier marks are escaped data.
-Agent subjects, labels and action instructions lose terminal controls and bidi marks.
+Agent subjects, labels, option summaries, code paths and action instructions lose
+terminal controls, invisible separators, zero-width characters and bidi marks.
 The person's replies bypass the agent-messaging pause and have a separate bounded
 queue, so paused peer traffic cannot deny them delivery.
 Someone holding the runner's full token already has the UI's shell authority and can

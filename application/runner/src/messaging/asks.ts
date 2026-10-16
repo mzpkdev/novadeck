@@ -78,7 +78,7 @@ const subject = z
 const markdown = z.string().max(16_384)
 const option = z.strictObject({
   label: subject,
-  summary: z.string().max(2048).nullable().optional(),
+  summary: z.string().transform(cleanInboxText).pipe(z.string().max(2048)).nullable().optional(),
   details: markdown.nullable().optional(),
   code: z.strictObject({ path: subject, text: markdown }).nullable().optional(),
 })
@@ -162,6 +162,7 @@ export class Asks {
   private readonly open = new Map<string, Letter>()
   private readonly texts = new Map<string, string>()
   private readonly sent = new Map<string, readonly number[]>()
+  private readonly guesses = new Set<string>()
   private readonly sweeper: ReturnType<typeof setInterval> | undefined
   private readonly letters = new Map<string, Letter>()
   private readonly readers = new Set<Latest<InboxLetter[]>>()
@@ -257,11 +258,11 @@ export class Asks {
           "This Inbox item is over 32 KB. Shorten its details or put longer content in a file.",
         )
       const existing = this.byTerminal.get(terminalId)
-      // A call from the new session confirms which old asks no longer belong here, even
-      // when Antigravity's earlier root was a guess.
-      for (const letter of existing?.values() ?? [])
-        if (letter.content.kind === "ask" && letter.state === "open" && !same(letter, owner))
-          this.put({ ...letter, state: "gone" })
+      // A tentative root can still be corrected back to an earlier session.
+      if (!this.guesses.has(terminalId))
+        for (const letter of existing?.values() ?? [])
+          if (letter.content.kind === "ask" && letter.state === "open" && !same(letter, owner))
+            this.put({ ...letter, state: "gone" })
       const open = [...(existing?.values() ?? [])].filter(
         (each) =>
           each.state === "open" &&
@@ -364,19 +365,30 @@ export class Asks {
   rooted(terminalId: string, changes: readonly RootChange[]): void {
     if (this.closed) return
     for (const change of changes) {
-      if (change.type === "corrected")
-        for (const letter of this.byTerminal.get(terminalId)?.values() ?? [])
-          if (
-            letter.terminalId === terminalId &&
+      if (change.type === "new" ? change.guess : change.type === "corrected" && !change.confirmed)
+        this.guesses.add(terminalId)
+      else this.guesses.delete(terminalId)
+      if (change.type === "corrected" && change.from !== change.root.sessionId) {
+        const open = [...(this.byTerminal.get(terminalId)?.values() ?? [])].filter(
+          (letter) =>
             letter.state === "open" &&
             letter.content.kind === "ask" &&
-            letter.agent === change.root.agent &&
-            letter.sessionId === change.from
+            letter.agent === change.root.agent,
+        )
+        const existing = open.filter((letter) => letter.sessionId === change.root.sessionId).length
+        const tentative = open
+          .filter((letter) => letter.sessionId === change.from)
+          .toSorted((a, b) => a.at - b.at)
+        const remaining = Math.max(0, maxOpenAsks - existing)
+        for (const [index, letter] of tentative.entries())
+          this.put(
+            index < remaining
+              ? { ...letter, sessionId: change.root.sessionId }
+              : { ...letter, state: "gone" },
           )
-            this.put({ ...letter, sessionId: change.root.sessionId })
+      }
     }
-    const last = changes.at(-1)
-    if (last?.type === "new" && last.guess) {
+    if (this.guesses.has(terminalId)) {
       this.changed(terminalId)
       return
     }
@@ -386,11 +398,14 @@ export class Asks {
   reconcile(terminalId: string): void {
     if (this.closed) return
     const owner = this.host.owner(terminalId)
+    if (!owner) this.guesses.delete(terminalId)
     for (const letter of this.byTerminal.get(terminalId)?.values() ?? [])
       if (
         letter.terminalId === terminalId &&
         letter.state === "open" &&
-        (letter.content.kind === "ask" ? !same(letter, owner) : !this.host.exists(terminalId))
+        (letter.content.kind === "ask"
+          ? !same(letter, owner) && (!owner || !this.guesses.has(terminalId))
+          : !this.host.exists(terminalId))
       )
         this.put({ ...letter, state: "gone" })
     this.changed(terminalId)
@@ -455,6 +470,11 @@ export class Asks {
 
   forgetProject(projectId: string): void {
     const gone = [...this.letters.values()].filter((each) => each.projectId === projectId)
+    const terminals = new Set(gone.map((letter) => letter.terminalId))
+    for (const id of this.guesses) {
+      const owner = this.host.owner(id)
+      if (!owner || owner.projectId === projectId || terminals.has(id)) this.guesses.delete(id)
+    }
     this.remove(gone)
   }
 
@@ -529,6 +549,7 @@ export class Asks {
 
   close(): void {
     this.closed = true
+    this.guesses.clear()
     clearInterval(this.sweeper)
     for (const reader of this.readers) reader.finish()
     this.readers.clear()

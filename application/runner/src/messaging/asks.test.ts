@@ -507,9 +507,218 @@ describe("Inbox creation limits", () => {
     expect(run.asks.call(identity.terminalId, "ask", letter).ok).toBe(true)
   })
 
-  it("clears stale guessed-session asks when the replacement makes its own call, without growing hidden open records", ({
+  it("preserves earlier asks across a guessed root and correction back to their session", ({
     resources,
   }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    const original = run.create()
+    const guess = {
+      type: "new" as const,
+      root: {
+        agent: identity.agent,
+        sessionId: "tentative",
+        instance: null,
+        source: "binding" as const,
+      },
+      guess: true,
+      ready: true,
+    }
+    run.messaging.rooted(identity.terminalId, [guess])
+    run.asks.rooted(identity.terminalId, [guess])
+    const temporary = run.create({ subject: "A tentative question", body: "Body" })
+    run.asks.reconcile(identity.terminalId)
+    const correction = {
+      type: "corrected" as const,
+      from: "tentative",
+      root: { ...guess.root, sessionId: identity.sessionId, source: "status-line" as const },
+      confirmed: true,
+    }
+    run.messaging.rooted(identity.terminalId, [correction])
+    run.asks.rooted(identity.terminalId, [correction])
+    expect(run.asks.list().map((each) => each.id)).toEqual([original, temporary])
+    run.asks.answer(original, { type: "reply", option: 0, text: "Keep this one" })
+    expect(run.messaging.inboxReply(original)?.to.sessionId).toBe(identity.sessionId)
+  })
+
+  it("excludes earlier asks from a guessed session cap and retires them on confirmation", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const records = memoryAsks()
+    const run = setup(records, undefined, clock)
+    resources.defer(run.stop)
+    for (let index = 0; index < 50; index++) {
+      run.create()
+      clock.advance()
+    }
+    const guess = {
+      type: "new" as const,
+      root: {
+        agent: identity.agent,
+        sessionId: "replacement",
+        instance: null,
+        source: "binding" as const,
+      },
+      guess: true,
+      ready: true,
+    }
+    run.messaging.rooted(identity.terminalId, [guess])
+    run.asks.rooted(identity.terminalId, [guess])
+    run.create()
+    expect(records.letters().filter((each) => each.state === "open")).toHaveLength(51)
+    const confirmed = { ...guess, guess: false }
+    run.messaging.rooted(identity.terminalId, [confirmed])
+    run.asks.rooted(identity.terminalId, [confirmed])
+    expect(records.letters().filter((each) => each.state === "open")).toHaveLength(1)
+    for (let index = 1; index < 50; index++) {
+      clock.advance()
+      run.create()
+    }
+    expect(run.asks.call(identity.terminalId, "ask", letter)).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining("50 open asks"),
+    })
+  })
+
+  it("preserves fifty destination asks without accumulating tentative asks on repeated corrections", ({
+    resources,
+  }) => {
+    const clock = inboxClock()
+    const records = memoryAsks()
+    const run = setup(records, undefined, clock)
+    resources.defer(run.stop)
+    const originals: string[] = []
+    for (let index = 0; index < 50; index++) {
+      originals.push(run.create())
+      clock.advance()
+    }
+    for (let index = 0; index < 3; index++) {
+      const guess = {
+        type: "new" as const,
+        root: {
+          agent: identity.agent,
+          sessionId: `guess-${index}`,
+          instance: null,
+          source: "binding" as const,
+        },
+        guess: true,
+        ready: true,
+      }
+      run.messaging.rooted(identity.terminalId, [guess])
+      run.asks.rooted(identity.terminalId, [guess])
+      const temporary = run.create()
+      clock.advance()
+      const correction = {
+        type: "corrected" as const,
+        from: guess.root.sessionId,
+        root: { ...guess.root, sessionId: identity.sessionId, source: "status-line" as const },
+        confirmed: true,
+      }
+      run.messaging.rooted(identity.terminalId, [correction])
+      run.asks.rooted(identity.terminalId, [correction])
+      expect(run.asks.list().map((each) => each.id)).toEqual(originals)
+      expect(records.letters().find((each) => each.id === temporary)?.state).toBe("gone")
+      expect(run.asks.call(identity.terminalId, "ask", letter)).toMatchObject({
+        ok: false,
+        reason: expect.stringContaining("50 open asks"),
+      })
+    }
+  })
+
+  it("fills correction capacity with the oldest tentative asks and retains overflow as gone history", ({
+    resources,
+  }) => {
+    let at = 1_000_000
+    const records = memoryAsks()
+    const run = setup(records, undefined, { now: () => at })
+    resources.defer(run.stop)
+    const originals: string[] = []
+    for (let index = 0; index < 48; index++) {
+      originals.push(run.create())
+      at += 6_001
+    }
+    const guess = {
+      type: "new" as const,
+      root: {
+        agent: identity.agent,
+        sessionId: "tentative",
+        instance: null,
+        source: "binding" as const,
+      },
+      guess: true,
+      ready: true,
+    }
+    run.messaging.rooted(identity.terminalId, [guess])
+    run.asks.rooted(identity.terminalId, [guess])
+    const base = at
+    at = base + 20_000
+    const newest = run.create()
+    at = base + 10_000
+    const oldest = run.create()
+    at = base + 15_000
+    const middle = run.create()
+    const correction = {
+      type: "corrected" as const,
+      from: guess.root.sessionId,
+      root: { ...guess.root, sessionId: identity.sessionId, source: "status-line" as const },
+      confirmed: true,
+    }
+    run.messaging.rooted(identity.terminalId, [correction])
+    run.asks.rooted(identity.terminalId, [correction])
+    expect(new Set(run.asks.list().map((each) => each.id))).toEqual(
+      new Set([...originals, oldest, middle]),
+    )
+    expect(records.letters().find((each) => each.id === newest)).toMatchObject({
+      state: "gone",
+      sessionId: "tentative",
+    })
+  })
+
+  it("forgets tentative roots when terminals leave, projects are forgotten or the service closes", ({
+    resources,
+  }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    const guess = {
+      type: "new" as const,
+      root: {
+        agent: identity.agent,
+        sessionId: "tentative",
+        instance: null,
+        source: "binding" as const,
+      },
+      guess: true,
+      ready: true,
+    }
+    for (let index = 0; index < 100; index++) {
+      const id = randomUUID()
+      run.messaging.register(
+        id,
+        { projectId: identity.projectId, sessionId: identity.workspaceSessionId },
+        `terminal-${index}`,
+        null,
+      )
+      run.messaging.rooted(id, [guess])
+      run.asks.rooted(id, [guess])
+      run.messaging.unregister(id)
+      run.asks.reconcile(id)
+    }
+    expect(run.asks["guesses"].size).toBe(0)
+    run.messaging.rooted(identity.terminalId, [guess])
+    run.asks.rooted(identity.terminalId, [guess])
+    run.asks.forgetProject(identity.projectId)
+    expect(run.asks["guesses"].size).toBe(0)
+    run.asks.rooted(identity.terminalId, [guess])
+    run.create()
+    run.asks.forgetProject(identity.projectId)
+    expect(run.asks["guesses"].size).toBe(0)
+    run.asks.rooted(identity.terminalId, [guess])
+    run.asks.close()
+    expect(run.asks["guesses"].size).toBe(0)
+  })
+
+  it("clears confirmed replacement asks without growing hidden open records", ({ resources }) => {
     const clock = inboxClock()
     const records = memoryAsks()
     const run = setup(records, undefined, clock)
@@ -519,11 +728,11 @@ describe("Inbox creation limits", () => {
         type: "new" as const,
         root: {
           agent: "claude" as const,
-          sessionId: `guess-${session}`,
+          sessionId: `confirmed-${session}`,
           instance: null,
           source: "binding" as const,
         },
-        guess: true,
+        guess: false,
         ready: true,
       }
       run.messaging.rooted(identity.terminalId, [change])
@@ -669,18 +878,18 @@ describe("Inbox history outcomes and safe instructions", () => {
     ).toBe("answered")
   })
 
-  it("strips terminal escapes, controls and bidi from subjects and action instructions", ({
+  it("strips terminal escapes, invisible separators and bidi from subjects and action instructions", ({
     resources,
   }) => {
     const run = setup()
     resources.defer(run.stop)
     run.create({
-      subject: "\u001b[31mLogin\u001b[0m\u202e\u0007",
+      subject: "\u001b[31mLogin\u001b[0m\u202e\u0007\u2028\u2029\u200b\u200c\u200d\u2060\ufeff",
       body: "Do it yourself",
       shape: {
         type: "action",
         command: "\u001b[32mtool login\u001b[0m\u2066\u0000",
-        directory: "/repo\u202d\u0007",
+        directory: "/repo\u202d\u0007\u2028\u200b\ufeff",
         done_label: "Done\u202c",
       },
     })
@@ -693,7 +902,42 @@ describe("Inbox history outcomes and safe instructions", () => {
     })
   })
 
-  it("accepts Unicode person text under the encoded budget and names the bound for expanded text", ({
+  it("cleans option summaries and code paths before storing or displaying them", ({
+    resources,
+  }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    run.create({
+      subject: "Choose",
+      body: "Body",
+      shape: {
+        type: "options",
+        options: [
+          {
+            label: "Option\u200b",
+            summary: "\u001b[31mSummary\u001b[0m\u2028\u2029\u200b\ufeff\u202e",
+            code: { path: "/repo\u2028\u2060/\ufefffile.ts", text: "const kept = true" },
+          },
+        ],
+      },
+    })
+    expect(run.asks.list()[0]?.content).toMatchObject({
+      kind: "ask",
+      ask: {
+        shape: {
+          options: [
+            {
+              label: "Option",
+              summary: "Summary",
+              code: { path: "/repo/file.ts", text: "const kept = true" },
+            },
+          ],
+        },
+      },
+    })
+  })
+
+  it("accepts Unicode person text and keeps an oversized reply retryable with a plain error", ({
     resources,
   }) => {
     const run = setup()
@@ -705,8 +949,12 @@ describe("Inbox history outcomes and safe instructions", () => {
     const tooLarge = run.create()
     expect(() =>
       run.asks.answer(tooLarge, { type: "reply", option: null, text: "&".repeat(4096) }),
-    ).toThrow(/encoded bytes; at most 8192/)
+    ).toThrow("That reply is too long. Shorten it and try again.")
     expect(run.asks.list().some((each) => each.id === tooLarge)).toBe(true)
+    expect(run.messaging.inboxReply(tooLarge)).toBeUndefined()
+    expect(() =>
+      run.asks.answer(tooLarge, { type: "reply", option: null, text: "Shorter" }),
+    ).not.toThrow()
   })
 })
 
@@ -943,7 +1191,7 @@ describe("person response delivery budgets", () => {
     } catch (error) {
       reason = (error as Error).message
     }
-    expect(reason).toMatch(/\([0-9]+ encoded bytes; at most 8192\)/)
+    expect(reason).toBe("That reply is too long. Shorten it and try again.")
     expect(run.asks.list().some((each) => each.id === expanded)).toBe(true)
   })
 })
