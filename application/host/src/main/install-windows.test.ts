@@ -691,12 +691,16 @@ describe("the installer's running-app check", () => {
     )
     expect(target).toContain('getResource(this.options.include, "installer.nsh")')
     expect(target).toContain("addIncludeDir(packager.info.buildResourcesDir)")
-    const config = readFileSync(join(process.cwd(), "electron-builder.yml"), "utf8")
+    // Read as LF, as a Windows checkout has CRLF.
+    const config = readFileSync(join(process.cwd(), "electron-builder.yml"), "utf8").replaceAll(
+      "\r\n",
+      "\n",
+    )
     // `buildResources` sits under the top-level `directories:` and is exactly `resources`.
     expect(config).toMatch(/^directories:\n(?: {2}.*\n)*? {2}buildResources: resources$/mu)
     // No explicit `nsis.include`, which would replace the include by name.
     // The `nsis:` block runs to the next top-level key; comments don't end it.
-    const nsis = /^nsis:[^\n]*\n((?:(?: .*|#.*|)\n)*)/mu.exec(config.replaceAll("\r\n", "\n"))?.[1]
+    const nsis = /^nsis:[^\n]*\n((?:(?: .*|#.*|)\n)*)/mu.exec(config)?.[1]
     expect(nsis).toContain("artifactName")
     expect(nsis).not.toMatch(/^ {2}include:/mu)
     expect(template("installSection.nsh")).toContain("!insertmacro customInstall")
