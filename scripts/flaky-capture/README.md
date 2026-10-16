@@ -93,14 +93,15 @@ when archiving them, with the actual checked-out SHA rather than only the PR mer
 
 ## Follow-up native captures
 
-The `Flaky hunt 3` workflow adds macOS uninstall evidence and a Linux Antigravity
-experiment. It runs on pull requests changing its workflow, these collectors or the
-Antigravity probe/config. Both jobs check out and verify the exact PR head, use read-only
-repository permissions, disable persisted checkout credentials and always upload their
+The `Flaky hunt 3` workflow adds macOS uninstall evidence, a Linux Antigravity experiment
+and a Windows Antigravity approval capture. It runs on pull requests changing its
+workflow, these collectors or the Antigravity probes/config. All jobs check out and
+verify the exact PR head, use read-only repository permissions, disable persisted
+checkout credentials and always upload their
 visible capture directories for seven days. The workflow uses no repository secrets and
 publishes no release. Its jobs are separate from the original `Flaky capture` workflow;
 any original Grid or natural Antigravity jobs that also run are additional controls,
-outside the experiment's six-process bound.
+outside the Linux experiment's six-process bound.
 
 ### macOS uninstall
 
@@ -173,3 +174,61 @@ times, delivery/binding state, transcripts/history and visible hook traces. A re
 PTY write is an acknowledgment from the input API, not proof that the harness consumed
 the key then. Compare the natural, busy-frame and cleared-frame controls before assigning
 a cause; a staged failure alone does not establish the original natural failure's cause.
+
+### Windows identical approvals
+
+Run on Windows with Node 26, locked dependencies, PowerShell 7, Git for Windows and
+symlink support, as on `windows-latest`. Use the pinned Antigravity environment above:
+
+```sh
+pnpm --filter @novadeck/runner... build
+node scripts/e2e/install/main.ts
+node scripts/flaky-capture/agy-approval.ts --output /path/to/windows-agy-approval
+```
+
+This command launches one fresh process with pinned Antigravity 1.2.14. It selects the
+original `answers.e2e.ts` case that approves two identical queued commands from the chat
+in turn and asserts each ran once. The original 60-second second-dialog wait and
+180-second case ceiling remain. The process is not retried. A five-minute launcher
+watchdog, eight-minute capture step and 25-minute workflow job bound infrastructure
+hangs without extending either test deadline.
+
+The original Windows E2E fixture supplies its sandbox, fake model/key, refusing proxy,
+credential/home tripwires and process teardown. It refuses to start while Windows
+Credential Manager holds the person's Antigravity login; the collector does not read or
+remove that secret. Windows has no Linux network namespace. Its proxy blocks requests
+from programs that honor it; direct connections that bypass the proxy are neither
+blocked nor recorded by that mechanism. The workflow supplies no provider credentials.
+
+The opt-in transform checks the original scenario body hash and exact instrumentation
+boundaries. It retains the original case and records both incoming and transformed
+source hashes. The visible output directory contains:
+
+- `identity.json`, `harness.json` and `transforms/{hook,case}.json`: checkout, tool,
+  pinned-binary and source identities.
+- `events.jsonl`: raw-ingress, size-pruned payload and decoder observations, including
+  the presence, type and safe value of `tool_confirmation_pending`, payload sizes,
+  session/step metadata, tool/input hashes, decoded facts and pending request sets.
+  Distinct `PreToolUse` sequence numbers preserve the two source occurrences even when
+  their command hashes match. A decoded occurrence does not prove that its report was
+  accepted for the bound session; compare report-return and binding/request state.
+  The timeline also records native rendered frames, explicit answer calls and PTY
+  write-entry/return acknowledgments. A returned write does not prove that the CLI
+  consumed the key at that time.
+- `native-output.jsonl`, `final.json`, `history.json`, `transcript.json` and `hooks.txt`:
+  native PTY chunks, final screen/binding/activity, conversation evidence and visible
+  hook traces. The opt-in event observations finish before the fixture's teardown;
+  the fixture still performs its normal cleanup and tripwire checks.
+- `tests.json`, `process.log`, `process.json` and `summary.json`: original case results,
+  process/watchdog outcome, completeness and bounded-buffer overflow information. A
+  matching visible permission without a pending request is recorded separately from
+  other scenario failures. With identical dialogs, that screen alone does not establish
+  which occurrence remains visible.
+
+Here, raw ingress means the relay payload received and parsed by the runner, before its
+size pruning. It is not an observation of the CLI's stdin or an earlier relay boundary.
+Unknown payload strings are hashed rather than copied into the metadata. Exit 0 requires
+the original single case to pass, complete observations, two source tool occurrences and
+two explicit answers. A nonzero result needs classification before it can be called an
+approval reproduction. Instrumentation can affect timing. This collects evidence; a
+passing sample does not establish a repair.
