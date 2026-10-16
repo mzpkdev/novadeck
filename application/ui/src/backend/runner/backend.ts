@@ -1076,7 +1076,8 @@ export const runnerBackend = (
       }
       if (isNew) entry.ready = createTerminal(entry)
       entries.set(key.terminalId, entry)
-      // What the runner reported of its agent comes with it; it says nothing again until it changes.
+      // What the runner reported of its agent comes with it; it says nothing again until
+      // it changes.
       if (reported) noteUsage(entry, terminalActivity(reported, quickExitMs).usage)
       followWhenReady(entry)
       return entry

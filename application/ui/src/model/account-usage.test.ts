@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../test"
-import { workspaceFixture } from "../test/fixtures"
+import { terminalFixture, workspaceFixture } from "../test/fixtures"
 import {
   accountUsage,
   movedOrder,
@@ -9,7 +9,8 @@ import {
   sameAccounts,
   sameSeats,
 } from "./account-usage"
-import type { AgentUsage } from "./types"
+import { createTerminalState } from "./state"
+import type { AgentUsage, TerminalMetadata, Workspace } from "./types"
 
 const hour = 3_600_000
 
@@ -138,27 +139,37 @@ describe("the account's subscription usage", () => {
 })
 
 describe("the terminals that report to the account", () => {
-  const process = (state: "running" | "idle") =>
-    workspaceFixture().projects.map((project) => ({
-      ...project,
-      history: project.history.map((session) => ({
-        ...session,
-        state: {
-          ...session.state,
-          roster: {
-            ...session.state.roster,
-            terminals: session.state.roster.terminals.map((terminal, index) =>
-              index === 0
-                ? ({ ...terminal, process: "claude", state } as typeof terminal)
-                : ({ ...terminal, state: "idle", process: "zsh" } as typeof terminal),
-            ),
-          },
+  // A session whose first terminal runs Claude Code in `state`, beside a shell.
+  const workspaceOf = (state: "running" | "idle"): Workspace => {
+    const base = workspaceFixture()
+    const agent: TerminalMetadata =
+      state === "running"
+        ? {
+            ...terminalFixture(1, "~/project"),
+            process: "claude",
+            state,
+            agent: { working: false },
+          }
+        : { ...terminalFixture(1, "~/project"), process: "claude", state }
+    const [project] = base.projects
+    return {
+      ...base,
+      projects: [
+        {
+          ...project!,
+          history: [
+            {
+              ...project!.history[0]!,
+              state: createTerminalState([agent, terminalFixture(2, "~/project")], "grid", "grid"),
+            },
+          ],
         },
-      })),
-    }))
+      ],
+    }
+  }
 
   it("are the running ones, by the session that holds them", () => {
-    const workspace = { ...workspaceFixture(), projects: process("running") }
+    const workspace = workspaceOf("running")
     const [project] = workspace.projects
     const [session] = project!.history
     expect(runningSeats(workspace)).toContainEqual({
@@ -170,7 +181,7 @@ describe("the terminals that report to the account", () => {
   })
 
   it("leave out terminals that are not running, whatever they once reported", () => {
-    const workspace = { ...workspaceFixture(), projects: process("idle") }
+    const workspace = workspaceOf("idle")
     expect(runningSeats(workspace)).toEqual([])
   })
 
@@ -198,5 +209,26 @@ describe("the terminals that report to the account", () => {
         0,
       )
     expect(sameAccounts(reading(1), reading(2))).toBe(true)
+  })
+
+  it("change them when a window's use or reset moves", () => {
+    const reading = (used: number, resetsAt: number) =>
+      accountUsage(
+        [{ context: "p/s", id: "1", program: "claude" }],
+        {
+          "p/s": {
+            "1": {
+              context: null,
+              limits: [{ minutes: 300, used, resetsAt }],
+              model: null,
+              effort: null,
+            },
+          },
+        },
+        0,
+      )
+    expect(sameAccounts(reading(0.4, hour), reading(0.5, hour))).toBe(false)
+    expect(sameAccounts(reading(0.4, hour), reading(0.4, 2 * hour))).toBe(false)
+    expect(sameAccounts(reading(0.4, hour), [])).toBe(false)
   })
 })

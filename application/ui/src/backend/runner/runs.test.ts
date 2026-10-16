@@ -305,13 +305,13 @@ describe("an agent's telemetry", () => {
       expect(app.received.map((action) => action.type)).toContain("terminal/add"),
     )
     // The terminal joins the workspace, and its agent's usage shows with it.
-    const added = app.received.find((action) => action.type === "terminal/add")!
+    const added = app.received.filter((action) => action.type === "terminal/add")
     const seeded = workspaceFromSeed(app.backend.seed, {
       view: "grid",
       windowedView: "grid",
       now: 1,
     })
-    app.backend.commit(workspaceReducer(seeded, added as never), [added as never])
+    app.backend.commit(added.reduce<Workspace>(workspaceReducer, seeded), added)
     expect(app.backend.telemetry.getSnapshot()["p/s"]?.[other]).toEqual(telemetry(3_000))
     app.stop()
   })
