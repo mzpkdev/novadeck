@@ -93,6 +93,18 @@ describe("the demo's murmur", () => {
       expect(murmur.state.getSnapshot().installing).toMatchObject({ step: "model" })
     })
 
+    it("shows a verdict beside files that stayed, installed but unchecked", () => {
+      const murmur = createDemoMurmur()
+      murmur.show("unsupported-with-files")
+      expect(murmur.state.getSnapshot()).toMatchObject({
+        installed: true,
+        check: null,
+        enabled: false,
+        recheck: true,
+        unsupported: expect.any(String),
+      })
+    })
+
     it("shows the host's software-rendering verdict with nothing to check again", () => {
       const murmur = createDemoMurmur()
       murmur.show("unsupported-host")

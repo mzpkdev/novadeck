@@ -44,6 +44,11 @@ export const murmurGroups = (murmur: DemoMurmur | undefined): readonly DemoActio
               run: () => murmur.show("unsupported"),
             },
             {
+              label: "Not available, files left",
+              hint: "Addons shows Not available with Details and Check again beside Uninstall, no switch",
+              run: () => murmur.show("unsupported-with-files"),
+            },
+            {
               label: "Not available (software rendering)",
               hint: "As Not available, from the host: Details has the reason, no Check again",
               run: () => murmur.show("unsupported-host"),

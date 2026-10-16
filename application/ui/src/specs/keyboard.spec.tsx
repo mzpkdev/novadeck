@@ -1130,7 +1130,7 @@ describe("dictation", () => {
       await expect.element(offer()).not.toBeInTheDocument()
       await expect.element(saying("Setting up voice input")).toBeVisible()
       await expect.element(saying("Voice input ready"), { timeout: 15_000 }).toBeVisible()
-      await expect.element(page.getByText(/to talk\./)).toBeVisible()
+      await expect.element(page.getByText(/to talk\./).first()).toBeVisible()
       expect(microphone.live()).toBe(0)
     })
 

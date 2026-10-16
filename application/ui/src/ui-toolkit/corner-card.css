@@ -92,6 +92,10 @@
   align-self: flex-end;
   margin-top: 4px;
 }
+/* A row holding only the note has nothing to show where the note is hidden. */
+.corner-card-actions:not(:has(> :not(.corner-card-note))) {
+  display: none;
+}
 .corner-card-close {
   position: absolute;
   top: 6px;
@@ -107,6 +111,7 @@
     display: block;
   }
   .corner-card-actions {
+    display: flex;
     align-self: stretch;
     justify-content: flex-end;
     margin-top: 0;
@@ -119,6 +124,7 @@
   display: block;
 }
 .corner-stack[data-beside] .corner-card-actions {
+  display: flex;
   align-self: stretch;
   justify-content: flex-end;
   margin-top: 0;

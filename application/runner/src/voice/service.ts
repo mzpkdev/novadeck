@@ -249,7 +249,6 @@ export class Voice {
     this.failure = null
     this.gpu = this.settings.voiceCheck()?.gpu ?? this.gpu
     const model = this.aim()
-    this.settings.saveVoiceCheck(null)
     // Installing it at all says the person wants it, whatever they chose before: an off
     // from then on, during the install too, still holds.
     if (this.installed.length === 0) this.settings.saveVoiceSettings({ enabled: null })

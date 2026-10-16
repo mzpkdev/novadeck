@@ -76,7 +76,7 @@ export type CornerCardProps = {
   readonly actions?: React.ReactNode
   // A few words beside the buttons that stand in, on a page too narrow for a tall card, for
   // the body marked `corner-card-detail`.
-  readonly note?: string
+  readonly note?: React.ReactNode
   // Shows a close button that calls this; without it the card has none.
   readonly onClose?: () => void
   // What assistive technology is told when the card arrives or this changes; the title (itself

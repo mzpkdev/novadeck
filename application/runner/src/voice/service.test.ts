@@ -433,6 +433,38 @@ describe("installing voice input", () => {
     expect(store.voiceEnabledChoice()).toBeUndefined()
   })
 
+  it("keeps a working model usable when a reinstall is cancelled", async ({ resources }) => {
+    const { voice, store } = await installed(resources)
+    const check = voice.state().check
+    await voice.install()
+    await voice.cancel()
+    await voice.set({ enabled: false })
+    await voice.set({ enabled: true })
+
+    expect(store.voiceCheck()).toEqual(check)
+    expect(voice.state()).toMatchObject({ enabled: true, model: "small" })
+  })
+
+  it("commits small and removes turbo when turbo does not start but small passes", async ({
+    resources,
+  }) => {
+    const { voice, directory } = await setup(resources, {
+      catalog: await modelCatalog(resources, { turbo: "turbo badload" }),
+    })
+
+    await voice.install()
+    await voice.settled()
+
+    expect(voice.state()).toMatchObject({
+      model: "small",
+      aim: "small",
+      installed: ["small"],
+      enabled: true,
+      failure: null,
+    })
+    expect(await readdir(`${directory}/models`)).toHaveLength(2)
+  })
+
   it("keeps turbo, and blames the engine, when neither model starts", async ({ resources }) => {
     const { voice, directory } = await setup(resources, {
       catalog: await modelCatalog(resources, { turbo: "turbo badload", small: "small badload" }),
@@ -618,7 +650,8 @@ describe("voice input settings", () => {
     expect(first.store.voiceCheck()).toEqual(check)
 
     await first.voice.install()
-    expect(first.store.voiceCheck()).toBeNull()
+    // The check that passed stays until the new one replaces it.
+    expect(first.store.voiceCheck()).toEqual(check)
     await first.voice.settled()
     expect(first.store.voiceCheck()).toMatchObject({ model: "small" })
 

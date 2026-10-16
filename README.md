@@ -798,7 +798,7 @@ App:
   the next agent finish, once per page load, and Addons shows Install), Installing (held at
   the model, half there, with Cancel), Install fails (network) (the failure with Try again,
   no decline), Install ends Not available (the next Turn on or Install runs the check and
-  lands in Not available) and Not available (Addons shows it with Details, and no offer).
+  lands in Not available), Not available, files left (the files stay beside the verdict: Details and Check again by Uninstall, no switch) and Not available (Addons shows it with Details, and no offer).
 - **Voice input:** the demo starts with it installed and on, as the try demo shows it, and
   never offers it; `&voice=uninstalled` in the address starts it without. The actions set
   Installed, Not installed (the mic of an agent's terminal, or Ctrl+Shift+M, opens the

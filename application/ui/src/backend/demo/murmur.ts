@@ -64,6 +64,7 @@ export type DemoMurmurScenario =
   | "network-failure"
   | "unsupported-after-install"
   | "unsupported-host"
+  | "unsupported-with-files"
 
 export type DemoMurmur = Murmur & { readonly show: (scenario: DemoMurmurScenario) => void }
 
@@ -187,6 +188,15 @@ export const createDemoMurmur = (
       state.update(() => ({
         ...demoMurmurState,
         unsupported: softwareSample,
+      }))
+    else if (scenario === "unsupported-with-files")
+      // Removing the files for a verdict failed: they stay, unchecked, beside it.
+      state.update(() => ({
+        ...installedState,
+        enabled: false,
+        check: null,
+        unsupported: unsupportedSample,
+        recheck: true,
       }))
     else if (scenario === "installing")
       // Held at the model, half there, until cancelled.
