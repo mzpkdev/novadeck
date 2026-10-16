@@ -384,6 +384,7 @@ describe("dictation", () => {
     it("offers it when the mic is clicked, and again the next time", () => {
       const app = setup(notInstalled)
       app.controller.dictation.toggle(target)
+      app.controller.setupActions.dismiss()
       app.controller.dictation.toggle(target)
       expect(app.offers).toEqual(["offer", "offer"])
     })
@@ -497,6 +498,28 @@ describe("dictation", () => {
       expect(app.voice.state.getSnapshot().wanted).toBe(true)
     })
 
+    it("turns on when the mic is clicked while the offer shows", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.dictation.toggle(target)
+      expect(app.calls).toEqual(["install"])
+      expect(kind(app)).toBe("installing")
+    })
+
+    it("clears the ready note and a failure as a clip starts, so its own result shows", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.setupActions.turnOn()
+      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      update(app, { ...installed, installing: null })
+      expect(kind(app)).toBe("ready")
+
+      app.controller.dictation.press(target, "KeyM")
+
+      expect(kind(app)).toBeUndefined()
+      expect(app.clips).toHaveLength(1)
+    })
+
     it("shows nothing after a cancel, and nothing for a refused setting", () => {
       const app = setup(notInstalled)
       app.controller.dictation.press(target, "KeyM")
@@ -507,8 +530,12 @@ describe("dictation", () => {
 
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
+      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
       update(app, { failure: "Couldn't change voice input: no." })
       expect(kind(app)).toBe("installing")
+      // The install ends with only that refusal on record: not a failure of the install.
+      update(app, { installing: null })
+      expect(kind(app)).toBeUndefined()
     })
 
     it("drops the setup once voice input is declined elsewhere", () => {

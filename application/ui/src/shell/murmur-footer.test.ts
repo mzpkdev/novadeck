@@ -1,6 +1,6 @@
 import type { MurmurState } from "../model/murmur"
 import { describe, expect, it } from "../test"
-import { footerPhase, footerText, installPercent, stepText } from "./murmur-footer"
+import { footerPhase, footerText, installPercent, isSnapshot, stepText } from "./murmur-footer"
 
 const idle: MurmurState = {
   available: true,
@@ -55,6 +55,54 @@ describe("Murmur's footer item", () => {
     expect(footerPhase("idle", failed, failed.failure)).toBe("idle")
     // A failure of a murmur that works is Addons'.
     expect(footerPhase("idle", { ...checked, failure: "Murmur stopped." }, null)).toBe("idle")
+  })
+
+  it("judges nothing before the runner's first snapshot, so a past run's failure never shows", () => {
+    const placeholder: MurmurState = { ...idle, sizes: { engine: 0, model: 0 }, offers: 0 }
+    expect(isSnapshot(placeholder)).toBe(false)
+    expect(isSnapshot(idle)).toBe(true)
+    // Mounted before the snapshot: the baseline is unknown, and nothing is shown.
+    expect(footerPhase("idle", placeholder, undefined)).toBe("idle")
+    expect(footerPhase("idle", { ...idle, failure: "From a past run." }, undefined)).toBe("idle")
+    // Once the snapshot gave the baseline, that failure is not an install's.
+    expect(footerPhase("idle", { ...idle, failure: "From a past run." }, "From a past run.")).toBe(
+      "idle",
+    )
+  })
+
+  it("shows nothing for an engine update the app starts, and something for a check the person retries", () => {
+    const update: MurmurState = {
+      ...checked,
+      installing: { step: "engine", received: 1, total: 100 },
+    }
+    expect(footerPhase("idle", update, null)).toBe("idle")
+    // Ended, still no "done": it was never shown.
+    expect(footerPhase("idle", checked, null)).toBe("idle")
+    // Installed but with no check, an install the person asked for runs the check again.
+    const retry: MurmurState = {
+      ...checked,
+      check: null,
+      installing: { step: "check", received: 0, total: 0 },
+    }
+    expect(footerPhase("idle", retry, null)).toBe("installing")
+  })
+
+  it("leaves a refused switch to Addons, not turning it into a failed install", () => {
+    const refused = { ...idle, failure: "Couldn't change the setting: the runner is busy." }
+    expect(footerPhase("idle", refused, null)).toBe("idle")
+    expect(footerPhase("installing", refused, null)).toBe("idle")
+    // A refused install is an install's.
+    expect(footerPhase("idle", { ...idle, failure: "Couldn't install: refused." }, null)).toBe(
+      "failed",
+    )
+  })
+
+  it("keeps the failed label short, and says the failure once in the live summary", () => {
+    const failed = { ...idle, failure: "The download stopped." }
+    expect(footerText("failed", failed).label).toBe("Murmur \u00b7 failed")
+    expect(footerText("failed", failed).summary).toBe(
+      "Murmur couldn't turn on. The download stopped.",
+    )
   })
 
   it("leaves a failed item once the failure is cleared", () => {

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 
 import type { TerminalKey } from "../../backend/port"
+import { currentPlatform, matchesShortcut, shortcutBindings } from "../../interaction/shortcuts"
 import type { TerminalMetadata, Workspace } from "../../model/types"
 import { chatDraftOf, chatShown, setChatDraft } from "../../terminals/chat/mode-state"
 import type { DictationControls } from "../../terminals/WindowShell"
@@ -92,7 +93,7 @@ export const useDictationController = ({
     const typed = (event: KeyboardEvent): void => {
       const modifier = ["Control", "Shift", "Alt", "Meta", "AltGraph"].includes(event.key)
       // The shortcut itself, pressed again, turns voice input on.
-      const chord = event.ctrlKey && event.shiftKey && event.code === "KeyM"
+      const chord = matchesShortcut(event, shortcutBindings(currentPlatform()).voice)
       if (!modifier && !chord) controller.setupActions.dismiss()
     }
     let place = placeOf(workspace.getSnapshot())
@@ -100,6 +101,14 @@ export const useDictationController = ({
       const next = placeOf(workspace.getSnapshot())
       if (next === place) return
       place = next
+      // Going to the terminal the offer was made on, as clicking its mic selects it, is
+      // not leaving it.
+      const target = controller.setup.getSnapshot()?.target
+      if (
+        target &&
+        next === `${target.projectId}/${target.workspaceSessionId}/${target.terminalId}`
+      )
+        return
       controller.setupActions.dismiss()
     })
     window.addEventListener("keydown", typed, true)

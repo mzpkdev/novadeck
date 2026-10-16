@@ -74,6 +74,7 @@
   }
 
   .dictation-strip {
+    container: dictation-strip / inline-size;
     --_bg: var(--dictation-strip-bg, var(--window-header-bg, var(--color-paper)));
     position: absolute;
     left: 0;
@@ -212,6 +213,58 @@
   }
   .dictation-muted {
     color: var(--dictation-muted-fg, var(--color-muted));
+  }
+  /* The size and the step's numbers never give way to the words beside them. */
+  .dictation-fixed {
+    flex: none;
+  }
+  .dictation-short {
+    display: none;
+  }
+  /* In a narrow tile, the long words give way to short ones. */
+  @container dictation-strip (max-width: 34rem) {
+    .dictation-long {
+      display: none;
+    }
+    .dictation-short {
+      display: inline;
+    }
+    .dictation-progress {
+      display: none;
+    }
+  }
+  /* Voice input's setup takes a row of its own, so the terminal above it shrinks to make
+     room instead of being covered: its last lines are the agent's input. Its height never
+     changes between the setup's states, so the terminal refits once per state, not per
+     tick of progress. */
+  .dictation-strip[data-phase="setup"] {
+    position: relative;
+    inset: auto;
+    flex: none;
+  }
+  .dictation-strip[data-phase="setup"][data-edge="top"] {
+    order: -1;
+  }
+  .dictation-strip[data-setup="failed"] {
+    background-color: color-mix(in srgb, var(--color-danger-fg) 18%, var(--_bg));
+    border-color: color-mix(in srgb, var(--color-danger-fg) 50%, var(--color-line));
+  }
+  .dictation-overlay[data-setup="failed"] {
+    background-color: color-mix(in srgb, var(--color-danger-fg) 14%, var(--color-paper));
+  }
+  /* The pill at the app's foot stays one line and compact. */
+  .dictation-overlay[data-phase="setup"] {
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .dictation-overlay .dictation-text {
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dictation-overlay .dictation-progress {
+    width: calc(var(--spacing) * 12);
   }
   .dictation-link {
     flex: none;

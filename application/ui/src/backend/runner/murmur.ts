@@ -87,7 +87,8 @@ export const createRunnerMurmur = (
         settings.offered
           ? // Only counted: a count that is not kept is no failure to show.
             void track(calls.set(settings)).catch(() => {})
-          : void change("change the setting", () => calls.set(settings)),
+          : // Its failure begins `settingFailurePrefix`, which the footer's item leaves alone.
+            void change("change the setting", () => calls.set(settings)),
       // Murmur is extra: a gist that can't be asked for leaves the reply as it was.
       gist: (terminalId, at) => void track(calls.gist(terminalId, at)).catch(() => {}),
     },

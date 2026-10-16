@@ -112,6 +112,9 @@ describe("voice input's setup in a terminal's strip", () => {
     expect(text).toContain("Talk to your agents. Voice input runs on this computer")
     expect(text).toContain("602 MB once")
     expect(view.container.querySelector("[title*='Preferences']")).not.toBeNull()
+    // The size stays in a part of its own, which a narrow tile does not hide.
+    expect(view.container.querySelector(".dictation-fixed")?.textContent).toContain("602 MB once")
+    expect(view.container.querySelector(".dictation-short")?.textContent).toBe("Voice input")
     const buttons = [...view.container.querySelectorAll("button")]
     expect(buttons.map((one) => one.textContent)).toEqual(["No thanks", "Turn on"])
     calls.length = 0
@@ -177,7 +180,7 @@ describe("voice input's setup in a terminal's strip", () => {
     }))
     setupOf(each, { kind: "failed", target: terminal })
     const view = render(strip(each, true))
-    expect(view.container.textContent).toContain("Out of disk space.")
+    expect(view.container.textContent).toContain("Voice input didn't install: Out of disk space.")
     calls.length = 0
     act(() =>
       [...view.container.querySelectorAll("button")]

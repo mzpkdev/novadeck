@@ -47,6 +47,10 @@ export type MurmurState = {
   readonly offers: number
 }
 
+// How a backend's failure to change a setting begins, in `MurmurState.failure`: a refused
+// switch, never an install's.
+export const settingFailurePrefix = "Couldn't change the setting"
+
 // What each step of an install is called.
 export const murmurStepTitles = {
   engine: "Downloading engine",

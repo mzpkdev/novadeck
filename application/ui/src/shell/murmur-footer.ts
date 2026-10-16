@@ -1,4 +1,4 @@
-import { murmurStepTitles, type MurmurState } from "../model/murmur"
+import { murmurStepTitles, settingFailurePrefix, type MurmurState } from "../model/murmur"
 import { formatSize } from "../model/voice-format"
 
 // What Murmur's footer item shows, as a plain function of the addon's state: an install's
@@ -11,28 +11,38 @@ export type FooterPhase = "idle" | "installing" | "done" | "failed" | "unavailab
 // How long "Terminals name themselves now" stays.
 export const doneForMs = 4000
 
+// Whether the runner has said how it is: the placeholder before its first snapshot has no
+// download sizes.
+export const isSnapshot = (state: MurmurState): boolean => state.sizes.model > 0
+
+// Whether `state` is an engine update: the check kept, an install running over it. It is the
+// app's own doing, not the person's, so it shows nothing.
+const engineUpdate = (state: MurmurState): boolean => state.installed && state.check !== null
+
 // Where the item stands after `state`, given where it stood. `baseline` is the failure the
-// state showed when the app started, which is not an install's.
+// runner's first snapshot showed (a past run's), which is not an install's; before that
+// snapshot (`undefined`) nothing is judged. A refused switch (a decline that did not save) is
+// not an install's failure either.
 export const footerPhase = (
   phase: FooterPhase,
   state: MurmurState,
-  baseline: string | null,
+  baseline: string | null | undefined,
 ): FooterPhase => {
-  if (state.installing) return "installing"
+  if (baseline === undefined) return phase
+  const failure = state.failure?.startsWith(settingFailurePrefix) ? null : state.failure
+  if (state.installing) return phase === "installing" || !engineUpdate(state) ? "installing" : phase
   if (phase === "installing") {
     // It ended: how, is for the state to say.
     if (state.unsupported !== null) return "unavailable"
-    if (state.failure !== null) return "failed"
+    if (failure !== null) return "failed"
     return state.installed && state.check !== null ? "done" : "idle"
   }
   if (phase === "idle")
     // A call that failed before an install began, as a refused install, is shown too.
-    return state.failure !== null &&
-      state.failure !== baseline &&
-      (!state.installed || state.check === null)
+    return failure !== null && failure !== baseline && (!state.installed || state.check === null)
       ? "failed"
       : "idle"
-  if (phase === "failed" && state.failure === null) return "idle"
+  if (phase === "failed" && failure === null) return "idle"
   return phase
 }
 
@@ -56,7 +66,10 @@ export const footerText = (
   if (phase === "done")
     return { label: "Terminals name themselves now", summary: "Terminals name themselves now" }
   if (phase === "failed")
-    return { label: "Murmur couldn't turn on", summary: "Murmur couldn't turn on" }
+    return {
+      label: "Murmur \u00b7 failed",
+      summary: `Murmur couldn't turn on${state.failure ? `. ${state.failure}` : ""}`,
+    }
   if (phase === "unavailable")
     return { label: "Murmur isn't available", summary: "Murmur isn't available on this computer" }
   const percent = installPercent(state)

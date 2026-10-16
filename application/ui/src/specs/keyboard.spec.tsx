@@ -1123,10 +1123,58 @@ describe("dictation", () => {
       await press(`${dictateKeys}${releaseKeys}`)
       await expect.element(offer()).toBeVisible()
 
-      await press("{Escape}")
+      // Esc reaches the terminal, where it interrupts the agent: nothing prevented it.
+      const prevented: boolean[] = []
+      const note = (event: KeyboardEvent): void => {
+        if (event.key === "Escape") prevented.push(event.defaultPrevented)
+      }
+      document.addEventListener("keydown", note)
+      try {
+        await press("{Escape}")
+      } finally {
+        document.removeEventListener("keydown", note)
+      }
+      expect(prevented).toEqual([false])
 
       // The offer is only ignored, never answered by Esc.
       await press(`${dictateKeys}${releaseKeys}`)
+      await expect.element(offer()).toBeVisible()
+    })
+
+    it("turns on when the shortcut is pressed again on a layout where M is elsewhere", async () => {
+      await openWithoutVoice()
+      await commandInput("Checkout implementation").click()
+      await press(`${dictateKeys}${releaseKeys}`)
+      await expect.element(offer()).toBeVisible()
+
+      // AZERTY: the M key sits where QWERTY has the semicolon.
+      const init = { key: "M", code: "Semicolon", ctrlKey: true, shiftKey: true, bubbles: true }
+      window.dispatchEvent(new KeyboardEvent("keydown", init))
+      window.dispatchEvent(new KeyboardEvent("keyup", init))
+
+      await expect.element(saying("Setting up voice input")).toBeVisible()
+    })
+
+    it("makes room for the offer instead of covering the terminal's last lines", async () => {
+      await openWithoutVoice()
+      await commandInput("Checkout implementation").click()
+      await press(`${dictateKeys}${releaseKeys}`)
+      await expect.element(offer()).toBeVisible()
+
+      const strip = document.querySelector<HTMLElement>(".dictation-strip:not([hidden])")!
+      const content = strip.parentElement!.firstElementChild!.getBoundingClientRect()
+      expect(content.bottom).toBeLessThanOrEqual(strip.getBoundingClientRect().top + 1)
+    })
+
+    it("keeps its offer when the mic of another terminal is clicked in Grid, which selects it", async () => {
+      await openWithoutVoice("/?demo=agents&voice=uninstalled")
+      await chooseView("Grid")
+      await terminal("Tests")
+        .getByRole("button", { name: labelled("Set up voice input for ", "Tests") })
+        .click()
+
+      await expect.element(offer()).toBeVisible()
+      await wait(600)
       await expect.element(offer()).toBeVisible()
     })
 

@@ -421,6 +421,13 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     },
     close: (): void => setSetup(null),
   }
+  const offering = (): boolean => setup.getSnapshot()?.kind === "offer" && state.kind === "idle"
+  // A clip starting leaves no room for the ready note or a failure, which would hide what
+  // the first clip comes to.
+  const clearTold = (): void => {
+    const kind = setup.getSnapshot()?.kind
+    if (kind === "ready" || kind === "failed") setSetup(null)
+  }
   const ready = (): Readiness => readiness(voice.state.getSnapshot())
   return {
     voice: voice.state,
@@ -442,14 +449,20 @@ export const createDictation = (deps: DictationDeps): DictationController => {
       active: () => state.kind !== "idle",
       claims: () => state.kind !== "idle" || voiceClaimed(voice.state.getSnapshot()),
       // Pressed again while its offer shows, the shortcut turns voice input on.
-      press: (target, code) =>
-        setup.getSnapshot()?.kind === "offer" && state.kind === "idle"
-          ? turnOn()
-          : dispatch({ type: "press", code, target, now: now(), readiness: ready() }),
+      press: (target, code) => {
+        if (offering()) return turnOn()
+        clearTold()
+        dispatch({ type: "press", code, target, now: now(), readiness: ready() })
+      },
       release: (code) => dispatch({ type: "release", code, now: now() }),
       blur: () => dispatch({ type: "blur" }),
       cancel: () => dispatch({ type: "cancel" }),
-      toggle: (target) => dispatch({ type: "toggle", target, now: now(), readiness: ready() }),
+      // The mic, clicked while the offer shows, turns voice input on as the shortcut does.
+      toggle: (target) => {
+        if (offering()) return turnOn()
+        clearTold()
+        dispatch({ type: "toggle", target, now: now(), readiness: ready() })
+      },
     },
   }
 }

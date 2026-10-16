@@ -6,6 +6,8 @@ import { Chord } from "../ui-toolkit/Chord"
 import { Progress } from "../ui-toolkit/Progress"
 import type { DictationController, VoiceSetup } from "./dictation"
 
+const failurePrefix = "Voice input didn't install:"
+const offerText = "Talk to your agents. Voice input runs on this computer"
 const preferencesNote = "You can turn it on later in Preferences → Addons."
 
 // A button of the strip or the overlay: it takes the pointer but never focus, so typing
@@ -55,9 +57,12 @@ export const VoiceSetupContent = ({
     return (
       <>
         <Mic size={14} className="dictation-icon" aria-hidden />
-        <span className="dictation-text" title={preferencesNote}>
-          Talk to your agents. Voice input runs on this computer
-          <span className="dictation-muted"> · {formatSize(installSize(state))} once</span>
+        <span className="dictation-text" title={`${offerText}. ${preferencesNote}`}>
+          <span className="dictation-long">{offerText}</span>
+          <span className="dictation-short">Voice input</span>
+        </span>
+        <span className="dictation-muted dictation-fixed">
+          · {formatSize(installSize(state))} once
         </span>
         <Action title={preferencesNote} onPress={noThanks}>
           No thanks
@@ -73,16 +78,19 @@ export const VoiceSetupContent = ({
     return (
       <>
         <Mic size={14} className="dictation-icon" aria-hidden />
-        <span className="dictation-text">
-          Setting up voice input
-          <span className="dictation-muted" aria-hidden>
-            {" · "}
-            {installing === null
-              ? "Starting…"
-              : installing.step === "check"
-                ? "Checking…"
-                : `${stepLabels[installing.step]} ${formatSize(installing.received)} of ${formatSize(installing.total)}`}
-          </span>
+        <span className="dictation-text">Setting up voice input</span>
+        <span className="dictation-muted dictation-fixed" aria-hidden>
+          {"· "}
+          {installing === null ? (
+            "Starting…"
+          ) : installing.step === "check" ? (
+            "Checking…"
+          ) : (
+            <>
+              <span className="dictation-long">{stepLabels[installing.step]} </span>
+              {formatSize(installing.received)} of {formatSize(installing.total)}
+            </>
+          )}
         </span>
         <span className="dictation-progress" aria-hidden>
           <Progress
@@ -109,8 +117,11 @@ export const VoiceSetupContent = ({
   return (
     <>
       <TriangleAlert size={14} className="dictation-icon" aria-hidden />
-      <span className="dictation-text dictation-clamp" title={state.failure ?? undefined}>
-        {state.failure}
+      <span
+        className="dictation-text dictation-clamp"
+        title={`${failurePrefix} ${state.failure ?? ""}`}
+      >
+        {failurePrefix} {state.failure}
       </span>
       <Action primary onPress={turnOn}>
         Try again

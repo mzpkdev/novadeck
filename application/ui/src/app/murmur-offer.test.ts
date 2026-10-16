@@ -9,6 +9,7 @@ import {
   offerable,
   offerDue,
   offerSessions,
+  canCarryChip,
   offerText,
   plainTitle,
   watchAgentFinishes,
@@ -59,6 +60,62 @@ describe("which titles the chip is offered beside", () => {
     expect(plainTitle({ titleSource: { kind: "person" } })).toBe(false)
     expect(plainTitle({ titleSource: { kind: "agent", by: "claude" } })).toBe(false)
     expect(plainTitle({ titleSource: { kind: "murmur" } })).toBe(false)
+  })
+})
+
+describe("which finished terminal may carry the chip", () => {
+  const target = { projectId: "project", workspaceSessionId: "initial" }
+  const finished = { context: "project/initial", id: "02" }
+
+  const inView = (view: "focus" | "grid") => {
+    const workspace = createWorkspaceStore(workspaceFixture())
+    workspace.dispatch({
+      type: "view/change",
+      target,
+      view,
+      enabledViews: ["focus", "grid", "canvas"],
+    })
+    workspace.dispatch({ type: "terminal/select", target, terminalId: "01" })
+    return workspace
+  }
+
+  it("takes the one shown in Focus, under its plain name", () => {
+    const workspace = inView("focus")
+    workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
+    expect(canCarryChip(workspace.getSnapshot(), finished)).toBe(true)
+  })
+
+  it("lets go of a finish in Focus of a terminal that is not the one shown", () => {
+    expect(canCarryChip(inView("focus").getSnapshot(), finished)).toBe(false)
+  })
+
+  it("takes any terminal in Grid that is not hidden from it", () => {
+    const workspace = inView("grid")
+    expect(canCarryChip(workspace.getSnapshot(), finished)).toBe(true)
+    workspace.dispatch({ type: "terminal/visibility", target, terminalId: "02", hidden: true })
+    expect(canCarryChip(workspace.getSnapshot(), finished)).toBe(false)
+  })
+
+  it("lets go of a title someone gave", () => {
+    const workspace = createWorkspaceStore(workspaceFixture())
+    workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
+    for (const titleSource of [
+      { kind: "person" },
+      { kind: "agent", by: "claude" },
+      { kind: "murmur" },
+    ] as const) {
+      workspace.dispatch({ type: "terminal/update", target, terminalId: "02", titleSource })
+      expect(canCarryChip(workspace.getSnapshot(), finished)).toBe(false)
+    }
+  })
+
+  it("lets go of a finish in a session that is not on screen, or a terminal that is gone", () => {
+    const workspace = createWorkspaceStore(workspaceFixture())
+    workspace.dispatch({ type: "terminal/select", target, terminalId: "02" })
+    expect(canCarryChip(workspace.getSnapshot(), { context: "other/background", id: "02" })).toBe(
+      false,
+    )
+    expect(canCarryChip(workspace.getSnapshot(), { ...finished, id: "99" })).toBe(false)
   })
 })
 
