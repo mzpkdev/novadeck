@@ -313,7 +313,7 @@ export class Doorbell {
       )
       const wait = quiet + this.calmMs - this.now()
       if (wait > 0) {
-        this.later(terminalId, Math.max(wait, this.nextWait(terminalId)))
+        this.later(terminalId, wait)
         return undefined
       }
     }

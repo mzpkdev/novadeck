@@ -60,7 +60,7 @@ const states = (terminal: DeckTerminal, after = 0) =>
 type Internals = {
   readonly messaging: {
     ring(terminalId: string, nonce: string): boolean
-    ringFailed(terminalId: string, nonce: string): void
+    ringFailed(terminalId: string, nonce: string, ours?: boolean): void
   }
   live(terminalId: string): {
     readonly screen: { write(data: string): void }
@@ -90,7 +90,8 @@ const lost = (run: E2E, terminal: DeckTerminal, nonce: string): void => {
   internals(run)
     .live(terminal.id)
     .process.write(`\x1b[200~${doorbellLine(nonce)}\x1b[201~`)
-  messaging.ringFailed(terminal.id, nonce)
+  // The paste check had accepted the line: it is alone in the box, Novadeck's own.
+  messaging.ringFailed(terminal.id, nonce, true)
 }
 
 /** t2 sends t1 one message and waits until t1 holds it queued. */
