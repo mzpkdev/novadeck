@@ -605,7 +605,13 @@ const ask: Tool<{ readonly id: string; readonly withdrawn?: boolean }> = {
             type: "object",
             properties: {
               type: { const: "action" },
-              command: { type: "string", maxLength: 4096 },
+              command: {
+                type: "string",
+                maxLength: 4096,
+                description:
+                  "What the user runs themselves, up to 40 lines. Novadeck removes runs of blank " +
+                  "lines and spaces, and characters that draw as nothing, so all of it shows.",
+              },
               directory: { type: "string", maxLength: 4096 },
               done_label: { type: "string", maxLength: 256 },
             },

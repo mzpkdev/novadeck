@@ -470,6 +470,21 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+/* What draws as nothing in a command, said in its place: a run of blank lines on a row of
+   its own, a long run of spaces or an invisible character inline. */
+.inbox-command-mark {
+  margin: 0 2px;
+  padding: 0 4px;
+  border-radius: var(--radius-control);
+  background-color: var(--color-soft);
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.inbox-command-mark[data-mark="blank-lines"] {
+  display: inline-block;
+}
 .inbox-command-dollar {
   color: var(--color-muted);
   font-weight: 400;

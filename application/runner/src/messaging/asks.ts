@@ -76,6 +76,29 @@ const subject = z
       .refine((text) => !/[\r\n\x00-\x1f]/.test(text), "Use one line for the subject"),
   )
 const markdown = z.string().max(16_384)
+/** The most lines an action's command may hold. */
+export const commandLines = 40
+// What an agent could use to hide part of a command it asks the person to run: characters
+// that draw as nothing, the other kinds of space, and runs of blank lines or spaces.
+const fillers = /[\u00ad\u115f\u1160\u2800\u3164\uffa0]/g
+const spaces = /[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g
+/**
+ * An action's command as the person is asked to run it, everything in it in sight: with no
+ * character that draws as nothing, no run of more than one blank line, no long run of
+ * spaces, and no trailing blanks. The Inbox marks whatever draws as nothing in a command
+ * it shows anyway (`ui/src/inbox/command-view.ts`), as a harness's permission prompt, which
+ * Novadeck shows verbatim.
+ */
+export const commandText = (text: string): string =>
+  cleanInboxText(text)
+    .replace(fillers, "")
+    .replace(spaces, " ")
+    .replace(/[ \t]{9,}/g, " ")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
 const option = z.strictObject({
   label: subject,
   summary: z.string().transform(cleanInboxText).pipe(z.string().max(2048)).nullable().optional(),
@@ -91,7 +114,19 @@ const requestedShape = z.discriminatedUnion("type", [
   }),
   z.strictObject({
     type: z.literal("action"),
-    command: z.string().transform(cleanInboxText).pipe(z.string().trim().min(1).max(4096)),
+    command: z
+      .string()
+      .transform(commandText)
+      .pipe(
+        z
+          .string()
+          .min(1)
+          .max(4096)
+          .refine(
+            (text) => text.split("\n").length <= commandLines,
+            `Keep the command to ${commandLines} lines or fewer`,
+          ),
+      ),
     directory: z
       .string()
       .transform(cleanInboxText)
