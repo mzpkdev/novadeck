@@ -44,6 +44,8 @@ const terminal = (
     logo?: boolean
     /** Its screen can't be read once a ring is under way. */
     screenThrowsWhileRinging?: boolean
+    /** A queued prompt bars its screen from being believed this long from the start, in milliseconds. */
+    barredMs?: number
     /** Resizes it as the foreground is looked at, once: after the calm, before the ring. */
     resizeAtForeground?: boolean
   } = {},
@@ -64,6 +66,7 @@ const terminal = (
   let resizedAt = 0
   let resizeAtForeground = options.resizeAtForeground ?? false
   let stalled = options.stalled !== undefined
+  const barEnd = Date.now() + (options.barredMs ?? 0)
   let reading: "empty" | "starting" | Waits = options.stalled ?? "empty"
   const emptied: number[] = []
   const blocks: (Waits | null)[] = []
@@ -97,7 +100,8 @@ const terminal = (
       ringing = nonce
       return true
     },
-    stalled: () => stalled,
+    stalled: () => stalled && Date.now() >= barEnd,
+    barred: () => Math.max(0, barEnd - Date.now()),
     reading: () => reading,
     emptied: (_, readAt) => {
       emptied.push(readAt)
@@ -615,6 +619,46 @@ describe("the doorbell's care with a terminal it looks at", () => {
     doorbell.changed("t")
     await vi.waitFor(() => expect(failed.length).toBeGreaterThanOrEqual(3), { timeout: 3_000 })
     expect(blocks).not.toContain("failed")
+    stop()
+    doorbell.close()
+  })
+
+  it("looks just after a queued prompt's bar and calls the terminal Ready", async () => {
+    const { host, emptied, emptiedAt, screens, stop } = terminal({
+      ringable: false,
+      stalled: "empty",
+      barredMs: 300,
+    })
+    const doorbell = new Doorbell(host, host.queue, { ...recheck, calmMs: 30 })
+    const began = Date.now()
+    doorbell.changed("t")
+    await sleep(200)
+    expect(screens()).toBe(0)
+    await vi.waitFor(() => expect(emptied).toHaveLength(1))
+    expect(emptiedAt[0]! - began).toBeGreaterThanOrEqual(300)
+    expect(emptiedAt[0]! - began).toBeLessThan(600)
+    stop()
+    doorbell.close()
+  })
+
+  it("keeps backing off a stalled terminal whose redraws change nothing", async () => {
+    const { host, screens, bump, stop } = terminal({ ringable: false, stalled: "draft" })
+    const doorbell = new Doorbell(host, host.queue, {
+      ...recheck,
+      calmMs: 30,
+      recheckMs: 40,
+      recheckMaxMs: 160,
+    })
+    const redrawing = setInterval(() => doorbell.changed("t"), 5)
+    await sleep(700)
+    clearInterval(redrawing)
+    // Looks at 0, ~40, ~120, ~280, ~440, ~600 ms; a look every calm window would be ~20.
+    expect(screens()).toBeLessThanOrEqual(8)
+    // A key of the person's ends the wait.
+    const before = screens()
+    bump()
+    doorbell.changed("t")
+    await vi.waitFor(() => expect(screens()).toBeGreaterThan(before), { timeout: 200 })
     stop()
     doorbell.close()
   })
