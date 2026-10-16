@@ -27,7 +27,7 @@ import {
   sameTarget,
   windowedDestination,
 } from "../selectors"
-import { noteUpdateShown } from "../ui-store"
+import { notePortableCardShown } from "../ui-store"
 import { createChatCommands, type ChatCommands } from "./chat"
 import { createCompanionCommands, type CompanionCommands } from "./companion"
 import type { CommandContext } from "./context"
@@ -97,11 +97,11 @@ export type WorkspaceCommands = ShellCommands &
     readonly retryAfterCrashLoop: () => void
     readonly dismissCrashLoop: () => void
     // Opens or closes the portable copy's card, which the footer's chip reopens once dismissed.
-    readonly setUpdateOpen: (open: boolean) => void
+    readonly setPortableCardOpen: (open: boolean) => void
     // Opens or closes the sandbox notice; opening it closes the update's, which shares its place.
     readonly setSandboxOpen: (open: boolean) => void
     // Notes that the card came up in this run, so it isn't raised by itself again.
-    readonly updateShown: () => void
+    readonly portableCardShown: () => void
   }
 
 // The terminal created last stays highlighted this long.
@@ -497,18 +497,26 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       crashLoop?.retry()
     },
     dismissCrashLoop: () => ui.update((state) => ({ ...state, crashLoopDismissed: true })),
-    setUpdateOpen: (updateOpen) =>
+    setPortableCardOpen: (portableCardOpen) =>
       ui.update((state) =>
-        state.updateOpen === updateOpen && !(updateOpen && state.sandboxOpen)
+        state.portableCardOpen === portableCardOpen && !(portableCardOpen && state.sandboxOpen)
           ? state
-          : { ...state, updateOpen, sandboxOpen: updateOpen ? false : state.sandboxOpen },
+          : {
+              ...state,
+              portableCardOpen,
+              sandboxOpen: portableCardOpen ? false : state.sandboxOpen,
+            },
       ),
     setSandboxOpen: (sandboxOpen) =>
       ui.update((state) =>
-        state.sandboxOpen === sandboxOpen && !(sandboxOpen && state.updateOpen)
+        state.sandboxOpen === sandboxOpen && !(sandboxOpen && state.portableCardOpen)
           ? state
-          : { ...state, sandboxOpen, updateOpen: sandboxOpen ? false : state.updateOpen },
+          : {
+              ...state,
+              sandboxOpen,
+              portableCardOpen: sandboxOpen ? false : state.portableCardOpen,
+            },
       ),
-    updateShown: () => noteUpdateShown(ui.getSnapshot().portable),
+    portableCardShown: () => notePortableCardShown(ui.getSnapshot().portable),
   }
 }

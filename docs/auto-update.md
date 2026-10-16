@@ -186,7 +186,7 @@ itself for the person: the answer is `installed`, the page says the installed co
 effect after you restart Novadeck", and nothing is quit, started or handed off. While it
 works the host sends `InstallProgress` to the app's pages (`onInstallProgress`): `installing`
 on every system, and on Windows whole-percent `downloading` before it. `PortableState.installed`
-is true once this run installed, and a second request answers the same without installing
+is true once this run installed, or found a newer copy already installed, and a second request answers the same without installing
 again. On Linux:
 
 - It installs from the running file, with no download: the AppImage is copied beside the
@@ -450,5 +450,6 @@ full one.
   offer for an early-only release stays until a later check offers another version; the
   bridge has no way to withdraw one. A downloaded update stays `ready` as well, unless a stable release newer than the running
   build replaces it, and a `downloading` offer is replaced only by its own outcome.
-- **Windows installs are not watched past the call.** The NSIS installer is started
-  asynchronously as the app exits, so an error there is not seen by the app.
+- **Windows updates are not watched past the call.** An installed copy's update runs the
+  NSIS installer asynchronously as the app exits, so an error there is not seen by the app.
+  (A portable copy's install is watched: see Portable builds.)

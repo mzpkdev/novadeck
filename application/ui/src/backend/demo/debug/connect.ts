@@ -1,7 +1,7 @@
 import type { SandboxState } from "../../../model/sandbox"
 import type { BootRehearsals } from "../../boot-rehearsal"
 import type { BackendConnection, ConnectBackend } from "../../port"
-import { clearUpdateRaised } from "../../update-raised"
+import { clearPortableCardRaised } from "../../portable-card-raised"
 import { keepVariant, rememberVariant, requestedVariant } from "../variants"
 import { bootFailures } from "./boot-failures"
 import { restoreIconGuides } from "./icon-guides"
@@ -33,7 +33,7 @@ export const connectDemo = (rehearsals: BootRehearsals): ConnectBackend => {
     // Each demo boot stands for a launch of the app, retries and variant switches too (the
     // desktop app's retries are not launches): a portable copy's card, raised once per
     // launch, is not held back as already shown by the boot before.
-    if (portable) clearUpdateRaised()
+    if (portable) clearPortableCardRaised()
     // An abandoned attempt leaves the arming for the next.
     const slow = slowAttach && !signal.aborted
     if (slow) slowAttach = false

@@ -1,12 +1,11 @@
 import { X } from "lucide-react"
 import { useEffect, useId, useRef, useState } from "react"
 
-import { blockingOverlayOpen } from "../interaction/dom"
 import type { InstallProgress, InstallResult } from "../model/portable"
 import type { UpdateOffer } from "../model/update"
 import { Progress } from "../ui-toolkit/Progress"
-import { KeepFocus, useRecoverFocus } from "./notice-focus"
-import { fadeMs, finishedForMs } from "./UpdateProgress"
+import { useLinger } from "./linger"
+import { KeepFocus, useOverlayOpen, useRecoverFocus } from "./notice-focus"
 
 // A portable copy, which never updates itself and is the way to install the app that does.
 export type FooterPortable = {
@@ -30,7 +29,7 @@ type Install =
 
 // A portable copy's install entry. A copy that updates itself has none: its downloads show
 // as a floating bar (UpdateProgress.tsx).
-export type FooterUpdateProps = {
+export type PortableInstallProps = {
   // The release this copy is missing; absent while there is none, when the chip only
   // offers to install.
   readonly offer?: UpdateOffer | undefined
@@ -44,24 +43,6 @@ export type FooterUpdateProps = {
   readonly onShown: () => void
   // Puts typing focus back in the selected terminal; false when there is none.
   readonly returnFocus: () => boolean
-}
-
-// Whether a dialog, menu or popover is open, looked at while `active`: they come and go
-// in portals, so there is nothing to subscribe to. Looked at as `active` begins, so an
-// offer that arrives with one open never shows, and then every 150 ms.
-export const useOverlayOpen = (active: boolean): boolean => {
-  const [was, setWas] = useState(false)
-  const [open, setOpen] = useState(false)
-  if (active !== was) {
-    setWas(active)
-    setOpen(active && blockingOverlayOpen())
-  }
-  useEffect(() => {
-    if (!active) return undefined
-    const timer = setInterval(() => setOpen(blockingOverlayOpen()), 150)
-    return () => clearInterval(timer)
-  }, [active])
-  return active && open
 }
 
 // What the card says of where installing stands, as its title and its one line.
@@ -102,11 +83,11 @@ const cardWords = (
 // to the card, so Escape there folds it back into the chip and returns to it.
 // A finished install says so for a few seconds, as the update bar does, then fades and
 // leaves "Installed" on the chip. Novadeck never restarts itself.
-export const FooterUpdate = ({
-  update,
+export const PortableInstall = ({
+  portable: card,
   hidden,
 }: {
-  readonly update: FooterUpdateProps | undefined
+  readonly portable: PortableInstallProps | undefined
   readonly hidden: boolean
 }): React.JSX.Element => {
   // Where installing from a portable copy stands.
@@ -114,7 +95,7 @@ export const FooterUpdate = ({
   // How far the install has got, as far as the host tells.
   const [progress, setProgress] = useState<InstallProgress | null>(null)
   // Whether the card is saying an install is done, for a few seconds, before it fades away.
-  const [lingering, setLingering] = useState<"shown" | "fading" | null>(null)
+  const [lingering, setLingering] = useState<"finished" | "fading" | null>(null)
   const panel = useRef<HTMLElement>(null)
   const chip = useRef<HTMLButtonElement>(null)
   // Whether the person opened the card from the chip: focus moves into it once it
@@ -123,16 +104,16 @@ export const FooterUpdate = ({
   const opener = useRef<"chip" | "auto">("auto")
   const titleId = useId()
   const panelId = useId()
-  const offer = update?.offer
-  const portable = update?.portable
+  const offer = card?.offer
+  const portable = card?.portable
   // A window opened again in a run that installed the app finds it done.
   const install: Install = started ?? { phase: portable?.installed ? "installed" : "idle" }
   const running = install.phase === "running"
-  const wanted = (update?.open ?? false) && !hidden && !update?.blocked
+  const wanted = (card?.open ?? false) && !hidden && !card?.blocked
   const overlay = useOverlayOpen(wanted)
-  const blocked = (update?.blocked ?? false) || overlay
-  const visible = (update?.open ?? false) && !hidden && !blocked
-  const onShown = update?.onShown
+  const blocked = (card?.blocked ?? false) || overlay
+  const visible = (card?.open ?? false) && !hidden && !blocked
+  const onShown = card?.onShown
   useEffect(() => {
     if (visible) onShown?.()
   }, [visible, onShown])
@@ -148,33 +129,24 @@ export const FooterUpdate = ({
   }, [visible])
   const lost = useRecoverFocus(blocked || hidden, chip)
   const finish = (): void => {
-    if (!update) return
+    if (!card) return
     const inside = panel.current?.contains(document.activeElement) === true
     const back = opener.current === "chip"
     requested.current = false
     opener.current = "auto"
     setLingering(null)
-    update.onOpenChange(false)
+    card.onOpenChange(false)
     if (!inside) return
-    if (back || !update.returnFocus()) chip.current?.focus()
+    if (back || !card.returnFocus()) chip.current?.focus()
   }
-  useEffect(() => {
-    if (!visible || lingering === null) return undefined
-    const timer = setTimeout(
-      () => (lingering === "shown" ? setLingering("fading") : finish()),
-      lingering === "shown" ? finishedForMs : fadeMs,
-    )
-    return () => clearTimeout(timer)
-    // `finish` only reads what the effect already depends on.
-    // oxlint-disable-next-line react/exhaustive-deps
-  }, [visible, lingering])
+  useLinger(lingering, visible, (to) => (to === "fading" ? setLingering("fading") : finish()))
   const word = offer ? "Update available" : "Install Novadeck"
   const narrow = offer ? "Update" : "Install"
   const installed = install.phase === "installed"
   // Nothing is left to install: the chip says so, for a newer copy found as for ours.
   const done = installed || install.phase === "newer"
   const startInstall = (): void => {
-    if (!portable || !update || running) return
+    if (!portable || !card || running) return
     // The button pressed goes with the card's words; focus stays in the card.
     if (panel.current?.contains(document.activeElement)) panel.current.focus()
     setStarted({ phase: "running" })
@@ -190,8 +162,8 @@ export const FooterUpdate = ({
             ? { phase: "newer", version: result.version }
             : { phase: "failed", reason: result.reason },
       )
-      if (result.kind === "installed") setLingering("shown")
-      update.onOpenChange(true)
+      if (result.kind === "installed") setLingering("finished")
+      card.onOpenChange(true)
     })
   }
   const { title, line } = cardWords(offer, install, progress)
@@ -211,7 +183,7 @@ export const FooterUpdate = ({
                 ? word
                 : ""}
       </span>
-      {update && portable && (
+      {card && portable && (
         <>
           <button
             ref={chip}
@@ -237,7 +209,7 @@ export const FooterUpdate = ({
               opener.current = "chip"
               // Opened again by the person, the card starts over without the last failure.
               if (install.phase === "failed") setStarted({ phase: "idle" })
-              update.onOpenChange(true)
+              card.onOpenChange(true)
             }}
           >
             {offer && install.phase === "idle" && (

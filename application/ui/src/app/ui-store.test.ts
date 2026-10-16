@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, vi } from "vitest"
 
-import { clearUpdateRaised } from "../backend/update-raised"
+import { clearPortableCardRaised } from "../backend/portable-card-raised"
 import type { PortableState } from "../model/portable"
 import { createWorkspaceStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
@@ -10,7 +10,7 @@ import { appearance, workspaceFixture } from "../test/fixtures"
 import {
   createUiStore,
   initialUi,
-  noteUpdateShown,
+  notePortableCardShown,
   persist,
   trackRecent,
   watchFinishes,
@@ -24,7 +24,7 @@ import {
 } from "./ui-store"
 
 // A run of the app's memory of what it raised outlasts a store, so each test starts one.
-beforeEach(() => clearUpdateRaised())
+beforeEach(() => clearPortableCardRaised())
 
 const initial = (): UiState =>
   initialUi({
@@ -477,10 +477,10 @@ describe("a waiting update", () => {
     report(offered("0.0.80"))
     report(offered("0.0.81", "available"))
     report({ kind: "downloading", version: "0.0.82", percent: 10 })
-    expect(ui.getSnapshot().updateOpen).toBe(false)
+    expect(ui.getSnapshot().portableCardOpen).toBe(false)
     ui.update((state) => ({ ...state, portable: { portable: false } }))
     report(offered("0.0.83"))
-    expect(ui.getSnapshot().updateOpen).toBe(false)
+    expect(ui.getSnapshot().portableCardOpen).toBe(false)
   })
 
   it("is never there where the backend has no updates", () => {
@@ -558,7 +558,7 @@ describe("a portable copy", () => {
   it("raises its card once the host says it is portable, with no release known", async () => {
     const ui = createUiStore(initial())
     watchPortable(host(), ui)
-    await vi.waitFor(() => expect(ui.getSnapshot().updateOpen).toBe(true))
+    await vi.waitFor(() => expect(ui.getSnapshot().portableCardOpen).toBe(true))
   })
 
   it("raises its card for a release, whichever is heard first", async () => {
@@ -567,26 +567,26 @@ describe("a portable copy", () => {
     const early = createUiStore(initial())
     watchUpdates(first.updates, early)
     first.report(available)
-    expect(early.getSnapshot().updateOpen).toBe(false)
+    expect(early.getSnapshot().portableCardOpen).toBe(false)
     watchPortable(host(), early)
-    await vi.waitFor(() => expect(early.getSnapshot().updateOpen).toBe(true))
+    await vi.waitFor(() => expect(early.getSnapshot().portableCardOpen).toBe(true))
     // The answer first, in another run.
-    clearUpdateRaised()
+    clearPortableCardRaised()
     const second = updateHost()
     const late = createUiStore(initial())
     watchPortable(host(), late)
     await vi.waitFor(() => expect(late.getSnapshot().portable).toEqual(here))
-    late.update((state) => ({ ...state, updateOpen: false }))
+    late.update((state) => ({ ...state, portableCardOpen: false }))
     watchUpdates(second.updates, late)
     second.report(available)
-    expect(late.getSnapshot().updateOpen).toBe(true)
+    expect(late.getSnapshot().portableCardOpen).toBe(true)
   })
 
   it("raises nothing when this run installed the app already", async () => {
     const ui = createUiStore(initial())
     watchPortable(host({ ...here, installed: true }), ui)
     await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual({ ...here, installed: true }))
-    expect(ui.getSnapshot().updateOpen).toBe(false)
+    expect(ui.getSnapshot().portableCardOpen).toBe(false)
   })
 
   it("takes a state the host pushes, which wins over an answer that comes after it", async () => {
@@ -608,7 +608,7 @@ describe("a portable copy", () => {
     answer(here)
     await Promise.resolve()
     expect(ui.getSnapshot().portable).toEqual({ ...here, installed: true })
-    expect(ui.getSnapshot().updateOpen).toBe(false)
+    expect(ui.getSnapshot().portableCardOpen).toBe(false)
   })
 
   it("raises nothing when the answer is that it is not a portable copy", async () => {
@@ -618,7 +618,7 @@ describe("a portable copy", () => {
     report(available)
     watchPortable(host({ portable: false }), ui)
     await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual({ portable: false }))
-    expect(ui.getSnapshot().updateOpen).toBe(false)
+    expect(ui.getSnapshot().portableCardOpen).toBe(false)
   })
 
   it("does not raise its card again for a later offer once it was shown this run", async () => {
@@ -626,13 +626,13 @@ describe("a portable copy", () => {
     const ui = createUiStore(initial())
     watchPortable(host(), ui)
     watchUpdates(updates, ui)
-    await vi.waitFor(() => expect(ui.getSnapshot().updateOpen).toBe(true))
+    await vi.waitFor(() => expect(ui.getSnapshot().portableCardOpen).toBe(true))
     // Shown, then dismissed.
-    noteUpdateShown(here)
-    ui.update((state) => ({ ...state, updateOpen: false }))
+    notePortableCardShown(here)
+    ui.update((state) => ({ ...state, portableCardOpen: false }))
     report(available)
     report(offered("0.0.81", "available"))
-    expect(ui.getSnapshot().updateOpen).toBe(false)
+    expect(ui.getSnapshot().portableCardOpen).toBe(false)
   })
 
   context(
@@ -643,7 +643,7 @@ describe("a portable copy", () => {
         const ui = createUiStore(initial())
         watchPortable(host({ ...here, run }), ui)
         await vi.waitFor(() => expect(ui.getSnapshot().portable).toEqual({ ...here, run }))
-        return ui.getSnapshot().updateOpen
+        return ui.getSnapshot().portableCardOpen
       }
 
       it("raises the card again when it was raised but never shown", async () => {
@@ -653,8 +653,8 @@ describe("a portable copy", () => {
 
       it("does not raise it again once shown, until a relaunch", async () => {
         expect(await launch()).toBe(true)
-        // The footer shows the card, as the command `updateShown` records.
-        noteUpdateShown(here)
+        // The footer shows the card, as the command `portableCardShown` records.
+        notePortableCardShown(here)
         // The window closed and opened again: the page is new and the run the same.
         sessionStorage.clear()
         expect(await launch()).toBe(false)

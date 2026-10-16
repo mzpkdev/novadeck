@@ -1,12 +1,8 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 
 import type { UpdateOffer } from "../model/update"
 import { Progress } from "../ui-toolkit/Progress"
-
-// How long a finished download says so before the bar fades, and how long the fade takes.
-// Both are spent in view: they wait while the bar is hidden, as in Zen mode.
-export const finishedForMs = 4_000
-export const fadeMs = 200
+import { useLinger } from "./linger"
 
 // Where the bar stands for the offer heard last. A download this page saw finish keeps the
 // bar full for `finishedForMs`, then fades it; a version found ready without a download
@@ -44,17 +40,7 @@ export const UpdateProgress = ({
   const next = watchedAfter(watched, offer)
   if (next?.version !== watched?.version || next?.moment !== watched?.moment) setWatched(next)
   const moment = watched?.moment ?? "gone"
-  useEffect(() => {
-    if (hidden || (moment !== "finished" && moment !== "fading")) return undefined
-    const timer = setTimeout(
-      () =>
-        setWatched(
-          (current) => current && { ...current, moment: moment === "finished" ? "fading" : "gone" },
-        ),
-      moment === "finished" ? finishedForMs : fadeMs,
-    )
-    return () => clearTimeout(timer)
-  }, [moment, hidden])
+  useLinger(moment, !hidden, (to) => setWatched((current) => current && { ...current, moment: to }))
   const percent = moment === "progress" ? (offer?.percent ?? 0) : 100
   const shown = moment !== "gone" && !hidden
   return (

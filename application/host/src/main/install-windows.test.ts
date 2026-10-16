@@ -688,7 +688,7 @@ describe("the installer's PowerShell checks", () => {
   // app-builder-lib/templates/nsis/include/allowOnlyOneInstallerInstance.nsh (the two
   // `nsExec::Exec ... -C "<command>"` lines). They are pinned here so an upgrade that
   // changes them is noticed.
-  it("are the exact commands of the template, when it can be found", () => {
+  it("are the exact commands of the template, and the path check is the prefix one mirrored", () => {
     expect(powershellChecks).toEqual([
       "if (Get-Command Get-CimInstance -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }",
       "if ((Get-ExecutionPolicy -Scope Process) -eq 'Restricted') { exit 1 } else { exit 0 }",
@@ -697,7 +697,8 @@ describe("the installer's PowerShell checks", () => {
     const found = existsSync(store)
       ? readdirSync(store).find((name) => name.startsWith("app-builder-lib@"))
       : undefined
-    if (found === undefined) return
+    // A missing template fails: the pin is worth nothing if it silently stops running.
+    if (found === undefined) throw new Error(`app-builder-lib is not installed under ${store}`)
     const template = readFileSync(
       join(
         store,
@@ -707,6 +708,9 @@ describe("the installer's PowerShell checks", () => {
       "utf8",
     )
     for (const command of powershellChecks) expect(template).toContain(`-C "${command}"`)
+    // `insideInstallFolder` mirrors this plain case-insensitive prefix check of a process's
+    // path against the install folder.
+    expect(template).toContain("StartsWith('$INSTDIR', 'CurrentCultureIgnoreCase')")
   })
 })
 

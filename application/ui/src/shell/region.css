@@ -318,7 +318,7 @@
   box-shadow: var(--region-sidebar-shadow, var(--shadow-panel));
 }
 
-/* An update downloading (UpdateProgress.tsx) and a portable copy's card (FooterUpdate.tsx),
+/* An update downloading (UpdateProgress.tsx) and a portable copy's card (PortableInstall.tsx),
    `.floating` surfaces above the footer's right end: a title and the percent or a
    dismissing ×, the bar where there is one, and a line of what is happening. The download
    is information only, so it lets clicks through to what it covers; the card, which has

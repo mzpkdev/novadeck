@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react"
 
 import type { UpdateOffer } from "../model/update"
 import { FooterSandbox, type FooterSandboxProps } from "./FooterSandbox"
-import { FooterUpdate, type FooterUpdateProps } from "./FooterUpdate"
+import { PortableInstall, type PortableInstallProps } from "./PortableInstall"
 import { UpdateAvailable, type FooterAvailable } from "./UpdateAvailable"
 import { UpdateProgress } from "./UpdateProgress"
 
@@ -25,7 +25,7 @@ const shown: Record<Exclude<FooterStatus, "ok">, { readonly tone: Tone; readonly
 // downloading floats a bar above its right end (UpdateProgress.tsx); one it can't install
 // itself is a chip, "Update available", that opens the release page (UpdateAvailable.tsx).
 // A portable copy has a chip there instead, "Install Novadeck" or "Update available", in
-// the bar's own colours, which opens its notice (FooterUpdate.tsx). Without the security
+// the bar's own colours, which opens its notice (PortableInstall.tsx). Without the security
 // sandbox, a chip before it says so (FooterSandbox.tsx).
 export const WorkspaceFooter = ({
   hidden,
@@ -34,7 +34,7 @@ export const WorkspaceFooter = ({
   status,
   navigate = false,
   onRetry,
-  update,
+  portable,
   progress = null,
   available,
   noticeOpen = false,
@@ -51,7 +51,7 @@ export const WorkspaceFooter = ({
   readonly onRetry?: (() => void) | undefined
   // A portable copy's install entry, with the release it is missing. Quiet: it never tones
   // the bar, and the link's status keeps its place after it.
-  readonly update?: FooterUpdateProps | undefined
+  readonly portable?: PortableInstallProps | undefined
   // The update the app updates itself to, whose download the floating bar follows.
   readonly progress?: UpdateOffer | null
   // A release an installed copy can't install itself: a chip that opens its release page.
@@ -102,7 +102,7 @@ export const WorkspaceFooter = ({
       <span className="flex items-center gap-4">
         {usage}
         <FooterSandbox sandbox={sandbox} hidden={hidden} />
-        <FooterUpdate update={update} hidden={hidden} />
+        <PortableInstall portable={portable} hidden={hidden} />
         <UpdateAvailable available={available} />
         <UpdateProgress offer={progress} hidden={hidden || noticeOpen} />
         <span className="footer-status flex items-center gap-1.5 font-bold">

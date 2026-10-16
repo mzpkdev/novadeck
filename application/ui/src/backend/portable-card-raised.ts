@@ -4,31 +4,31 @@
 // launch's: the card comes up by itself once per launch, not once per page or per window,
 // which macOS closes and opens again without ending the app. Without storage it is kept in
 // memory, and a reload is a launch.
-const updateRaisedStorageKey = "novadeck.update-raised"
+const portableCardRaisedStorageKey = "novadeck.portable-card-raised"
 let raisedInMemory: string | null = null
 
 /** Whether the card was shown in `run`. */
-export const readUpdateRaised = (run: string): boolean => {
+export const readPortableCardRaised = (run: string): boolean => {
   try {
-    return localStorage.getItem(updateRaisedStorageKey) === run
+    return localStorage.getItem(portableCardRaisedStorageKey) === run
   } catch {
     return raisedInMemory === run
   }
 }
 
-export const clearUpdateRaised = (): void => {
+export const clearPortableCardRaised = (): void => {
   raisedInMemory = null
   try {
-    localStorage.removeItem(updateRaisedStorageKey)
+    localStorage.removeItem(portableCardRaisedStorageKey)
   } catch {
     /* Nothing is kept. */
   }
 }
 
 /** Notes that the card was shown in `run`. */
-export const writeUpdateRaised = (run: string): void => {
+export const writePortableCardRaised = (run: string): void => {
   try {
-    localStorage.setItem(updateRaisedStorageKey, run)
+    localStorage.setItem(portableCardRaisedStorageKey, run)
   } catch {
     raisedInMemory = run
   }

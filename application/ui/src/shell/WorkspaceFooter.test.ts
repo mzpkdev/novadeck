@@ -5,7 +5,7 @@ import type { InstallProgress, InstallResult } from "../model/portable"
 import type { UpdateOffer } from "../model/update"
 import { context, describe, expect, it } from "../test"
 import { render, type Rendered } from "../test/render"
-import { fadeMs, finishedForMs } from "./UpdateProgress"
+import { fadeMs, finishedForMs } from "./linger"
 import { recoveredForMs, WorkspaceFooter, type FooterStatus } from "./WorkspaceFooter"
 
 const mounted: Rendered[] = []
@@ -26,7 +26,7 @@ const props = (status: FooterStatus, update?: UpdateOffer) => ({
   count: 2,
   running: 1,
   status,
-  update: {
+  portable: {
     offer: update,
     portable,
     open: false,
@@ -381,7 +381,7 @@ describe("workspace footer", () => {
         createElement(WorkspaceFooter, {
           ...props("ok"),
           hidden,
-          update: {
+          portable: {
             offer: offer ?? undefined,
             portable,
             open: true,
@@ -444,8 +444,8 @@ describe("workspace footer", () => {
         const page = render(
           createElement(WorkspaceFooter, {
             ...props("ok"),
-            update: {
-              ...props("ok").update,
+            portable: {
+              ...props("ok").portable,
               open: true,
               portable: {
                 ...portable,
@@ -477,7 +477,7 @@ describe("workspace footer", () => {
         const page = render(
           createElement(WorkspaceFooter, {
             ...props("ok"),
-            update: { ...props("ok").update, portable: { ...portable, installed: true } },
+            portable: { ...props("ok").portable, portable: { ...portable, installed: true } },
           }),
         )
         mounted.push(page)
@@ -499,8 +499,8 @@ describe("workspace footer", () => {
         const page = render(
           createElement(WorkspaceFooter, {
             ...props("ok"),
-            update: {
-              ...props("ok").update,
+            portable: {
+              ...props("ok").portable,
               open: true,
               portable: { ...portable, unsandboxed: true },
             },
@@ -515,8 +515,8 @@ describe("workspace footer", () => {
         const page = render(
           createElement(WorkspaceFooter, {
             ...props("ok"),
-            update: {
-              ...props("ok").update,
+            portable: {
+              ...props("ok").portable,
               open: true,
               portable: {
                 ...portable,

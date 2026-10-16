@@ -31,7 +31,7 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   const connection = useConnection(backend.connection)
   const crashes = useUiState((state) => state.crashLoop)
   const offer = useUiState((state) => state.update)
-  const updateOpen = useUiState((state) => state.updateOpen)
+  const portableCardOpen = useUiState((state) => state.portableCardOpen)
   const sandbox = useUiState((state) => state.sandbox)
   const sandboxOpen = useUiState((state) => state.sandboxOpen)
   const portableState = useUiState((state) => state.portable)
@@ -108,7 +108,7 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
           ? { version: offer.version, onOpenPage: updates.openPage }
           : undefined
       }
-      update={
+      portable={
         portable && portableHost
           ? {
               offer: updates ? (offer ?? undefined) : undefined,
@@ -119,10 +119,10 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
                 installed: portableState?.portable === true && portableState.installed,
                 ...(portableHost.onProgress && { onProgress: portableHost.onProgress }),
               },
-              open: updateOpen,
+              open: portableCardOpen,
               blocked: asking || welcome || sandboxOpen,
-              onOpenChange: commands.setUpdateOpen,
-              onShown: commands.updateShown,
+              onOpenChange: commands.setPortableCardOpen,
+              onShown: commands.portableCardShown,
               returnFocus: () => {
                 const { selected, view } = currentState(store.getSnapshot())
                 if (!selected) return false

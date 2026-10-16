@@ -326,9 +326,9 @@ export type NativeUpdater = {
  * reports, from the first, then `ready` once downloaded. A download already on disk from
  * an earlier launch reports none, and is `ready` at once. A release whose download fails
  * is tried again, once in a run, by a check `retryCheckMs` later; after that the schedule
- * tries it. Meanwhile it is offered as `available`, to be
- * installed from the release page, once its progress or an update it replaces was
- * offered; one that failed before either goes untold, as a failed check does. The one
+ * tries it. Meanwhile it is offered as `retrying`, which the page shows nothing for, once
+ * its progress or an update it replaces was offered; one that failed before either goes
+ * untold, as a failed check does. The one
  * exception is the release `failedVersion`
  * names, the version an earlier install failed on: it is only told of, as `available`,
  * and not downloaded again, so a failing install does not come back at every launch. A
@@ -344,7 +344,7 @@ export type NativeUpdater = {
  * from `ready` to `downloading` the newer release as its progress comes in, so the page
  * shows it again. Should it fail, the waiting file is likely gone
  * with it, as electron-updater clears its download folder then: the newer release is
- * offered as `available` until the retry downloads it. On macOS the schedule ends once an
+ * offered as `retrying` until the retry downloads it. On macOS the schedule ends once an
  * update has downloaded instead, as whether Squirrel.Mac stages an update over one it has
  * staged is untried; the next launch checks again.
  *
@@ -353,7 +353,8 @@ export type NativeUpdater = {
  * the version, and `offer` is told the update is only `available`. Installing is when
  * the updater's `install` (quitting) has been called, which this wraps to know, and on
  * macOS also while Squirrel stages the download; any other error, such as a check still
- * in flight failing offline, is only logged. *
+ * in flight failing offline, is only logged.
+ *
  * In `tell` mode it downloads and installs nothing, and tells `offer` each release newer
  * than this build is `available`; the schedule goes on, so a newer
  * release replaces the offer.

@@ -1,5 +1,5 @@
 import type { Backend } from "../backend/port"
-import { readUpdateRaised, writeUpdateRaised } from "../backend/update-raised"
+import { readPortableCardRaised, writePortableCardRaised } from "../backend/portable-card-raised"
 import {
   agentWorking,
   finishGraceMs,
@@ -74,7 +74,7 @@ export type UiState = {
   // The update the desktop app last told of: downloaded, or to fetch from its release page.
   readonly update: UpdateOffer | null
   // Whether its notice is open, or waits to open once the footer shows.
-  readonly updateOpen: boolean
+  readonly portableCardOpen: boolean
   // Whether the desktop app runs in its security sandbox, as the host said at startup; null
   // until then, and where it does not say.
   readonly sandbox: SandboxState | null
@@ -133,7 +133,7 @@ export const initialUi = ({
   crashLoopDismissed: false,
   crashLoop: 0,
   update: null,
-  updateOpen: false,
+  portableCardOpen: false,
   sandbox: null,
   sandboxOpen: false,
   portable: null,
@@ -261,7 +261,7 @@ export const watchCrashLoop = (crashes: Store<number> | undefined, ui: UiStore):
 // a bar. An offer heard before the host says whether this is a portable copy is raised once
 // it does (`watchPortable`).
 // Once per launch is what the host's run name says, kept beyond the page's life
-// (`readUpdateRaised`, written as the card shows), so a reload, a window opened again or a
+// (`readPortableCardRaised`, written as the card shows), so a reload, a window opened again or a
 // new attempt at the backend does not raise it again, while a card held back does. (The
 // demo's boots stand for launches and clear it; the desktop app's retries do not.)
 export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => void) =>
@@ -271,19 +271,19 @@ export const watchUpdates = (updates: Backend["updates"], ui: UiStore): (() => v
     ui.update((current) => ({
       ...current,
       update,
-      updateOpen: current.updateOpen || raise,
+      portableCardOpen: current.portableCardOpen || raise,
     }))
   }) ?? (() => {})
 
 // Notes that the portable copy's card showed, for the rest of the run.
-export const noteUpdateShown = (portable: PortableState | null): void => {
-  if (portable?.portable) writeUpdateRaised(portable.run)
+export const notePortableCardShown = (portable: PortableState | null): void => {
+  if (portable?.portable) writePortableCardRaised(portable.run)
 }
 
 // Whether this run of a portable copy has shown its card already.
 // A copy that installed the app already has nothing to raise.
 const raisedThisRun = (portable: PortableState): boolean =>
-  portable.portable && (portable.installed || readUpdateRaised(portable.run))
+  portable.portable && (portable.installed || readPortableCardRaised(portable.run))
 
 // Asks the backend once whether the app is a portable copy, and keeps the answer for the
 // footer. A portable copy raises its card now, offer or not. A host that fails to say is
@@ -303,7 +303,7 @@ export const watchPortable = (portable: Backend["portable"], ui: UiStore): (() =
       ui.update((state) => ({
         ...state,
         portable: portableState,
-        updateOpen: state.updateOpen || raise,
+        portableCardOpen: state.portableCardOpen || raise,
       }))
     },
     // A host that fails to say is not one, so nothing waits on its answer.
