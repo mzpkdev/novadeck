@@ -18,7 +18,7 @@ describe("a path's spellings", () => {
   })
 
   it("are the path itself on Linux", () => {
-    expect(spellings("/tmp/novadeck-e2e-x")).toEqual(["/tmp/novadeck-e2e-x"])
+    expect(spellings("/tmp/sandbox-x")).toEqual(["/tmp/sandbox-x"])
   })
 })
 

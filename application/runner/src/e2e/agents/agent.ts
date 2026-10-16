@@ -264,8 +264,9 @@ export type AgentSetup = {
    * What the tripwire watches of the harness in the developer's home (see `Watch`):
    * `searched` its configuration files, which its own sessions rewrite as they start or
    * run and only a connect or trust that leaked out of the sandbox would write the
-   * sandbox's root to; `stamped` its login and plugin folders, which change only when a
-   * plugin is installed or removed.
+   * sandbox's root to; `listed` folders a leak would add an entry named after the sandbox
+   * to; `stamped` its login and plugin folders, which change only when a plugin is
+   * installed or removed.
    */
   readonly watch: Watch
   /**

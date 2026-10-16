@@ -169,7 +169,8 @@ const intact = (): string | undefined => {
 // Removes the listers of other sources, as earlier versions of this one compiled: a run of
 // one may still use it, which leaves it there.
 const sweep = (): void => {
-  const others = /^sandbox-reap-[0-9a-f]{16}(-[0-9a-f]{16})?\.exe$/
+  // Those this compiled as `novadeck-e2e-reap-*` before it was a library's go too.
+  const others = /^(?:sandbox|novadeck-e2e)-reap-[0-9a-f]{16}(-[0-9a-f]{16})?\.exe$/
   for (const name of readdirSync(tmpdir()))
     if (others.test(name) && !name.startsWith(`${listerName}-`))
       try {
@@ -263,9 +264,9 @@ const windows = (trees: Trees | undefined): Table => ({
   // Windows has no signal to ask with: ending one is TerminateProcess, and forcibly it
   // ends what it started too: the tree `trees` reads, where a process counts as a child
   // only if it started no earlier than its recorded parent, so an unrelated one given an
-  // ended parent's pid isn't, and each is ended only as the process it was (see `Trees`). Only a tree whose root is the process
-  // found, by its start, is ended, and waited for, so nothing of it holds the sandbox's
-  // files once `reap` returns.
+  // ended parent's pid isn't, and each is ended only as the process it was (see `Trees`).
+  // Only a tree whose root is the process found, by its start, is ended, and waited for,
+  // so nothing of it holds the sandbox's files once `reap` returns.
   end: async (one, forcibly) => {
     if (!forcibly) {
       try {

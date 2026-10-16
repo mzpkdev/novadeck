@@ -14,7 +14,9 @@ const made = (options: Partial<SandboxOptions> = {}) => {
   return sandbox
 }
 
-describe("a sandbox", () => {
+// The first sandbox on Windows asks git and PowerShell 7 where they're installed, which a
+// cold runner may take seconds to answer.
+describe("a sandbox", { timeout: 60_000 }, () => {
   it("keeps its home, project and temporary folder inside its root", () => {
     const sandbox = made()
 
