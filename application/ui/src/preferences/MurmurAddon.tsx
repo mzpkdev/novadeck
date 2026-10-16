@@ -53,22 +53,7 @@ export const MurmurAddon = ({
   const { failure, installing, installed, check, unsupported, recheck, unchecked } = state
   if (!state.available)
     return <Note>{`This build has no ${MURMUR_NAME} engine for this platform.`}</Note>
-  // Known not to run here, by the host or by an install: nothing to install, and why behind Details.
-  // Files that stay beside the verdict (their removal failed) keep the installed card, with its
-  // Uninstall; the host's word also never takes away an install that works.
-  if (unsupported !== null && !installed)
-    return (
-      <div className={settingsCardClasses}>
-        <div className={addonRowClasses}>
-          <span className={addonNoteClasses}>Not available on this computer</span>
-        </div>
-        <AddonDetails
-          {...(recheck && { action: { label: "Check again", onClick: actions.install } })}
-        >
-          {unsupported}
-        </AddonDetails>
-      </div>
-    )
+  // An install under way is shown whatever the verdict said: Check again keeps it until the new check ends.
   if (installing)
     return (
       <div className={settingsCardClasses}>
@@ -83,6 +68,22 @@ export const MurmurAddon = ({
           indeterminate={installing.step === "check"}
           onCancel={actions.cancel}
         />
+      </div>
+    )
+  // Known not to run here, by the host or by an install: nothing to install, and why behind Details.
+  // Files that stay beside the verdict (their removal failed) keep the installed card, with its
+  // Uninstall; the host's word also never takes away an install that works.
+  if (unsupported !== null && !installed)
+    return (
+      <div className={settingsCardClasses}>
+        <div className={addonRowClasses}>
+          <span className={addonNoteClasses}>Not available on this computer</span>
+        </div>
+        <AddonDetails
+          {...(recheck && { action: { label: "Check again", onClick: actions.install } })}
+        >
+          {unsupported}
+        </AddonDetails>
       </div>
     )
   if (!installed)
@@ -112,6 +113,8 @@ export const MurmurAddon = ({
   const busy = removing !== null
   // Files beside a verdict and no passed check: it can't run, so no switch that looks as if it did.
   const blocked = unsupported !== null && check === null
+  // Nothing to retry where the host's word holds, or no check can run beside a verdict.
+  const noRetry = unsupported !== null && (check === null || !recheck)
   return (
     <>
       <div className={settingsCardClasses}>
@@ -156,7 +159,7 @@ export const MurmurAddon = ({
             {busy ? "Removing…" : "Uninstall"}
           </button>
         </AddonRow>
-        {(failure || (unchecked && !blocked)) && (
+        {(failure || (unchecked && !noRetry)) && (
           // Installed with no check that passed, murmur can't run yet: another install runs
           // the check again, unless the host's word holds, where nothing can run it.
           <div className="flex items-center justify-between gap-6">
@@ -165,7 +168,7 @@ export const MurmurAddon = ({
             ) : (
               <p className={`${addonNoteClasses} m-0 px-4 py-3`}>{murmurUncheckedText}</p>
             )}
-            {!blocked && (
+            {!noRetry && (
               <button
                 type="button"
                 className="button mr-4 min-h-8 shrink-0 px-3 text-control"

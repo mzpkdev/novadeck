@@ -61,9 +61,12 @@ export const VoiceSetupContent = ({
           <span className="dictation-long">{offerText}</span>
           <span className="dictation-short">Voice input</span>
         </span>
-        <span className="dictation-muted dictation-fixed">
-          · {formatSize(installSize(state))} once
-        </span>
+        {/* Nothing to download, as after a cancel at the check, has no size to say. */}
+        {installSize(state) > 0 && (
+          <span className="dictation-muted dictation-fixed">
+            · {formatSize(installSize(state))} once
+          </span>
+        )}
         <Action title={preferencesNote} onPress={noThanks}>
           No thanks
         </Action>

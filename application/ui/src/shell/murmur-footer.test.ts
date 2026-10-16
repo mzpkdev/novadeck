@@ -128,6 +128,23 @@ describe("Murmur's footer item", () => {
     )
   })
 
+  it("is not told Not available by a verdict that stood when the install began", () => {
+    const standing = { ...idle, unsupported: "No graphics device answered.", recheck: true }
+    // A Check again that was cancelled, or failed on the network, keeps the old verdict.
+    expect(footerPhase("installing", standing, null, standing.unsupported)).toBe("idle")
+    expect(
+      footerPhase(
+        "installing",
+        { ...standing, failure: "The download stopped." },
+        null,
+        standing.unsupported,
+      ),
+    ).toBe("failed")
+    // A verdict that is new is news, whether none stood before or another did.
+    expect(footerPhase("installing", standing, null, null)).toBe("unavailable")
+    expect(footerPhase("installing", standing, null, "Another reason.")).toBe("unavailable")
+  })
+
   it("keeps the failed label short, and says the failure once in the live summary", () => {
     const failed = { ...idle, failure: "The download stopped." }
     expect(footerText("failed", failed).label).toBe("Murmur \u00b7 failed")

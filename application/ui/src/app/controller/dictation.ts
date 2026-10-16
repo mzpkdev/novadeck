@@ -55,20 +55,24 @@ const placeOf = (snapshot: Workspace): string =>
 
 // Ends an offer that is ignored: once the person types into the terminal, or goes to another
 // one. Keys aimed at voice input's own strip or pill (Tab, Enter or Space on its buttons) are
-// the person answering it, and Tab alone only moves toward it. Returns what stops watching.
+// the person answering it, and Tab from outside a terminal only moves toward it. A terminal
+// takes Tab as its own key (a shell's completion), so there it is typing. The keyboard's way
+// to answer is the shortcut again, which turns voice input on; ignoring the offer is the
+// keyboard's no. Returns what stops watching.
 export const watchOfferDismissal = (
   controller: Pick<DictationController, "setup" | "setupActions">,
   workspace: Pick<WorkspaceStore, "getSnapshot" | "subscribe">,
   target: Pick<Window, "addEventListener" | "removeEventListener"> = window,
 ): (() => void) => {
   const typed = (event: KeyboardEvent): void => {
-    const modifier = ["Control", "Shift", "Alt", "Meta", "AltGraph", "Tab"].includes(event.key)
+    const modifier = ["Control", "Shift", "Alt", "Meta", "AltGraph"].includes(event.key)
     // The shortcut itself, pressed again, turns voice input on.
     const chord = matchesShortcut(event, shortcutBindings(currentPlatform()).voice)
-    const within =
-      event.target instanceof Element &&
-      event.target.closest(".dictation-strip, .dictation-overlay")
-    if (!modifier && !chord && !within) controller.setupActions.dismiss()
+    const at = event.target instanceof Element ? event.target : null
+    const within = at?.closest(".dictation-strip, .dictation-overlay") != null
+    const typing =
+      event.key === "Tab" ? at?.closest(".xterm, [data-terminal-input]") != null : !modifier
+    if (typing && !chord && !within) controller.setupActions.dismiss()
   }
   let place = placeOf(workspace.getSnapshot())
   const stopWorkspace = workspace.subscribe(() => {

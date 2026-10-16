@@ -102,6 +102,63 @@ describe("the demo's voice input", () => {
     expect(voice.state.getSnapshot()).toMatchObject({ installed: [], wanted: true })
   })
 
+  it("keeps the last check until a new one passes, and what an install got to when it stops", async () => {
+    const voice = createDemoVoice({ step: 100, transcribe: 10 })
+    const check = voice.state.getSnapshot().check
+    voice.install()
+    await vi.advanceTimersByTimeAsync(50)
+    expect(voice.state.getSnapshot().check).toEqual(check)
+    voice.cancel()
+
+    const fresh = createDemoVoice({ step: 100, transcribe: 10 }, "uninstalled")
+    fresh.install()
+    // Past the engine and the model: into the check.
+    await vi.advanceTimersByTimeAsync(250)
+    fresh.cancel()
+    expect(fresh.state.getSnapshot()).toMatchObject({
+      installing: null,
+      engineInstalled: true,
+      installed: ["turbo"],
+      check: null,
+    })
+  })
+
+  it("leaves the engine on disk when an install fails after its step", async () => {
+    const voice = createDemoVoice({ step: 100, transcribe: 10 })
+    voice.show("network-failure")
+    voice.install()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(voice.state.getSnapshot()).toMatchObject({
+      engineInstalled: true,
+      installed: [],
+      installing: null,
+    })
+    expect(voice.state.getSnapshot().failure).not.toBeNull()
+  })
+
+  it("reaches the not-set-up state, which a retry only checks", async () => {
+    const voice = createDemoVoice({ step: 100, transcribe: 10 })
+    voice.show("cancelled-at-check")
+    expect(voice.state.getSnapshot()).toMatchObject({
+      engineInstalled: true,
+      installed: ["turbo"],
+      check: null,
+    })
+    voice.install()
+    await vi.advanceTimersByTimeAsync(150)
+    expect(voice.state.getSnapshot()).toMatchObject({ installed: ["turbo"], enabled: true })
+  })
+
+  it("keeps the aim at small through an uninstall under software rendering", () => {
+    const voice = createDemoVoice({ step: 100, transcribe: 10 })
+    voice.show("software-graphics")
+    voice.uninstall()
+    expect(voice.state.getSnapshot().aim).toBe("small")
+    voice.show("uninstalled")
+    voice.uninstall()
+    expect(voice.state.getSnapshot().aim).toBe("turbo")
+  })
+
   it("answers a canned transcript shortly after a clip ends", async () => {
     const voice = createDemoVoice({ step: 100, transcribe: 10 })
     const clip = voice.record()

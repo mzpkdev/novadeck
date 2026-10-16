@@ -49,6 +49,15 @@ describe("voice input's card in Addons", () => {
     view.unmount()
   })
 
+  it("says to finish setting up, not a size, when nothing is left to download, and holds still while removing", () => {
+    const view = render(
+      card({ ...base, engineInstalled: true, installed: ["small"], aim: "small" }),
+    )
+    expect(view.container.textContent).toContain("Finish setting up voice input.")
+    expect(view.container.textContent).not.toContain("0 MB")
+    view.unmount()
+  })
+
   it("offers Uninstall for an engine alone, and nothing to remove for an empty disk", () => {
     const engine = render(card({ ...base, engineInstalled: true }))
     expect(labels(engine.container)).toContain("Uninstall")

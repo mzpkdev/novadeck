@@ -145,6 +145,9 @@ export const WindowShell = ({
     <header
       className="terminal-header flex shrink-0 touch-manipulation select-none flex-nowrap items-center justify-between whitespace-nowrap"
       onDoubleClick={(event) => {
+        // What a popover in a portal got (Murmur's offer) reaches here through React, but is not
+        // the header's.
+        if (!event.currentTarget.contains(event.target as Node)) return
         if (
           performance.now() < ignoreDoubleClickUntil.current ||
           (event.target as Element).closest("button, input")
@@ -162,6 +165,7 @@ export const WindowShell = ({
         headerDoubleAction()
       }}
       onPointerDown={(event) => {
+        if (!event.currentTarget.contains(event.target as Node)) return
         if (event.pointerType !== "touch") return
         if (!event.isPrimary || (event.target as Element).closest("button, input")) {
           headerPress.current = null
@@ -187,6 +191,7 @@ export const WindowShell = ({
         headerTap.current = null
       }}
       onPointerUp={(event) => {
+        if (!event.currentTarget.contains(event.target as Node)) return
         if (event.pointerType !== "touch") return
         const press = headerPress.current
         headerPress.current = null

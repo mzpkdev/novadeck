@@ -88,7 +88,8 @@ export type VoiceClip = {
 export type Voice = {
   readonly state: Store<VoiceState>
   // Each of these starts the change; `state` shows it as it goes, and its end or failure.
-  readonly install: () => void
+  // Answers once the call is through, where it is a call that takes time.
+  readonly install: () => Promise<void> | void
   readonly cancel: () => void
   readonly uninstall: () => void
   readonly set: (settings: VoiceChange) => void

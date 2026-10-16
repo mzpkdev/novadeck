@@ -31,6 +31,9 @@ export const footerPhase = (
   phase: FooterPhase,
   state: MurmurState,
   baseline: string | null | undefined,
+  // The verdict that stood as the install began (a Check again keeps it until the new check
+  // ends): only another is news of it.
+  verdictBefore: string | null = null,
 ): FooterPhase => {
   if (baseline === undefined) return phase
   const failure = state.failure !== null && isInstallFailure(state.failure) ? state.failure : null
@@ -38,7 +41,7 @@ export const footerPhase = (
     return phase === "installing" || !state.installing.engineOnly ? "installing" : phase
   if (phase === "installing") {
     // It ended: how, is for the state to say.
-    if (state.unsupported !== null) return "unavailable"
+    if (state.unsupported !== null && state.unsupported !== verdictBefore) return "unavailable"
     if (failure !== null) return "failed"
     return state.installed && state.check !== null ? "done" : "idle"
   }

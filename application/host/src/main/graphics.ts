@@ -27,14 +27,9 @@ const isSoftware = (device: unknown): boolean => {
 /**
  * Whether `app.getGPUInfo("basic")` shows only adapters that draw on the processor, so no
  * graphics hardware murmur could use. Unsure is false: a missing, empty or odd answer, a
- * device it does not know, and any Apple Silicon Mac (its GPU shares the chip's memory
- * and always answers) all count as capable, as the install's own check settles the rest.
+ * device it does not know all count as capable, as the install's own check settles the rest.
  */
-export const softwareGraphicsOnly = (
-  info: unknown,
-  machine: { platform: string; arch: string } = process,
-): boolean => {
-  if (machine.platform === "darwin" && machine.arch === "arm64") return false
+export const softwareGraphicsOnly = (info: unknown): boolean => {
   const devices = (info as { gpuDevice?: unknown } | null | undefined)?.gpuDevice
   if (!Array.isArray(devices) || devices.length === 0) return false
   return devices.every(isSoftware)
@@ -62,7 +57,7 @@ export const detectSoftwareGraphics = async (
       app.getGPUInfo("basic"),
       delay(answerMs, undefined, { signal: waiting.signal }),
     ])
-    return softwareGraphicsOnly(info, machine)
+    return softwareGraphicsOnly(info)
   } catch {
     // Rejected when the GPU is disabled outright (a switch, a blocklist): not a verdict.
     return false

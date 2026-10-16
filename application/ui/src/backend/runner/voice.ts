@@ -137,15 +137,16 @@ export const createRunnerVoice = (
     call: () => Promise<void>,
     // Shown at once, and taken back if the call is refused.
     optimistic?: (current: VoiceState) => VoiceState,
-  ): void => {
+  ): Promise<void> => {
     if (optimistic) state.update(optimistic)
-    track(call()).catch((error: unknown) =>
+    // Answers once the call is through, refused or not.
+    return track(call()).catch((error: unknown) => {
       state.update((current) => ({
         ...current,
         ...(optimistic && { installing: null }),
         failure: `Couldn't ${what}: ${reason(error)}`,
-      })),
-    )
+      }))
+    })
   }
 
   const record = (): VoiceClip => {

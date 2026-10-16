@@ -13,6 +13,7 @@ import {
   stepText,
   type FooterPhase,
 } from "./murmur-footer"
+import { KeepFocus } from "./notice-focus"
 
 export type FooterMurmurProps = {
   readonly state: MurmurState
@@ -20,6 +21,8 @@ export type FooterMurmurProps = {
   // A dialog, the switcher or a question holds the sheet back until it is answered, as it
   // holds the update's notice.
   readonly blocked: boolean
+  // Puts typing focus back in the selected terminal, for a sheet that goes with focus in it.
+  readonly returnFocus: () => void
 }
 
 // Murmur's install, as a small item beside the update's: a ring and "Murmur 42%" while it
@@ -48,10 +51,15 @@ export const FooterMurmur = ({
   const panel = useRef<HTMLElement>(null)
   // Whether the person opened the sheet by pressing the item: it then takes focus, so Esc closes it.
   const asked = useRef(false)
+  // Set as the sheet goes with focus inside it, as for a Cancel or a dialog that opens.
+  const lost = useRef(false)
   const titleId = useId()
   const panelId = useId()
   if (state && baseline === undefined && isSnapshot(state)) setBaseline(state.failure)
-  const next = state ? footerPhase(phase, state, baseline) : "idle"
+  // The verdict that stood as the install began.
+  const [before, setBefore] = useState<string | null>(null)
+  const next = state ? footerPhase(phase, state, baseline, before) : "idle"
+  if (next === "installing" && phase !== "installing" && state) setBefore(state.unsupported)
   if (next !== phase) {
     setPhase(next)
     // What went wrong, or can't be, is said once on its own; the rest opens when asked.
@@ -74,6 +82,20 @@ export const FooterMurmur = ({
     })
     return () => cancelAnimationFrame(frame)
   }, [visibleSheet])
+  const returnFocus = murmur?.returnFocus
+  useEffect(() => {
+    if (visibleSheet || !lost.current) return undefined
+    lost.current = false
+    // A frame on, once whatever took it has had it: if nothing holds it, the item (still there
+    // for a sheet closed by Esc or a dialog) or else the terminal gets it.
+    const frame = requestAnimationFrame(() => {
+      const active = document.activeElement
+      if (active && active !== document.body) return
+      if (chip.current?.isConnected) chip.current.focus()
+      else returnFocus?.()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [visibleSheet, returnFocus])
   if (!murmur || !state) return null
   const shown = phase !== "idle"
   const { actions } = murmur
@@ -144,6 +166,7 @@ export const FooterMurmur = ({
             leave()
           }}
         >
+          <KeepFocus lost={lost} selector=".footer-murmur-sheet" />
           {phase === "installing" && (
             <>
               <p id={titleId} className="update-title">

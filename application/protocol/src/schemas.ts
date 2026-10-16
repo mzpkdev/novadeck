@@ -786,8 +786,8 @@ export const murmurState = z.strictObject({
   // each start. An engine of another build forgets an install's verdict by itself.
   recheck: z.boolean(),
   // Installed, with no check passed and no install running: a check that was cancelled, or
-  // dropped because its device went away. Not a failure, so `failure` stays null; installing
-  // again runs just the check.
+  // dropped because its device went away. Not a failure in itself: `failure` is null unless
+  // something else went wrong, and then it takes precedence. Installing again runs just the check.
   unchecked: z.boolean(),
   // Why murmur is not working, in words for the person: the last install or engine update
   // that failed (network, disk), until the next install, update or removal; the device it was

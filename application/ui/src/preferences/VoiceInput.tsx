@@ -150,17 +150,21 @@ export const VoiceInput = ({
             <Switch
               checked={state.wanted}
               onChange={(enabled) => actions.set({ enabled })}
+              disabled={busy}
               labelledBy="voice-enabled"
               describedBy="voice-enabled-description"
             />
           </div>
           <div className={rowClasses}>
             <span className={noteClasses}>
-              {`Downloads ${formatSize(installSize(state))} once, then works offline.`}
+              {installSize(state) > 0
+                ? `Downloads ${formatSize(installSize(state))} once, then works offline.`
+                : "Finish setting up voice input."}
             </span>
             <button
               type="button"
               className="button primary min-h-8 shrink-0 px-3 text-control"
+              disabled={busy}
               onClick={actions.install}
             >
               Install
@@ -179,13 +183,7 @@ export const VoiceInput = ({
           <span className="flex min-w-0 flex-col gap-1">
             <span id="voice-enabled">Enabled</span>
             <span id="voice-enabled-description" className={noteClasses}>
-              {keys ? (
-                <>
-                  Hold <Chord keys={keys} /> in a terminal, or click its microphone, to speak.
-                </>
-              ) : (
-                "Hold the dictation shortcut in a terminal, or click its microphone, to speak."
-              )}
+              Hold <Chord keys={keys} /> in a terminal, or click its microphone, to speak.
             </span>
           </span>
           <Switch

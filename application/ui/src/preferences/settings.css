@@ -171,10 +171,10 @@
 }
 
 /* `.addon-action`: a quiet action under an addon's note, as Check again, on the link button
-   (`.button.link`): ink, not muted, underlined, flush with the text above it. Its colour is the
-   link button's token, `--button-link-fg`, set here to the ink. */
+   (`.button.link`): ink, not muted, underlined, flush with the text above it; its hover is the
+   link button's own. Token (its fallback in brackets): --addon-action-fg (ink). */
 .button.link.addon-action {
-  --button-link-fg: var(--color-ink);
+  --_fg: var(--addon-action-fg, var(--color-ink));
   display: block;
   margin: 4px 0 0;
   padding: 0;

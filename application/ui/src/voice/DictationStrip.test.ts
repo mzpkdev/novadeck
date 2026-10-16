@@ -59,7 +59,6 @@ const controller = (): DictationController => ({
     noThanks: () => void calls.push("no thanks"),
     cancel: () => void calls.push("cancel"),
     dismiss: () => {},
-    close: () => {},
   },
   start: () => () => {},
 })
@@ -123,6 +122,21 @@ describe("voice input's setup in a terminal's strip", () => {
     act(() => buttons[0]!.click())
     expect(calls).toEqual(["turn on", "no thanks"])
     expect(view.container.querySelector("[role=status]")?.hasAttribute("hidden")).toBe(false)
+    view.unmount()
+  })
+
+  it("says no size when nothing is left to download", () => {
+    const each = controller()
+    ;(each.voice as MutableStore<VoiceState>).update((state) => ({
+      ...state,
+      engineInstalled: true,
+      installed: ["turbo"],
+    }))
+    setupOf(each, { kind: "offer", target: terminal })
+    const view = render(strip(each, true))
+    expect(view.container.textContent).toContain("runs on this computer")
+    expect(view.container.textContent).not.toContain("MB")
+    expect(view.container.querySelector(".dictation-fixed")).toBeNull()
     view.unmount()
   })
 

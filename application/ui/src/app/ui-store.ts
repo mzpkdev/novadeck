@@ -74,7 +74,12 @@ export type UiState = {
   readonly addonOfferShown: boolean
   // The terminal Murmur's offer chip sits on, by session context and id: the first whose
   // agent finished a turn, until the offer is answered; never persisted.
-  readonly nameOffer: { readonly context: string; readonly id: string } | null
+  // `counted` once the chip was seen and the run's mark taken, so a later voice offer is fine.
+  readonly nameOffer: {
+    readonly context: string
+    readonly id: string
+    readonly counted?: true
+  } | null
   // How many crashes the backend reports while its far side keeps crashing; 0 otherwise.
   readonly crashLoop: number
   // The update the desktop app last told of: downloaded, or to fetch from its release page.

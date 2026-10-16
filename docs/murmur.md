@@ -214,7 +214,8 @@ state then reads `unchecked: true`, which Try again (an install) answers by runn
 
 Installed with no passed check (a check the person cancelled, a restart after a failed one, or
 a check dropped because its device went away) is `installed: true, check: null, unchecked: true`
-and no `failure`: a cancel is no failure. Install again runs just the check. `failure` is set
+and no `failure` of its own: a cancel is no failure (if something else went wrong, `failure` is
+set too and is what the card shows). Install again runs just the check. `failure` is set
 for a failed install or engine update, and clears on the next one. While murmur runs it is set
 when the worker thread won't start or after three engine failures in a row (a crash or no answer
 in time), and clears on the next job that succeeds or when murmur is turned on. The check is

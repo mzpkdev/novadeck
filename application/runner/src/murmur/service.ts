@@ -496,8 +496,8 @@ export class Murmur implements Describer {
     if (this.options.softwareGraphics) throw unavailable("Murmur can't run on this computer.")
     if (this.running || this.uninstalling)
       throw new DomainError("CONFLICT", "Murmur is already installing.")
-    // Installing again is how an install's verdict is asked anew.
-    this.settings.saveMurmurUnsupported(null)
+    // Installing again is how an install's verdict is asked anew: it stands until the new check
+    // ends, passed (then it goes) or not.
     const controller = new AbortController()
     this.updateFailedAt = undefined
     this.failure = null
@@ -698,6 +698,7 @@ export class Murmur implements Describer {
       this.progress({ step: "check", received: 0, total: 0 }, true)
       const check = await this.measure(signal, folder, devices)
       this.settings.saveMurmurCheck(check)
+      this.settings.saveMurmurUnsupported(null)
       this.resetBackoff()
       // Checked, so on, unless the person turned it off themselves.
       this.settings.saveMurmurSettings({ enabled: this.settings.murmurEnabledChoice() !== false })

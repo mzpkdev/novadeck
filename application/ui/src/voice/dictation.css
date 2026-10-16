@@ -35,7 +35,9 @@
    kept to its line).
    --dictation-strip-bg (the window header's bg), --dictation-strip-border-color (line):
    the strip. --dictation-error-bg (danger-fg at 9% over the strip; at 18% in a failed
-   setup): a failure's strip. */
+   setup, 14% over the pill's paper): a failure's strip or pill.
+   --dictation-error-border-color (danger-fg at 50% over the line): the border of a failed
+   setup. */
 
 @layer components {
   .dictation-overlay {
@@ -271,10 +273,20 @@
       --dictation-error-bg,
       color-mix(in srgb, var(--color-danger-fg) 18%, var(--_bg))
     );
-    border-color: color-mix(in srgb, var(--color-danger-fg) 50%, var(--color-line));
+    border-color: var(
+      --dictation-error-border-color,
+      color-mix(in srgb, var(--color-danger-fg) 50%, var(--color-line))
+    );
   }
   .dictation-overlay[data-setup="failed"] {
-    background-color: color-mix(in srgb, var(--color-danger-fg) 14%, var(--color-paper));
+    background-color: var(
+      --dictation-error-bg,
+      color-mix(in srgb, var(--color-danger-fg) 14%, var(--color-paper))
+    );
+    border-color: var(
+      --dictation-error-border-color,
+      color-mix(in srgb, var(--color-danger-fg) 50%, var(--color-line-strong))
+    );
   }
   /* The pill at the app's foot stays one line and compact. */
   .dictation-overlay[data-phase="setup"] {

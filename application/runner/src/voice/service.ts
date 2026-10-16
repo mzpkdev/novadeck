@@ -257,11 +257,6 @@ export class Voice {
     this.running = { controller, done: this.run(model, this.manifest, controller.signal) }
   }
 
-  /**
-   * The model an install fetches first: turbo, unless this computer is known not to suit
-   * it, from the host's verdict, a check that found no GPU, or a turbo that was rejected
-   * before (small is then the model chosen).
-   */
   /** The model in use that passed its check, if it is still on disk. */
   private keptModel(): VoiceModel | undefined {
     const check = this.settings.voiceCheck()
@@ -272,6 +267,11 @@ export class Voice {
       : undefined
   }
 
+  /**
+   * The model an install fetches first: turbo, unless this computer is known not to suit
+   * it, from the host's verdict, a check that found no GPU, or a turbo that was rejected
+   * before (small is then the model chosen).
+   */
   private aim(): VoiceModel {
     // A model that passed its check stays the aim: a retry checks it again, but one slow or
     // GPU-less result, or the host's verdict on this launch, never demotes it.

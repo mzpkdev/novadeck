@@ -87,7 +87,7 @@ describe("an offer that is ignored", () => {
     const setup = createStore<VoiceSetup | null>({ kind: "offer", target: at })
     const dismiss = vi.fn<() => void>()
     const stop = watchOfferDismissal(
-      { setup, setupActions: { turnOn() {}, noThanks() {}, cancel() {}, close() {}, dismiss } },
+      { setup, setupActions: { turnOn() {}, noThanks() {}, cancel() {}, dismiss } },
       workspace,
     )
     // A key aimed at `on`, as the browser sends it through the window's capture phase.
@@ -104,10 +104,24 @@ describe("an offer that is ignored", () => {
     stop()
   })
 
-  it("stays for modifiers, Tab and the shortcut itself", () => {
+  it("takes Tab in a terminal as typing, and Tab elsewhere as a move toward the offer", () => {
+    const { dismiss, press, stop } = offered(key)
+    const terminal = document.createElement("div")
+    terminal.className = "xterm"
+    const input = document.createElement("textarea")
+    terminal.append(input)
+    document.body.append(terminal)
+    press({ key: "Tab" })
+    expect(dismiss).not.toHaveBeenCalled()
+    press({ key: "Tab" }, input)
+    expect(dismiss).toHaveBeenCalledTimes(1)
+    terminal.remove()
+    stop()
+  })
+
+  it("stays for modifiers and the shortcut itself", () => {
     const { dismiss, press, stop } = offered(key)
     press({ key: "Shift" })
-    press({ key: "Tab" })
     press({ key: "M", ctrlKey: true, shiftKey: true })
     expect(dismiss).not.toHaveBeenCalled()
     stop()

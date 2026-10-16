@@ -820,6 +820,8 @@ App:
   - Installing: held at the model, half there, with Cancel.
   - Install, then ready: follows the steps, then says it is ready for a few seconds.
   - Install, turbo too slow: small's model and check follow turbo's.
+  - Cancelled at the check: the engine and the model are on disk, never checked; the offer
+    says no size, and Addons shows Install and Uninstall.
   - Install fails (network): the failure with Try again, not a decline.
   - Declined: no mic, Ctrl+Shift+M reaches the terminal, and Addons still offers it.
 

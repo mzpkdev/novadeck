@@ -13,31 +13,25 @@ const info = (...gpuDevice: object[]) => ({ gpuDevice })
 
 describe("softwareGraphicsOnly", () => {
   it("is true when every adapter draws on the processor", () => {
-    expect(softwareGraphicsOnly(info(llvmpipe), linux)).toBe(true)
-    expect(softwareGraphicsOnly(info(swiftshader), linux)).toBe(true)
-    expect(softwareGraphicsOnly(info(warp), { platform: "win32", arch: "x64" })).toBe(true)
-    expect(softwareGraphicsOnly(info(llvmpipe, swiftshader), linux)).toBe(true)
+    expect(softwareGraphicsOnly(info(llvmpipe))).toBe(true)
+    expect(softwareGraphicsOnly(info(swiftshader))).toBe(true)
+    expect(softwareGraphicsOnly(info(warp))).toBe(true)
+    expect(softwareGraphicsOnly(info(llvmpipe, swiftshader))).toBe(true)
   })
 
   it("is false when any adapter is real hardware", () => {
-    expect(softwareGraphicsOnly(info(nvidia, intel), linux)).toBe(false)
-    expect(softwareGraphicsOnly(info(llvmpipe, intel), linux)).toBe(false)
+    expect(softwareGraphicsOnly(info(nvidia, intel))).toBe(false)
+    expect(softwareGraphicsOnly(info(llvmpipe, intel))).toBe(false)
   })
 
   it("is false when unsure", () => {
-    expect(softwareGraphicsOnly(undefined, linux)).toBe(false)
-    expect(softwareGraphicsOnly({}, linux)).toBe(false)
-    expect(softwareGraphicsOnly(info(), linux)).toBe(false)
-    expect(softwareGraphicsOnly(info({ vendorId: 0x15ad, deviceId: 0x405 }), linux)).toBe(false)
-    expect(softwareGraphicsOnly(info({ deviceId: 5 }), linux)).toBe(false)
+    expect(softwareGraphicsOnly(undefined)).toBe(false)
+    expect(softwareGraphicsOnly({})).toBe(false)
+    expect(softwareGraphicsOnly(info())).toBe(false)
+    expect(softwareGraphicsOnly(info({ vendorId: 0x15ad, deviceId: 0x405 }))).toBe(false)
+    expect(softwareGraphicsOnly(info({ deviceId: 5 }))).toBe(false)
     // An adapter that identifies nothing is not known to be software.
-    expect(softwareGraphicsOnly(info({ vendorId: 0, deviceId: 0 }), linux)).toBe(false)
-  })
-
-  it("counts Apple Silicon as capable whatever it reports", () => {
-    expect(softwareGraphicsOnly(info(swiftshader), { platform: "darwin", arch: "arm64" })).toBe(
-      false,
-    )
+    expect(softwareGraphicsOnly(info({ vendorId: 0, deviceId: 0 }))).toBe(false)
   })
 })
 

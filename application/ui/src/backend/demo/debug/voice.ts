@@ -75,6 +75,14 @@ export const voiceGroups = (voice: DemoVoice | undefined): readonly DemoActionGr
               },
             },
             {
+              label: "Cancelled at the check",
+              hint: "Engine and model on disk, never checked: the offer says no size, and Addons shows Install with Uninstall",
+              run: () => {
+                voice.show("cancelled-at-check")
+                pressChord()
+              },
+            },
+            {
               label: "Install fails (network)",
               hint: "The strip shows the failure with Try again, not a decline",
               run: () => {

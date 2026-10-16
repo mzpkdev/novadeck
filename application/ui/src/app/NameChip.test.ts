@@ -2,15 +2,14 @@ import { act, createElement } from "react"
 import { afterEach, beforeEach, vi } from "vitest"
 
 import type { Murmur, MurmurState } from "../model/murmur"
-import { createStore, createWorkspaceStore } from "../model/store"
+import { createStore } from "../model/store"
 import type { AgentStatus } from "../model/types"
 import { context, describe, expect, it } from "../test"
-import { appearance, workspaceFixture } from "../test/fixtures"
+import { openCommands } from "../test/commands"
 import { render } from "../test/render"
 import { WorkspaceServicesContext, type WorkspaceServices } from "./controller/context"
 import { NameChip } from "./NameChip"
 import { NameOffer } from "./NameOffer"
-import { createUiStore, initialUi } from "./ui-store"
 
 const offered: MurmurState = {
   available: true,
@@ -30,34 +29,16 @@ const offered: MurmurState = {
 const target = { projectId: "project", workspaceSessionId: "initial" }
 const finished = { context: "project/initial", id: "02" }
 
-// The services the chip and its watcher read, over real stores and a murmur that records.
+// The services the chip and its watcher read: the real stores and commands over a fixture
+// (test/commands.ts), and a murmur that records.
 const setup = () => {
-  const workspace = createWorkspaceStore(workspaceFixture())
-  const ui = createUiStore(
-    initialUi({
-      location: {
-        route: {
-          projectId: "project",
-          sessionId: "initial",
-          view: "focus",
-          terminal: "",
-          panel: "terminals",
-          dialog: null,
-          section: "general",
-        },
-        dialogDepth: 0,
-        navigationType: "POP",
-      },
-      preferences: {
-        fontSize: 13,
-        enabledViews: ["focus", "grid"],
-        appearance,
-        notifyFinished: true,
-        ligatures: false,
-        chatView: false,
-      },
-    }),
-  )
+  const { workspace, ui, commands } = openCommands()
+  workspace.dispatch({
+    type: "view/change",
+    target,
+    view: "focus",
+    enabledViews: ["focus", "grid"],
+  })
   const set = vi.fn<Murmur["set"]>()
   const murmur: Murmur = {
     state: createStore(offered),
@@ -65,13 +46,6 @@ const setup = () => {
     cancel: vi.fn<() => void>(),
     uninstall: () => Promise.resolve(),
     set,
-  }
-  const commands = {
-    markAddonOfferShown: () =>
-      ui.update((state) => (state.addonOfferShown ? state : { ...state, addonOfferShown: true })),
-    offerNameTo: (nameOffer: { context: string; id: string } | null) =>
-      ui.update((state) => ({ ...state, nameOffer })),
-    setKeyboardFocus: vi.fn<() => void>(),
   }
   const services = { backend: { murmur }, workspace, ui, commands } as unknown as WorkspaceServices
   const status = (agent: AgentStatus) =>
@@ -136,6 +110,55 @@ describe("the offer chip counts the session once it is seen", () => {
     })
     expect(set).toHaveBeenCalledExactlyOnceWith({ offered: true })
     expect(ui.getSnapshot().addonOfferShown).toBe(true)
+    unmount()
+  })
+})
+
+describe("the chip and another offer's mark", () => {
+  const stubSeen = (): IntersectionObserverCallback[] => {
+    const seen: IntersectionObserverCallback[] = []
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          seen.push(callback)
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    return seen
+  }
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("stops drawing a chip that was not seen once voice input's offer took the run's mark", () => {
+    stubSeen()
+    const { ui, set, commands, mount } = setup()
+    commands.offerNameTo(finished)
+    const { unmount } = mount(
+      createElement(NameChip, { terminalId: "02", context: "project/initial" }),
+    )
+    expect(chip()).not.toBeNull()
+
+    // Panned into view only later, the run was already claimed: it never shows, uncounted.
+    act(() => commands.markAddonOfferShown())
+    expect(chip()).toBeNull()
+    expect(set).not.toHaveBeenCalled()
+    expect(ui.getSnapshot().nameOffer).not.toBeNull()
+    unmount()
+  })
+
+  it("keeps a chip that was counted when voice input's offer comes after, as it was asked for", () => {
+    const { set, commands, mount } = setup()
+    commands.offerNameTo(finished)
+    const { unmount } = mount(
+      createElement(NameChip, { terminalId: "02", context: "project/initial" }),
+    )
+    expect(set).toHaveBeenCalledOnce()
+
+    act(() => commands.markAddonOfferShown())
+    expect(chip()).not.toBeNull()
+    expect(set).toHaveBeenCalledOnce()
     unmount()
   })
 })

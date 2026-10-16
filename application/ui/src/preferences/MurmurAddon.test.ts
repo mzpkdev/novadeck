@@ -224,3 +224,51 @@ describe("murmur's card when a verdict stands beside files", () => {
     unmount()
   })
 })
+
+describe("murmur's card when an install runs beside a standing verdict", () => {
+  it("shows the install, not Not available, until the new check ends", () => {
+    const { container, unmount } = render(
+      createElement(MurmurAddon, {
+        murmur: {
+          state: {
+            ...unchecked,
+            installed: false,
+            unchecked: false,
+            unsupported: "No graphics device answered.",
+            recheck: true,
+            installing: { step: "check", received: 0, total: 0, engineOnly: false },
+          },
+          actions: actions(),
+        },
+      }),
+    )
+    expect(container.textContent).toMatch(/Checking this computer/)
+    expect(container.textContent).not.toMatch(/Not available/)
+    unmount()
+  })
+})
+
+describe("murmur's card under the host's verdict", () => {
+  it("offers no retry for a runtime failure of an install that works, only Uninstall", () => {
+    const { container, unmount } = render(
+      createElement(MurmurAddon, {
+        murmur: {
+          state: {
+            ...unchecked,
+            enabled: true,
+            unchecked: false,
+            check: { device: "Intel Arc Graphics", integrated: true, milliseconds: 900 },
+            unsupported: "This computer reports only software rendering.",
+            recheck: false,
+            failure: "Murmur stopped: its engine kept failing.",
+          },
+          actions: actions(),
+        },
+      }),
+    )
+    expect(container.textContent).toMatch(/engine kept failing/)
+    expect(button("Try again", container)).toBeUndefined()
+    expect(button("Uninstall", container)).toBeDefined()
+    unmount()
+  })
+})

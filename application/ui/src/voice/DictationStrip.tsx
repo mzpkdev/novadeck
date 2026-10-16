@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react"
 import type { Store } from "../model/store"
 import type { TerminalKey } from "../model/types"
 import { maxClipSeconds } from "../model/voice"
+import { Chord } from "../ui-toolkit/Chord"
 import { useShown } from "../ui-toolkit/shown"
 import { dictationKey, type DictationController } from "./dictation"
 import { VoiceSetupContent } from "./VoiceSetup"
@@ -59,14 +60,6 @@ const useSeconds = (since: number): number => {
   return Math.max(0, Math.floor((now - since) / 1000))
 }
 
-const Keys = ({ keys }: { readonly keys: readonly string[] }): React.JSX.Element => (
-  <>
-    {keys.map((key) => (
-      <kbd key={key}>{key}</kbd>
-    ))}
-  </>
-)
-
 const Recording = ({
   level,
   mode,
@@ -92,7 +85,7 @@ const Recording = ({
           "Release to send"
         ) : (
           <>
-            <Keys keys={stopKeys} /> send · <Keys keys={["Esc"]} /> discard
+            <Chord keys={stopKeys} /> send · <Chord keys={["Esc"]} /> discard
           </>
         )}
       </span>

@@ -99,7 +99,9 @@ export type WorkspaceCommands = ShellCommands &
     // Notes that an addon offer came up in this run, so no other offers itself unasked.
     readonly markAddonOfferShown: () => void
     // Puts Murmur's offer chip on a terminal, or takes it away (null).
-    readonly offerNameTo: (target: { readonly context: string; readonly id: string } | null) => void
+    readonly offerNameTo: (
+      target: { readonly context: string; readonly id: string; readonly counted?: true } | null,
+    ) => void
     // Opens or closes the update's notice, which the footer's chip reopens after Later.
     readonly setUpdateOpen: (open: boolean) => void
     // Opens or closes the sandbox notice; opening it closes the update's, which shares its place.

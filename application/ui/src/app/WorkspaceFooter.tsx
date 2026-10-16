@@ -135,6 +135,10 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
               state: murmurState,
               actions: backend.murmur,
               blocked: asking || welcome || sandboxOpen || updateOpen,
+              returnFocus: () => {
+                const { selected, view } = currentState(store.getSnapshot())
+                if (selected) commands.setKeyboardFocus({ id: selected, view })
+              },
             }
           : undefined
       }

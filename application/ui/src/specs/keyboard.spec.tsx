@@ -1148,14 +1148,13 @@ describe("dictation", () => {
       await press(`${dictateKeys}${releaseKeys}`)
       await expect.element(offer()).toBeVisible()
 
-      for (let tabs = 0; tabs < 30; tabs += 1) {
-        if (document.activeElement?.textContent === "No thanks") break
-        // eslint-disable-next-line no-await-in-loop -- Each Tab depends on where the last went.
-        await press("{Tab}")
-      }
+      // Focus already in the strip (Tab from a terminal is the terminal's, and ignores the
+      // offer; the shortcut again is the keyboard's yes): Enter answers its button.
+      page.getByRole("button", { name: "No thanks" }).element().focus()
       expect(document.activeElement?.textContent).toBe("No thanks")
-      // Tabbing there did not dismiss the offer.
+      await press("{Tab}")
       await expect.element(offer()).toBeVisible()
+      page.getByRole("button", { name: "No thanks" }).element().focus()
 
       await press("{Enter}")
 

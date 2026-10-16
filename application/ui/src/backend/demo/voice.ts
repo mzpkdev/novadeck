@@ -55,6 +55,7 @@ export type DemoVoiceScenario =
   | "installing"
   | "install-and-finish"
   | "install-fallback"
+  | "cancelled-at-check"
   | "software-graphics"
   | "network-failure"
 
@@ -77,6 +78,22 @@ const defaultTiming: DemoVoiceTiming = { step: 1200, transcribe: 600 }
 
 // How many times a download reports progress.
 const ticks = 8
+
+// What an install that stops where it is has put on disk: the engine once its step is past,
+// and the model once its step is.
+const keepWhatCame = (current: VoiceState): VoiceState => {
+  const { installing } = current
+  if (!installing || installing.step === "engine") return { ...current, installing: null }
+  return {
+    ...current,
+    installing: null,
+    engineInstalled: true,
+    installed:
+      installing.step === "check" && !current.installed.includes(installing.model)
+        ? [...current.installed, installing.model]
+        : current.installed,
+  }
+}
 
 export const createDemoVoice = (
   timing: DemoVoiceTiming = defaultTiming,
@@ -125,6 +142,8 @@ export const createDemoVoice = (
   // Whether the next install finds turbo too slow, as the runner's does on a computer
   // without a GPU: it goes on to small, and turbo goes.
   let slowTurbo = false
+  // Whether the host saw only software rendering, which keeps the aim at small, as the runner's.
+  let software = false
   // How the next install ends instead of finishing: held at the model, half there, until
   // cancelled, or failing as a connection that drops.
   let endsIn: "hold" | "failure" | undefined = start === "failing" ? "failure" : undefined
@@ -138,7 +157,7 @@ export const createDemoVoice = (
     // The engine stays once downloaded, so another install skips it.
     const steps: { model: VoiceModel; step: "engine" | "model" | "check" }[] = [
       ...(state.getSnapshot().engineInstalled ? [] : [{ model: aim, step: "engine" as const }]),
-      { model: aim, step: "model" },
+      ...(installed.includes(aim) ? [] : [{ model: aim, step: "model" as const }]),
       { model: aim, step: "check" },
       ...(aim === "turbo" && slowTurbo
         ? [
@@ -147,13 +166,12 @@ export const createDemoVoice = (
           ]
         : []),
     ]
-    // As the runner: a new install forgets the last check until its own passes, and a
-    // first one says voice input is wanted, whatever was chosen before.
+    // As the runner: the last check stays until a new one passes, and a first install says
+    // voice input is wanted, whatever was chosen before.
     if (installed.length === 0) choice = undefined
     state.update((current) => ({
       ...current,
       failure: null,
-      check: null,
       wanted: choice !== false,
       // At once, as the first step of the install is begun by the call itself.
       installing: {
@@ -178,8 +196,7 @@ export const createDemoVoice = (
       later(
         () =>
           state.update((current) => ({
-            ...current,
-            installing: null,
+            ...keepWhatCame(current),
             failure: "The download stopped: the connection dropped.",
           })),
         (failing + 0.5) * timing.step,
@@ -193,6 +210,7 @@ export const createDemoVoice = (
     stop()
     choice = undefined
     slowTurbo = false
+    software = false
     endsIn = undefined
     if (scenario === "installed") state.update(() => installedState)
     else if (scenario === "uninstalled") state.update(() => demoVoiceState)
@@ -209,11 +227,19 @@ export const createDemoVoice = (
       // Turbo downloads and checks, and is too slow here: small follows, and turbo goes.
       state.update(() => demoVoiceState)
       slowTurbo = true
-    } else if (scenario === "software-graphics")
+    } else if (scenario === "cancelled-at-check")
+      // A cancel at the check left the engine and the model on disk, never checked.
+      state.update(() => ({
+        ...demoVoiceState,
+        engineInstalled: true,
+        installed: ["turbo"],
+      }))
+    else if (scenario === "software-graphics") {
       // As the runner where the host saw only software rendering: small is what installs,
       // and what the offer quotes.
+      software = true
       state.update(() => ({ ...demoVoiceState, aim: "small" }))
-    else {
+    } else {
       // The next install fails as a connection that drops.
       state.update(() => demoVoiceState)
       endsIn = "failure"
@@ -226,13 +252,13 @@ export const createDemoVoice = (
     install,
     cancel: () => {
       stop()
-      state.update((current) => ({ ...current, installing: null }))
+      state.update(keepWhatCame)
     },
     uninstall: () => {
       stop()
       // Removing it says the person doesn't want it.
       choice = false
-      state.update(() => ({ ...demoVoiceState, wanted: false }))
+      state.update(() => ({ ...demoVoiceState, aim: software ? "small" : "turbo", wanted: false }))
     },
     set: (settings) =>
       state.update((current) => {

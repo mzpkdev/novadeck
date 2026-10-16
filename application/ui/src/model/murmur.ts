@@ -47,7 +47,8 @@ export type MurmurState = {
   // word is not, and an engine of another build forgets an install's by itself.
   readonly recheck: boolean
   // Installed, with no check passed and no install running: a check that was cancelled, or
-  // dropped because its device went away. Not a failure; installing again runs the check.
+  // dropped because its device went away. Not a failure in itself: `failure` is null unless
+  // something else went wrong, and then it takes precedence. Installing again runs the check.
   readonly unchecked: boolean
   // In how many sessions of the app the one-time offer was shown; it stops after three.
   readonly offers: number

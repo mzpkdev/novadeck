@@ -104,6 +104,17 @@ describe("Murmur's one-time offer", () => {
       expect(document.activeElement).not.toBe(chip().query())
     })
 
+    it("keeps a right-click in the popover from opening the terminal's own menu", async () => {
+      await promptBuild("uninstalled")
+      await chip().click({ timeout: 10_000 })
+      await popover().getByText("Name terminals from what they do").click({ button: "right" })
+      await expect.element(page.getByRole("menu")).not.toBeInTheDocument()
+
+      // The chip is the window's own, and a right-click there does reach it.
+      await chip().click({ button: "right" })
+      await expect.element(page.getByRole("menu")).toBeVisible()
+    })
+
     it("turns on into the footer item, then says it is done, and the chip is gone", async () => {
       await promptBuild("uninstalled")
       await chip().click({ timeout: 10_000 })

@@ -360,6 +360,40 @@ describe("installing murmur", () => {
     expect(store.murmurUnsupported()).toBeNull()
   })
 
+  it("keeps the verdict through a Check again that is cancelled or fails, until a check passes", async ({
+    resources,
+  }) => {
+    const { store, directory, manifest, murmur } = await installed(resources, {
+      devices: [processor],
+    })
+    await murmur.close()
+    const verdict = store.murmurUnsupported()
+    expect(verdict).not.toBeNull()
+
+    // A Check again that cannot download: a failure to try again, the verdict standing.
+    const offline = await setup(resources, { store, directory, engine: manifest, source: "" })
+    await offline.murmur.install()
+    await offline.murmur.settled()
+    expect(offline.murmur.state().failure).not.toBeNull()
+    expect(store.murmurUnsupported()).toEqual(verdict)
+    expect(offline.murmur.state().unsupported).toBe(verdict!.reason)
+
+    // One cancelled as it starts.
+    const cancelled = await setup(resources, { store, directory, engine: manifest, devices: [arc] })
+    await cancelled.murmur.install()
+    await cancelled.murmur.cancel()
+    expect(store.murmurUnsupported()).toEqual(verdict)
+
+    // One that passes clears it.
+    await cancelled.murmur.install()
+    await cancelled.murmur.settled()
+    expect(store.murmurUnsupported()).toBeNull()
+    expect(cancelled.murmur.state()).toMatchObject({
+      unsupported: null,
+      check: { device: arc.name },
+    })
+  })
+
   it("forgets an install's verdict once the engine is another build", async ({ resources }) => {
     const { store, directory, murmur } = await installed(resources, { devices: [processor] })
     await murmur.close()

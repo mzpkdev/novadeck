@@ -115,7 +115,6 @@ export type DictationController = {
     readonly cancel: () => void
     // Ignoring the offer: gone for now, offered again by the next press.
     readonly dismiss: () => void
-    readonly close: () => void
   }
   // Starts following the backend voice, for the setup's story; returns what ends it.
   readonly start: () => () => void
@@ -343,6 +342,8 @@ export const createDictation = (deps: DictationDeps): DictationController => {
   let cancelSetup: (() => void) | null = null
   // An install this setup followed was seen under way, so its end is told.
   let seen = false
+  // Turn on was pressed and its install call has not come back.
+  let awaiting = false
   const setSetup = (next: VoiceSetup | null): void => {
     const current = setup.getSnapshot()
     if (current?.kind === next?.kind && current?.target === next?.target) return
@@ -373,6 +374,9 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     const backend = voice.state.getSnapshot()
     const isReady = voiceReady(backend)
     if (!backend.wanted) return setSetup(null)
+    // Until the install call is through, a snapshot that shows no install is one from before
+    // it, which says nothing of how it goes: it neither drops the strip nor shows an old failure.
+    if (awaiting && !backend.installing && current.kind === "installing") return
     if (current.kind === "offer") {
       if (isReady) return setSetup(null)
       if (backend.installing) {
@@ -396,7 +400,12 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     const current = setup.getSnapshot()
     seen = false
     setSetup({ kind: "installing", target: current?.target ?? null })
-    voice.install()
+    awaiting = true
+    const through = (): void => {
+      awaiting = false
+      sync()
+    }
+    void Promise.resolve(voice.install()).then(through, through)
     sync()
   }
   const setupActions = {
@@ -412,7 +421,6 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     dismiss: (): void => {
       if (setup.getSnapshot()?.kind === "offer") setSetup(null)
     },
-    close: (): void => setSetup(null),
   }
   const offering = (): boolean => setup.getSnapshot()?.kind === "offer" && state.kind === "idle"
   // A clip starting leaves no room for the ready note or a failure, which would hide what

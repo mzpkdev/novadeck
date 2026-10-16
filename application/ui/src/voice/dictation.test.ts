@@ -50,9 +50,14 @@ type FakeClip = VoiceClip & {
 const setup = (state: VoiceState = installed) => {
   const clips: FakeClip[] = []
   const calls: string[] = []
+  // What the install call answers with, where a test holds it.
+  const gate: { pending: Promise<void> | undefined } = { pending: undefined }
   const voice: Voice = {
     state: createStore(state),
-    install: () => void calls.push("install"),
+    install: () => {
+      calls.push("install")
+      return gate.pending
+    },
     cancel: () => void calls.push("cancel"),
     uninstall: () => {},
     set: (change) => void calls.push(`set ${JSON.stringify(change)}`),
@@ -149,6 +154,7 @@ const setup = (state: VoiceState = installed) => {
     voice,
     offers,
     calls,
+    gate,
   }
 }
 
@@ -480,10 +486,11 @@ describe("dictation", () => {
       expect(kind(app)).toBeUndefined()
     })
 
-    it("follows the install to the ready note, which goes by itself", () => {
+    it("follows the install to the ready note, which goes by itself", async () => {
       const app = setup(notInstalled)
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
+      await flush()
       update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
       expect(kind(app)).toBe("installing")
       update(app, { ...installed, installing: null })
@@ -492,10 +499,11 @@ describe("dictation", () => {
       expect(kind(app)).toBeUndefined()
     })
 
-    it("shows an install's failure, not as a decline, and drops it after a while", () => {
+    it("shows an install's failure, not as a decline, and drops it after a while", async () => {
       const app = setup(notInstalled)
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
+      await flush()
       update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
       update(app, { installing: null, failure: "Out of disk space." })
       expect(kind(app)).toBe("failed")
@@ -525,10 +533,11 @@ describe("dictation", () => {
       expect(app.calls).toEqual(["install"])
     })
 
-    it("clears the ready note and a failure as a clip starts, so its own result shows", () => {
+    it("clears the ready note and a failure as a clip starts, so its own result shows", async () => {
       const app = setup(notInstalled)
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
+      await flush()
       update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
       update(app, { ...installed, installing: null })
       expect(kind(app)).toBe("ready")
@@ -539,16 +548,37 @@ describe("dictation", () => {
       expect(app.clips).toHaveLength(1)
     })
 
-    it("shows nothing after a cancel, and nothing for a refused setting", () => {
+    it("ignores a snapshot from before the install call is through", async () => {
+      const app = setup(notInstalled)
+      let through = (): void => {}
+      app.gate.pending = new Promise<void>((resolve) => {
+        through = resolve
+      })
+      app.controller.dictation.press(target, "KeyM")
+      app.controller.setupActions.turnOn()
+
+      // A stale snapshot: no install, and a failure from long ago.
+      update(app, { installing: null, failure: "Old failure." })
+      expect(kind(app)).toBe("installing")
+
+      update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
+      through()
+      await flush()
+      expect(kind(app)).toBe("installing")
+    })
+
+    it("shows nothing after a cancel, and nothing for a refused setting", async () => {
       const app = setup(notInstalled)
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
+      await flush()
       update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
       update(app, { installing: null })
       expect(kind(app)).toBeUndefined()
 
       app.controller.dictation.press(target, "KeyM")
       app.controller.setupActions.turnOn()
+      await flush()
       update(app, { installing: { model: "turbo", step: "model", received: 1, total: 2 } })
       update(app, { failure: "Couldn't change voice input: no." })
       expect(kind(app)).toBe("installing")
