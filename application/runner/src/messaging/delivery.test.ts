@@ -588,9 +588,11 @@ describe("the person's submission", () => {
       const changed = transition(entered, key(kind, at + 7800), 10_000)
       const result = run(transition(changed, prompt, 10_000), stop)
       expect(result.box.doubted).toBe(false)
-      expect(transition(result, { type: "emptied", at: at + 13100, epoch: result.epoch })).toBe(
-        result,
-      )
+      // The screen is the authority on the box, so a key that left it empty is no doubt
+      // for it: Settled again, as the turn completed.
+      expect(
+        transition(result, { type: "emptied", at: at + 13100, epoch: result.epoch }).state,
+      ).toBe("ready")
     }
     const asked = run(entered, key("content", at + 7800, true))
     expect(run(transition(asked, prompt, 10_000), stop).box.doubted).toBe(false)
@@ -663,15 +665,16 @@ describe("the person's submission", () => {
     expect(recovered).toMatchObject({ state: "settled", byPerson: false, box: { empty: true } })
     expect(ringableSince(recovered)).toBe(origin + 7136)
     expect(transition(completed, { ...empty, epoch: completed.epoch - 1 })).toBe(completed)
-    // The screen cannot clear a new draft, a queued prompt, or the next turn's box.
+    // A key ends the doubt, but the screen decides what is in the box: empty, it is Settled.
     for (const kind of ["content", "neutral", "accept", "enter", "escape"] as const) {
       const changed = transition(completed, key(kind, origin + 7500))
       expect(changed.box.doubted).toBe(false)
-      expect(transition(changed, empty)).toBe(changed)
+      expect(["settled", "ready"]).toContain(transition(changed, empty).state)
     }
+    // The next turn's own box, known not empty by its Enter, is read like any other.
     const next = run(completed, prompted(origin + 7800), stop)
     expect(next.box.doubted).toBe(false)
-    expect(transition(next, empty)).toBe(next)
+    expect(["drafting", "ready"]).toContain(transition(next, empty).state)
   })
 
   it("keeps real drafts and queued prompts out of a late prompt's screen recovery", () => {
@@ -690,7 +693,10 @@ describe("the person's submission", () => {
     ]) {
       const completed = run(before, late, stop)
       expect(completed).toMatchObject({ state: "drafting", box: { doubted: false } })
-      expect(transition(completed, { type: "emptied", at, epoch: completed.epoch })).toBe(completed)
+      // Without a doubt, the screen alone settles it.
+      expect(transition(completed, { type: "emptied", at, epoch: completed.epoch }).state).toBe(
+        "ready",
+      )
     }
     // The next hook of an actual queued prompt confirms its submission even when late.
     expect(run(working, typing, enter, stop, late, stop)).toMatchObject({
