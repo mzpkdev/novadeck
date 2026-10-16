@@ -1,4 +1,4 @@
-import { useRef, type ComponentProps } from "react"
+import { useEffect, useRef, type ComponentProps } from "react"
 import { HashRouter, MemoryRouter } from "react-router"
 
 import type { CreateBackend } from "../backend/port"
@@ -18,7 +18,7 @@ import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controlle
 import { DictationContext, useDictationController } from "./controller/dictation"
 import { useKeyboard } from "./controller/useKeyboard"
 import { useWorkspaceEffects } from "./controller/useWorkspaceEffects"
-import { announceShown, EmbeddedContext } from "./embedded"
+import { announceShown, EmbeddedContext, holdInputUntilEngaged } from "./embedded"
 import { HeaderSection } from "./HeaderSection"
 import { InboxHost } from "./InboxHost"
 import { currentState, currentTarget, shallowEqual } from "./selectors"
@@ -48,6 +48,8 @@ export const App = ({ createBackend, embedded = false }: AppProps): React.JSX.El
     announced.current = true
     announceShown()
   }
+  // Framed, the wheel is the framing page's until the visitor engages the app there.
+  useEffect(() => (embedded ? holdInputUntilEngaged() : undefined), [embedded])
   return (
     <EmbeddedContext value={embedded}>
       <BackendGate

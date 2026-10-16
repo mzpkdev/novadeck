@@ -195,6 +195,38 @@ describe("the visitor build", () => {
       }
     })
 
+    // The page around the app is still tilted and not the visitor's yet: its wheel is that
+    // page's, until the page says the visitor engaged the app.
+    it("hands the wheel to the page around it until that page engages it", async () => {
+      expect(window.parent).not.toBe(window)
+      const post = vi.spyOn(window.parent, "postMessage")
+      try {
+        await openEmbedded()
+        const wheel = (): WheelEvent => {
+          const event = new WheelEvent("wheel", {
+            deltaY: 60,
+            cancelable: true,
+            bubbles: true,
+          })
+          document.querySelector("[data-terminal-content]")!.dispatchEvent(event)
+          return event
+        }
+        expect(wheel().defaultPrevented).toBe(true)
+        expect(post).toHaveBeenCalledWith({ type: "novadeck:wheel", deltaX: 0, deltaY: 60 }, "*")
+        post.mockClear()
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            data: { type: "novadeck:engaged" },
+            source: window.parent,
+          }),
+        )
+        expect(wheel().defaultPrevented).toBe(false)
+        expect(post).not.toHaveBeenCalled()
+      } finally {
+        post.mockRestore()
+      }
+    })
+
     // True of the app anywhere; framed, it leaves the page around it its focus.
     it("takes no focus until the person uses it", async () => {
       await openEmbedded()
