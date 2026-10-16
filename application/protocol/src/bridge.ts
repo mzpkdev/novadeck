@@ -257,7 +257,8 @@ export const parseUpdateOffer = (value: unknown): UpdateOffer | undefined => {
   if (!isRecord(value)) return undefined
   const { kind, version, percent } = value
   if (!isVersion(version)) return undefined
-  if (kind === "downloading") return isUpdatePercent(percent) ? { kind, version, percent } : undefined
+  if (kind === "downloading")
+    return isUpdatePercent(percent) ? { kind, version, percent } : undefined
   if (kind === "ready" || kind === "retrying" || kind === "available") return { kind, version }
   return undefined
 }

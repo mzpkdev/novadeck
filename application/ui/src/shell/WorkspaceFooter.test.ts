@@ -1,7 +1,7 @@
 import { act, createElement } from "react"
 import { afterEach, vi } from "vitest"
 
-import type { InstallProgress, InstallResult } from "../model/portable"
+import type { PortableInstall } from "../model/portable"
 import type { UpdateOffer } from "../model/update"
 import { context, describe, expect, it } from "../test"
 import { render, type Rendered } from "../test/render"
@@ -16,8 +16,8 @@ afterEach(() => {
 
 const portable = {
   unsandboxed: false,
-  onInstall: () => Promise.resolve({ kind: "installed" as const }),
-  installed: false,
+  onInstall: () => {},
+  install: { phase: "idle" } as PortableInstall,
 }
 
 // A portable copy's install entry; a copy that updates itself has none.
@@ -439,36 +439,36 @@ describe("workspace footer", () => {
         expect(region.textContent).not.toContain("Release notes")
       })
 
-      it("shows a determinate bar and the percent while the host reports a download", async () => {
-        let tell: (progress: InstallProgress) => void = () => {}
-        const page = render(
-          createElement(WorkspaceFooter, {
-            ...props("ok"),
-            portable: {
-              ...props("ok").portable,
-              open: true,
-              portable: {
-                ...portable,
-                onProgress: (listener: (progress: InstallProgress) => void) => {
-                  tell = listener
-                  return () => {}
-                },
-                onInstall: () => new Promise<InstallResult>(() => {}),
-              },
-            },
-          }),
-        )
+      // The card open with the host's account of the install, which is all it shows.
+      const installing = (install: PortableInstall, onInstall = () => {}) =>
+        createElement(WorkspaceFooter, {
+          ...props("ok"),
+          portable: {
+            ...props("ok").portable,
+            open: true,
+            portable: { ...portable, install, onInstall },
+          },
+        })
+
+      it("asks the host to install, and shows nothing of it until the host says", () => {
+        const onInstall = vi.fn<() => void>()
+        const page = render(installing({ phase: "idle" }, onInstall))
         mounted.push(page)
         act(() =>
           notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
         )
-        expect(notice(page)!.textContent).toContain("Installing Novadeck")
-        act(() => tell({ phase: "downloading", percent: 42 }))
+        expect(onInstall).toHaveBeenCalledOnce()
+        expect(notice(page)!.textContent).not.toContain("Installing Novadeck")
+      })
+
+      it("shows a determinate bar and the percent while the host reports a download", () => {
+        const page = render(installing({ phase: "downloading", percent: 42 }))
+        mounted.push(page)
         expect(notice(page)!.textContent).toContain("Installing Novadeck")
         expect(notice(page)!.textContent).toContain("Downloading…")
         expect(notice(page)!.textContent).toContain("42%")
         expect(notice(page)!.querySelector("[data-state=indeterminate]")).toBeNull()
-        act(() => tell({ phase: "installing" }))
+        page.rerender(installing({ phase: "installing" }))
         expect(notice(page)!.textContent).toContain("Keeps your workspace")
         expect(notice(page)!.querySelector("[data-state=indeterminate]")).not.toBeNull()
       })
@@ -477,7 +477,10 @@ describe("workspace footer", () => {
         const page = render(
           createElement(WorkspaceFooter, {
             ...props("ok"),
-            portable: { ...props("ok").portable, portable: { ...portable, installed: true } },
+            portable: {
+              ...props("ok").portable,
+              portable: { ...portable, install: { phase: "installed" } },
+            },
           }),
         )
         mounted.push(page)
@@ -510,33 +513,33 @@ describe("workspace footer", () => {
         expect(notice(page)!.textContent).toContain("Installing also lets you turn on the sandbox.")
       })
 
-      it("shows an indeterminate bar while installing, which can still be folded away", async () => {
-        let finish: (result: { kind: "installed" }) => void = () => {}
-        const page = render(
-          createElement(WorkspaceFooter, {
-            ...props("ok"),
-            portable: {
-              ...props("ok").portable,
-              open: true,
-              portable: {
-                ...portable,
-                onInstall: () =>
-                  new Promise<InstallResult>((resolve) => (finish = resolve as typeof finish)),
-              },
-            },
-          }),
-        )
+      it("shows an indeterminate bar while installing, which can still be folded away", () => {
+        const page = render(installing({ phase: "installing" }))
         mounted.push(page)
-        act(() =>
-          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
-        )
         const region = notice(page)!
         expect(region.textContent).toContain("Installing Novadeck")
         expect(region.querySelector("[data-state=indeterminate]")).not.toBeNull()
         expect(region.querySelector("[aria-label=Dismiss]")).not.toBeNull()
         expect(chip(page).getAttribute("aria-label")).toBe("Installing…")
-        await act(async () => finish({ kind: "installed" }))
+        page.rerender(installing({ phase: "installed" }))
         expect(notice(page)!.textContent).toContain("Takes effect after you restart Novadeck")
+        expect(chip(page).textContent).toBe("Installed")
+      })
+
+      it("says why an install failed, and offers to try again", () => {
+        const page = render(installing({ phase: "failed", reason: "Disk full" }))
+        mounted.push(page)
+        expect(notice(page)!.textContent).toContain("Couldn't install")
+        expect(notice(page)!.textContent).toContain("Disk full")
+        expect(notice(page)!.querySelector(".update-card-foot button")!.textContent).toBe(
+          "Try again",
+        )
+      })
+
+      it("reports a newer installed copy as the outcome", () => {
+        const page = render(installing({ phase: "newer", version: "0.0.90" }))
+        mounted.push(page)
+        expect(notice(page)!.textContent).toContain("Novadeck 0.0.90 is already installed")
         expect(chip(page).textContent).toBe("Installed")
       })
 
