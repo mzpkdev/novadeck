@@ -108,25 +108,36 @@ export const insideInstallFolder = (
   })
 }
 
-/**
- * The last release whose installer and uninstaller still carry electron-builder's own
- * running-app check, not `resources/installer.nsh`. Releases are tagged by version, and
- * this is the newest tag before the macro; remove everything marked LEGACY with it once
- * no installed copy that old can be updated from here.
- */
-export const lastVersionWithLegacyUninstaller = "0.0.135"
+/** The value `resources/installer.nsh` writes beside builder's `InstallLocation` of every install. */
+export const runningCheckValue = "RunningCheck"
 
 /**
- * LEGACY. Whether an installed copy may carry the old uninstaller, which a new setup runs
- * first (`uninstallOldVersion` in electron-builder's `installUtil.nsh`, with `/S
- * --updated`): a version at or below `lastVersionWithLegacyUninstaller`, or one that is
- * not known.
+ * LEGACY. Whether the installed copy the registry records may carry builder's old
+ * running-app check in its uninstaller, which a new setup runs first
+ * (`uninstallOldVersion` in electron-builder's `installUtil.nsh`, `/S --updated`): there is
+ * a record of an install (an `UninstallString` or an `InstallLocation`, whether or not its
+ * executable is still there) without the `RunningCheck` marker of an install made by this
+ * installer. A registry that cannot be read counts as legacy, the safe answer.
  */
-export const hasLegacyUninstaller = (copies: readonly InstalledCopy[]): boolean =>
-  copies.some(
-    ({ version }) =>
-      version === undefined || !isNewerVersion(version, lastVersionWithLegacyUninstaller),
-  )
+export const readLegacyUninstaller = async (
+  appId: string,
+  run: (key: string, name: string) => Promise<string>,
+): Promise<boolean> => {
+  const keys = registryKeys(appId)
+  try {
+    const [uninstall, location, marker] = await Promise.all([
+      run(keys.version, "UninstallString"),
+      run(keys.location, "InstallLocation"),
+      run(keys.location, runningCheckValue),
+    ])
+    const recorded =
+      registryValue(uninstall, "UninstallString") !== undefined ||
+      registryValue(location, "InstallLocation") !== undefined
+    return recorded && registryValue(marker, runningCheckValue) === undefined
+  } catch {
+    return true
+  }
+}
 
 /**
  * LEGACY. The folder of `folders` whose name `execPath` merely starts with, a sibling such

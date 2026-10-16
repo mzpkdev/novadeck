@@ -8,15 +8,15 @@ import { describe, expect, it } from "../test"
 import { newerCopy } from "./install-linux"
 import {
   findInstalledWindows,
-  hasLegacyUninstaller,
   hashBody,
   insideInstallFolder,
   installedAtLeast,
   installedByInstaller,
   installerGuid,
-  lastVersionWithLegacyUninstaller,
   latestVersionOf,
   legacyPrefixFolder,
+  readLegacyUninstaller,
+  runningCheckValue,
   powershellChecks,
   powershellUsable,
   prepareSetup,
@@ -676,6 +676,14 @@ describe("the installer's running-app check", () => {
     expect(macro).not.toMatch(/^[^#\n]*(taskkill|\/IM\b|KILL_PROCESS)/mu)
   })
 
+  it("leaves the marker the host reads in the key the uninstaller deletes whole", () => {
+    const macro = readFileSync(join(process.cwd(), "resources", "installer.nsh"), "utf8")
+    expect(macro).toContain(`"\${INSTALL_REGISTRY_KEY}" ${runningCheckValue} 1`)
+    expect(template("uninstaller.nsh")).toContain(
+      'DeleteRegKey SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}"',
+    )
+  })
+
   it("is still reached by the installer and the uninstaller", () => {
     expect(template("installSection.nsh")).toContain("!insertmacro CHECK_APP_RUNNING")
     expect(template("uninstaller.nsh")).toContain("!insertmacro CHECK_APP_RUNNING")
@@ -702,21 +710,42 @@ describe("a copy running inside the install folder", () => {
 
 describe("the guard for installed copies with the old uninstaller", () => {
   const install = "C:\\Users\\me\\AppData\\Local\\Programs\\novadeck"
-  const copy = (version: string | undefined) => ({
-    image: `${install}\\novadeck.exe`,
-    version,
-    unchecked: version === undefined,
+  const guid = installerGuid("dev.mzpk.novadeck")
+  // What `reg query` answers for the values the installer left; "" where there is none.
+  const registry = (values: Record<string, string>) => async (key: string, name: string) => {
+    if (!key.includes(guid)) throw new Error("other key")
+    const data = values[name]
+    return data === undefined ? "" : `\r\n${key}\r\n    ${name}    REG_SZ    ${data}\r\n`
+  }
+
+  it("applies to a recorded install without the marker, even when its executable is gone", async () => {
+    expect(
+      await readLegacyUninstaller(
+        "dev.mzpk.novadeck",
+        registry({ UninstallString: '"C:\\u.exe"' }),
+      ),
+    ).toBe(true)
+    expect(
+      await readLegacyUninstaller("dev.mzpk.novadeck", registry({ InstallLocation: install })),
+    ).toBe(true)
   })
 
-  it("applies to a copy at or below the last version without the macro, or of unknown version", () => {
-    expect(hasLegacyUninstaller([copy(lastVersionWithLegacyUninstaller)])).toBe(true)
-    expect(hasLegacyUninstaller([copy("0.0.1")])).toBe(true)
-    expect(hasLegacyUninstaller([copy(undefined)])).toBe(true)
+  it("does not apply to an install the new installer made, or to no install", async () => {
+    expect(
+      await readLegacyUninstaller(
+        "dev.mzpk.novadeck",
+        registry({ UninstallString: "x", InstallLocation: install, [runningCheckValue]: "1" }),
+      ),
+    ).toBe(false)
+    expect(await readLegacyUninstaller("dev.mzpk.novadeck", registry({}))).toBe(false)
   })
 
-  it("does not apply to a newer copy, or to none", () => {
-    expect(hasLegacyUninstaller([copy("0.0.999")])).toBe(false)
-    expect(hasLegacyUninstaller([])).toBe(false)
+  it("applies when the registry cannot be read", async () => {
+    expect(
+      await readLegacyUninstaller("dev.mzpk.novadeck", async () => {
+        throw new Error("reg.exe failed")
+      }),
+    ).toBe(true)
   })
 
   it("refuses a sibling folder by plain prefix, as the old uninstaller would stop it", () => {

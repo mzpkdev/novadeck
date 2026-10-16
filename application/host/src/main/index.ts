@@ -64,11 +64,11 @@ import { isInstalledImage } from "./install-location.js"
 import {
   findInstalledWindows,
   hashBody,
-  hasLegacyUninstaller,
   insideInstallFolder,
   installedAtLeast,
   installedByInstaller,
   legacyPrefixFolder,
+  readLegacyUninstaller,
   powershellUsable,
   prepareSetup,
   readInstallRecord,
@@ -772,9 +772,9 @@ const installWindowsSetup = async (
     }
   // LEGACY: an installed copy from before `resources/installer.nsh` has an uninstaller the
   // new setup runs first, which stops by a plain path prefix, or every novadeck.exe by name
-  // without PowerShell, either of which can close this copy. Retired with
-  // `lastVersionWithLegacyUninstaller`.
-  if (hasLegacyUninstaller(await installedCopies().catch(() => []))) {
+  // without PowerShell, either of which can close this copy. Told by the registry, not by
+  // version: the new installer leaves `RunningCheck` beside the install record.
+  if (await readLegacyUninstaller(appId, queryRegistry)) {
     const inside = legacyPrefixFolder(process.execPath, folders)
     if (inside !== undefined)
       return {
