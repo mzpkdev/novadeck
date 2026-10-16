@@ -15,10 +15,7 @@
   .canvas-viewport .react-flow__node.resizing {
     transition: none;
   }
-  /* A window panned or zoomed out of view skips its layout and paint until it nears the
-     screen again; the node's own size holds its place meanwhile. */
   .canvas-node {
-    content-visibility: auto;
     opacity: var(--terminal-idle-opacity);
     transition: opacity var(--motion-state) var(--ease-interface);
   }

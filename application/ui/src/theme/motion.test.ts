@@ -1,7 +1,7 @@
 // An animation that never ends keeps running for as long as its element is on screen, so
 // it must be one the compositor can run alone: its keyframes change only `transform`,
 // `translate`, `rotate`, `scale`, `opacity` or `filter`. Anything else, as `content` or
-// `background-position`, repaints on the main thread every frame (performance rule 12).
+// `background-position`, repaints on the main thread every frame.
 
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -27,30 +27,35 @@ const blockAt = (css: string, open: number): string => {
   return css.slice(open + 1)
 }
 
-// Every `@keyframes` in the stylesheets, by name, with the properties its frames set.
-const keyframes = new Map<string, { readonly file: string; readonly properties: Set<string> }>(
-  stylesheets.flatMap((file) => {
-    const css = read(file)
-    return [...css.matchAll(/@keyframes\s+([\w-]+)\s*\{/g)].map((match) => {
-      const body = blockAt(css, match.index + match[0].length - 1)
-      const properties = new Set(
-        [...body.matchAll(/([\w-]+)\s*:[^;{}]*[;}]/g)]
-          .map((declaration) => declaration[1]!)
-          .filter((property) => property !== "animation-timing-function"),
-      )
-      return [match[1]!, { file, properties }] as const
-    })
-  }),
-)
+// Every `@keyframes` in the stylesheets, with the properties its frames set.
+const definitions = stylesheets.flatMap((file) => {
+  const css = read(file)
+  return [...css.matchAll(/@keyframes\s+([\w-]+)\s*\{/g)].map((match) => {
+    const body = blockAt(css, match.index + match[0].length - 1)
+    const properties = new Set(
+      [...body.matchAll(/([\w-]+)\s*:[^;{}]*[;}]/g)]
+        .map((declaration) => declaration[1]!)
+        .filter((property) => property !== "animation-timing-function"),
+    )
+    return { name: match[1]!, file, properties }
+  })
+})
+const keyframes = new Map(definitions.map((definition) => [definition.name, definition]))
 
-// What isn't an animation's name in its shorthand: keywords, times, counts and functions.
+// What isn't an animation's name in its shorthand: keywords, times and counts.
 const keywords = new Set(
   "infinite normal reverse alternate alternate-reverse none forwards backwards both running paused linear ease ease-in ease-out ease-in-out step-start step-end".split(
     " ",
   ),
 )
-const nameOf = (tokens: readonly string[]): string | undefined =>
-  tokens.find((token) => !keywords.has(token) && !/^[\d.-]/.test(token) && !token.includes("("))
+// A layer's name, or where none is written out, the variable that holds it; a variable
+// among the times and easings is no name.
+const nameOf = (tokens: readonly string[]): string | undefined => {
+  const words = tokens.filter((token) => !keywords.has(token) && !/^-?[\d.]/.test(token))
+  return (
+    words.find((token) => !token.includes("(")) ?? words.find((token) => token.startsWith("var("))
+  )
+}
 
 // The layers of a shorthand, split at the commas outside any function.
 const layers = (value: string): string[] => {
@@ -69,12 +74,14 @@ const layers = (value: string): string[] => {
 }
 
 // The keyframes each `animation` layer that repeats forever runs, with where it is set.
-// Functions are dropped before the layer is split into tokens, so `steps(1)` is no name.
+// Functions but `var()` are dropped before the layer is split into tokens, so `steps(1)` is
+// no name, while a name kept in a variable shows as one no keyframes define.
 const infinite = stylesheets.flatMap((file) =>
   [...read(file).matchAll(/(?:^|[\s;{])animation\s*:([^;{}]+)/g)].flatMap((match) =>
     layers(match[1]!).flatMap((layer) => {
       const tokens = layer
-        .replace(/[\w-]*\([^()]*(?:\([^()]*\)[^()]*)*\)/g, " ")
+        .toLowerCase()
+        .replace(/(?<![\w-])(?!var\()[\w-]*\([^()]*(?:\([^()]*\)[^()]*)*\)/g, " ")
         .trim()
         .split(/\s+/)
       const name = tokens.includes("infinite") ? nameOf(tokens) : undefined
@@ -88,7 +95,20 @@ describe("animations that never end", () => {
     expect(infinite.length).toBeGreaterThan(0)
   })
 
-  it("run keyframes the stylesheets define", () => {
+  it("are set with the `animation` shorthand, which this check reads", () => {
+    const longhands = stylesheets.flatMap((file) =>
+      [...read(file).matchAll(/(?:^|[\s;{])(animation-(?:name|iteration-count))\s*:/g)].map(
+        (match) => `${file}: ${match[1]}`,
+      ),
+    )
+    expect(longhands).toEqual([])
+  })
+
+  it("run keyframes the stylesheets define, each once", () => {
+    const repeated = definitions.filter(
+      (definition) => keyframes.get(definition.name) !== definition,
+    )
+    expect(repeated.map(({ file, name }) => `${file}: @keyframes ${name}`)).toEqual([])
     const unknown = infinite.filter(({ name }) => !keyframes.has(name))
     expect(unknown.map(({ file, name }) => `${file}: ${name}`)).toEqual([])
   })

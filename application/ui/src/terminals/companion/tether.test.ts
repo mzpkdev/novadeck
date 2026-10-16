@@ -39,15 +39,14 @@ describe("a tethered icon", () => {
 })
 
 describe("a refused drop", () => {
-  it("is marked on the root only as it flips, not on every move of the pointer", async () => {
-    const records: MutationRecord[] = []
-    const observer = new MutationObserver((found) => records.push(...found))
+  it("is marked on the root only as it flips, not on every move of the pointer", () => {
+    const observer = new MutationObserver(() => {})
     observer.observe(document.documentElement, { attributes: true })
     refuseDrop(true)
     refuseDrop(true)
     refuseDrop(false)
     refuseDrop(false)
-    await Promise.resolve()
+    const records = observer.takeRecords()
     observer.disconnect()
     expect(records.map((record) => record.attributeName)).toEqual([
       "data-drag-refused",
