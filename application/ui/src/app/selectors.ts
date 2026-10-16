@@ -85,7 +85,7 @@ export const crashLoopQuestion = (ui: Pick<UiState, "crashLoop" | "crashLoopDism
 
 // Whether an alert dialog is on screen, which holds every shortcut back.
 export const alertOpen = (ui: UiState, workspace: Workspace): boolean =>
-  closeQuestion(ui, workspace) !== undefined || crashLoopQuestion(ui) > 0
+  closeQuestion(ui, workspace) !== undefined || crashLoopQuestion(ui) > 0 || ui.voiceOffer
 
 // How the current session's terminals are told apart where one says where another's
 // work came from, by id: "@fox · Terminal", as names alone repeat.

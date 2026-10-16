@@ -54,7 +54,7 @@ describe("the runner's murmur", () => {
     push({
       ...installed,
       check: null,
-      failure: "Murmur needs a GPU on this computer.",
+      failure: "Murmur installed but did not pass its check on this computer.",
     })
     await vi.waitFor(() => expect(murmur.state.getSnapshot().check).toBeNull())
   })

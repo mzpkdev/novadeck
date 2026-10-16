@@ -14,8 +14,9 @@ const unchecked: MurmurState = {
   sizes: { engine: 34 * 1024 * 1024, model: 1222 * 1024 * 1024 },
   installing: null,
   check: null,
-  failure:
-    "Murmur is installed but has not passed its check on this computer's GPU yet. Try again.",
+  unsupported: null,
+  recheck: false,
+  failure: "Murmur is installed but has not passed its check on this computer yet.",
 }
 
 const actions = () => ({
@@ -94,16 +95,106 @@ describe("murmur's card when murmur failed while running", () => {
       ...unchecked,
       enabled: true,
       check: { device: "Intel Arc Graphics", integrated: true, milliseconds: 900 },
-      failure: "Murmur stopped: its GPU went away.",
+      failure: "Murmur stopped: its graphics device went away.",
     }
     const calls = actions()
     const { container, unmount } = render(
       createElement(MurmurAddon, { murmur: { state: checked, actions: calls } }),
     )
-    expect(container.querySelector("[role=alert]")?.textContent).toMatch(/GPU went away/)
+    expect(container.querySelector("[role=alert]")?.textContent).toMatch(
+      /graphics device went away/,
+    )
     expect(container.textContent).toMatch(/Intel Arc Graphics/)
     button("Try again", container)?.click()
     expect(calls.install).toHaveBeenCalledOnce()
+    unmount()
+  })
+})
+
+describe("murmur's card on a computer that can't run it", () => {
+  const unsupported: MurmurState = {
+    ...unchecked,
+    installed: false,
+    failure: null,
+    unsupported: "No graphics device answered. On Linux, check that a Vulkan driver is installed.",
+    recheck: true,
+  }
+
+  it("says Not available in place of Install, with the reason behind Details", () => {
+    const calls = actions()
+    const { container, unmount } = render(
+      createElement(MurmurAddon, { murmur: { state: unsupported, actions: calls } }),
+    )
+    expect(container.textContent).toMatch(/Not available on this computer/)
+    expect(button("Install", container)).toBeUndefined()
+    expect(container.querySelector("[role=switch]")).toBeNull()
+    expect(container.textContent).not.toMatch(/GPU/)
+    const details = container.querySelector("details")
+    expect(details?.querySelector("summary")?.textContent).toBe("Details")
+    expect(details?.open).toBe(false)
+    expect(details?.textContent).toMatch(/Vulkan driver/)
+    unmount()
+  })
+
+  it("offers Check again inside Details, which installs again", () => {
+    const calls = actions()
+    const { container, unmount } = render(
+      createElement(MurmurAddon, { murmur: { state: unsupported, actions: calls } }),
+    )
+    expect(
+      container.querySelector("details")?.contains(button("Check again", container) ?? null),
+    ).toBe(true)
+    button("Check again", container)?.click()
+    expect(calls.install).toHaveBeenCalledOnce()
+    unmount()
+  })
+
+  it("has no Check again for what the host saw", () => {
+    const { container, unmount } = render(
+      createElement(MurmurAddon, {
+        murmur: { state: { ...unsupported, recheck: false }, actions: actions() },
+      }),
+    )
+    expect(button("Check again", container)).toBeUndefined()
+    unmount()
+  })
+})
+
+describe("murmur's card before an install", () => {
+  it("says what it downloads without mentioning a GPU", () => {
+    const { container, unmount } = render(
+      createElement(MurmurAddon, {
+        murmur: {
+          state: { ...unchecked, installed: false, failure: null },
+          actions: actions(),
+        },
+      }),
+    )
+    expect(container.textContent).toMatch(/Downloads 1\.2 GB once, then works offline\./)
+    expect(container.textContent).not.toMatch(/GPU/)
+    unmount()
+  })
+})
+
+describe("murmur's card when a verdict stands beside files", () => {
+  it("keeps the installed card with Uninstall, not Not available, and shows no Try again", () => {
+    const { container, unmount } = render(
+      createElement(MurmurAddon, {
+        murmur: {
+          state: {
+            ...unchecked,
+            failure: null,
+            unsupported: "This computer reports only software rendering.",
+            recheck: false,
+          },
+          actions: actions(),
+        },
+      }),
+    )
+    expect(container.textContent).not.toMatch(/Not available on this computer/)
+    expect(container.querySelector("[role=switch]")).not.toBeNull()
+    expect(button("Uninstall", container)).toBeDefined()
+    expect(button("Try again", container)).toBeUndefined()
     unmount()
   })
 })

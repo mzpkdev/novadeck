@@ -1141,4 +1141,19 @@ describe("murmur's settings", () => {
     reopened.saveMurmurCheck(null)
     expect(reopened.murmurCheck()).toBeNull()
   })
+
+  it("keep why this computer can't run murmur, until it is forgotten", ({ directory, store }) => {
+    const path = join(directory(), "workspace.sqlite")
+    const workspace = store(path)
+    expect(workspace.murmurUnsupported()).toBeNull()
+    workspace.saveMurmurUnsupported({ reason: "No graphics device answered.", engine: "abc" })
+    workspace.close()
+    const reopened = store(path)
+    expect(reopened.murmurUnsupported()).toEqual({
+      reason: "No graphics device answered.",
+      engine: "abc",
+    })
+    reopened.saveMurmurUnsupported(null)
+    expect(reopened.murmurUnsupported()).toBeNull()
+  })
 })

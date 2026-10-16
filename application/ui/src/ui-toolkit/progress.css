@@ -1,7 +1,8 @@
 /* The progress recipe: a bar filling as work goes (`.progress-track`, with its
    `.progress-range`), for work whose size is known.
 
-   Hooks: on the track, data-state="loading" | "complete" from the component.
+   Hooks: on the track, data-state="loading" | "complete" from the component; on the
+   fill of work with no size, data-state="indeterminate", which slides.
 
    Tokens, each optional (its fallback in brackets):
    --progress-track-bg (soft), --progress-track-border-color (line),
@@ -18,4 +19,23 @@
   height: 100%;
   background-color: var(--progress-range-bg, var(--color-strong));
   transition: width var(--motion-state) var(--ease-interface);
+}
+.progress-range[data-state="indeterminate"] {
+  width: 40%;
+  animation: progress-slide 1.4s var(--ease-interface) infinite alternate;
+}
+@keyframes progress-slide {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(150%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-range[data-state="indeterminate"] {
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
+  }
 }

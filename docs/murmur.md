@@ -171,7 +171,7 @@ behind a random API key made for each launch and passed in the environment
 
 ## Device policy
 
-Murmur needs a GPU; there is no CPU mode. `llama-server --list-devices` prints each device
+Murmur needs graphics hardware (a GPU, integrated or not); there is no CPU mode. People are never told "GPU": the app says "this computer". `llama-server --list-devices` prints each device
 with its kind (`igpu`, `gpu`, `cpu`, `accel`; Novadeck's patch adds the kind). Candidates are
 integrated GPUs first, then dedicated ones, never the CPU, picked by kind and never by index.
 `cpu` is never listed by llama-server in practice, and Metal always reports `gpu`, so on Apple
@@ -180,13 +180,22 @@ silicon the check records `integrated: false`.
 The install check runs a fixed test description on each candidate in that order and keeps
 the first that returns a valid one. The result (`device` name, `integrated`, `milliseconds`)
 is saved. Launches find that device again by name, as indexes differ between boots. The devices
-are listed before the model is downloaded: with no candidate the install fails saying murmur
-needs a working GPU, without the 1.28 GB download. When candidates all fail the check, the
-failure keeps the last device's own words. If the engine can't list devices at all, the failure
-says what it printed last.
+are listed before the model is downloaded: with no candidate the computer can't run murmur,
+and the 1.28 GB download never happens. When candidates all fail the check, the verdict keeps
+the last device's own words. If the engine can't list devices at all, it keeps what it printed
+last.
 
-If a later launch finds the engine doesn't list the checked GPU (it may list none), the check is dropped and
-the card shows "The GPU murmur was checked on is gone. Try again."
+Those verdicts are not failures to retry. The runner removes the engine and the model, saves
+the reason (`murmur.unsupported` in the settings table) and shows `unsupported` in the state:
+Preferences then says "Not available on this computer" with the reason behind Details, and the
+offer never comes up. Network, disk and cancelled installs stay ordinary failures with Try
+again. The host also tells the runner at start (`--novadeck-murmur-graphics=software`) when
+Electron's `app.getGPUInfo("basic")` lists only software adapters (SwiftShader, llvmpipe, WARP),
+so the same state shows before any download; that verdict is not saved, and an unsure answer
+counts as capable. Apple silicon always does.
+
+If a later launch finds the engine doesn't list the checked device (it may list none), the check
+is dropped and the card shows "The graphics device murmur was checked on isn't there now. Try again."
 
 ## The card's state
 

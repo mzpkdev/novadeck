@@ -508,12 +508,18 @@ describe("key commands", () => {
 })
 
 // A dictation that records what it was asked, standing in for the microphone.
-const fakeDictation = (): Dictation & { readonly calls: string[]; recordingNow: boolean } => {
+const fakeDictation = (): Dictation & {
+  readonly calls: string[]
+  recordingNow: boolean
+  claimed: boolean
+} => {
   const dictation = {
     calls: [] as string[],
     recordingNow: false,
     recording: () => dictation.recordingNow,
     active: () => dictation.recordingNow,
+    claimed: true,
+    claims: () => dictation.claimed,
     press: (target: { terminalId: string } | undefined, code: string) =>
       void dictation.calls.push(`press ${target?.terminalId ?? "none"} ${code}`),
     release: (code: string) => void dictation.calls.push(`release ${code}`),
@@ -555,6 +561,16 @@ describe("key commands for voice input", () => {
       app.keydown(chord)
       expect(app.keydown({ ...chord, repeat: true })).toBe("handled")
       expect(dictation.calls).toEqual(["press 01 KeyM"])
+    })
+
+    it("leaves the chord to the terminal once voice input is off or declined", () => {
+      const dictation = fakeDictation()
+      dictation.claimed = false
+      const app = openKeys({ dictation })
+      expect(app.keydown({ ...chord, target: { editing: true, terminalInput: true } })).toBe(
+        "passed",
+      )
+      expect(dictation.calls).toEqual([])
     })
 
     it("still keeps the key from the terminal where voice input is absent", () => {

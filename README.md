@@ -792,6 +792,23 @@ App:
   your replies going through. "Usage limit, reset passed" adds the limit Novadeck can't resume, with its
   window reset, offering Continue now. "A new item arrives" adds the next kind not there
   yet, and "Clear the Inbox" empties it.
+- **Murmur:** the demo starts with it installed and on, as the try demo shows it, and never
+  offers it; `&murmur=uninstalled` or `&murmur=unsupported` in the address starts it
+  without. The actions set Installed, Not installed (the one-time offer card comes up at
+  the next agent finish, once per page load, and Addons shows Install), Installing (held at
+  the model, half there, with Cancel), Install fails (network) (the failure with Try again,
+  no decline), Install ends Not available (the next Turn on or Install runs the check and
+  lands in Not available) and Not available (Addons shows it with Details, and no offer).
+- **Voice input:** the demo starts with it installed and on, as the try demo shows it, and
+  never offers it; `&voice=uninstalled` in the address starts it without. The actions set
+  Installed, Not installed (the mic of an agent's terminal, or Ctrl+Shift+M, opens the
+  offer; Esc or a click outside offers again the next time), Offer dialog (opens it at once),
+  Software rendering (the offer quotes small's size, as where the host saw no graphics
+  hardware), Install, turbo too slow (the card goes on to small's model and check), Installing (the corner card at
+  the model, half there, with Cancel), Install, then ready (the card follows the steps, then
+  says Voice input ready for a few seconds), Install fails (network) (the card shows the
+  failure with Try again, not a decline) and Declined (no mic, Ctrl+Shift+M reaches the
+  terminal, and Addons still offers it).
 - **Startup:** "Hold the splash" keeps it until you press Escape; "Slow attach" counts
   terminals attaching over about 3 s; "Welcome dialog" opens the first-run dialog for
   connecting agents again (no reboot).

@@ -8,10 +8,7 @@ describe("the demo's murmur", () => {
   afterEach(() => vi.useRealTimers())
 
   it("installs through the engine, the model and a check, then turns on", async () => {
-    const murmur = createDemoMurmur({
-      step: 100,
-      device: "Intel Arc Graphics",
-    })
+    const murmur = createDemoMurmur({ step: 100, device: "Intel Arc Graphics" }, "uninstalled")
     expect(murmur.state.getSnapshot()).toMatchObject({
       installed: false,
       enabled: false,
@@ -35,35 +32,91 @@ describe("the demo's murmur", () => {
     })
   })
 
-  context("on a computer with no working GPU", () => {
-    it("installs the files, leaves murmur off and says it needs a GPU", async () => {
-      const murmur = createDemoMurmur({ step: 100, device: null })
+  context("on a computer that can't run it", () => {
+    it("ends the install in Not available, with the downloads removed", async () => {
+      const murmur = createDemoMurmur({ step: 100, device: null }, "uninstalled")
       murmur.install()
       await vi.advanceTimersByTimeAsync(400)
       expect(murmur.state.getSnapshot()).toMatchObject({
         installing: null,
-        installed: true,
+        installed: false,
         enabled: false,
         check: null,
-        failure: expect.stringMatching(/needs a GPU/),
+        failure: null,
+        unsupported: expect.stringMatching(/graphics device/),
       })
     })
 
-    it("only runs the check again on another try", async () => {
-      const murmur = createDemoMurmur({ step: 100, device: null })
+    it("checks anew on another try, which ends the same way here", async () => {
+      const murmur = createDemoMurmur({ step: 100, device: null }, "uninstalled")
       murmur.install()
       await vi.advanceTimersByTimeAsync(400)
       murmur.install()
       await vi.advanceTimersByTimeAsync(50)
+      expect(murmur.state.getSnapshot()).toMatchObject({ installing: { step: "engine" } })
+      await vi.advanceTimersByTimeAsync(400)
+      expect(murmur.state.getSnapshot()).toMatchObject({ installed: false, recheck: true })
+    })
+
+    it("starts Not available when asked to", () => {
+      const murmur = createDemoMurmur(undefined, "unsupported")
       expect(murmur.state.getSnapshot()).toMatchObject({
-        installing: { step: "check" },
-        failure: null,
+        installed: false,
+        unsupported: expect.stringMatching(/Vulkan/),
+        recheck: true,
+        // Not a decline: murmur is still wanted, only not here.
+        wanted: true,
       })
     })
   })
 
+  it("starts installed and on, so the try demo never offers it", () => {
+    expect(createDemoMurmur().state.getSnapshot()).toMatchObject({
+      installed: true,
+      enabled: true,
+      wanted: true,
+      check: { device: "Intel Arc Graphics" },
+      unsupported: null,
+    })
+  })
+
+  context("for the debug panel", () => {
+    it("shows a network failure that is no decline, and a held install", () => {
+      const murmur = createDemoMurmur()
+      murmur.show("network-failure")
+      expect(murmur.state.getSnapshot()).toMatchObject({
+        installed: false,
+        wanted: true,
+        failure: expect.stringMatching(/connection dropped/),
+      })
+      murmur.show("installing")
+      expect(murmur.state.getSnapshot().installing).toMatchObject({ step: "model" })
+    })
+
+    it("shows the host's software-rendering verdict with nothing to check again", () => {
+      const murmur = createDemoMurmur()
+      murmur.show("unsupported-host")
+      expect(murmur.state.getSnapshot()).toMatchObject({
+        unsupported: expect.stringMatching(/software rendering/),
+        recheck: false,
+      })
+    })
+
+    it("makes the next install end Not available, and puts it back", async () => {
+      const murmur = createDemoMurmur({ step: 100, device: "Intel Arc Graphics" })
+      murmur.show("unsupported-after-install")
+      murmur.install()
+      await vi.advanceTimersByTimeAsync(400)
+      expect(murmur.state.getSnapshot().unsupported).not.toBeNull()
+      murmur.show("uninstalled")
+      murmur.install()
+      await vi.advanceTimersByTimeAsync(400)
+      expect(murmur.state.getSnapshot()).toMatchObject({ installed: true, unsupported: null })
+    })
+  })
+
   it("stops an install on cancel", async () => {
-    const murmur = createDemoMurmur({ step: 100, device: "GPU" })
+    const murmur = createDemoMurmur({ step: 100, device: "GPU" }, "uninstalled")
     murmur.install()
     await vi.advanceTimersByTimeAsync(150)
     murmur.cancel()
@@ -75,7 +128,7 @@ describe("the demo's murmur", () => {
   })
 
   it("stays off after the person turns it off, and when it is uninstalled", async () => {
-    const murmur = createDemoMurmur({ step: 100, device: "GPU" })
+    const murmur = createDemoMurmur({ step: 100, device: "GPU" }, "uninstalled")
     murmur.install()
     await vi.advanceTimersByTimeAsync(400)
     murmur.set({ enabled: false })
@@ -93,7 +146,7 @@ describe("the demo's murmur", () => {
   })
 
   it("wants murmur before an install when it is turned on there", () => {
-    const murmur = createDemoMurmur({ step: 100, device: "GPU" })
+    const murmur = createDemoMurmur({ step: 100, device: "GPU" }, "uninstalled")
     murmur.set({ enabled: true })
     expect(murmur.state.getSnapshot()).toMatchObject({
       installed: false,

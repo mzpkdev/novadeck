@@ -20,23 +20,33 @@ const noticeMilliseconds = 4000
 export const voiceReady = (state: VoiceState): boolean =>
   state.enabled && state.installed.includes(state.model)
 
+// Whether reaching for dictation offers to install voice input: it is wanted and not set up,
+// and nothing installs. That includes an install the person cancelled or that failed, which
+// left a model on disk that never passed its check: Turn on picks it up from there.
+export const offered = (state: VoiceState): boolean =>
+  state.available && state.wanted && !state.installing && !voiceReady(state)
+
 // An engine update doesn't stop dictation: the runner keeps the engine it has until the
 // new one is in, and says why should there be none to use.
 const readiness = (state: VoiceState): Readiness =>
   voiceReady(state)
     ? { ready: true }
-    : {
-        ready: false,
-        hint: !state.available
-          ? "Voice input isn't available on this machine. See Preferences → Addons."
-          : state.installing
-            ? "Voice input is still installing. See Preferences → Addons."
-            : !state.installed.length
-              ? "Voice input isn't installed yet. Install it in Preferences → Addons."
+    : offered(state)
+      ? { ready: false, offer: true }
+      : {
+          ready: false,
+          hint: !state.available
+            ? "Voice input isn't available on this machine. See Preferences → Addons."
+            : state.installing
+              ? "Voice input is still installing."
               : !state.wanted
                 ? "Voice input is off. Turn it on in Preferences → Addons."
                 : "Voice input isn't ready yet. See Preferences → Addons.",
-      }
+        }
+
+// Whether the shortcut and the microphone are the app's: voice input exists here and the
+// person hasn't turned it off or said no thanks to it.
+export const voiceClaimed = (state: VoiceState): boolean => state.available && state.wanted
 
 // What dictation tells the person once a clip is over, or before one starts:
 // - `done`: the words went in; `hint`: nothing went wrong, but nothing went in either;
@@ -70,6 +80,8 @@ const quiet: DictationView = {
 
 export type DictationDeps = {
   readonly voice: Voice
+  // Offers to install voice input, as the person reached for it before it is installed.
+  readonly offer: () => void
   readonly typeInto: (key: TerminalKey, text: string) => boolean
   readonly startCapture: (handlers: CaptureHandlers) => Promise<Capture>
   readonly now: () => number
@@ -105,7 +117,7 @@ const wordCount = (text: string): string => {
 // at once, so the engine warms up while the person speaks, streaming audio into it, and
 // pasting what comes back into the terminal it began in.
 export const createDictation = (deps: DictationDeps): DictationController => {
-  const { voice, typeInto, startCapture, now, after } = deps
+  const { voice, offer, typeInto, startCapture, now, after } = deps
   const view: MutableStore<DictationView> = createStore(quiet)
   const level: MutableStore<number> = createStore(0)
   const docks: MutableStore<ReadonlyMap<string, number>> = createStore<ReadonlyMap<string, number>>(
@@ -288,6 +300,8 @@ export const createDictation = (deps: DictationDeps): DictationController => {
         abortDrain?.()
         abortDrain = null
         return
+      case "offer":
+        return offer()
       case "hint":
         return notify(effect.text, "hint", effect.target ?? null, effect.setup)
     }
@@ -308,6 +322,7 @@ export const createDictation = (deps: DictationDeps): DictationController => {
     dictation: {
       recording: () => state.kind === "recording",
       active: () => state.kind !== "idle",
+      claims: () => state.kind !== "idle" || voiceClaimed(voice.state.getSnapshot()),
       press: (target, code) =>
         dispatch({ type: "press", code, target, now: now(), readiness: ready() }),
       release: (code) => dispatch({ type: "release", code, now: now() }),

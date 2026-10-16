@@ -1,11 +1,12 @@
-import type { VoiceModel, VoiceState } from "../model/voice"
+import { currentPlatform, shortcutBindings, type Shortcut } from "../interaction/shortcuts"
+import type { VoiceState } from "../model/voice"
 
 // What the voice input card says, as plain functions of the addon's state.
 
-export const modelNames: Record<VoiceModel, string> = { turbo: "Turbo", small: "Small" }
-export const modelSummaries: Record<VoiceModel, string> = {
-  turbo: "Most accurate, 99 languages; best with a GPU.",
-  small: "Faster without a GPU, less accurate.",
+// The keys the person holds to dictate, when the shortcut list names them.
+export const dictationKeys = (): readonly string[] | undefined => {
+  const bindings: Partial<Record<string, Shortcut>> = shortcutBindings(currentPlatform())
+  return bindings["voice"]?.display
 }
 
 export const languages = [
@@ -40,11 +41,16 @@ export const formatSize = (bytes: number): string =>
     ? `${(bytes / gigabyte).toFixed(1)} GB`
     : `${bytes <= 0 ? 0 : Math.max(1, Math.round(bytes / megabyte))} MB`
 
-// What installing `model` downloads: its own file, and the engine too until one is there.
-// A model's size includes the speech-detection model every install shares, which the state
-// doesn't give apart, so a second install is shown at most a megabyte over.
-export const installSize = (state: VoiceState, model: VoiceModel): number =>
-  state.sizes[model] + (state.installed.length ? 0 : state.sizes.engine)
+// Whether voice input is set up: its model is installed and either passed its check or was
+// turned on despite a failed one. Otherwise Addons offers the install, whatever is on disk.
+export const voiceSetUp = (state: VoiceState): boolean =>
+  state.installed.includes(state.model) && (state.check !== null || state.enabled)
+
+// What an install downloads: the model it aims for (turbo, or small where the computer is
+// known not to suit turbo), and the engine too until one is there. A turbo that later turns
+// out too slow for this computer costs small's download after, which isn't counted.
+export const installSize = (state: VoiceState): number =>
+  state.sizes[state.aim] + (state.installed.length ? 0 : state.sizes.engine)
 
 // What an uninstall frees: the engine and every model on disk, with the shared
 // speech-detection model counted once per model for the same reason.
@@ -57,15 +63,5 @@ export const stepLabels = {
   check: "Checking",
 } as const
 
-export const checkText = ({ milliseconds, gpu }: NonNullable<VoiceState["check"]>): string =>
-  `Checked: a test clip took ${(milliseconds / 1000).toFixed(1)} s on the ${gpu ? "GPU" : "CPU"}.`
-
-// Said when the model this computer suits is not the one in use.
-export const recommendation = (state: VoiceState): string | undefined => {
-  const { check, model, installed } = state
-  if (!check || check.recommended === model) return undefined
-  const name = modelNames[check.recommended]
-  return installed.includes(check.recommended)
-    ? `This computer suits ${name} better; you can switch to it above.`
-    : `This computer suits ${name} better; you can install it below.`
-}
+export const checkText = ({ milliseconds }: NonNullable<VoiceState["check"]>): string =>
+  `Checked: a test clip took ${(milliseconds / 1000).toFixed(1)} s.`

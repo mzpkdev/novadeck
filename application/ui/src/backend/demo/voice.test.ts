@@ -7,10 +7,22 @@ describe("the demo's voice input", () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
+  const uninstalled = (step = 100) => createDemoVoice({ step, transcribe: 10 }, "uninstalled")
+
+  it("starts installed and on, as the try demo shows it", () => {
+    const voice = createDemoVoice()
+    expect(voice.state.getSnapshot()).toMatchObject({
+      installed: ["turbo"],
+      enabled: true,
+      wanted: true,
+      check: { model: "turbo", gpu: true },
+    })
+  })
+
   it("installs through the engine, the model and a check, then turns on", async () => {
-    const voice = createDemoVoice({ step: 100, transcribe: 10 })
+    const voice = uninstalled()
     expect(voice.state.getSnapshot()).toMatchObject({ installed: [], enabled: false })
-    voice.install("turbo")
+    voice.install()
     await vi.advanceTimersByTimeAsync(50)
     expect(voice.state.getSnapshot().installing).toMatchObject({ model: "turbo", step: "engine" })
     await vi.advanceTimersByTimeAsync(100)
@@ -26,43 +38,26 @@ describe("the demo's voice input", () => {
     })
   })
 
-  it("leaves voice input off for another model when the person turned it off", async () => {
-    const voice = createDemoVoice({ step: 100, transcribe: 10 })
-    voice.install("turbo")
-    await vi.advanceTimersByTimeAsync(400)
-    voice.set({ enabled: false })
-
-    voice.install("small")
-    await vi.advanceTimersByTimeAsync(300)
-
-    expect(voice.state.getSnapshot()).toMatchObject({ model: "small", enabled: false })
-  })
-
   it("stops an install on cancel, and forgets everything on uninstall", async () => {
-    const voice = createDemoVoice({ step: 100, transcribe: 10 })
-    voice.install("small")
+    const voice = uninstalled()
+    voice.install()
     await vi.advanceTimersByTimeAsync(150)
     voice.cancel()
     await vi.advanceTimersByTimeAsync(1000)
     expect(voice.state.getSnapshot()).toMatchObject({ installing: null, installed: [] })
-    voice.install("small")
+    voice.install()
     await vi.advanceTimersByTimeAsync(400)
     voice.uninstall()
-    expect(voice.state.getSnapshot()).toMatchObject({ installed: [], enabled: false })
-  })
-
-  it("refuses a model that is not installed", () => {
-    const voice = createDemoVoice()
-    voice.set({ model: "small" })
     expect(voice.state.getSnapshot()).toMatchObject({
-      model: "turbo",
-      failure: "That model isn't installed.",
+      installed: [],
+      enabled: false,
+      wanted: false,
     })
   })
 
   it("keeps an off chosen during a first install, as the runner", async () => {
-    const voice = createDemoVoice({ step: 10, transcribe: 10 })
-    voice.install("turbo")
+    const voice = uninstalled(10)
+    voice.install()
     voice.set({ enabled: false })
     await vi.advanceTimersByTimeAsync(100)
     expect(voice.state.getSnapshot()).toMatchObject({
@@ -73,12 +68,31 @@ describe("the demo's voice input", () => {
   })
 
   it("is wanted until turned off, and turned on before an install is wanted again", () => {
-    const voice = createDemoVoice()
+    const voice = uninstalled()
     expect(voice.state.getSnapshot()).toMatchObject({ enabled: false, wanted: true })
     voice.set({ enabled: false })
     expect(voice.state.getSnapshot()).toMatchObject({ enabled: false, wanted: false })
     voice.set({ enabled: true })
     expect(voice.state.getSnapshot()).toMatchObject({ enabled: false, wanted: true })
+  })
+
+  it("shows each state of the offer on demand", async () => {
+    const voice = createDemoVoice({ step: 100, transcribe: 10 })
+    voice.show("declined")
+    expect(voice.state.getSnapshot()).toMatchObject({ installed: [], wanted: false })
+    voice.show("network-failure")
+    expect(voice.state.getSnapshot()).toMatchObject({
+      installed: [],
+      wanted: true,
+      failure: expect.stringContaining("connection dropped"),
+    })
+    voice.show("installing")
+    expect(voice.state.getSnapshot().installing).toMatchObject({ step: "model" })
+    voice.show("install-and-finish")
+    await vi.advanceTimersByTimeAsync(400)
+    expect(voice.state.getSnapshot()).toMatchObject({ installed: ["turbo"], enabled: true })
+    voice.show("uninstalled")
+    expect(voice.state.getSnapshot()).toMatchObject({ installed: [], wanted: true })
   })
 
   it("answers a canned transcript shortly after a clip ends", async () => {

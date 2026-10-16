@@ -1,6 +1,6 @@
 import { vi } from "vitest"
 
-import { createStore } from "../model/store"
+import { createStore, type MutableStore } from "../model/store"
 import type { TerminalKey } from "../model/types"
 import {
   maxClipSeconds,
@@ -21,6 +21,7 @@ const installed: VoiceState = {
   enabled: true,
   wanted: true,
   model: "turbo",
+  aim: "turbo",
   language: "auto",
   sizes: { engine: 1, turbo: 2, small: 1 },
   installing: null,
@@ -82,8 +83,10 @@ const setup = (state: VoiceState = installed) => {
   let now = 0
   const timers = new Map<number, { at: number; run: () => void }>()
   let timerIds = 0
+  const offers: string[] = []
   const controller: DictationController = createDictation({
     voice,
+    offer: () => void offers.push("offer"),
     typeInto: (key, text) => {
       if (terminal.open) typed.push({ key, text })
       return terminal.open
@@ -124,7 +127,7 @@ const setup = (state: VoiceState = installed) => {
     await Promise.resolve()
     microphone.handlers.at(-1)!.onSamples(new Int16Array(Math.round(seconds * 16_000)))
   }
-  return { controller, clips, typed, terminal, microphone, capture, advance, speak, voice }
+  return { controller, clips, typed, terminal, microphone, capture, advance, speak, voice, offers }
 }
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
@@ -325,7 +328,7 @@ describe("dictation", () => {
 
   context("when dictation is not set up", () => {
     it("starts nothing and points to Preferences", () => {
-      const app = setup({ ...installed, enabled: false })
+      const app = setup({ ...installed, enabled: false, wanted: false })
       app.controller.dictation.press(target, "KeyM")
       expect(app.clips).toHaveLength(0)
       expect(app.controller.view.getSnapshot().notice?.text).toContain("Preferences → Addons")
@@ -339,10 +342,82 @@ describe("dictation", () => {
     })
 
     it("lets the hint fade after a few seconds", () => {
-      const app = setup({ ...installed, enabled: false })
+      const app = setup({ ...installed, enabled: false, wanted: false })
       app.controller.dictation.press(target, "KeyM")
       app.advance(4000)
       expect(app.controller.view.getSnapshot().notice).toBeNull()
+    })
+  })
+
+  context("when voice input is not installed", () => {
+    const notInstalled = { ...installed, installed: [], enabled: false }
+
+    it("offers to install it when the shortcut is pressed, saying nothing else", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.offers).toEqual(["offer"])
+      expect(app.clips).toHaveLength(0)
+      expect(app.controller.view.getSnapshot().notice).toBeNull()
+    })
+
+    it("offers it when the mic is clicked, and again the next time", () => {
+      const app = setup(notInstalled)
+      app.controller.dictation.toggle(target)
+      app.controller.dictation.toggle(target)
+      expect(app.offers).toEqual(["offer", "offer"])
+    })
+
+    it("offers it again after an install that failed", () => {
+      const app = setup({ ...notInstalled, installed: ["small"], failure: "Out of disk space." })
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.offers).toEqual(["offer"])
+    })
+
+    it("offers it again after a cancel that left a model on disk, never checked", () => {
+      const app = setup({ ...notInstalled, installed: ["small"], model: "small", check: null })
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.offers).toEqual(["offer"])
+      expect(app.clips).toHaveLength(0)
+    })
+
+    it("does not offer it while it installs, and says so", () => {
+      const app = setup({
+        ...notInstalled,
+        installing: { model: "turbo", step: "model", received: 1, total: 2 },
+      })
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.offers).toEqual([])
+      expect(app.controller.view.getSnapshot().notice?.text).toContain("still installing")
+    })
+
+    it("does not offer it once the person said no thanks", () => {
+      const app = setup({ ...notInstalled, wanted: false })
+      app.controller.dictation.press(target, "KeyM")
+      expect(app.offers).toEqual([])
+    })
+  })
+
+  context("whose shortcut is it", () => {
+    it("is dictation's while voice input is wanted, installed or not", () => {
+      expect(setup().controller.dictation.claims()).toBe(true)
+      expect(
+        setup({ ...installed, installed: [], enabled: false }).controller.dictation.claims(),
+      ).toBe(true)
+    })
+
+    it("is the terminal's once voice input is off or declined, or where there is none", () => {
+      expect(setup({ ...installed, wanted: false }).controller.dictation.claims()).toBe(false)
+      expect(setup({ ...installed, available: false }).controller.dictation.claims()).toBe(false)
+    })
+
+    it("stays dictation's while a clip is recorded", () => {
+      const app = setup()
+      app.controller.dictation.press(target, "KeyM")
+      ;(app.voice.state as MutableStore<VoiceState>).update((state) => ({
+        ...state,
+        wanted: false,
+      }))
+      expect(app.controller.dictation.claims()).toBe(true)
     })
   })
 

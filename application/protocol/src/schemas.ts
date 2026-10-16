@@ -718,6 +718,9 @@ export const voiceState = z.strictObject({
   // app offers it, as a microphone that leads to its install.
   wanted: z.boolean(),
   model: voiceModel,
+  // The model an install fetches first: turbo, or small where this computer is known not
+  // to suit turbo. The person does not choose it.
+  aim: voiceModel,
   language: voiceLanguage,
   // Download sizes in bytes: the engine for this platform, and each model.
   sizes: z.strictObject({ engine: z.int().nonnegative(), turbo: z.int(), small: z.int() }),
@@ -729,7 +732,7 @@ export const voiceState = z.strictObject({
   failure: z.string().max(1024).nullable(),
 })
 
-// Murmur: a small model that runs on this machine's GPU and writes terminals' titles,
+// Murmur: a small model that runs on this machine's graphics and writes terminals' titles,
 // opt-in from Preferences like voice input. It has one engine and one model.
 
 // What an install is doing: downloading the engine or the model, or checking that they
@@ -761,14 +764,22 @@ export const murmurState = z.strictObject({
   // Download sizes in bytes: the engine for this platform, and the model.
   sizes: z.strictObject({ engine: z.int().nonnegative(), model: z.int().nonnegative() }),
   installing: murmurInstall.nullable(),
-  // Null until a check passes. A machine with no working GPU stays null, and `failure`
-  // says murmur needs one.
+  // Null until a check passes.
   check: murmurCheck.nullable(),
+  // Why this computer can't run murmur, technical and for a details view, once it is known:
+  // the host saw only software rendering, or an install found no graphics device that runs
+  // the model (the downloads are then removed). Null while nothing says it can't. Nothing
+  // installs while it is set, and it is no failure to try again.
+  unsupported: z.string().max(1024).nullable(),
+  // Whether `unsupported` came from an install and can be asked again (an install clears
+  // it and checks anew); the host's word about software rendering is not, it is read at
+  // each start. An engine of another build forgets an install's verdict by itself.
+  recheck: z.boolean(),
   // Why murmur is not working, in words for the person: the last install or engine update
-  // that failed, until the next install, update or removal; the GPU it was checked on being
-  // gone (the check is then null, and Try again installs just the check); a worker that
-  // would not start; or the engine failing three jobs in a row (the check stands) until a job
-  // succeeds. Turning murmur on clears the last two.
+  // that failed (network, disk), until the next install, update or removal; the device it was
+  // checked on being gone (the check is then null, and Try again installs just the check); a
+  // worker that would not start; or the engine failing three jobs in a row (the check stands)
+  // until a job succeeds. Turning murmur on clears the last two.
   failure: z.string().max(1024).nullable(),
 })
 
@@ -830,6 +841,9 @@ export const voiceSettings = z.strictObject({
   model: voiceModel,
   language: voiceLanguage,
 })
+
+// What the person changes of the settings: the model is the install's choice, not theirs.
+export const voiceChange = voiceSettings.omit({ model: true }).partial()
 
 export const voiceTranscript = z.strictObject({
   text: z.string(),
@@ -944,6 +958,7 @@ export type VoiceCheck = z.infer<typeof voiceCheck>
 export type VoiceState = z.infer<typeof voiceState>
 export type VoiceUnavailable = z.infer<typeof voiceUnavailable>
 export type VoiceSettings = z.infer<typeof voiceSettings>
+export type VoiceChange = z.infer<typeof voiceChange>
 export type VoiceTranscript = z.infer<typeof voiceTranscript>
 export type MurmurInstall = z.infer<typeof murmurInstall>
 export type MurmurCheck = z.infer<typeof murmurCheck>

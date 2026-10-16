@@ -14,6 +14,7 @@ const controller = (): DictationController => ({
   dictation: {
     recording: () => false,
     active: () => false,
+    claims: () => true,
     press: () => {},
     release: () => {},
     blur: () => {},

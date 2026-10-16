@@ -333,7 +333,7 @@ export const createRouter = (options: {
           throw apiError(error)
         }
       }),
-      install: authorized.voice.install.handler(({ input }) => voice.install(input.model)),
+      install: authorized.voice.install.handler(() => voice.install()),
       cancel: authorized.voice.cancel.handler(() => voice.cancel()),
       uninstall: authorized.voice.uninstall.handler(() => voice.uninstall()),
       set: authorized.voice.set.handler(({ input }) => voice.set(input)),

@@ -53,6 +53,7 @@ import {
   renamedMoveReason,
 } from "./applications-folder.js"
 import { dataFolderName } from "./data-folder.js"
+import { detectSoftwareGraphics } from "./graphics.js"
 import {
   extractWithProcess,
   findInstalled,
@@ -853,6 +854,8 @@ const launch = async (): Promise<void> => {
     relay: relayPath(),
     ...(await voiceEngine()),
     ...(await murmurEngine()),
+    // Asked on Windows only, where the GPU process answers once the app is ready.
+    softwareGraphics: await detectSoftwareGraphics(app),
   })
   // A port is shell access: only the main frame of this app's own window showing its
   // own UI may ask for one.

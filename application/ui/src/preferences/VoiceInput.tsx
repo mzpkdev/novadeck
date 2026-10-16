@@ -1,29 +1,21 @@
-import { useState, type ComponentProps, type RefObject } from "react"
+import { useState, type RefObject } from "react"
 
-import { currentPlatform, shortcutBindings, type Shortcut } from "../interaction/shortcuts"
-import type { Voice, VoiceModel, VoiceState } from "../model/voice"
+import type { Voice, VoiceState } from "../model/voice"
+import { Chord } from "../ui-toolkit/Chord"
 import { ConfirmDialog } from "../ui-toolkit/ConfirmDialog"
-import { SegmentGroup } from "../ui-toolkit/SegmentGroup"
 import { Select } from "../ui-toolkit/Select"
 import { Switch } from "../ui-toolkit/Switch"
-import {
-  AddonFailure,
-  AddonRow,
-  addonNoteClasses,
-  addonRowClasses,
-  InstallProgress,
-} from "./addon-parts"
+import { AddonFailure, addonNoteClasses, addonRowClasses, InstallProgress } from "./addon-parts"
 import { settingsCardClasses } from "./settings"
 import {
   checkText,
+  dictationKeys,
   formatSize,
   installedSize,
   installSize,
   languages,
-  modelNames,
-  modelSummaries,
-  recommendation,
   stepLabels,
+  voiceSetUp,
 } from "./voice-addon"
 
 export type VoiceAddon = {
@@ -31,57 +23,8 @@ export type VoiceAddon = {
   readonly actions: Pick<Voice, "install" | "cancel" | "uninstall" | "set">
 }
 
-const models: readonly VoiceModel[] = ["turbo", "small"]
 const rowClasses = addonRowClasses
 const noteClasses = addonNoteClasses
-
-const Row = (props: Omit<ComponentProps<typeof AddonRow>, "scope">): React.JSX.Element => (
-  <AddonRow scope="voice" {...props} />
-)
-
-// What the person holds to dictate, when the shortcut list names it.
-const dictationKeys = (): string | undefined => {
-  const bindings: Partial<Record<string, Shortcut>> = shortcutBindings(currentPlatform())
-  return bindings["voice"]?.display.join(" + ")
-}
-
-// The model chooser, with what the chosen one is like.
-const ModelChoice = ({
-  label,
-  choices,
-  value,
-  onChange,
-  detail,
-  disabled = false,
-}: {
-  readonly label: string
-  readonly choices: readonly VoiceModel[]
-  readonly value: VoiceModel
-  readonly onChange: (model: VoiceModel) => void
-  readonly detail: (model: VoiceModel) => string
-  readonly disabled?: boolean
-}): React.JSX.Element => (
-  <Row id="model" label={label} description={`${modelSummaries[value]} ${detail(value)}`.trim()}>
-    {choices.length === 1 ? (
-      // One installed model leaves nothing to choose: it is shown as the value.
-      <span className="shrink-0">{modelNames[value]}</span>
-    ) : (
-      <SegmentGroup
-        label={label}
-        items={choices.map((model) => ({ label: modelNames[model], value: model }))}
-        value={value}
-        disabled={disabled}
-        onValueChange={(next) => {
-          const model = choices.find((item) => item === next)
-          if (model) onChange(model)
-        }}
-        className="flex shrink-0 gap-1"
-        itemClassName="flex h-7 min-w-14 items-center justify-center px-2.5 text-control"
-        indicatorClassName="absolute"
-      />
-    )}
-  </Row>
-)
 
 const Installing = ({
   installing,
@@ -90,11 +33,11 @@ const Installing = ({
   readonly installing: NonNullable<VoiceState["installing"]>
   readonly onCancel: () => void
 }): React.JSX.Element => {
-  const { step, received, total, model } = installing
+  const { step, received, total } = installing
   const label = stepLabels[step]
   return (
     <InstallProgress
-      title={`${label}${step === "check" ? "" : `: ${step === "model" ? modelNames[model] : "speech engine"}`}`}
+      title={`${label}${step === "check" ? "" : `: ${step === "model" ? "speech model" : "speech engine"}`}`}
       {...(step !== "check" && { detail: `${formatSize(received)} of ${formatSize(total)}` })}
       label={label}
       received={step === "check" ? 0 : received}
@@ -116,23 +59,13 @@ export const VoiceInput = ({
   readonly open: boolean
   readonly portalContainer: RefObject<HTMLElement | null>
 }): React.JSX.Element => {
-  const [choice, setChoice] = useState<VoiceModel>("turbo")
   const [selecting, setSelecting] = useState(false)
   const [confirming, setConfirming] = useState(false)
   // Set once the person confirms an uninstall, holding the failure then showing: the state
   // has no field for a removal under way, so the card waits for the engine to be gone or a
   // new failure to turn up.
   const [removing, setRemoving] = useState<{ readonly failure: string | null } | null>(null)
-  // The model the person last asked to install, which Try again installs again, until that
-  // install is seen through: once it has run, an end without a failure forgets it.
-  const [asked, setAsked] = useState<{ readonly model: VoiceModel; readonly ran: boolean } | null>(
-    null,
-  )
-  if (
-    removing &&
-    voice &&
-    (!voice.state.installed.length || voice.state.failure !== removing.failure)
-  )
+  if (removing && voice && (!voiceSetUp(voice.state) || voice.state.failure !== removing.failure))
     setRemoving(null)
   if (!voice)
     return (
@@ -141,19 +74,12 @@ export const VoiceInput = ({
       </div>
     )
   const { state, actions } = voice
-  if (asked && !asked.ran && state.installing) setAsked({ ...asked, ran: true })
-  if (asked?.ran && !state.installing && !state.failure) setAsked(null)
-  const { failure, installing, installed } = state
+  const { failure, installing } = state
   const failed = failure && <AddonFailure>{failure}</AddonFailure>
-  const install = (model: VoiceModel): void => {
-    setAsked({ model, ran: false })
-    actions.install(model)
-  }
-  // What an installed card can still do about a failure: install again, the model asked
-  // for if there was one, or the one in use, which fetches an engine that is missing or out
-  // of date, runs the check, and skips models on disk. It leaves voice input off if it was.
-  const retry = (): void =>
-    install(asked?.model ?? (installed.includes(state.model) ? state.model : installed[0]!))
+  // What an installed card can still do about a failure: install again, which fetches an
+  // engine that is missing or out of date, runs the check, and skips models on disk. It
+  // leaves voice input off if it was.
+  const retry = actions.install
   if (!state.available)
     return (
       <div className={settingsCardClasses}>
@@ -168,16 +94,16 @@ export const VoiceInput = ({
         <Installing installing={installing} onCancel={actions.cancel} />
       </div>
     )
-  if (!installed.length)
+  if (!voiceSetUp(state))
     return (
       <div className={settingsCardClasses}>
-        {/* Wanted until turned off: the app offers it, as a microphone in agent terminals
-            that leads here, and an install turns it on. */}
+        {/* Wanted until turned off or declined: the app shows a microphone in agent terminals
+            that offers the install, and holds the shortcut. Off, both go until it is on again. */}
         <div className={rowClasses}>
           <span className="flex min-w-0 flex-col gap-1">
             <span id="voice-enabled">Enabled</span>
             <span id="voice-enabled-description" className={noteClasses}>
-              Shows a microphone in agent terminals. Dictation works once it's installed.
+              Shows a microphone in agent terminals. It offers to install voice input when used.
             </span>
           </span>
           <Switch
@@ -187,19 +113,14 @@ export const VoiceInput = ({
             describedBy="voice-enabled-description"
           />
         </div>
-        <ModelChoice
-          label="Model"
-          choices={models}
-          value={choice}
-          onChange={setChoice}
-          detail={(model) => `Downloads ${formatSize(installSize(state, model))}, with the engine.`}
-        />
         <div className={rowClasses}>
-          <span className={noteClasses}>Downloads once, then works offline.</span>
+          <span className={noteClasses}>
+            {`Downloads ${formatSize(installSize(state))} once, then works offline.`}
+          </span>
           <button
             type="button"
             className="button primary min-h-8 shrink-0 px-3 text-control"
-            onClick={() => install(choice)}
+            onClick={actions.install}
           >
             Install
           </button>
@@ -208,9 +129,7 @@ export const VoiceInput = ({
       </div>
     )
   const busy = removing !== null
-  const other = models.find((model) => !installed.includes(model))
   const keys = dictationKeys()
-  const hint = recommendation(state)
   return (
     <>
       <div className={settingsCardClasses}>
@@ -218,9 +137,13 @@ export const VoiceInput = ({
           <span className="flex min-w-0 flex-col gap-1">
             <span id="voice-enabled">Enabled</span>
             <span id="voice-enabled-description" className={noteClasses}>
-              {keys
-                ? `Hold ${keys} in a terminal, or click its microphone, to speak.`
-                : "Hold the dictation shortcut in a terminal, or click its microphone, to speak."}
+              {keys ? (
+                <>
+                  Hold <Chord keys={keys} /> in a terminal, or click its microphone, to speak.
+                </>
+              ) : (
+                "Hold the dictation shortcut in a terminal, or click its microphone, to speak."
+              )}
             </span>
           </span>
           <Switch
@@ -231,30 +154,6 @@ export const VoiceInput = ({
             describedBy="voice-enabled-description"
           />
         </div>
-        <ModelChoice
-          label="Model"
-          choices={installed}
-          value={installed.includes(state.model) ? state.model : installed[0]!}
-          onChange={(model) => actions.set({ model })}
-          detail={() => ""}
-          disabled={busy}
-        />
-        {other && (
-          <div className={rowClasses}>
-            <span className="flex min-w-0 flex-col gap-1">
-              <span>{`Also install ${modelNames[other]}`}</span>
-              <span className={noteClasses}>{modelSummaries[other]}</span>
-            </span>
-            <button
-              type="button"
-              className="button min-h-8 shrink-0 px-3 text-control"
-              disabled={busy}
-              onClick={() => install(other)}
-            >
-              {`Install · ${formatSize(installSize(state, other))}`}
-            </button>
-          </div>
-        )}
         <Select
           className={`${rowClasses} [&_[data-part=trigger]]:w-36`}
           label="Language"
@@ -270,7 +169,6 @@ export const VoiceInput = ({
           <div className={rowClasses}>
             <span className="flex min-w-0 flex-col gap-1">
               <span className={noteClasses}>{checkText(state.check)}</span>
-              {hint && <span className={noteClasses}>{hint}</span>}
             </span>
           </div>
         )}

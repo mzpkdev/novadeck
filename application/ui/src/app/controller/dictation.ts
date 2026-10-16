@@ -9,10 +9,12 @@ import { startCapture } from "../../voice/capture"
 import {
   createDictation,
   dictationKey,
+  voiceClaimed,
   voiceReady,
   type DictationController,
 } from "../../voice/dictation"
 import type { UiStore } from "../ui-store"
+import { offerVoice } from "../voice-offer"
 import { useWorkspaceServices, type WorkspaceServices } from "./context"
 import { domEffects } from "./effects"
 
@@ -59,6 +61,7 @@ export const useDictationController = ({
       typeInto &&
       createDictation({
         voice,
+        offer: () => offerVoice(ui),
         typeInto: dictateInto(ui, typeInto, (key) =>
           backend.conversations
             ? workspace
@@ -82,12 +85,12 @@ const never = (): (() => void) => () => {}
 
 // What a terminal's header needs for its mic button, or undefined where the button
 // doesn't show: not an agent, no voice input on this machine, or the person turned it
-// off. Until voice input is ready the button opens Addons, where it is installed.
+// off or said no thanks. Until voice input is ready the button offers to install it.
 export const useMicButton = (
   terminal: TerminalMetadata,
   key: TerminalKey,
 ): DictationControls | undefined => {
-  const { backend, navigation } = useWorkspaceServices()
+  const { backend } = useWorkspaceServices()
   const controller = useContext(DictationContext)
   const state = useSyncExternalStore(
     backend.voice?.state.subscribe ?? never,
@@ -97,14 +100,9 @@ export const useMicButton = (
     controller?.view.subscribe ?? never,
     () => controller?.view.getSnapshot() ?? null,
   )
-  if (!controller || !state || !state.available || !state.wanted || !isAgentTerminal(terminal))
-    return undefined
+  if (!controller || !state || !voiceClaimed(state) || !isAgentTerminal(terminal)) return undefined
   if (!voiceReady(state))
-    return {
-      recording: false,
-      ready: false,
-      onToggle: () => navigation.go({ dialog: "preferences", section: "addons" }),
-    }
+    return { recording: false, ready: false, onToggle: () => controller.dictation.toggle(key) }
   return {
     recording:
       view?.phase === "recording" &&

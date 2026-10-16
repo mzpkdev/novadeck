@@ -1,8 +1,9 @@
 import type { Store } from "./store"
 
-// Murmur, as a backend offers it: a small model that runs on the backend's machine, on
-// its GPU, and names the terminals from what they are doing. The person
-// installs it from Preferences; it has no model or language to choose.
+// Murmur, as a backend offers it: a small model that runs on the backend's machine, on its
+// graphics, and names the terminals from what they are doing. The person turns it on from
+// the one-time offer or from Preferences; it has no model or language to choose. Nothing
+// downloads without that click.
 
 // What the person is told it is called. The name isn't final, so every text that says it
 // reads it from here.
@@ -26,16 +27,22 @@ export type MurmurState = {
     readonly received: number
     readonly total: number
   } | null
-  // The GPU that passed the check after an install. Null until one does: on a computer
-  // with no working GPU it stays null, and `failure` says so.
+  // The device that passed the check after an install; null until one does.
   readonly check: {
     readonly device: string
     readonly integrated: boolean
     readonly milliseconds: number
   } | null
-  // Why the last install, or its check, failed. A backend may also show here why a change
-  // was refused, until its next snapshot.
+  // Why the last install failed for a reason that may pass (network, disk), or why a change
+  // was refused, until the next snapshot or try.
   readonly failure: string | null
+  // Why this computer can't run murmur, technical, for a details view: set before any
+  // download when the host knows, or by an install that found out (its downloads are then
+  // removed). Not a failure to retry: there is nothing to install, and no offer.
+  readonly unsupported: string | null
+  // Whether that came from an install and "Check again" (an install) asks anew; the host's
+  // word is not, and an engine of another build forgets an install's by itself.
+  readonly recheck: boolean
 }
 
 export type MurmurSettings = {

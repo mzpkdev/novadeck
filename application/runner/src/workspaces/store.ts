@@ -50,6 +50,9 @@ export type VoiceSettingsChange = {
   readonly enabled?: boolean | null | undefined
 }
 
+/** Why an install found this computer can't run murmur, and the engine build it ran. */
+export type MurmurVerdict = { readonly reason: string; readonly engine: string }
+
 /** Murmur's settings to change; `enabled: null` forgets the choice, as when it is turned on before an install. */
 export type MurmurSettingsChange = {
   readonly enabled?: boolean | null | undefined
@@ -1142,6 +1145,34 @@ export class WorkspaceStore implements TerminalRecords, MailboxRecords, AskRecor
     else
       void this.queries.run`
         INSERT INTO settings (key, value) VALUES ('murmur.check', ${JSON.stringify(check)})
+        ON CONFLICT (key) DO UPDATE SET value = excluded.value
+      `
+  }
+
+  /**
+   * Why an install found this computer can't run murmur, with the sha of the engine build
+   * it ran; `null` when it never did or the value can't be read.
+   */
+  murmurUnsupported(): MurmurVerdict | null {
+    const row = this.queries.get`SELECT value FROM settings WHERE key = 'murmur.unsupported'` as
+      | { value: string }
+      | undefined
+    if (row === undefined) return null
+    try {
+      const { reason, engine } = JSON.parse(row.value) as Partial<MurmurVerdict>
+      return typeof reason === "string" && typeof engine === "string" ? { reason, engine } : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Remembers that this computer can't run murmur; `null` forgets it. */
+  saveMurmurUnsupported(verdict: MurmurVerdict | null): void {
+    if (verdict === null)
+      void this.queries.run`DELETE FROM settings WHERE key = 'murmur.unsupported'`
+    else
+      void this.queries.run`
+        INSERT INTO settings (key, value) VALUES ('murmur.unsupported', ${JSON.stringify(verdict)})
         ON CONFLICT (key) DO UPDATE SET value = excluded.value
       `
   }

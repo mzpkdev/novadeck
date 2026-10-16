@@ -69,6 +69,11 @@ export type UiState = {
   readonly closing: { readonly context: string; readonly id: string } | null
   // The person chose "Not now" for this crash loop; it asks again only after the next one.
   readonly crashLoopDismissed: boolean
+  // Whether an addon offer (voice input, murmur) came up in this run of the app: each run
+  // offers at most one unasked; never persisted.
+  readonly addonOfferShown: boolean
+  // Voice input's offer is open: the person reached for the mic and it is not installed.
+  readonly voiceOffer: boolean
   // How many crashes the backend reports while its far side keeps crashing; 0 otherwise.
   readonly crashLoop: number
   // The update the desktop app last told of: downloaded, or to fetch from its release page.
@@ -135,6 +140,8 @@ export const initialUi = ({
   created: null,
   closing: null,
   crashLoopDismissed: false,
+  addonOfferShown: false,
+  voiceOffer: false,
   crashLoop: 0,
   update: null,
   updateOpen: false,

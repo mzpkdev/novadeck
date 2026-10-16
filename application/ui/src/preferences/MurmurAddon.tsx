@@ -4,13 +4,14 @@ import { MURMUR_NAME, type Murmur, type MurmurState } from "../model/murmur"
 import { ConfirmDialog } from "../ui-toolkit/ConfirmDialog"
 import { Switch } from "../ui-toolkit/Switch"
 import {
+  AddonDetails,
   AddonFailure,
   AddonRow,
   addonNoteClasses,
   addonRowClasses,
   InstallProgress,
 } from "./addon-parts"
-import { deviceText, murmurInstallSize, murmurStepTitles } from "./murmur-addon"
+import { deviceText, murmurDownloadNote, murmurInstallSize, murmurStepTitles } from "./murmur-addon"
 import { settingsCardClasses } from "./settings"
 import { formatSize } from "./voice-addon"
 
@@ -43,9 +44,25 @@ export const MurmurAddon = ({
     setRemoving(null)
   if (!murmur) return <Note>{`${MURMUR_NAME} isn't available here.`}</Note>
   const { state, actions } = murmur
-  const { failure, installing, installed, check } = state
+  const { failure, installing, installed, check, unsupported, recheck } = state
   if (!state.available)
     return <Note>{`This build has no ${MURMUR_NAME} engine for this platform.`}</Note>
+  // Known not to run here, by the host or by an install: nothing to install, and why behind Details.
+  // Files that stay beside the verdict (their removal failed) keep the installed card, with its
+  // Uninstall; the host's word also never takes away an install that works.
+  if (unsupported !== null && !installed)
+    return (
+      <div className={settingsCardClasses}>
+        <div className={addonRowClasses}>
+          <span className={addonNoteClasses}>Not available on this computer</span>
+        </div>
+        <AddonDetails
+          {...(recheck && { action: { label: "Check again", onClick: actions.install } })}
+        >
+          {unsupported}
+        </AddonDetails>
+      </div>
+    )
   if (installing)
     return (
       <div className={settingsCardClasses}>
@@ -57,6 +74,7 @@ export const MurmurAddon = ({
           label={murmurStepTitles[installing.step]}
           received={installing.step === "check" ? 0 : installing.received}
           total={installing.total}
+          indeterminate={installing.step === "check"}
           onCancel={actions.cancel}
         />
       </div>
@@ -73,9 +91,7 @@ export const MurmurAddon = ({
           />
         </AddonRow>
         <div className={addonRowClasses}>
-          <span className={addonNoteClasses}>
-            {`Downloads ${formatSize(murmurInstallSize(state))} once, then works offline. Needs a GPU.`}
-          </span>
+          <span className={addonNoteClasses}>{murmurDownloadNote(state)}</span>
           <button
             type="button"
             className="button primary min-h-8 shrink-0 px-3 text-control"
@@ -120,8 +136,8 @@ export const MurmurAddon = ({
           </button>
         </AddonRow>
         {failure && (
-          // Installed with no GPU that passed, murmur can't run: the failure says so, and
-          // another install runs the check again.
+          // Installed with no check that passed, murmur can't run yet: the failure says so,
+          // and another install runs the check again.
           <div className="flex items-center justify-between gap-6">
             <AddonFailure>{failure}</AddonFailure>
             <button

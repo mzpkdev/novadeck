@@ -8,7 +8,7 @@ import {
 import { hasCode, type Runner } from "@novadeck/protocol/client"
 
 import { createStore } from "../../model/store"
-import type { Voice, VoiceClip, VoiceModel, VoiceState } from "../../model/voice"
+import { changeFailurePrefix, type Voice, type VoiceClip, type VoiceState } from "../../model/voice"
 
 // The runner's voice input addon: its state as `voice.watch` streams it, installs and
 // settings as calls whose failures show in that state until the next snapshot, and clips
@@ -32,6 +32,7 @@ export const noVoice: VoiceState = {
   // Nothing is offered until the runner says it is wanted.
   wanted: false,
   model: "turbo",
+  aim: "turbo",
   language: "auto",
   sizes: { engine: 0, turbo: 0, small: 0 },
   installing: null,
@@ -94,6 +95,9 @@ const littleEndian = (chunks: readonly Int16Array[]): Uint8Array => {
   return bytes
 }
 
+// `change`'s words for a refused setting: the failure then starts with `changeFailurePrefix`.
+const changeWhat = changeFailurePrefix.replace(/^Couldn't /, "")
+
 export const createRunnerVoice = (
   calls: VoiceCalls,
   // Keeps a call the backend waits for before it stops, as its other calls are.
@@ -127,9 +131,19 @@ export const createRunnerVoice = (
 
   // Runs a call that changes the addon; the next snapshot shows its effect, and a
   // rejection shows meanwhile as the failure.
-  const change = (what: string, call: () => Promise<void>): void => {
+  const change = (
+    what: string,
+    call: () => Promise<void>,
+    // Shown at once, and taken back if the call is refused.
+    optimistic?: (current: VoiceState) => VoiceState,
+  ): void => {
+    if (optimistic) state.update(optimistic)
     track(call()).catch((error: unknown) =>
-      state.update((current) => ({ ...current, failure: `Couldn't ${what}: ${reason(error)}` })),
+      state.update((current) => ({
+        ...current,
+        ...(optimistic && { installing: null }),
+        failure: `Couldn't ${what}: ${reason(error)}`,
+      })),
     )
   }
 
@@ -200,10 +214,29 @@ export const createRunnerVoice = (
   return {
     voice: {
       state,
-      install: (model: VoiceModel) => change("install voice input", () => calls.install(model)),
+      // Shows as installing at once, so a second press before the runner's first snapshot of
+      // the install does not offer it again.
+      install: () =>
+        change(
+          "install voice input",
+          () => calls.install(),
+          (current) =>
+            current.installing
+              ? current
+              : {
+                  ...current,
+                  failure: null,
+                  installing: {
+                    model: current.aim,
+                    step: "engine",
+                    received: 0,
+                    total: current.sizes.engine,
+                  },
+                },
+        ),
       cancel: () => change("cancel the install", () => calls.cancel()),
       uninstall: () => change("uninstall voice input", () => calls.uninstall()),
-      set: (settings) => change("change voice input", () => calls.set(settings)),
+      set: (settings) => change(changeWhat, () => calls.set(settings)),
       record,
     },
     follow,

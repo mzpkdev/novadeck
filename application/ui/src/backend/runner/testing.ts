@@ -184,7 +184,7 @@ export const recordingRunner = (runner: Runner, io: string[]): RunnerApi => {
     },
     voice: {
       watch: () => runner.voice.watch(),
-      install: (model) => note(`voice install ${model}`, () => runner.voice.install(model)),
+      install: () => note("voice install", () => runner.voice.install()),
       cancel: () => note("voice cancel", () => runner.voice.cancel()),
       uninstall: () => note("voice uninstall", () => runner.voice.uninstall()),
       set: (settings) =>

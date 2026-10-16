@@ -96,6 +96,8 @@ export type WorkspaceCommands = ShellCommands &
     // next crash loop.
     readonly retryAfterCrashLoop: () => void
     readonly dismissCrashLoop: () => void
+    // Notes that an addon offer came up in this run, so no other offers itself unasked.
+    readonly markAddonOfferShown: () => void
     // Opens or closes the update's notice, which the footer's chip reopens after Later.
     readonly setUpdateOpen: (open: boolean) => void
     // Opens or closes the sandbox notice; opening it closes the update's, which shares its place.
@@ -498,6 +500,8 @@ export const createWorkspaceCommands = (ctx: CommandContext): WorkspaceCommands 
       crashLoop?.retry()
     },
     dismissCrashLoop: () => ui.update((state) => ({ ...state, crashLoopDismissed: true })),
+    markAddonOfferShown: () =>
+      ui.update((state) => (state.addonOfferShown ? state : { ...state, addonOfferShown: true })),
     setUpdateOpen: (updateOpen) =>
       ui.update((state) =>
         state.updateOpen === updateOpen && !(updateOpen && state.sandboxOpen)

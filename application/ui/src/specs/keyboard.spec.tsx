@@ -991,26 +991,6 @@ const fakeMicrophone = (): { readonly live: () => number; readonly restore: () =
   }
 }
 
-// The demo's voice input starts uninstalled: install it as a person would, in Preferences.
-const installVoice = async (): Promise<void> => {
-  await pressShortcut("preferences")
-  await expectFocusWithin(preferencesDialog())
-  await preferencesDialog().getByRole("tab", { name: "Addons" }).click()
-  const addons = preferencesDialog()
-    .getByRole("tabpanel", { name: "Addons" })
-    .getByRole("region", { name: "Voice input" })
-  await addons.getByRole("button", { name: "Install" }).click()
-  // Only an installed card offers Uninstall; the switch shows before the install too.
-  await expect
-    .element(addons.getByRole("button", { name: "Uninstall" }), { timeout: 10_000 })
-    .toBeVisible()
-  await expect
-    .element(addons.getByRole("switch", { name: "Enabled" }))
-    .toHaveAttribute("aria-checked", "true")
-  await press("{Escape}")
-  await expect.element(preferencesDialog()).not.toBeInTheDocument()
-}
-
 // Hold to dictate: Ctrl+Shift+M, on every platform.
 const dictateKeys = "{Control>}{Shift>}{M>}"
 const releaseKeys = "{/M}{/Shift}{/Control}"
@@ -1098,55 +1078,130 @@ describe("dictation", () => {
   })
 
   context("when voice input is not installed", () => {
-    it("points to Preferences instead of recording", async () => {
-      await openWorkspace()
+    // The demo starts it installed, as the try demo shows it; the address asks for it without.
+    const openWithoutVoice = async (route = "/?voice=uninstalled"): Promise<void> => {
+      await openWorkspace(route)
+      const skip = page.getByRole("button", { name: "Skip for now" })
+      if (await skip.query()) await skip.click()
+    }
+    const offer = (): Locator => page.getByRole("dialog", { name: "Voice input" })
+
+    it("offers it when the shortcut is pressed, without recording or downloading", async () => {
+      await openWithoutVoice()
       await commandInput("Checkout implementation").click()
 
       await press(`${dictateKeys}${releaseKeys}`)
 
-      await expect.element(saying("Preferences → Addons")).toBeVisible()
-      expect(microphone.live()).toBe(0)
-      // The terminal's strip opens Addons, where voice input is set up.
-      await saying("Preferences → Addons").getByRole("button", { name: "Open Addons" }).click()
+      await expect.element(offer()).toBeVisible()
       await expect
-        .element(preferencesDialog().getByRole("tab", { name: "Addons" }))
-        .toHaveAttribute("aria-selected", "true")
+        .element(offer().getByText(/or click the mic and talk to your agents/))
+        .toBeVisible()
+      await expect.element(offer().getByText(/downloads \d+ MB once\./)).toBeVisible()
+      await expect
+        .element(offer().getByText("Preferences → Addons", { exact: false }))
+        .toBeVisible()
+      await expect.element(offer().getByRole("button", { name: "Turn on" })).toBeVisible()
+      await expect.element(offer().getByRole("button", { name: "No thanks" })).toBeVisible()
+      expect(microphone.live()).toBe(0)
+      expect(page.getByText("Setting up voice input").query()).toBeNull()
     })
-  })
 
-  context("before voice input is installed", () => {
-    it("offers an agent's microphone, which opens Addons, until turned off there", async () => {
-      // The agents demo, whose Checkout implementation runs Claude Code.
-      await openWorkspace("/?demo=agents")
-      const skip = page.getByRole("button", { name: "Skip for now" })
-      if (await skip.query()) await skip.click()
+    it("offers it again after Esc, which is not an answer", async () => {
+      await openWithoutVoice()
+      await commandInput("Checkout implementation").click()
+      await press(`${dictateKeys}${releaseKeys}`)
+      await expect.element(offer()).toBeVisible()
+
+      await press("{Escape}")
+      await expect.element(offer()).not.toBeInTheDocument()
+      await commandInput("Checkout implementation").click()
+      await press(`${dictateKeys}${releaseKeys}`)
+
+      await expect.element(offer()).toBeVisible()
+    })
+
+    it("installs on Turn on, shows it in a corner card, and does not start recording", async () => {
+      await openWithoutVoice()
+      await commandInput("Checkout implementation").click()
+      await press(`${dictateKeys}${releaseKeys}`)
+
+      await offer().getByRole("button", { name: "Turn on" }).click()
+
+      await expect.element(offer()).not.toBeInTheDocument()
+      await expect.element(saying("Setting up voice input")).toBeVisible()
+      await expect.element(saying("Voice input ready"), { timeout: 15_000 }).toBeVisible()
+      await expect.element(page.getByText(/to talk\./)).toBeVisible()
+      expect(microphone.live()).toBe(0)
+    })
+
+    it("frees the shortcut and hides the microphone on No thanks", async () => {
+      await openWithoutVoice("/?demo=agents&voice=uninstalled")
       await terminalTab("Checkout implementation").click()
-      // Until voice input is installed, it says what it does: lead to the setup.
       const mic = terminal("Checkout implementation").getByRole("button", {
         name: labelled("Set up voice input for ", "Checkout implementation"),
       })
       await mic.click()
-      const dialog = preferencesDialog()
-      await expect
-        .element(dialog.getByRole("tab", { name: "Addons" }))
-        .toHaveAttribute("aria-selected", "true")
+      await expect.element(offer()).toBeVisible()
       expect(microphone.live()).toBe(0)
 
-      const enabled = dialog
+      await offer().getByRole("button", { name: "No thanks" }).click()
+
+      await expect.element(offer()).not.toBeInTheDocument()
+      await expect.element(mic).not.toBeInTheDocument()
+      // The chord is the terminal's: nothing handled it, so nothing was prevented.
+      const prevented: boolean[] = []
+      const note = (event: KeyboardEvent): void => {
+        if (event.key.toLowerCase() === "m" && event.ctrlKey) prevented.push(event.defaultPrevented)
+      }
+      document.addEventListener("keydown", note)
+      try {
+        await commandInput("Checkout implementation").click()
+        await press(`${dictateKeys}${releaseKeys}`)
+      } finally {
+        document.removeEventListener("keydown", note)
+      }
+      expect(prevented).toEqual([false])
+      await expect.element(offer()).not.toBeInTheDocument()
+      expect(microphone.live()).toBe(0)
+      // Addons still offers it.
+      await pressShortcut("preferences")
+      await preferencesDialog().getByRole("tab", { name: "Addons" }).click()
+      await expect
+        .element(
+          preferencesDialog()
+            .getByRole("region", { name: "Voice input" })
+            .getByRole("button", { name: "Install" }),
+        )
+        .toBeVisible()
+    })
+
+    it("brings the microphone and the shortcut back when turned on in Addons", async () => {
+      await openWithoutVoice("/?demo=agents&voice=uninstalled")
+      await terminalTab("Checkout implementation").click()
+      const mic = terminal("Checkout implementation").getByRole("button", {
+        name: labelled("Set up voice input for ", "Checkout implementation"),
+      })
+      await mic.click()
+      await offer().getByRole("button", { name: "No thanks" }).click()
+      await expect.element(mic).not.toBeInTheDocument()
+
+      await pressShortcut("preferences")
+      await preferencesDialog().getByRole("tab", { name: "Addons" }).click()
+      const enabled = preferencesDialog()
         .getByRole("region", { name: "Voice input" })
         .getByRole("switch", { name: "Enabled" })
-      await expect.element(enabled).toHaveAttribute("aria-checked", "true")
-      await enabled.click()
       await expect.element(enabled).toHaveAttribute("aria-checked", "false")
+      await enabled.click()
+      await expect.element(enabled).toHaveAttribute("aria-checked", "true")
       await press("{Escape}")
-      await expect.element(mic).not.toBeInTheDocument()
+
+      await expect.element(mic).toBeVisible()
     })
   })
 
   context("when voice input is installed", () => {
     it("records while the shortcut is held and pastes the transcript into the terminal without sending it", async () => {
       await openWorkspace()
-      await installVoice()
       await commandInput("Checkout implementation").click()
 
       await press(dictateKeys)
@@ -1172,7 +1227,6 @@ describe("dictation", () => {
 
     it("keeps recording after a quick tap until the next press", async () => {
       await openWorkspace()
-      await installVoice()
       await commandInput("Checkout implementation").click()
 
       await press(`${dictateKeys}${releaseKeys}`)
@@ -1194,7 +1248,6 @@ describe("dictation", () => {
       await openWorkspace("/?demo=agents")
       const skip = page.getByRole("button", { name: "Skip for now" })
       if (await skip.query()) await skip.click()
-      await installVoice()
       await terminalTab("Checkout implementation").click()
       const chat = terminal("Checkout implementation").getByRole("region", {
         name: "Checkout implementation chat",
@@ -1214,7 +1267,6 @@ describe("dictation", () => {
 
     it("drops the recording on Escape and releases the microphone", async () => {
       await openWorkspace()
-      await installVoice()
       await commandInput("Checkout implementation").click()
 
       await press(dictateKeys)

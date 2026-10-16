@@ -27,6 +27,8 @@ export const noMurmur: MurmurState = {
   sizes: { engine: 0, model: 0 },
   installing: null,
   check: null,
+  unsupported: null,
+  recheck: false,
   failure: null,
 }
 

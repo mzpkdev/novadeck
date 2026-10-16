@@ -58,7 +58,7 @@ describe("the runner's voice input", () => {
         },
       })
       follow()
-      voice.install("turbo")
+      voice.install()
       await vi.waitFor(() =>
         expect(voice.state.getSnapshot().failure).toBe(
           "Couldn't install voice input: Already installing.",
@@ -71,11 +71,11 @@ describe("the runner's voice input", () => {
 
   it("passes installs, settings, cancels and uninstalls to the runner", () => {
     const { voice, calls } = runner()
-    voice.install("small")
+    voice.install()
     voice.set({ language: "pl" })
     voice.cancel()
     voice.uninstall()
-    expect(calls.install).toHaveBeenCalledWith("small")
+    expect(calls.install).toHaveBeenCalledWith()
     expect(calls.set).toHaveBeenCalledWith({ language: "pl" })
     expect(calls.cancel).toHaveBeenCalled()
     expect(calls.uninstall).toHaveBeenCalled()

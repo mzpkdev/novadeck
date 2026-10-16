@@ -280,7 +280,7 @@ export const WindowShell = ({
           <Tooltip
             content={
               dictation.ready === false
-                ? "Dictate · set up in Addons"
+                ? "Dictate · turn on voice input"
                 : dictation.recording
                   ? "Stop and send"
                   : `Dictate · hold ${shortcutBindings().voice.display.join(" ")}`
