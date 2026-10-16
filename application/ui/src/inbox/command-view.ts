@@ -9,12 +9,15 @@ import { hiddenAt } from "../model/command-text"
 // it is indentation (a heredoc's YAML or Python reads as written).
 export const longestSpace = 8
 export const longestIndent = 40
+// A tab draws as this many columns, the CSS default tab-size, so a run is counted in columns.
+export const tabColumns = 8
 
 export type CommandPart =
   | { readonly type: "text"; readonly text: string }
   // A run of blank lines, more than one.
   | { readonly type: "blank-lines"; readonly count: number }
-  // A run of spaces or tabs longer than `longestSpace`, or `longestIndent` at a line's start.
+  // A run of spaces or tabs longer than `longestSpace` columns, or `longestIndent` at a line's start;
+  // `count` is its columns, a tab being `tabColumns`.
   | { readonly type: "spaces"; readonly count: number }
   // One character that draws as nothing, by its code point.
   | { readonly type: "invisible"; readonly code: string }
@@ -42,9 +45,10 @@ const lineParts = (line: string): CommandPart[] => {
       let end = index
       while (line[end] === " " || line[end] === "\t") end += 1
       const run = line.slice(index, end)
-      if (run.length > (index === 0 ? longestIndent : longestSpace)) {
+      const columns = [...run].reduce((sum, each) => sum + (each === "\t" ? tabColumns : 1), 0)
+      if (columns > (index === 0 ? longestIndent : longestSpace)) {
         flush()
-        parts.push({ type: "spaces", count: run.length })
+        parts.push({ type: "spaces", count: columns })
       } else text += run
       index = end
       continue

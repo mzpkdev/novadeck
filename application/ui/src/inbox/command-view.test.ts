@@ -93,6 +93,19 @@ describe("A command shown in the Inbox", () => {
     )
   })
 
+  it("counts a tab as the columns it draws, not as one character", () => {
+    expect(drawn("ls\tx")).toBe("ls\tx")
+    expect(drawn("ls\t\tx")).toBe("ls[16 spaces]x")
+    expect(drawn(`${"\t".repeat(longestIndent / 8)}curl x`)).toBe(
+      `${"\t".repeat(longestIndent / 8)}curl x`,
+    )
+    expect(drawn(`${"\t".repeat(40)}curl x`)).toBe("[320 spaces]curl x")
+    expect(drawn(`${"\t".repeat(longestIndent / 8)} curl x`)).toBe(
+      `[${longestIndent + 1} spaces]curl x`,
+    )
+    expect(drawn(`a${" ".repeat(4)}\t${" ".repeat(4)}b`)).toBe("a[16 spaces]b")
+  })
+
   it("marks control characters and spaces other than a plain one", () => {
     expect(drawn("a\u000bb\u001bc\u0085d")).toBe("a[U+000B]b[U+001B]c[U+0085]d")
     expect(drawn("a\n\u1680\u1680\nb")).toBe("a\n[U+1680][U+1680]\nb")
