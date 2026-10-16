@@ -5407,20 +5407,21 @@ describe.skipIf(process.platform === "win32" || !existsSync(bash))(
     it("keeps a session that bound while a title naming it was still being checked", async ({
       shell,
     }) => {
-      let checks = 0
+      let holding = false
       let asked!: () => void
       const checking = new Promise<void>((resolve) => (asked = resolve))
       let answer!: (trusted: boolean) => void
-      // Its start's title is answered at once; the one after /clear only when the test says.
+      // The initial title can be superseded by the person's first keys before its trust
+      // check runs. Hold the check after /clear by phase, regardless of earlier checks.
       const trust = () => {
-        checks += 1
-        if (checks === 1) return Promise.resolve(true)
+        if (!holding) return Promise.resolve(true)
         asked()
         return new Promise<boolean>((resolve) => (answer = resolve))
       }
       const thread = "01a0f932-a824-7c30-b713-b59ed562f00b"
       const tui = await ringing(shell, "shownbusy", "named", "codex", thread, trust)
       await tui.first()
+      holding = true
       tui.type("/clear")
       await shell.until(tui.manager, tui.idle.id, "> /clear")
       tui.type("\r")
