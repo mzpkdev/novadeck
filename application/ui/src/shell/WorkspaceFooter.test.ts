@@ -646,8 +646,43 @@ describe("workspace footer", () => {
         // Opened by the person, it shows the outcome, without lingering to fade by itself.
         page.rerender(other({ phase: "installed" }, true))
         expect(notice(page)!.textContent).toContain("Novadeck installed")
-        act(() => vi.advanceTimersByTime(finishedForMs + fadeMs + 100))
+        // Each step of a linger is its own timer, set once the step before has rendered.
+        act(() => vi.advanceTimersByTime(finishedForMs + 100))
+        act(() => vi.advanceTimersByTime(fadeMs + 100))
         expect(notice(page)).not.toBeNull()
+        expect(onOpenChange).not.toHaveBeenCalledWith(false)
+      })
+
+      it("raises the card only for the install this window asked for, not a later one", () => {
+        const onOpenChange = vi.fn<(open: boolean) => void>()
+        const card = (install: PortableInstall, open: boolean) =>
+          createElement(WorkspaceFooter, {
+            ...props("ok"),
+            portable: {
+              ...props("ok").portable,
+              open,
+              onOpenChange,
+              portable: { ...portable, install },
+            },
+          })
+        const page = render(card({ phase: "idle" }, true))
+        mounted.push(page)
+        act(() =>
+          notice(page)!.querySelector<HTMLButtonElement>(".update-card-foot button")!.click(),
+        )
+        page.rerender(card({ phase: "installing" }, false))
+        page.rerender(card(failed, false))
+        expect(onOpenChange).toHaveBeenLastCalledWith(true)
+        onOpenChange.mockClear()
+        // Another window tries again and fails; this one did not ask this time.
+        page.rerender(card(failed, false))
+        page.rerender(card({ phase: "installing" }, false))
+        page.rerender(card(failed, false))
+        expect(onOpenChange).not.toHaveBeenCalledWith(true)
+        // Nor does it show that failure: it was the other window's person who met it.
+        page.rerender(card(failed, true))
+        expect(notice(page)!.textContent).toContain("Portable copy")
+        expect(page.container.querySelector("[role=alert]")).toBeNull()
       })
 
       it("shows no alert in a window that never pressed Install when the install fails", () => {
