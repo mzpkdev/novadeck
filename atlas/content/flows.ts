@@ -88,7 +88,7 @@ export const flows: (Omit<Flow, "steps"> & { steps: CuratedStep[] })[] = [
         text: "The UI connects the protocol client and completes the handshake before anything renders.",
         anchor: {
           file: `${ui}/backend/runner/index.ts`,
-          text: "runner = await connectRunner(transport(), { signal })",
+          text: "runner = await connectRunner(through(), { signal })",
         },
       },
       {
@@ -126,7 +126,7 @@ export const flows: (Omit<Flow, "steps"> & { steps: CuratedStep[] })[] = [
         text: "The attachment sends the data in a terminals.write call.",
         anchor: {
           file: "application/protocol/src/runner.ts",
-          text: "await link.wire.terminals.write({ terminalId: this.id, data })",
+          text: "await link.client.terminals.write({ terminalId: this.id, data })",
         },
       },
       {
