@@ -97,6 +97,8 @@ export const startClock = (changes: () => number): Clock => {
       const done = work.finally(() => {
         settled = true
       })
+      // Its failure is reported once, where it is awaited below.
+      done.catch(() => {})
       const waiting = (): boolean => !settled
       // eslint-disable-next-line no-await-in-loop -- Frames run one after another.
       for (let index = 0; index < most && waiting(); index += 1) await frame()
