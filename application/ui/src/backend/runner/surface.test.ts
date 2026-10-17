@@ -1168,3 +1168,47 @@ describe("typing into a terminal's screen", () => {
     expect(screens.typeInto(key, " \r\n ")).toBe(false)
   })
 })
+
+describe("a terminal's screen resized out of view", () => {
+  // Cells of 8 by 17, and a view of the screen that reports where the test says.
+  const measured = () => {
+    const reports: ((entries: { isIntersecting: boolean }[]) => void)[] = []
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(report: (entries: { isIntersecting: boolean }[]) => void) {
+          reports.push(report)
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(8 * 32)
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(17)
+    return (isIntersecting: boolean) => reports.forEach((report) => report([{ isIntersecting }]))
+  }
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it("keeps following its shell's output", async () => {
+    const view = measured()
+    const { xterm } = createScreens(starting().runtime).acquire(
+      { ...key, terminalId: "out-of-view" },
+      { fontSize: 13, name: "T", waiting: false },
+    )
+    const write = (lines: number) =>
+      new Promise<void>((resolve) => xterm.write("output\r\n".repeat(lines), resolve))
+    view(true)
+    await write(3)
+    view(false)
+    // The output is parsed before the renderer, which waits for an idle moment while the
+    // screen is out of view, takes the new size.
+    const drawn = write(40)
+    xterm.resize(64, 19)
+    await drawn
+    expect(xterm.buffer.active.baseY).toBeGreaterThan(0)
+    expect(xterm.buffer.active.viewportY).toBe(xterm.buffer.active.baseY)
+  })
+})
