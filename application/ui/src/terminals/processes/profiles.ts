@@ -1,8 +1,9 @@
 import { FileText, Terminal, type LucideIcon } from "lucide-react"
 import type { ComponentType, ReactNode } from "react"
 
-import type { CompanionItem } from "../../model/companion"
-import type { TerminalMetadata } from "../../model/types"
+import type { CompanionItem } from "#core/companion"
+import type { TerminalMetadata } from "#core/types"
+
 import { ClaudeIcon } from "../../ui-toolkit/icons/ClaudeIcon"
 import { CodexIcon } from "../../ui-toolkit/icons/CodexIcon"
 import { iconOf } from "../companion/artifact-icons"

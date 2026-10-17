@@ -1,6 +1,6 @@
 import { WebglAddon, type IEvent, type Terminal } from "@novadeck/emulator/browser"
 
-import type { ViewMode } from "../../model/types"
+import type { ViewMode } from "#core/types"
 
 // xterm draws with its DOM renderer unless the WebGL addon takes over, which costs a
 // fraction of the main thread's time on a busy Grid. This module is all the WebGL

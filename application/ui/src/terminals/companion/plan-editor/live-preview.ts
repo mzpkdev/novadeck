@@ -20,7 +20,8 @@ import {
   type ViewUpdate,
 } from "@codemirror/view"
 
-import { notePattern } from "../../../model/companion"
+import { notePattern } from "#core/companion"
+
 import type { Mark } from "../plan-doc"
 import {
   addNote,

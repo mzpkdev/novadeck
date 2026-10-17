@@ -1,6 +1,7 @@
 import { lazy, Suspense, useRef, type ReactNode } from "react"
 
-import type { FileContent } from "../../model/companion"
+import type { FileContent } from "#core/companion"
+
 import type { PlanEditorHandle } from "./plan-editor/PlanEditor"
 import { headingsOf } from "./plan-text"
 

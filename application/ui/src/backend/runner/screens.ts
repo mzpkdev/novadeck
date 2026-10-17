@@ -1,7 +1,8 @@
 import { FitAddon, Terminal, type ITheme } from "@novadeck/emulator/browser"
 import { applyWidths } from "@novadeck/emulator/width"
 
-import { createStore, type Store } from "../../model/store"
+import { createStore, type Store } from "#core/store"
+
 import { themeChangeEvent } from "../../theme/apply"
 import { tokenColors } from "../../theme/probe"
 import type { TerminalKey } from "../port"

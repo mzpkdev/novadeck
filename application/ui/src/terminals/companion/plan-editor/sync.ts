@@ -1,6 +1,7 @@
 import { ChangeSet, Text } from "@codemirror/state"
 
-import { notePattern } from "../../../model/companion"
+import { notePattern } from "#core/companion"
+
 import type { Mark } from "../plan-doc"
 
 // Lines with their line breaks, so joining them gives back the exact text.

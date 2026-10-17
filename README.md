@@ -105,7 +105,7 @@ name, updating as programs start and finish; the line stays empty when it is unk
 The runner reports each terminal's foreground process as its name and, on Linux, the
 process group leader's command line (`argv`); macOS reports only the name (the one the
 program was run by, not a versioned file a link points at, as Claude Code's `claude` is), and Windows
-reports none. `application/ui/src/model/process.ts` turns that into a program name,
+reports none. `application/ui/src/core/process.ts` turns that into a program name,
 resolving known Node CLIs from the script Node runs, so the Codex and Claude packages
 show as `codex` and `claude` while other Node programs stay `node`. Where the process
 cannot tell, as on Windows or for a Node CLI on macOS, a connected agent that reported

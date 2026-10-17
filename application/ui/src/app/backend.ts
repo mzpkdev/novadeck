@@ -1,4 +1,4 @@
-import { createBootRehearsals } from "../backend/boot-rehearsal"
+import { createBootRehearsals } from "../backend/demo/debug/boot-rehearsal"
 import type { BackendSelection, ConnectBackend } from "../backend/port"
 
 // The only place that chooses a build's backend adapter. Every build, development or

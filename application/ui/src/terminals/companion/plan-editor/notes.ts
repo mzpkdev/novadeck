@@ -1,7 +1,8 @@
 import { ChangeSet, EditorSelection, Text, type Line, type Transaction } from "@codemirror/state"
 import type { EditorView } from "@codemirror/view"
 
-import { noteClose, noteOpen, notePattern, noteSafe } from "../../../model/companion"
+import { noteClose, noteOpen, notePattern, noteSafe } from "#core/companion"
+
 import type { Mark } from "../plan-doc"
 import { findTables } from "./tables"
 

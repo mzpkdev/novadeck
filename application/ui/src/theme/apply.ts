@@ -1,4 +1,5 @@
-import type { SchemePreference } from "../model/types"
+import type { SchemePreference } from "#core/types"
+
 import type { Scheme } from "./scheme"
 import type { ThemeManifest } from "./themes"
 

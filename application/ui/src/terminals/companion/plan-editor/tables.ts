@@ -1,4 +1,4 @@
-import { noteClose, noteOpen, noteSafe } from "../../../model/companion"
+import { noteClose, noteOpen, noteSafe } from "#core/companion"
 
 // Markdown tables in a plan's text, down to each cell's place in the file, so a cell can
 // be edited without touching the pipes and spacing the agent wrote.

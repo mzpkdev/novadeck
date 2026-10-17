@@ -7,7 +7,8 @@ import "./debug-panel.css"
 import { Bug, ChevronDown, ChevronRight, ChevronUp, RotateCcw, Search, X } from "lucide-react"
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 
-import type { Workspace } from "../../../model/types"
+import type { Workspace } from "#core/types"
+
 import type { BackendConnectionState, BackendSink, DebugPanelProps } from "../../port"
 import { demoVariants } from "../variants"
 import { portableGroup } from "./portable"

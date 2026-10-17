@@ -1,4 +1,4 @@
-import { countListenersWoken } from "../../model/store"
+import { countListenersWoken } from "#core/store"
 
 // What the counter run counts: store listeners woken, through the stores' instrumentation
 // hook, and from outside the code it watches, DOM mutation records and the components

@@ -31,7 +31,7 @@ export const createStore = () => {
 }
 `
 
-const storeId = "/r/application/ui/src/model/store.ts"
+const storeId = "/r/application/ui/src/core/store.ts"
 
 describe("storeSpansPatch", () => {
   let folder: string | undefined
@@ -70,7 +70,7 @@ describe("storeSpansPatch", () => {
 
   it("leaves a store without the hook as it is, and fails on a hook of another shape", () => {
     expect(storeSpansPatch.transform("export const createStore = () => {}\n", storeId)).toBeNull()
-    expect(storeSpansPatch.transform(store, "/r/application/ui/src/model/state.ts")).toBeNull()
+    expect(storeSpansPatch.transform(store, "/r/application/ui/src/core/state.ts")).toBeNull()
     expect(() =>
       storeSpansPatch.transform(
         "export const countListenersWoken = (run: () => void): number => 0\n",

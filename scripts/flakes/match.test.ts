@@ -120,7 +120,7 @@ describe("the known-flake register", () => {
     const known = fixture("ui-agents-pinned-drag-top")
 
     it.each([
-      [" FAIL  unit  src/model/store.test.ts > a store > wakes its listeners", "store.test.ts"],
+      [" FAIL  unit  src/core/store.test.ts > a store > wakes its listeners", "store.test.ts"],
       [" FAIL  src/specs/zen.spec.tsx [ src/specs/zen.spec.tsx ]", "zen.spec.tsx"],
       [" FAIL  extract/routes.ts > reads them", "can't read"],
       ["⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯", "outside any test"],

@@ -1,11 +1,12 @@
 import { memo, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react"
 
+import { agentStats } from "#core/agent-usage"
+import { handleNames, runningLeads, terminalOrigins } from "#core/derivations"
+import { isWindow } from "#core/roster"
+import { activeProject } from "#core/state"
+import type { CompanionWindowMeta, TerminalMetadata, Tile } from "#core/types"
+
 import { shortcutBindings } from "../interaction/shortcuts"
-import { agentStats } from "../model/agent-usage"
-import { handleNames, runningLeads, terminalOrigins } from "../model/derivations"
-import { isWindow } from "../model/roster"
-import { activeProject } from "../model/state"
-import type { CompanionWindowMeta, TerminalMetadata, Tile } from "../model/types"
 import { ChatView } from "../terminals/chat/ChatView"
 import { chatDraftOf, chatReplyOf, chatSendOf, chatShown } from "../terminals/chat/mode-state"
 import { TerminalCompanion } from "../terminals/companion/TerminalCompanion"

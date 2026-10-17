@@ -1,4 +1,4 @@
-import { activeProject, activeSession } from "../model/state"
+import { activeProject, activeSession } from "#core/state"
 import type {
   TerminalMetadata,
   Tile,
@@ -7,7 +7,8 @@ import type {
   Workspace,
   WorkspaceState,
   WorkspaceTarget,
-} from "../model/types"
+} from "#core/types"
+
 import type { FocusPreview } from "../shell/shell-state"
 import type { UiState } from "./ui-store"
 
