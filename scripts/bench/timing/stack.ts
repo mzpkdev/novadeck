@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process"
+import { type ChildProcess, spawn, type SpawnOptions } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
@@ -20,27 +20,40 @@ const ui = join(root, "application", "ui")
 // The agent CLIs a folder on the sandbox's PATH may not hold, besides the fake's own.
 const agents = ["claude", "codex", "agy"]
 
-/** A free port on loopback, as the system hands one out. */
-const freePort = (): Promise<number> =>
-  new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once("error", reject)
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address()
-      server.close(() =>
-        typeof address === "object" && address
-          ? resolve(address.port)
-          : reject(new Error("no port")),
-      )
-    })
-  })
+/** A word sh reads as the text itself, whatever it holds. */
+const quoted = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`
 
-/** Waits until `url` answers at all, or fails once `ms` have passed or `child` has exited. */
+/** Free ports on loopback, each held until all are known, so no two come out the same. */
+const freePorts = async (count: number): Promise<readonly number[]> => {
+  const servers = Array.from({ length: count }, () => createServer())
+  try {
+    return await Promise.all(
+      servers.map(
+        (server) =>
+          new Promise<number>((resolve, reject) => {
+            server.once("error", reject)
+            server.listen(0, "127.0.0.1", () => {
+              const address = server.address()
+              if (typeof address === "object" && address) resolve(address.port)
+              else reject(new Error("no port"))
+            })
+          }),
+      ),
+    )
+  } finally {
+    await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))))
+  }
+}
+
+/** Whether the child has ended, by its exit or by a signal. */
+const ended = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null
+
+/** Waits until `url` answers at all, or fails once `ms` have passed or `child` has ended. */
 const ready = async (url: string, child: ChildProcess, ms: number): Promise<void> => {
   const deadline = Date.now() + ms
   for (;;) {
-    if (child.exitCode !== null)
-      throw new Error(`${url}: its process exited with ${child.exitCode}`)
+    if (ended(child))
+      throw new Error(`${url}: its process ended (${child.exitCode ?? child.signalCode})`)
     // eslint-disable-next-line no-await-in-loop -- Asks again until it answers.
     const answered = await fetch(url).then(
       () => true,
@@ -51,6 +64,31 @@ const ready = async (url: string, child: ChildProcess, ms: number): Promise<void
     // eslint-disable-next-line no-await-in-loop -- As above.
     await new Promise((resolve) => setTimeout(resolve, 200))
   }
+}
+
+/** Asks the child to end, and ends it forcibly should it outlive `ms`. */
+const halt = async (child: ChildProcess, ms: number): Promise<void> => {
+  if (ended(child)) return
+  const exited = new Promise((resolve) => child.once("exit", resolve))
+  child.kill("SIGTERM")
+  let timer: NodeJS.Timeout | undefined
+  const late = new Promise((resolve) => {
+    timer = setTimeout(resolve, ms, "late")
+  })
+  if ((await Promise.race([exited, late])) === "late") {
+    child.kill("SIGKILL")
+    await exited
+  }
+  clearTimeout(timer)
+}
+
+/** Starts a program that runs alongside, its failure to start kept for `ready` to report. */
+const start = (file: string, args: readonly string[], options: SpawnOptions): ChildProcess => {
+  const child = spawn(file, [...args], options)
+  // Without a listener a failure to start throws where nothing can catch it; `ready` sees
+  // it ended.
+  child.once("error", (error) => console.error(`${args[0] ?? file}: ${error.message}`))
+  return child
 }
 
 /** Runs a program to its end, its output passed through; rejects should it fail. */
@@ -67,52 +105,69 @@ const run = (
     )
   })
 
-/** The sandbox the runner runs in, with the fake agent first on its PATH as `claude`. */
+/**
+ * The sandbox the runner runs in, with the fake agent first on its PATH as `claude`. The
+ * runner's harness lookups read PATH again from a login shell (`$SHELL -ilc env`), where
+ * the system's profile may put its own folders first (macOS's path_helper does); none of
+ * those lookups runs in this scenario, which connects nothing.
+ */
 const sandboxed = (): { readonly sandbox: Sandbox; readonly control: string } => {
   const base = createSandbox({ prefix: "novadeck-timing-", bins: [], user: "novadeck" })
-  const bin = join(base.root, "bin")
-  mkdirSync(bin, { mode: 0o700 })
-  const claude = join(bin, "claude")
-  writeFileSync(
-    claude,
-    `#!/bin/sh\nexec node ${JSON.stringify(join(import.meta.dirname, "agent.ts"))} "$@"\n`,
-  )
-  chmodSync(claude, 0o755)
-  const path = [bin, base.env.PATH].join(delimiter)
-  const strays = path
-    .split(delimiter)
-    .slice(1)
-    .flatMap((folder) => agents.map((agent) => join(folder, agent)))
-    .filter((file) => existsSync(file))
-  if (strays.length > 0)
-    throw new Error(`the sandbox's PATH holds a real agent CLI: ${strays.join(", ")}`)
-  // The runner counts Claude Code connected once Novadeck's plugin is on in its settings.
-  mkdirSync(join(base.home, ".claude"), { recursive: true })
-  writeFileSync(
-    join(base.home, ".claude", "settings.json"),
-    JSON.stringify({ enabledPlugins: { "novadeck@novadeck": true } }),
-  )
-  const control = join(base.root, "control")
-  mkdirSync(control)
-  return { sandbox: { ...base, env: { ...base.env, PATH: path } }, control }
+  try {
+    const bin = join(base.root, "bin")
+    mkdirSync(bin, { mode: 0o700 })
+    const claude = join(bin, "claude")
+    writeFileSync(
+      claude,
+      `#!/bin/sh\nexec node ${quoted(join(import.meta.dirname, "agent.ts"))} "$@"\n`,
+    )
+    chmodSync(claude, 0o755)
+    const path = [bin, base.env.PATH].join(delimiter)
+    const strays = path
+      .split(delimiter)
+      .slice(1)
+      .flatMap((folder) => agents.map((agent) => join(folder, agent)))
+      .filter((file) => existsSync(file))
+    if (strays.length > 0)
+      throw new Error(`the sandbox's PATH holds a real agent CLI: ${strays.join(", ")}`)
+    // The runner counts Claude Code connected once Novadeck's plugin is on in its settings.
+    mkdirSync(join(base.home, ".claude"), { recursive: true })
+    writeFileSync(
+      join(base.home, ".claude", "settings.json"),
+      JSON.stringify({ enabledPlugins: { "novadeck@novadeck": true } }),
+    )
+    const control = join(base.root, "control")
+    mkdirSync(control)
+    return { sandbox: { ...base, env: { ...base.env, PATH: path } }, control }
+  } catch (error) {
+    rmSync(base.root, { recursive: true, force: true })
+    throw error
+  }
 }
 
-export type Stack = {
+/** The stack once it runs. */
+export type Running = {
   /** The UI's address. */
   readonly url: string
   /** Turns agent `seed` busy or idle (see agent.ts). */
   readonly busy: (seed: number, on: boolean) => void
   /** The shell command that starts agent `seed`. */
   readonly agent: (seed: number) => string
+}
+
+export type Stack = {
+  /** Builds the UI and starts the runner in the sandbox and the UI's preview over it. */
+  readonly start: () => Promise<Running>
   /**
-   * Stops it all and removes the sandbox. Returns what went wrong inside it: processes it
-   * had to end, and the developer's home written to from inside the sandbox.
+   * Stops whatever started and removes the sandbox, once, however far `start` got.
+   * Returns what went wrong inside the sandbox: processes it had to end, and the
+   * developer's home written to from inside it.
    */
   readonly stop: () => Promise<readonly string[]>
 }
 
-/** Builds the UI and starts the runner in a fresh sandbox and the UI's preview over it. */
-export const startStack = async (): Promise<Stack> => {
+/** A fresh sandbox, with the tripwire set over the developer's home; nothing runs yet. */
+export const openStack = (): Stack => {
   const { sandbox, control } = sandboxed()
   const changed = tripwire(sandbox, [
     {
@@ -122,96 +177,86 @@ export const startStack = async (): Promise<Stack> => {
     },
   ])
   const children: ChildProcess[] = []
-  const stop = async (): Promise<readonly string[]> => {
-    for (const child of children.toReversed()) child.kill("SIGTERM")
-    await Promise.all(
-      children.map(
-        (child) =>
-          child.exitCode === null &&
-          new Promise((resolve) => {
-            child.once("exit", resolve)
-            setTimeout(resolve, 10_000)
-          }),
-      ),
-    )
-    const leftovers = await reap(sandbox).catch((error: unknown) => [
-      `reaping failed: ${String(error)}`,
-    ])
-    const written = changed()
-    rmSync(sandbox.root, { recursive: true, force: true, maxRetries: 5 })
-    return [
-      ...leftovers.map((one) => `a process outlived the run in the sandbox: ${one}`),
-      ...written.map((path) => `the developer's home changed: ${path}`),
-    ]
-  }
-  try {
-    const [runnerPort, uiPort] = [await freePort(), await freePort()]
-    const token = randomBytes(32).toString("hex")
-    const origin = `http://127.0.0.1:${uiPort}`
-    const dist = join(sandbox.root, "ui")
-    // The runner's address and token are baked into the build, as the dev-web path does.
-    await run(
-      process.execPath,
-      [
-        join(ui, "node_modules", "vite", "bin", "vite.js"),
-        "build",
-        "--outDir",
-        dist,
-        "--emptyOutDir",
-      ],
-      {
+  let stopped: Promise<readonly string[]> | undefined
+  const stop = () =>
+    (stopped ??= (async () => {
+      for (const child of children.toReversed())
+        // eslint-disable-next-line no-await-in-loop -- The preview before the runner it serves.
+        await halt(child, 10_000)
+      const leftovers = await reap(sandbox).catch((error: unknown) => [
+        `reaping failed: ${String(error)}`,
+      ])
+      const written = (() => {
+        try {
+          return changed().map((path) => `the developer's home changed: ${path}`)
+        } catch (error) {
+          return [`the developer's home couldn't be checked: ${String(error)}`]
+        }
+      })()
+      rmSync(sandbox.root, { recursive: true, force: true, maxRetries: 5 })
+      return [
+        ...leftovers.map((one) => `a process outlived the run in the sandbox: ${one}`),
+        ...written,
+      ]
+    })())
+  const vite = join(ui, "node_modules", "vite", "bin", "vite.js")
+  return {
+    stop,
+    start: async () => {
+      const [runnerPort, uiPort] = await freePorts(2)
+      const token = randomBytes(32).toString("hex")
+      const origin = `http://127.0.0.1:${uiPort}`
+      const dist = join(sandbox.root, "ui")
+      // The runner's address and token are baked into the build, as the dev-web path does.
+      await run(process.execPath, [vite, "build", "--outDir", dist, "--emptyOutDir"], {
         cwd: ui,
         env: {
           ...process.env,
           VITE_NOVADECK_RUNNER_URL: `ws://127.0.0.1:${runnerPort}/api/rpc`,
           VITE_NOVADECK_RUNNER_TOKEN: token,
         },
-      },
-    )
-    const runner = spawn(
-      process.execPath,
-      [join(root, "application", "runner", "dist", "cli.js")],
-      {
-        cwd: sandbox.root,
-        env: {
-          ...sandbox.env,
-          NOVADECK_TOKEN: token,
-          HOST: "127.0.0.1",
-          PORT: String(runnerPort),
-          NOVADECK_DATABASE: join(sandbox.root, "data", "workspace.sqlite"),
-          CORS_ORIGINS: origin,
+      })
+      const runner = start(
+        process.execPath,
+        [join(root, "application", "runner", "dist", "cli.js")],
+        {
+          cwd: sandbox.root,
+          env: {
+            ...sandbox.env,
+            NOVADECK_TOKEN: token,
+            HOST: "127.0.0.1",
+            PORT: String(runnerPort),
+            NOVADECK_DATABASE: join(sandbox.root, "data", "workspace.sqlite"),
+            CORS_ORIGINS: origin,
+          },
+          stdio: ["ignore", "inherit", "inherit"],
         },
-        stdio: ["ignore", "inherit", "inherit"],
-      },
-    )
-    children.push(runner)
-    await ready(`http://127.0.0.1:${runnerPort}/`, runner, 60_000)
-    const preview = spawn(
-      process.execPath,
-      [
-        join(ui, "node_modules", "vite", "bin", "vite.js"),
-        "preview",
-        "--outDir",
-        dist,
-        "--host",
-        "127.0.0.1",
-        "--port",
-        String(uiPort),
-        "--strictPort",
-      ],
-      { cwd: ui, env: process.env, stdio: ["ignore", "ignore", "inherit"] },
-    )
-    children.push(preview)
-    await ready(origin, preview, 60_000)
-    return {
-      url: `${origin}/`,
-      busy: (seed, on) => writeFileSync(join(control, String(seed)), on ? "on" : "off"),
-      agent: (seed) =>
-        `TIMING_AGENT_CONTROL=${join(control, String(seed))} TIMING_AGENT_SEED=${seed} claude`,
-      stop,
-    }
-  } catch (error) {
-    await stop()
-    throw error
+      )
+      children.push(runner)
+      await ready(`http://127.0.0.1:${runnerPort}/`, runner, 60_000)
+      const preview = start(
+        process.execPath,
+        [
+          vite,
+          "preview",
+          "--outDir",
+          dist,
+          "--host",
+          "127.0.0.1",
+          "--port",
+          String(uiPort),
+          "--strictPort",
+        ],
+        { cwd: ui, env: process.env, stdio: ["ignore", "ignore", "inherit"] },
+      )
+      children.push(preview)
+      await ready(origin, preview, 60_000)
+      return {
+        url: `${origin}/`,
+        busy: (seed, on) => writeFileSync(join(control, String(seed)), on ? "on" : "off"),
+        agent: (seed) =>
+          `TIMING_AGENT_CONTROL=${quoted(join(control, String(seed)))} TIMING_AGENT_SEED=${seed} claude`,
+      }
+    },
   }
 }

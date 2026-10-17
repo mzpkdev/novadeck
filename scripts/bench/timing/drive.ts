@@ -1,21 +1,24 @@
 import { chromium, type CDPSession, type Page } from "playwright"
 
 import type { Steady, Switch } from "./report.ts"
-import type { Stack } from "./stack.ts"
+import type { Running } from "./stack.ts"
 
 // The scenario, as the measurement behind #206 ran it: 13 terminals in one session, the
 // first 5 running the fake agent and the rest idle shells; Grid, then Focus, so every
-// screen has been opened once; a steady window in each with every agent busy; then
-// switches between terminals in Focus, busy and idle, kept and not, timed from the click
-// to the target's screen painted.
+// screen has been opened once; a steady window in each with every agent busy, Focus on
+// agent 1; then switches between terminals in Focus, busy and idle, kept and not, timed
+// from the press to the first frame after the target's screen is in the page, laid out.
 
 export const scenario = {
   terminals: 13,
   agents: 5,
+  focusedInSteady: 1,
   warmMs: 5000,
   windowMs: 15_000,
   switchPasses: 2,
-  switchTargets: [1, 8, 3, 12, 5, 9, 2, 13, 4, 7],
+  // Each revisit comes within Focus's last 4 shown, so it lands on a kept window; the rest
+  // land on parked ones.
+  switchTargets: [1, 8, 1, 3, 12, 3, 5, 9, 5, 2, 13, 2, 4, 7, 4],
   viewport: { width: 1440, height: 900 },
 } as const
 
@@ -121,7 +124,7 @@ const row = async (page: Page, n: number) => {
 }
 
 /** Opens 13 terminals; the first 5 start the fake agent, the rest print a mark and idle. */
-const setUp = async (page: Page, stack: Stack) => {
+const setUp = async (page: Page, stack: Running) => {
   for (let n = 1; n <= scenario.terminals; n += 1) {
     // eslint-disable-next-line no-await-in-loop -- One terminal after another, as a person opens them.
     await page.getByRole("button", { name: "New terminal" }).first().click()
@@ -150,35 +153,41 @@ const setUp = async (page: Page, stack: Stack) => {
 const steady = async (page: Page, cdp: CDPSession, name: Steady["layout"]): Promise<Steady> => {
   await layout(page, name)
   await sleep(scenario.warmMs)
-  const task = async () =>
-    (await cdp.send("Performance.getMetrics")).metrics.find(
-      (metric) => metric.name === "TaskDuration",
-    )?.value ?? 0
-  const before = await task()
+  // The main thread's busy time and the clock it's measured on, from the same reading.
+  const reading = async () => {
+    const { metrics } = await cdp.send("Performance.getMetrics")
+    const value = (key: string) => metrics.find((metric) => metric.name === key)?.value ?? 0
+    return { task: value("TaskDuration"), at: value("Timestamp") }
+  }
   const longTasks = await page.evaluate(() => {
     const { benchTiming } = window as unknown as Probe
     benchTiming.frames = []
     benchTiming.recording = true
     return benchTiming.longTasks.length
   })
-  const started = Date.now()
+  const before = await reading()
   await sleep(scenario.windowMs)
+  const after = await reading()
   const { frames, tasks } = await page.evaluate((from) => {
     const { benchTiming } = window as unknown as Probe
     benchTiming.recording = false
     return { frames: benchTiming.frames, tasks: benchTiming.longTasks.slice(from) }
   }, longTasks)
-  const seconds = (Date.now() - started) / 1000
   return {
     layout: name,
-    seconds,
-    taskSeconds: (await task()) - before,
+    seconds: after.at - before.at,
+    taskSeconds: after.task - before.task,
     frameGaps: frames.slice(1).map((time, index) => time - frames[index]!),
     longTasks: tasks,
   }
 }
 
-/** Clicks terminal `target`'s row and times it until the target's screen paints. */
+/**
+ * Clicks terminal `target`'s row and times it from the press to the first frame painted
+ * after the target's screen is in the page and laid out: the frame callback that finds it
+ * posts a message, which arrives once that frame has painted. A kept window is in the page
+ * already, so its switch is the time to show it.
+ */
 const switchTo = async (page: Page, target: number): Promise<Switch> => {
   const where = await row(page, target)
   if (!where) return { target, ms: undefined }
@@ -196,8 +205,18 @@ const switchTo = async (page: Page, target: number): Promise<Switch> => {
       document.removeEventListener("pointerdown", down, true)
       timing.clicked = performance.now()
       const step = () => {
-        if (visible()) timing.painted = performance.now()
-        else if (performance.now() - timing.clicked < 4000) requestAnimationFrame(step)
+        if (visible()) {
+          const channel = new MessageChannel()
+          channel.port1.addEventListener(
+            "message",
+            () => {
+              timing.painted = performance.now()
+            },
+            { once: true },
+          )
+          channel.port1.start()
+          channel.port2.postMessage(undefined)
+        } else if (performance.now() - timing.clicked < 4000) requestAnimationFrame(step)
       }
       requestAnimationFrame(step)
     }
@@ -218,27 +237,40 @@ const switchTo = async (page: Page, target: number): Promise<Switch> => {
   return { target, ms }
 }
 
+/** Selects terminal `n` by its row, as a person does. */
+const select = async (page: Page, n: number) => {
+  const where = await row(page, n)
+  if (!where) throw new Error(`terminal ${n} has no row`)
+  await page.mouse.click(where.x, where.y)
+  await sleep(800)
+}
+
 /**
  * Runs the scenario in headless Chromium against `stack`, adding what it measures to
- * `measured` as it goes, so a run that fails part way keeps what it got.
+ * `measured` as it goes, so a run that fails part way keeps what it got, and telling
+ * `launched` the browser's version as soon as it runs.
  */
 export const drive = async (
-  stack: Stack,
+  stack: Running,
   measured: { agentPhases: (string | null)[]; steady: Steady[]; switches: Switch[] },
-): Promise<{ readonly chromium: string }> => {
+  launched: (version: string) => void,
+): Promise<void> => {
   const browser = await chromium.launch({ headless: true })
+  launched(browser.version())
   try {
     const page = await browser.newPage({ viewport: scenario.viewport })
     await page.addInitScript(probe)
     const cdp = await page.context().newCDPSession(page)
     await cdp.send("Performance.enable")
     await page.goto(stack.url, { waitUntil: "load" })
-    // The boot splash covers the app until it has connected to the runner.
-    await page.locator(".boot-splash").waitFor({ state: "detached", timeout: 60_000 })
-    await page
-      .getByText("Skip for now")
-      .click({ timeout: 15_000 })
-      .catch(() => {})
+    // Booted once it offers either the welcome or a new terminal, as it does once it has
+    // connected to the runner.
+    const skip = page.getByText("Skip for now")
+    await skip
+      .or(page.getByRole("button", { name: "New terminal" }))
+      .first()
+      .waitFor({ timeout: 60_000 })
+    if (await skip.isVisible()) await skip.click()
     await layout(page, "Focus")
     await setUp(page, stack)
     for (let seed = 1; seed <= scenario.agents; seed += 1) stack.busy(seed, true)
@@ -247,13 +279,15 @@ export const drive = async (
     await until(async () => (await phases()).every((each) => each === "running"), 15_000)
     measured.agentPhases.push(...(await phases()))
     measured.steady.push(await steady(page, cdp, "Grid"))
+    // What a person watching an agent sees, the other four running beside it.
+    await layout(page, "Focus")
+    await select(page, 1)
     measured.steady.push(await steady(page, cdp, "Focus"))
     for (let pass = 0; pass < scenario.switchPasses; pass += 1)
       for (const target of scenario.switchTargets)
         // eslint-disable-next-line no-await-in-loop -- One switch after another.
         measured.switches.push(await switchTo(page, target))
     for (let seed = 1; seed <= scenario.agents; seed += 1) stack.busy(seed, false)
-    return { chromium: browser.version() }
   } finally {
     await browser.close()
   }

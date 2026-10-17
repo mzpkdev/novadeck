@@ -3,7 +3,7 @@
 The benchmark's timing run (rule 16): the UI's production build in headless Chromium against
 a real runner over WebSocket, as the dev-web path wires them, with fake agents that send real
 hooks and status-line telemetry. Its numbers are a trend, too noisy to gate on: it writes a
-report and always exits 0.
+report and exits 0, whatever it measured or failed on, stopped by SIGINT or SIGTERM included.
 
 ```sh
 pnpm bench:timing [--output <file>]
@@ -18,8 +18,9 @@ It builds the runner and the sandbox library (turbo), then:
 2. builds the UI with the runner's address and token baked in, and serves it with `vite preview`;
 3. starts the runner from its build with the sandbox's environment alone;
 4. drives Chromium through the scenario (`drive.ts`): 13 terminals, the first 5 running the fake
-   agent and the rest idle shells; Grid, then Focus, a steady window in each with every agent
-   busy (5 s warm-up, 15 s measured); then 2 passes of 10 switches in Focus;
+   agent and the rest idle shells; Grid, then Focus on agent 1, a steady window in each with
+   every agent busy (5 s warm-up, 15 s measured); then 2 passes of 15 switches in Focus, every
+   third a revisit that lands on a window Focus keeps;
 5. stops it all, reaps whatever still runs in the sandbox and checks the developer's home with
    the tripwire.
 
@@ -38,7 +39,7 @@ Its shape, with illustrative numbers:
   "environment": { "platform": "linux", "cpus": 4, "cpu": "…", "chromium": "…", … },
   "scenario": { "terminals": 13, "agents": 5, "warmMs": 5000, "windowMs": 15000, … },
   "summary": {
-    "switchP50Ms": 31.2,      // click to the target's screen painted, null if none painted
+    "switchP50Ms": 31.2,      // press to the first frame painted with the target's screen in the page, null if none
     "switchP90Ms": 35.0,
     "switchesTimedOut": 0,    // switches that never painted within 4 s
     "agentsHeard": 5,         // agents whose hooks the runner heard: below 5, the run measured less load
@@ -55,7 +56,22 @@ Its shape, with illustrative numbers:
 }
 ```
 
-`problems` should always be empty: anything there means the sandbox leaked. `mainThreadShare`
-is Chromium's TaskDuration over wall time, which can pass 100 when the main thread is saturated
-and other threads' tasks count too. On a shared machine the numbers move run to run; compare
-runs from the same machine, as the CI gate keeps them.
+`problems` should always be empty: anything there means the sandbox leaked.
+
+- **Switch times** run from the press to the first frame painted after the target's screen is
+  in the page and laid out: a window still fading in counts, and a kept window, in the page
+  already, counts at once.
+- **`mainThreadShare`** is Chromium's TaskDuration over its own clock between two readings: a
+  saturated main thread reads about 100.
+- **`framesOver33ms`** counts frame gaps over 33 ms: at 60 Hz a single dropped frame is one.
+- On a shared machine the numbers move run to run; compare runs from the same machine, as the CI
+  gate keeps them.
+
+## The sandbox's limits
+
+The runner, and every shell it starts, get the sandbox's environment alone, and the run refuses
+to start while any folder on its PATH but the fake's holds `claude`, `codex` or `agy`. The
+runner's harness lookups (connecting a plugin, Codex's app server) read PATH again from a login
+shell, where the system's profile can put its own folders first (macOS's `path_helper` does).
+This scenario connects nothing and runs no Codex, so none of them runs; a scenario that does
+needs that PATH checked too.
