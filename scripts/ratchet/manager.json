@@ -8,7 +8,7 @@
   "lines": {
     "budget": 5079,
     "reason": "Step 2's T6 moves shellLaunch's generic half into @novadeck/terminal/shell: manager.ts's code is unchanged, but startsCommands and ShellLaunch now come from the library's import, listed a name to a line, 2 lines more.",
-    "from": "T6, task/arch-step-2@terminal-shell"
+    "from": "#247"
   },
   "methods": 175,
   "slack": { "lines": 100, "methods": 5 }
