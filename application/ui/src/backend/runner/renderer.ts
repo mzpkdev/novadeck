@@ -11,7 +11,8 @@ import type { ViewMode } from "../../model/types"
 // page's, and loses the oldest when more are asked for (it warns on the console and fires
 // webglcontextlost), which would blank a terminal that is still shown. The app draws
 // nothing else with WebGL, so the screens take all but two, kept for a canvas the page
-// doesn't own (an extension's, devtools') and as a margin while a lost context is freed.
+// doesn't own (an extension's, in the browser build) and as a margin while a context the
+// GPU lost waits to be freed.
 // That is a Grid of 13 or 14 all on WebGL, where one busy terminal left on the DOM costs
 // about as much as the other twelve; a shown screen past the cap draws with the DOM
 // renderer until a slot frees.
