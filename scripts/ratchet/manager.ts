@@ -42,7 +42,7 @@ const isFunction = (node: unknown): boolean =>
   isNode(node) && (node.type === "FunctionExpression" || node.type === "ArrowFunctionExpression")
 
 // A member that is a function: a method, an accessor or the constructor, or a property
-// holding a function.
+// set to a function or arrow expression (one set to what a call returns, as `.bind`'s, isn't).
 const isFunctionMember = (member: Node): boolean =>
   member.type === "MethodDefinition" ||
   (member.type === "PropertyDefinition" && isFunction(member.value))
@@ -158,7 +158,7 @@ export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets
       budget > limit
         ? count > (was ?? count)
           ? `${budgetsPath} raises ${measure} to ${budget}, past the ${count} the file has: raise it only to ${count}.`
-          : `${budgetsPath} raises ${measure} to ${budget}, though the file's ${count} needs no raise: keep it at most at ${limit}.`
+          : `${budgetsPath} raises ${measure} to ${budget}, though the file's ${count} needs no raise: keep it at ${limit} at most.`
         : undefined,
     ].filter((problem): problem is string => problem !== undefined)
     if (count > budget)

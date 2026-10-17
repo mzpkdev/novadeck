@@ -45,21 +45,28 @@ const baseCommit = (): string | undefined => {
   return undefined
 }
 
-// The budgets as the base branch has them; none where the base has no file yet. A pull
-// request's CI must find its base, or a raise there would go unchecked.
-const baseBudgets = (): Budgets | undefined => {
+// What the change starts from: the base branch's budgets (none where the base has no file
+// yet), and whether the change touches manager.ts or its budgets at all. A pull request's
+// CI must find its base, or a raise there would go unchecked.
+const base = (): { readonly budgets?: Budgets; readonly touched: boolean } => {
   const commit = baseCommit()
   if (!commit) {
     if (process.env.GITHUB_BASE_REF)
       throw new Error(
         `The ratchet reads the base branch's ${budgetsPath} from the pull request's merge commit, which this checkout can't see: check out two commits deep (fetch-depth: 2).`,
       )
-    return undefined
+    return { touched: true }
+  }
+  let touched = false
+  try {
+    git("diff", "--quiet", commit, "--", managerPath, budgetsPath)
+  } catch {
+    touched = true
   }
   try {
-    return JSON.parse(git("show", `${commit}:${budgetsPath}`)) as Budgets
+    return { budgets: JSON.parse(git("show", `${commit}:${budgetsPath}`)) as Budgets, touched }
   } catch {
-    return undefined
+    return { touched }
   }
 }
 
@@ -67,9 +74,18 @@ describe("manager.ts", () => {
   it("stays within its budgets, and no further under them than their slack", () => {
     const budgets = JSON.parse(read(budgetsPath)) as Budgets
     const counts = countManager(read(managerPath))
+    const from = base()
+    const problems = ratchetProblems(counts, budgets, from.budgets)
     // Straight to stderr: Vitest keeps a passing test's console output to itself.
-    for (const note of ratchetNotes(counts, budgets)) process.stderr.write(`${note}\n`)
-    expect(ratchetProblems(counts, budgets, baseBudgets())).toEqual([])
+    const say = (text: string): boolean => process.stderr.write(`${text}\n`)
+    ratchetNotes(counts, budgets).forEach(say)
+    // A change that leaves manager.ts and its budgets alone isn't held to what others left,
+    // as two changes merged one after the other can: the next change to them is.
+    if (!from.touched) {
+      problems.forEach((problem) => say(`Left for the next change to manager.ts: ${problem}`))
+      return
+    }
+    expect(problems).toEqual([])
   })
 })
 
@@ -216,7 +232,7 @@ describe("the ratchet", () => {
     const needless: Budgets = { ...budgets, lines: { budget: 102, reason: "Room", from: "#240" } }
     expect(ratchetProblems({ ...counts, lines: 98 }, needless, budgets)).toEqual([
       expect.stringMatching(
-        /raises lines to 102, though the file's 98 needs no raise: keep it at most at 100/,
+        /raises lines to 102, though the file's 98 needs no raise: keep it at 100 at most/,
       ),
     ])
   })
