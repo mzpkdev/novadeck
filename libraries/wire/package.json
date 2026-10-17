@@ -27,6 +27,13 @@
         "types": "./dist/server.d.ts",
         "default": "./dist/server.js"
       }
+    },
+    "./electron": {
+      "node": {
+        "development": "./src/electron.ts",
+        "types": "./dist/electron.d.ts",
+        "default": "./dist/electron.js"
+      }
     }
   },
   "scripts": {
@@ -44,16 +51,21 @@
     "@orpc/server": "catalog:",
     "@types/node": "^26.6.5",
     "@types/ws": "8.18.2",
+    "electron": "catalog:",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3",
     "ws": "catalog:"
   },
   "peerDependencies": {
     "@orpc/server": "catalog:",
+    "electron": "catalog:",
     "ws": "catalog:"
   },
   "peerDependenciesMeta": {
     "@orpc/server": {
+      "optional": true
+    },
+    "electron": {
       "optional": true
     },
     "ws": {

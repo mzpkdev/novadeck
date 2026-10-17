@@ -55,6 +55,22 @@ know: the app's procedures and their codes stay the app's, beside the wire's own
     its handshake, if any. `websocket(url, { token })` reaches a server deployed on its own,
     the token kept out of the URL; `messagePort(port)` reaches one its host hands a port to.
     A single port connects once; pass a function that asks for a fresh port to reconnect.
+    `hostTransport({ request, message, lateAnswerMs })` is that function for a page in
+    Electron's renderer: `request(id)` asks the host (through what its preload exposes), and
+    the port comes back as a window message `{ type: message, id }`. A port that answers a
+    request given up on is closed, if it comes within `lateAnswerMs`.
+- `./electron` (Node only: Electron's main process and preload): the host's side of
+  `hostTransport`, with `electron` as an optional peer.
+  - `brokerPorts({ channel, allow, deliver })`, in the main process: a page that asks on the
+    IPC `channel` (and that `allow` lets ask: a port is whatever access the service gives)
+    gets one end of a fresh `MessageChannelMain` under its request id; `deliver` hands the
+    other end to the service, or returns false while there's none, and the request is
+    dropped.
+  - `relayPorts({ channel, message })`, in the preload: ports can't cross the context bridge,
+    so it relays each one to the page as a window message, and returns the request function
+    for the bridge to expose.
+
+  Forking, restarting and closing the service's process stay the app's.
 - `./server` (Node only): the server's side.
   - `createSessions({ protocolVersion, router, admit, closed, error, epoch })`, a server's
     sessions, and the router its transports serve: the wire's handshake beside the app's
