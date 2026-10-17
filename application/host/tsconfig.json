@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    // Workspace packages' source, as Vitest reads it: no build first (see turbo.json).
+    "customConditions": ["development"],
     "target": "ES2023",
     "lib": ["ES2023"],
     "module": "ESNext",
