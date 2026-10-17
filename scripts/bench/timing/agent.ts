@@ -2,15 +2,16 @@ import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 
-// A fake Claude Code for the timing run, started as `claude` in a sandboxed terminal. It
-// draws as Ink does, redrawing about 34 lines in place, and reports to Novadeck as Claude
-// Code's hooks and status line do: each event goes to `$NOVADECK_HOOK claude <Event>` with
-// the hook's JSON on stdin and CLAUDE_PID set to this process, so the runner binds the
-// session to it. Whether it's busy is the word in `$TIMING_AGENT_CONTROL` ("on" is busy).
-// Busy, it runs a turn (UserPromptSubmit to Stop, a new one every 20 s), a tool call about
-// every 2 s and a status line every 300 ms with a growing context; idle, it sends Stop
-// once and a status line every 5 s. `$TIMING_AGENT_SEED` seeds what it draws, and every
-// line carries `[T<seed>]`, which the run looks for on screen.
+// A fake Claude Code for the timing run, started as `claude` in a sandboxed terminal. It draws as
+// Ink does, redrawing 34 lines in place (on a screen shorter than that, as Grid's tiles are, the
+// cursor stops at the top and each frame scrolls on), and reports to Novadeck as Claude Code's
+// hooks and status line do: each event goes to `$NOVADECK_HOOK claude <Event>` with the hook's
+// JSON on stdin and CLAUDE_PID set to this process, so the runner binds the session to it.
+// Whether it's busy is the word in `$TIMING_AGENT_CONTROL` ("on" is busy). Busy, it runs a turn
+// (UserPromptSubmit to Stop, a new one every 20 s), a tool call about every 2 s and a status line
+// every 300 ms with a growing context; idle, it sends Stop once and a status line every 5 s.
+// `$TIMING_AGENT_SEED` seeds what it draws, and every line carries `[T<seed>]`, which the run
+// looks for on screen.
 
 const control = process.env.TIMING_AGENT_CONTROL
 const seed = Number(process.env.TIMING_AGENT_SEED ?? 1)
@@ -118,12 +119,16 @@ const idleFrame = () => {
 
 const busyFrame = () => {
   let text = ""
+  // A step done takes the last line, so every frame is the same height to redraw.
+  const done = tick % 25 === 24
   for (let line = 0; line < lines; line += 1) {
     const color = colors[(line + tick) % colors.length]
     const spin = spinner[(tick + line) % spinner.length]
-    text += `\r\x1b[2K[T${seed}] \x1b[${color}m${spin}\x1b[0m \x1b[1m${pick(words)}\x1b[22m ${pick(words)} ${tick}.${line} ${"x".repeat(random(40))}\x1b[90m (${random(9999)}ms)\x1b[0m\n`
+    text +=
+      done && line === lines - 1
+        ? `\r\x1b[2K\x1b[32m✓\x1b[0m step ${tick} done: ${pick(words)}\n`
+        : `\r\x1b[2K[T${seed}] \x1b[${color}m${spin}\x1b[0m \x1b[1m${pick(words)}\x1b[22m ${pick(words)} ${tick}.${line} ${"x".repeat(random(40))}\x1b[90m (${random(9999)}ms)\x1b[0m\n`
   }
-  if (tick % 25 === 24) text += `\x1b[32m✓\x1b[0m step ${tick} done: ${pick(words)}\n`
   draw(text)
   const now = Date.now()
   if (now - lastTool > 2000) {

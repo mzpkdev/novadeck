@@ -20,6 +20,30 @@ const ui = join(root, "application", "ui")
 // The agent CLIs a folder on the sandbox's PATH may not hold, besides the fake's own.
 const agents = ["claude", "codex", "agy"]
 
+/**
+ * The real agent CLIs in the folders of `path` but its first, the fake's own: the sandbox
+ * refuses to start while there are any.
+ */
+export const strays = (path: string): readonly string[] =>
+  path
+    .split(delimiter)
+    .slice(1)
+    .flatMap((folder) => agents.map((agent) => join(folder, agent)))
+    .filter((file) => existsSync(file))
+
+/** The runner's environment: the sandbox's alone, with what the runner itself is told. */
+export const runnerEnv = (
+  sandbox: Pick<Sandbox, "env" | "root">,
+  runner: { readonly token: string; readonly port: number; readonly origin: string },
+): NodeJS.ProcessEnv => ({
+  ...sandbox.env,
+  NOVADECK_TOKEN: runner.token,
+  HOST: "127.0.0.1",
+  PORT: String(runner.port),
+  NOVADECK_DATABASE: join(sandbox.root, "data", "workspace.sqlite"),
+  CORS_ORIGINS: runner.origin,
+})
+
 /** A word sh reads as the text itself, whatever it holds. */
 const quoted = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`
 
@@ -55,7 +79,7 @@ const ready = async (url: string, child: ChildProcess, ms: number): Promise<void
     if (ended(child))
       throw new Error(`${url}: its process ended (${child.exitCode ?? child.signalCode})`)
     // eslint-disable-next-line no-await-in-loop -- Asks again until it answers.
-    const answered = await fetch(url).then(
+    const answered = await fetch(url, { signal: AbortSignal.timeout(5000) }).then(
       () => true,
       () => false,
     )
@@ -112,9 +136,9 @@ const run = (
 
 /**
  * The sandbox the runner runs in, with the fake agent first on its PATH as `claude`. The
- * runner's harness lookups read PATH again from a login shell (`$SHELL -ilc env`), where
- * the system's profile may put its own folders first (macOS's path_helper does); none of
- * those lookups runs in this scenario, which connects nothing.
+ * runner reads PATH again from a login shell (`$SHELL -ilc env`) as it starts, where the
+ * system's profile may put its own folders first (macOS's path_helper does); that PATH starts
+ * no agent CLI in this scenario, which connects nothing.
  */
 const sandboxed = (): { readonly sandbox: Sandbox; readonly control: string } => {
   const base = createSandbox({ prefix: "novadeck-timing-", bins: [], user: "novadeck" })
@@ -128,13 +152,9 @@ const sandboxed = (): { readonly sandbox: Sandbox; readonly control: string } =>
     )
     chmodSync(claude, 0o755)
     const path = [bin, base.env.PATH].join(delimiter)
-    const strays = path
-      .split(delimiter)
-      .slice(1)
-      .flatMap((folder) => agents.map((agent) => join(folder, agent)))
-      .filter((file) => existsSync(file))
-    if (strays.length > 0)
-      throw new Error(`the sandbox's PATH holds a real agent CLI: ${strays.join(", ")}`)
+    const found = strays(path)
+    if (found.length > 0)
+      throw new Error(`the sandbox's PATH holds a real agent CLI: ${found.join(", ")}`)
     // The runner counts Claude Code connected once Novadeck's plugin is on in its settings.
     mkdirSync(join(base.home, ".claude"), { recursive: true })
     writeFileSync(
@@ -174,13 +194,21 @@ export type Stack = {
 /** A fresh sandbox, with the tripwire set over the developer's home; nothing runs yet. */
 export const openStack = (): Stack => {
   const { sandbox, control } = sandboxed()
-  const changed = tripwire(sandbox, [
-    {
-      searched: [".claude.json", join(".claude", "settings.json")],
-      listed: [join(".claude", "projects")],
-      stamped: [join(".local", "share", "novadeck")],
-    },
-  ])
+  const changed = (() => {
+    try {
+      return tripwire(sandbox, [
+        {
+          searched: [".claude.json", join(".claude", "settings.json")],
+          listed: [join(".claude", "projects")],
+          stamped: [join(".local", "share", "novadeck")],
+        },
+      ])
+    } catch (error) {
+      // Nothing runs yet: the sandbox goes with it.
+      rmSync(sandbox.root, { recursive: true, force: true })
+      throw error
+    }
+  })()
   const children: ChildProcess[] = []
   let stopped: Promise<readonly string[]> | undefined
   // Once stopping, nothing more starts: what a start still under way just started ends at
@@ -227,11 +255,13 @@ export const openStack = (): Stack => {
       // The runner's address and token are baked into the build, as the dev-web path does.
       await run(
         process.execPath,
-        [vite, "build", "--outDir", dist, "--emptyOutDir"],
+        [vite, "build", "--mode", "production", "--outDir", dist, "--emptyOutDir"],
         {
           cwd: ui,
+          // A production build whatever the developer's shell says, as the numbers need one.
           env: {
             ...process.env,
+            NODE_ENV: "production",
             VITE_NOVADECK_RUNNER_URL: `ws://127.0.0.1:${runnerPort}/api/rpc`,
             VITE_NOVADECK_RUNNER_TOKEN: token,
           },
@@ -243,14 +273,7 @@ export const openStack = (): Stack => {
         [join(root, "application", "runner", "dist", "cli.js")],
         {
           cwd: sandbox.root,
-          env: {
-            ...sandbox.env,
-            NOVADECK_TOKEN: token,
-            HOST: "127.0.0.1",
-            PORT: String(runnerPort),
-            NOVADECK_DATABASE: join(sandbox.root, "data", "workspace.sqlite"),
-            CORS_ORIGINS: origin,
-          },
+          env: runnerEnv(sandbox, { token, port: runnerPort!, origin }),
           stdio: ["ignore", "inherit", "inherit"],
         },
       )

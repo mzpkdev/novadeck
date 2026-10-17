@@ -43,7 +43,7 @@ const probe = () => {
   } catch {
     // No long tasks to observe: the window reports none.
   }
-  // oxlint-disable-next-line unicorn/consistent-function-scoping -- Sent to the page as source.
+  // eslint-disable-next-line unicorn/consistent-function-scoping -- Sent to the page as source.
   const loop = (time: number) => {
     if (timing.recording) timing.frames.push(time)
     requestAnimationFrame(loop)
@@ -156,7 +156,12 @@ const steady = async (page: Page, cdp: CDPSession, name: Steady["layout"]): Prom
   // The main thread's busy time and the clock it's measured on, from the same reading.
   const reading = async () => {
     const { metrics } = await cdp.send("Performance.getMetrics")
-    const value = (key: string) => metrics.find((metric) => metric.name === key)?.value ?? 0
+    const value = (key: string) => {
+      const found = metrics.find((metric) => metric.name === key)?.value
+      // A metric Chromium no longer reports would read as an idle main thread.
+      if (found === undefined) throw new Error(`Chromium reported no ${key}`)
+      return found
+    }
     return { task: value("TaskDuration"), at: value("Timestamp") }
   }
   const longTasks = await page.evaluate(() => {
@@ -201,9 +206,11 @@ const switchTo = async (page: Page, target: number): Promise<Switch> => {
           return box.width > 0 && box.height > 0
         })
         .some((screen) => (screen.textContent ?? "").includes(tag))
-    const down = () => {
+    // From the press itself, its event's time, so a press waiting behind long tasks counts
+    // its wait too.
+    const down = (event: Event) => {
       document.removeEventListener("pointerdown", down, true)
-      timing.clicked = performance.now()
+      timing.clicked = event.timeStamp
       const step = () => {
         if (visible()) {
           const channel = new MessageChannel()
@@ -255,7 +262,14 @@ export const drive = async (
   measured: { agentPhases: (string | null)[]; steady: Steady[]; switches: Switch[] },
   launched: (version: string) => void,
 ): Promise<void> => {
-  const browser = await chromium.launch({ headless: true })
+  // Playwright would end the process on SIGINT itself, before main.ts has stopped the stack
+  // and written the report; the browser closes as `drive` ends, and on exit regardless.
+  const browser = await chromium.launch({
+    headless: true,
+    handleSIGINT: false,
+    handleSIGTERM: false,
+    handleSIGHUP: false,
+  })
   launched(browser.version())
   try {
     const page = await browser.newPage({ viewport: scenario.viewport })
