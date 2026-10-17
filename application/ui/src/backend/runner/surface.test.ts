@@ -3,7 +3,7 @@ import { RunnerError, type AttachedTerminal } from "@novadeck/protocol/client"
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
 import { act, createElement, type ReactNode } from "react"
-import { afterEach, vi } from "vitest"
+import { afterEach, onTestFinished, vi } from "vitest"
 
 import { createStore } from "../../model/store"
 import type { TerminalMetadata, ViewMode } from "../../model/types"
@@ -1194,17 +1194,29 @@ describe("a terminal's screen resized out of view", () => {
     vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(17)
     return (isIntersecting: boolean) => reports.forEach((report) => report([{ isIntersecting }]))
   }
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
-  })
+  afterEach(() => vi.unstubAllGlobals())
 
   it("keeps following its shell's output", async () => {
     const view = measured()
-    const { xterm } = createScreens(starting().runtime).acquire(
-      { ...key, terminalId: "out-of-view" },
-      { fontSize: 13, name: "T", waiting: false, webgl: false },
-    )
+    const screens = createScreens(starting().runtime)
+    const terminal = { ...key, terminalId: "out-of-view" }
+    const { xterm } = screens.acquire(terminal, {
+      fontSize: 13,
+      name: "T",
+      waiting: false,
+      webgl: false,
+    })
+    // The screen closes once it has stayed off screen for its retention, as the file's own
+    // do after each test.
+    onTestFinished(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] })
+      try {
+        screens.release(terminal)
+        vi.advanceTimersByTime(31 * 60 * 1000)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
     const write = (lines: number) =>
       new Promise<void>((resolve) => xterm.write("output\r\n".repeat(lines), resolve))
     view(true)
