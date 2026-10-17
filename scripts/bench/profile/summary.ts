@@ -132,7 +132,7 @@ export const metrics = {
   longTasks: (one: PhaseResult) => one.longTasks,
   compositorFps: (one: PhaseResult) => one.breakdown?.compositorFps,
   compositorThread: (one: PhaseResult) => one.breakdown?.threads.Compositor?.share,
-  rasterThreads: (one: PhaseResult) => one.breakdown?.threads.CompositorTileWorker?.share,
+  rasterThreads: (one: PhaseResult) => one.breakdown?.threads.raster?.share,
   vizThread: (one: PhaseResult) => one.breakdown?.threads.VizCompositorThread?.share,
   gpuMainThread: (one: PhaseResult) => one.breakdown?.threads.CrGpuMain?.share,
   switchP50Ms: (one: PhaseResult) => percentile(timed(one.switches), 0.5) ?? undefined,
@@ -389,7 +389,7 @@ const labels: Readonly<Record<Metric, string>> = {
   longTasks: "Long tasks",
   compositorFps: "Frames drawn a second (compositor)",
   compositorThread: "Renderer compositor thread busy",
-  rasterThreads: "Raster threads busy (summed)",
+  rasterThreads: "Raster tasks off the main thread (summed)",
   vizThread: "GPU process viz thread busy",
   gpuMainThread: "GPU process main thread busy",
   switchP50Ms: "Switch p50 (ms)",
@@ -428,7 +428,6 @@ const builds: Readonly<Record<Variant, string>> = {
 
 const percent = (value: number | undefined) => (value === undefined ? "–" : `${value.toFixed(1)}%`)
 
-/** The scenario's Grid busy share on the production build and with WebGL, and the cut. */
 /** How much less, in percent, a comparison's variant took than the production build. */
 const cut = (each: { production: number; points: number } | undefined) =>
   each && each.production > 0 ? (-each.points / each.production) * 100 : undefined

@@ -50,7 +50,9 @@ again ad hoc, which hasn't been tried yet.
 
 It runs the real app on the real display, so whoever runs it on a personal machine says so
 first. The app, the runner it starts and every shell get the sandbox's environment alone, plus
-`DISPLAY` and `XAUTHORITY` to reach the X server, the shells included: on Linux it draws through
+`DISPLAY` and `XAUTHORITY` to reach the X server, the shells included (an X session that sets no
+`XAUTHORITY`, relying on `~/.Xauthority`, can't be reached from the sandbox's home: set it to that
+file for the run): on Linux it draws through
 X11, under a Wayland session through XWayland, since the sandbox's runtime folder holds no
 Wayland socket. The unpacked package's `chrome-sandbox` isn't setuid, so on Linux it runs with
 `--no-sandbox`, as the packaged smoke test does. The machine should be left alone while it runs:
@@ -99,8 +101,15 @@ In the output folder:
   app runs, which Chrome DevTools' Performance panel and ui.perfetto.dev open;
 - `maps/<variant>/`: each build of the UI the source maps came from.
 
-`problems` should always be empty: anything there means the sandbox leaked or a split couldn't
-be made.
+`problems` should always be empty: anything there means the sandbox leaked, a build or a split
+couldn't be made, a run didn't stop cleanly, or a trace couldn't be read (one past about 512 MB,
+Node's longest string, can't be). profile.json and profile.md are written again after each run,
+so a run that ends the profile early leaves what the runs before it got; until the last run is
+done they say they're in progress (`complete: false` in the JSON).
+
+A run of the profile starts its output folder afresh: it removes the `traces/`, `apps/` and
+`maps/<variant>/` folders in it first. To keep a profile, give the next run another `--output`,
+or another `--machine`.
 
 ## What the numbers are
 
@@ -170,9 +179,9 @@ time.
   saves goes into fewer or more frames; its time a frame still moves.
 - **fps** and **frames over 33 ms** are the page's animation frames, as the timing run counts
   them; **frames drawn a second** are the frames the renderer's compositor drew.
-- **The other threads that draw**: the renderer's compositor thread, its raster threads (summed,
-  so they may pass 100%), and the GPU process's viz compositor and main threads, each by its busy
-  time.
+- **The other threads that draw**: the renderer's compositor thread, its raster tasks, which run
+  on its pool workers (each worker's time summed, so they may pass 100%), and the GPU process's viz
+  compositor and main threads, each by its busy time.
 - **Switch p50 and p90**, in the switches phase, are timed as the timing run times them: from the
   press to the first frame painted with the target's screen in the page, laid out. On the WebGL
   build, whose screens draw their text on a canvas, a screen's text is read from its buffer

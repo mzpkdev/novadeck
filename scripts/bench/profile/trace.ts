@@ -391,10 +391,10 @@ const part = (us: number, windowUs: number): Part => ({
   share: windowUs > 0 ? (us / windowUs) * 100 : 0,
 })
 
-// The threads by name; the raster threads, numbered, by their name's start.
+// The threads that draw, by name. Raster has no thread of its own to name: Chromium runs its
+// tasks on the renderer's pool workers, so they count by their spans (`raster` below).
 const drawing: readonly { readonly label: string; readonly named: (name: string) => boolean }[] = [
   { label: "Compositor", named: (name) => name === "Compositor" },
-  { label: "CompositorTileWorker", named: (name) => name.startsWith("CompositorTileWorker") },
   { label: "VizCompositorThread", named: (name) => name === "VizCompositorThread" },
   { label: "CrGpuMain", named: (name) => name === "CrGpuMain" },
 ]
@@ -459,6 +459,23 @@ export const breakdown = (events: readonly TraceEvent[], attribution: Attributio
     const us = matching.reduce((sum, each) => sum + busyTime(thread(each.pid, each.tid)), 0)
     if (matching.length > 0) threads[label] = part(us, windowUs)
   }
+  // The renderer's raster tasks off its main thread, each thread's time summed.
+  const rasterThreads = new Set(
+    events
+      .filter(
+        (event) => event.name === "RasterTask" && event.pid === main.pid && event.tid !== main.tid,
+      )
+      .map((event) => event.tid),
+  )
+  if (rasterThreads.size > 0)
+    threads.raster = part(
+      [...rasterThreads].reduce(
+        (sum, tid) =>
+          sum + busyTime(thread(main.pid, tid).filter((span) => span.name === "RasterTask")),
+        0,
+      ),
+      windowUs,
+    )
   const compositor = [...names.values()].find(
     (each) => each.pid === main.pid && each.name === "Compositor",
   )

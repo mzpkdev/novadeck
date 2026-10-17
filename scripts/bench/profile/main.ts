@@ -215,7 +215,8 @@ const seen: { metadata?: Record<string, unknown> } = {}
 let current: AppRun | undefined
 let stoppedBy: string | undefined
 
-const write = () => {
+/** Writes the report, `complete` once the last run is done, and says so on the last. */
+const write = (complete: boolean) => {
   const summary = summarize(results)
   // A software rasterizer drawing, or no GPU compositing at all.
   const software =
@@ -224,6 +225,7 @@ const write = () => {
     ) || (machine?.gpuFeatures.gpu_compositing ?? "").startsWith("disabled")
   const report = {
     version: 1,
+    complete,
     startedAt,
     finishedAt: new Date().toISOString(),
     commit,
@@ -263,6 +265,7 @@ const write = () => {
   const lines = [
     `${startedAt}${commit ? `, commit ${commit.slice(0, 12)}` : ""}${values.note ? `: ${values.note}` : ""}.`,
     "",
+    ...(complete ? [] : ["**In progress: the runs so far, written after each.**", ""]),
     ...(software
       ? ["**Software rendering: a smoke test of the tooling, not the baseline.**", ""]
       : []),
@@ -294,13 +297,14 @@ const write = () => {
     join(output, "profile.md"),
     markdown(summary, { title: `Real-hardware profile: ${machineName}`, lines }),
   )
-  console.log(
-    JSON.stringify(
-      { output, problems, failed: results.filter((run) => run.error).length },
-      null,
-      2,
-    ),
-  )
+  if (complete)
+    console.log(
+      JSON.stringify(
+        { output, problems, failed: results.filter((run) => run.error).length },
+        null,
+        2,
+      ),
+    )
 }
 
 // Stopped from outside: the app running closes, which ends its run, and the loop below
@@ -389,9 +393,17 @@ for (let run = 1; run <= runs; run += 1)
           error: stoppedBy ? `stopped by ${stoppedBy}: ${error}` : error,
         }),
       })
+      // A trace that can't be read leaves its phase's numbers out, which the summary can't tell.
+      for (const one of results.at(-1)!.phases)
+        if (one.traceError)
+          problems.push(
+            `${scenario}, ${variant}, run ${run}: the ${one.phase} trace couldn't be read: ${one.traceError.split("\n")[0]}`,
+          )
       console.log(`${scenario}, ${variant}, run ${run}: ${error ? "failed" : "done"}`)
+      // What the runs so far got, should a later one end it all.
+      write(false)
     }
 // The builds' copies of the package are big, and made again each time.
 rmSync(join(output, "apps"), { recursive: true, force: true })
-write()
+write(true)
 process.exitCode = stoppedBy || problems.length > 0 || results.some((run) => run.error) ? 1 : 0

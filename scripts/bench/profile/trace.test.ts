@@ -259,21 +259,24 @@ describe("breakdown", () => {
         named(10, 12, "Compositor"),
         named(20, 21, "VizCompositorThread"),
         named(30, 31, "VizCompositorThread"),
-        named(10, 13, "CompositorTileWorker1"),
+        named(10, 13, "ThreadPoolForegroundWorker"),
         { name: "process_name", ph: "M", pid: 20, tid: 0, ts: 0, args: { name: "GPU Process" } },
         complete("A", 0, 100, compositor),
         complete("B", 50, 100, compositor),
         complete("C", 0, 10, viz),
-        complete("E", 0, 400, { pid: 10, tid: 13 }),
+        // A pool worker's task, and the raster tasks in it.
+        complete("ThreadPool_RunTask", 0, 400, { pid: 10, tid: 13 }),
+        complete("RasterTask", 0, 200, { pid: 10, tid: 13 }),
+        complete("RasterTask", 250, 100, { pid: 10, tid: 13 }),
         // Another renderer's, left out.
         complete("D", 0, 500, { pid: 30, tid: 31 }),
         ...[100, 200, 300].map((ms) => ({ name: "DrawFrame", ph: "I", ts: at(ms), ...compositor })),
       ],
       none,
     )
-    // The raster thread's name starts as the compositor's does, and counts apart.
+    // The compositor by its own thread; raster by its tasks alone, on the thread they run on.
     expect(result.threads.Compositor).toEqual({ ms: 150, share: 15 })
-    expect(result.threads.CompositorTileWorker).toEqual({ ms: 400, share: 40 })
+    expect(result.threads.raster).toEqual({ ms: 300, share: 30 })
     expect(result.threads.VizCompositorThread).toEqual({ ms: 10, share: 1 })
     expect(result.compositorFps).toBe(3)
     // A trace that names no compositor thread tells nothing of its frames.
