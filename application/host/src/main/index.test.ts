@@ -43,6 +43,10 @@ describe("compiled desktop host", () => {
       expect(main).toContain("senderFrame")
       expect(preload).toContain("novadeck:runner-port")
       expect(preload).toContain("requestRunner")
+      // The sandboxed preload may load nothing but electron.
+      expect(new Set(preload.match(/require\("[^"]+"\)/g))).toEqual(
+        new Set(['require("electron")']),
+      )
     })
 
     it("offers a folder picker parented to the requesting window", async () => {
