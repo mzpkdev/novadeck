@@ -7,9 +7,8 @@ import type { IEvent, Terminal } from "@xterm/xterm"
 
 // Chromium keeps about 16 live WebGL contexts per page and loses the oldest when a page
 // asks for more (it warns on the console and fires webglcontextlost), which would blank a
-// terminal that is still shown. Staying under
-// that leaves room for the page's own canvases; a shown screen past the cap draws with the
-// DOM renderer until a slot frees.
+// terminal that is still shown. Staying under that leaves room for the page's own
+// canvases; a shown screen past the cap draws with the DOM renderer until a slot frees.
 export const contextCap = 12
 // How many times a screen may lose its context, or fail to load one; it tries again when
 // it is shown again, once, and stays on the DOM renderer after that.
@@ -193,20 +192,31 @@ const watchRoot = (changed: () => void): (() => void) => {
   return () => observer.disconnect()
 }
 
+// The WebGL context among a screen's canvases. Asking a 2D canvas for WebGL gives nothing
+// and creates nothing.
+const contextOf = (found: readonly HTMLCanvasElement[]): WebGL2RenderingContext | undefined =>
+  found.map((canvas) => canvas.getContext("webgl2")).find((context) => context !== null) ??
+  undefined
+
 // Loads xterm's WebGL addon into a screen, as a drawing whose dispose frees its context.
 export const loadWebgl = (xterm: Terminal): Drawing => {
+  const canvases = (): HTMLCanvasElement[] => [...(xterm.element?.querySelectorAll("canvas") ?? [])]
+  const before = new Set(canvases())
+  // What this load added: its own canvases, the one holding WebGL among them.
+  const added = (): HTMLCanvasElement[] => canvases().filter((canvas) => !before.has(canvas))
   const addon = new WebglAddon()
   try {
     xterm.loadAddon(addon)
   } catch (error) {
+    // A renderer that failed partway, as on a context lost mid-load, leaves its canvases
+    // and its context behind; they go with it.
+    const left = added()
+    contextOf(left)?.getExtension("WEBGL_lose_context")?.loseContext()
+    for (const canvas of left) canvas.remove()
     addon.dispose()
     throw error
   }
-  // The addon's own context, on the one canvas of xterm's that holds WebGL; asking the
-  // others, which hold 2D contexts, for WebGL gives nothing and creates nothing.
-  const gl = [...(xterm.element?.querySelectorAll("canvas") ?? [])]
-    .map((canvas) => canvas.getContext("webgl2"))
-    .find((context) => context !== null)
+  const gl = contextOf(added())
   return {
     onContextLoss: addon.onContextLoss,
     clearTextureAtlas: () => addon.clearTextureAtlas(),
