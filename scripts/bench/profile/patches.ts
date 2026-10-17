@@ -36,7 +36,7 @@ export const webglPatch = {
   },
 } as const
 
-// The stores' instrumentation hook, which step 1.3a adds to model/store.ts: it installs a
+// The stores' instrumentation hook, which step 1.3a adds to core/store.ts: it installs a
 // function told of each listener a store is about to run, and returns what restores the one
 // before.
 const hook =
@@ -44,7 +44,7 @@ const hook =
 
 /**
  * A `performance.measure` span around each run of the stores' listeners, through their hook,
- * where model/store.ts has it, and nothing where it doesn't. As the hook tells of a listener
+ * where core/store.ts has it, and nothing where it doesn't. As the hook tells of a listener
  * about to run, never of one done, a span runs from the first listener woken to a microtask
  * queued then, which runs at the next microtask checkpoint: once the script running them,
  * an event's listener or a promise's continuation, is done, the listeners, their selectors
@@ -60,7 +60,7 @@ export const storeSpansPatch = {
     if (!id.endsWith("/src/core/store.ts")) return null
     if (!/\bexport const countListenersWoken\b/.test(code)) return null
     if (!hook.test(code))
-      throw new Error("model/store.ts's countListenersWoken isn't the hook the spans expect")
+      throw new Error("core/store.ts's countListenersWoken isn't the hook the spans expect")
     const installer = `countListenersWoken((() => { let start; return () => { if (start !== undefined) return; start = performance.now(); queueMicrotask(() => { performance.measure(${JSON.stringify(storeSpan)}, { start }); start = undefined }) } })())`
     return { code: `${code.trimEnd()}\n;${installer}\n`, map: null }
   },

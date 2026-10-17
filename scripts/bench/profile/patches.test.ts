@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { storeSpansPatch, webglPatch } from "./patches.ts"
 import { storeSpan } from "./trace.ts"
 
-// A store module shaped as model/store.ts is once step 1.3a has added its hook.
+// A store module shaped as core/store.ts is once step 1.3a has added its hook.
 const store = `let woken = (): void => {}
 export const countListenersWoken = (count: () => void): (() => void) => {
   const previous = woken
