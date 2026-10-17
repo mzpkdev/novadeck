@@ -95,7 +95,8 @@ export type RunnerScreen = {
   readonly host: HTMLDivElement
   readonly xterm: Terminal
   readonly followed: FollowedTerminal
-  // Which renderer draws it: WebGL while shown and a context is free, else the DOM one.
+  // Which renderer draws it: WebGL while shown where its view wants it and a context is
+  // free, else the DOM one.
   readonly renderer: ScreenRenderer
   readonly stream: Store<ScreenStream>
   // Why the last paste failed, for a few seconds after it did.
