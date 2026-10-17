@@ -1,8 +1,12 @@
 import { context, describe, expect, it } from "../test"
 import {
   budgetChanges,
+  changedScripts,
   checkCounters,
   countersSummary,
+  parseBudgets,
+  parseReading,
+  type Budget,
   type Budgets,
   type Reading,
 } from "./counters"
@@ -17,6 +21,7 @@ const phase = {
 }
 const reading: Reading = { grid: phase, focus: phase, switches: phase }
 const budget = {
+  ticks: 10,
   notifications: 100,
   mutations: 20,
   bytes: 500,
@@ -24,6 +29,11 @@ const budget = {
   streamingSettled: 4,
 }
 const budgets: Budgets = { grid: budget, focus: budget, switches: budget }
+// The budgets with Grid's mutations budget written as `entry`.
+const withGridMutations = (entry: Budget, from: Budgets = budgets): Budgets => ({
+  ...from,
+  grid: { ...from.grid, mutations: entry },
+})
 
 describe("the counter run's budgets", () => {
   context("when every count meets its budget", () => {
@@ -68,28 +78,59 @@ describe("the counter run's budgets", () => {
     })
   })
 
-  context("when a counter can't be read", () => {
-    it("fails on a missing budget", () => {
+  context("when the script plays another number of ticks", () => {
+    it("fails until the budgets are set for it", () => {
+      const longer = { ...reading, switches: { ...phase, ticks: 12 } }
+      expect(changedScripts(longer, budgets)).toEqual([
+        expect.stringContaining("switches played 12 ticks"),
+      ])
+      expect(changedScripts(reading, budgets)).toEqual([])
+    })
+  })
+
+  context("when a file can't be read whole", () => {
+    it("fails on a missing budget, naming the file", () => {
       const { streamingPeak: _, ...partial } = budget
-      expect(() =>
-        checkCounters(reading, { ...budgets, switches: partial as typeof budget }),
-      ).toThrow("No budget is set for switches streamingPeak.")
+      expect(() => parseBudgets({ ...budgets, switches: partial }, "budgets.json")).toThrow(
+        "budgets.json has no whole-number budget for switches streamingPeak.",
+      )
     })
 
-    it("fails on a missing phase", () => {
+    it("fails on a budget that isn't a whole number", () => {
+      expect(() =>
+        parseBudgets(withGridMutations({ budget: 20.5, reason: "r", from: "#1" }), "base"),
+      ).toThrow("base has no whole-number budget for grid mutations.")
+    })
+
+    it("fails on a phase without its ticks", () => {
+      const { ticks: _, ...untimed } = budget
+      expect(() => parseBudgets({ ...budgets, focus: untimed }, "budgets.json")).toThrow(
+        "budgets.json doesn't say how many ticks focus plays.",
+      )
+    })
+
+    it("fails on a reading without a phase, or its counts", () => {
       const { switches: _, ...partial } = reading
-      expect(() => checkCounters(partial as Reading, budgets)).toThrow("no switches phase")
+      expect(() => parseReading(partial)).toThrow("The reading has no switches phase.")
+      expect(() => parseReading({ ...reading, grid: { ...phase, tickTotals: null } })).toThrow(
+        "The reading's grid phase has no ticks.",
+      )
+      expect(() => parseReading(null)).toThrow("The reading is not an object.")
+    })
+
+    it("reads a whole file as it is", () => {
+      expect(parseReading(reading)).toBe(reading)
+      expect(parseBudgets(budgets, "budgets.json")).toBe(budgets)
     })
   })
 
   context("when a pull request raises a budget", () => {
-    const raised = (entry: Budgets["grid"]["mutations"]): Budgets => ({
-      ...budgets,
-      grid: { ...budget, mutations: entry },
-    })
-
     it("lets it stand with a reason and where it came from, old to new", () => {
-      const next = raised({ budget: 30, reason: "A live readout per terminal", from: "#240" })
+      const next = withGridMutations({
+        budget: 30,
+        reason: "A live readout per terminal",
+        from: "#240",
+      })
       const changes = budgetChanges(next, budgets)
       expect(changes).toEqual([
         {
@@ -107,19 +148,34 @@ describe("the counter run's budgets", () => {
       }
       const rows = checkCounters(worse, next)
       expect(rows.every((row) => row.verdict === "within")).toBe(true)
-      expect(countersSummary(worse, rows, changes)).toContain(
+      expect(countersSummary(worse, rows, { changes })).toContain(
         "| grid | mutations | 20 → 30 | A live readout per terminal | #240 |",
       )
     })
 
     it("refuses a bare number", () => {
-      expect(budgetChanges(raised(30), budgets)[0]?.problem).toBeDefined()
+      expect(budgetChanges(withGridMutations(30), budgets)[0]?.problem).toBeDefined()
     })
 
     it("refuses a raise that doesn't say where it came from", () => {
-      expect(
-        budgetChanges(raised({ budget: 30, reason: "A readout", from: " " }), budgets)[0]?.problem,
-      ).toBeDefined()
+      const next = withGridMutations({ budget: 30, reason: "A readout", from: " " })
+      expect(budgetChanges(next, budgets)[0]?.problem).toBeDefined()
+    })
+
+    it("refuses a raise that names the earlier raise's source", () => {
+      const base = withGridMutations({ budget: 30, reason: "A readout", from: "#240" })
+      const next = withGridMutations({ budget: 45, reason: "A readout", from: "#240" })
+      expect(budgetChanges(next, base)[0]?.problem).toContain("earlier raise's source")
+      const own = withGridMutations({ budget: 45, reason: "Two readouts", from: "#251" })
+      expect(budgetChanges(own, base)[0]?.problem).toBeUndefined()
+    })
+
+    it("keeps a reason that would break the table to its own cell", () => {
+      const next = withGridMutations({ budget: 30, reason: "A | B\nand C", from: "#240" })
+      const changes = budgetChanges(next, budgets)
+      expect(countersSummary(reading, checkCounters(reading, next), { changes })).toContain(
+        "| A \\| B and C | #240 |",
+      )
     })
   })
 
@@ -127,7 +183,7 @@ describe("the counter run's budgets", () => {
     it("shows it, needing no reason", () => {
       const changes = budgetChanges({ ...budgets, focus: { ...budget, bytes: 100 } }, budgets)
       expect(changes).toEqual([{ phase: "focus", counter: "bytes", from: 500, to: 100 }])
-      expect(countersSummary(reading, checkCounters(reading, budgets), changes)).toContain(
+      expect(countersSummary(reading, checkCounters(reading, budgets), { changes })).toContain(
         "| focus | bytes | 500 → 100 | lowered |  |",
       )
     })
@@ -139,6 +195,14 @@ describe("the counter run's budgets", () => {
       expect(countersSummary(reading, checkCounters(reading, budgets))).not.toContain(
         "changes budgets",
       )
+    })
+  })
+
+  context("when there is no base to compare with", () => {
+    it("says budget changes went unchecked", () => {
+      expect(
+        countersSummary(reading, checkCounters(reading, budgets), { compared: false }),
+      ).toContain("budget changes aren't checked")
     })
   })
 })

@@ -2,41 +2,56 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs"
 
 import {
   budgetChanges,
+  changedScripts,
   checkCounters,
   countersSummary,
-  type Budgets,
-  type Reading,
+  parseBudgets,
+  parseReading,
 } from "./counters.ts"
 
 const readingPath = "application/ui/test-results/counters.json"
 const budgetsPath = "application/ui/src/specs/counters/budgets.json"
 
-// `node scripts/benchmark/main.ts [base budgets]`: checks the counter run's reading against
-// its budgets, and the budgets against the base branch's when given; writes the summary to
-// the job's, and fails on a count past its budget or a raise that doesn't say why.
+const readJson = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"))
+
+// `node scripts/benchmark/main.ts [base budgets]`, after the counter run: checks its
+// reading against the budgets, and the budgets against the base branch's when given;
+// writes the summary to the job's, and fails on a count past its budget, a script that
+// changed under its budgets, or a raise that doesn't say why. A base file that doesn't
+// read is an error: it would let any raise through unseen.
 export const main = (basePath = process.argv[2]): void => {
-  const reading = JSON.parse(readFileSync(readingPath, "utf8")) as Reading
-  const budgets = JSON.parse(readFileSync(budgetsPath, "utf8")) as Budgets
+  const reading = parseReading(readJson(readingPath))
+  const budgets = parseBudgets(readJson(budgetsPath), budgetsPath)
   const base =
     basePath && existsSync(basePath)
-      ? (JSON.parse(readFileSync(basePath, "utf8")) as Budgets)
+      ? parseBudgets(readJson(basePath), "The base branch's budgets")
       : undefined
   const rows = checkCounters(reading, budgets)
+  const scripts = changedScripts(reading, budgets)
   const changes = base ? budgetChanges(budgets, base) : []
-  const summary = countersSummary(reading, rows, changes)
+  const summary = countersSummary(reading, rows, { changes, scripts, compared: Boolean(base) })
   console.log(summary)
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary)
+  if (!base)
+    console.error(
+      "::warning title=Budgets not compared::No base budgets were given, so budget changes aren't checked.",
+    )
+  for (const script of scripts) console.error(`::error title=Script changed::${script}`)
   const over = rows.filter((row) => row.verdict === "over")
   for (const { phase, counter, value, budget } of over)
     console.error(
       `::error title=Counter past budget::${phase} ${counter} is ${value}, over its budget of ${budget}.`,
     )
-  const unexplained = changes.filter((change) => change.problem)
-  for (const { phase, counter, from, to } of unexplained)
+  for (const { phase, counter, value, budget } of rows.filter((row) => row.verdict === "under"))
     console.error(
-      `::error title=Budget raised without a reason::${phase} ${counter} went from ${from} to ${to}; say why and where from.`,
+      `::warning title=Counter under budget::${phase} ${counter} is ${value}, under its budget of ${budget}: lower the budget to keep the gain.`,
     )
-  process.exitCode = over.length || unexplained.length ? 1 : 0
+  const unexplained = changes.filter((change) => change.problem)
+  for (const { phase, counter, from, to, problem } of unexplained)
+    console.error(
+      `::error title=Budget raise not explained::${phase} ${counter} went from ${from} to ${to}. ${problem}`,
+    )
+  process.exitCode = over.length || scripts.length || unexplained.length ? 1 : 0
 }
 
 if (import.meta.main) {

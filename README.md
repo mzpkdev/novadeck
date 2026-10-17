@@ -1260,15 +1260,23 @@ phase fails the run. Run it with
 `pnpm --filter @novadeck/ui exec vitest run --project counters`; it leaves its reading in
 `application/ui/test-results/counters.json`.
 
-The Benchmark workflow runs it on Linux for every pull request that touches the UI, the
-runner, their contract or `libraries/`, and fails when a count goes past its budget in
-`src/specs/counters/budgets.json`. `node scripts/benchmark/main.ts` checks a local
-reading the same way. A count past its budget is a regression, never noise: fix it, or,
-for work that really costs more, raise the budget in the same pull request, written
-`{ "budget": n, "reason": "why", "from": "#PR or commit" }`. The job summary shows every
-budget the pull request changes, old to new, and a raise without its reason or source
-fails. A count under its budget asks for the budget to come down, so the gain stays. Commits and component renders are reported in
-the job summary, never gated. Each run's reading is kept as an artifact.
+The Benchmark workflow runs it on Linux for every pull request whose change can move a
+count (the UI, the runner, their contract, `libraries/`, the lockfile or the checker), and
+on main for the trend. It fails when a count goes past its budget in
+`application/ui/src/specs/counters/budgets.json`. Locally, after the counter run,
+`node scripts/benchmark/main.ts` checks the reading the same way, and
+`node scripts/benchmark/main.ts <base budgets.json>` checks budget changes too, as CI does
+against the base branch. A count past its budget is a regression, never noise: fix it,
+or, for work that really costs more, raise the budget in the same pull request, written
+`{ "budget": n, "reason": "why", "from": "#PR or commit" }` naming that pull request or
+commit. The job summary shows every budget the pull request changes, old to new, and a
+raise without its own reason and source fails. A count under its budget asks for the
+budget to come down, so the gain stays. Each phase's budgets record the ticks its script
+plays, so a script that plays another number fails until its budgets are set for it.
+Commits and component renders are reported in the job summary, never gated. Each run's
+reading is kept as an artifact. The check always reports, so it can be required; require
+branches to be up to date too, or two pull requests that each fit the budget can together
+pass it on main.
 
 ## Configuration
 

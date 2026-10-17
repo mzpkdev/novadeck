@@ -12,34 +12,82 @@ export const gated = [
   "streamingPeak",
   "streamingSettled",
 ] as const
-const reported = ["commits", "renders"] as const
+const ticked = ["notifications", "mutations", "commits", "renders"] as const
 
 type Phase = (typeof phases)[number]
 type Gated = (typeof gated)[number]
-type Tick = Record<"notifications" | "mutations" | (typeof reported)[number], number>
 
 // What application/ui/src/specs/counters/ leaves in test-results/counters.json.
 export type PhaseReading = {
   readonly ticks: number
-  readonly tickTotals: Tick
+  readonly tickTotals: Readonly<Record<(typeof ticked)[number], number>>
   readonly bytes: number
-  readonly written: number
   readonly streamingPeak: number
   readonly streamingSettled: number
 }
 export type Reading = Readonly<Record<Phase, PhaseReading>>
+
 // A counter's budget: a count, or a raised one with why it was raised and the pull request
 // or commit it came from.
 export type Budget =
   | number
   | { readonly budget: number; readonly reason: string; readonly from: string }
-// The budget file: each phase's gated counts, and notes for the reader.
-export type Budgets = Readonly<Record<Phase, Readonly<Record<Gated, Budget>>>> & {
+// The budget file: for each phase, the ticks its script plays and each gated count's
+// budget; and notes for the reader.
+export type PhaseBudgets = Readonly<Record<Gated, Budget>> & { readonly ticks: number }
+export type Budgets = Readonly<Record<Phase, PhaseBudgets>> & {
   readonly notes?: readonly string[]
 }
 
-const budgetOf = (budget: Budget | undefined): number | undefined =>
-  typeof budget === "object" ? budget.budget : budget
+const isCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0
+const said = (text: unknown): text is string => typeof text === "string" && text.trim() !== ""
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const budgetOf = (budget: Budget): number => (typeof budget === "object" ? budget.budget : budget)
+const raiseForm = '{ "budget": n, "reason": "why", "from": "#PR or commit" }'
+
+// Reads a reading file's contents, failing on anything the gate couldn't see whole: a
+// counter it can't see must not pass as within budget.
+export const parseReading = (data: unknown): Reading => {
+  if (!isRecord(data)) throw new Error("The reading is not an object.")
+  for (const phase of phases) {
+    const reading = data[phase]
+    if (!isRecord(reading)) throw new Error(`The reading has no ${phase} phase.`)
+    const totals = reading.tickTotals
+    if (!isCount(reading.ticks) || !isRecord(totals))
+      throw new Error(`The reading's ${phase} phase has no ticks.`)
+    for (const counter of ticked)
+      if (!isCount(totals[counter]))
+        throw new Error(`The reading has no whole count for ${phase} ${counter}.`)
+    for (const counter of ["bytes", "streamingPeak", "streamingSettled"])
+      if (!isCount(reading[counter]))
+        throw new Error(`The reading has no whole count for ${phase} ${counter}.`)
+  }
+  return data as Reading
+}
+
+// Reads a budget file's contents: every phase's ticks and every gated budget, each a whole
+// count or a raise written { budget, reason, from }. `name` says which file, for the error.
+export const parseBudgets = (data: unknown, name: string): Budgets => {
+  if (!isRecord(data)) throw new Error(`${name} is not an object.`)
+  for (const phase of phases) {
+    const budgets = data[phase]
+    if (!isRecord(budgets)) throw new Error(`${name} has no ${phase} phase.`)
+    if (!isCount(budgets.ticks))
+      throw new Error(`${name} doesn't say how many ticks ${phase} plays.`)
+    for (const counter of gated) {
+      const entry = budgets[counter]
+      const count = isRecord(entry) ? entry.budget : entry
+      if (!isCount(count))
+        throw new Error(`${name} has no whole-number budget for ${phase} ${counter}.`)
+      if (isRecord(entry) && (typeof entry.reason !== "string" || typeof entry.from !== "string"))
+        throw new Error(`${name}'s ${phase} ${counter} is written ${raiseForm}.`)
+    }
+  }
+  return data as Budgets
+}
 
 export type Verdict = "over" | "under" | "within"
 export type Row = {
@@ -59,20 +107,24 @@ const gatedValues = (phase: PhaseReading): Record<Gated, number> => ({
   streamingSettled: phase.streamingSettled,
 })
 
-const isCount = (value: unknown): value is number =>
-  typeof value === "number" && Number.isInteger(value) && value >= 0
+// The phases whose script plays another number of ticks than its budgets were set for: the
+// counts then measure something else, so the budgets change with the script.
+export const changedScripts = (reading: Reading, budgets: Budgets): string[] =>
+  phases.flatMap((phase) =>
+    reading[phase].ticks === budgets[phase].ticks
+      ? []
+      : [
+          `${phase} played ${reading[phase].ticks} ticks, and its budgets are for ${budgets[phase].ticks}: set them, and its ticks, for the new script.`,
+        ],
+  )
 
-// Every gated count of every phase beside its budget. A reading or budget file that lacks
-// one is an error: a counter the gate can't see must not pass as within budget.
+// Every gated count of every phase beside its budget.
 export const checkCounters = (reading: Reading, budgets: Budgets): Row[] =>
   phases.flatMap((phase) => {
-    if (!reading[phase]) throw new Error(`The reading has no ${phase} phase.`)
     const values = gatedValues(reading[phase])
     return gated.map((counter) => {
       const value = values[counter]
-      const budget = budgetOf(budgets[phase]?.[counter])
-      if (!isCount(value)) throw new Error(`The reading has no count for ${phase} ${counter}.`)
-      if (!isCount(budget)) throw new Error(`No budget is set for ${phase} ${counter}.`)
+      const budget = budgetOf(budgets[phase][counter])
       const verdict: Verdict = value > budget ? "over" : value < budget ? "under" : "within"
       return { phase, counter, value, budget, verdict }
     })
@@ -89,50 +141,64 @@ export type BudgetChange = {
   readonly problem?: string
 }
 
-const said = (text: unknown): text is string => typeof text === "string" && text.trim() !== ""
+// Why a raise can't stand, if it can't: it must say why, and name the pull request or
+// commit it came from, its own and not the earlier raise's it replaces.
+const raiseProblem = (entry: Budget, was: Budget): string | undefined => {
+  const why = typeof entry === "object" ? entry : undefined
+  if (!said(why?.reason) || !said(why.from)) return `A raised budget is written ${raiseForm}.`
+  if (typeof was === "object" && why.from === was.from)
+    return `This raise names the earlier raise's source (${why.from}); name its own pull request or commit.`
+  return undefined
+}
 
-// Every budget this change moves against the base branch's. A raise must say why and the
-// pull request or commit it came from; a cut needs neither.
+// Every budget this change moves against the base branch's. A cut needs no reason.
 export const budgetChanges = (budgets: Budgets, base: Budgets): BudgetChange[] =>
   phases.flatMap((phase) =>
     gated.flatMap((counter) => {
-      const entry = budgets[phase]?.[counter]
+      const entry = budgets[phase][counter]
+      const was = base[phase][counter]
       const to = budgetOf(entry)
-      const from = budgetOf(base[phase]?.[counter])
-      if (!isCount(to) || !isCount(from) || to === from) return []
+      const from = budgetOf(was)
+      if (to === from) return []
       if (to < from) return [{ phase, counter, from, to }]
       const why = typeof entry === "object" ? entry : undefined
-      const reason = said(why?.reason) ? why.reason : undefined
-      const source = said(why?.from) ? why.from : undefined
+      const problem = raiseProblem(entry, was)
       return [
         {
           phase,
           counter,
           from,
           to,
-          ...(reason ? { reason } : {}),
-          ...(source ? { source } : {}),
-          ...(reason && source
-            ? {}
-            : {
-                problem:
-                  'A raised budget is written { "budget": n, "reason": "why", "from": "#PR or commit" }.',
-              }),
+          ...(said(why?.reason) ? { reason: why.reason } : {}),
+          ...(said(why?.from) ? { source: why.from } : {}),
+          ...(problem ? { problem } : {}),
         },
       ]
     }),
   )
 
 const perTick = (total: number, ticks: number): string => (ticks ? (total / ticks).toFixed(1) : "–")
+// Text from the budget file, safe in a Markdown table's cell.
+const cell = (text: string): string => text.replaceAll(/\s+/g, " ").replaceAll("|", "\\|")
 
 const mark: Record<Verdict, string> = { over: "❌ over", under: "⬇️ under", within: "✅" }
 
-// The reading as Markdown, for the job summary: the gated counts against their budgets,
-// then the framework cost per tick.
+// The reading as Markdown, for the job summary: what stops the budgets standing, any
+// budgets the change moves, the gated counts against their budgets, then the framework
+// cost per tick.
 export const countersSummary = (
   reading: Reading,
   rows: readonly Row[],
-  changes: readonly BudgetChange[] = [],
+  {
+    changes = [],
+    scripts = [],
+    compared = true,
+  }: {
+    readonly changes?: readonly BudgetChange[]
+    readonly scripts?: readonly string[]
+    // Whether the budgets were compared with the base branch's.
+    readonly compared?: boolean
+  } = {},
 ): string => {
   const gatedRows = rows.map(({ phase, counter, value, budget, verdict }) => {
     const tick = counter === "notifications" || counter === "mutations"
@@ -144,15 +210,19 @@ export const countersSummary = (
     const { ticks, tickTotals } = reading[phase]
     return `| ${phase} | ${ticks} | ${perTick(tickTotals.commits, ticks)} | ${perTick(tickTotals.renders, ticks)} |`
   })
-  const over = rows.filter((row) => row.verdict === "over")
-  const under = rows.filter((row) => row.verdict === "under")
   const changeRows = changes.map(
     ({ phase, counter, from, to, reason, source, problem }) =>
-      `| ${phase} | ${counter} | ${from} → ${to} | ${problem ? `❌ ${problem}` : (reason ?? "lowered")} | ${source ?? ""} |`,
+      `| ${phase} | ${counter} | ${from} → ${to} | ${problem ? `❌ ${cell(problem)}` : cell(reason ?? "lowered")} | ${cell(source ?? "")} |`,
   )
+  const over = rows.filter((row) => row.verdict === "over")
+  const under = rows.filter((row) => row.verdict === "under")
   return [
     "## Counter run",
     "",
+    ...(compared
+      ? []
+      : ["> ⚠️ No base budgets to compare with: budget changes aren't checked.", ""]),
+    ...scripts.flatMap((script) => [`> ❌ ${script}`, ""]),
     ...(changes.length
       ? [
           "This pull request changes budgets:",
@@ -164,7 +234,7 @@ export const countersSummary = (
         ]
       : []),
     over.length
-      ? `${over.length} counter(s) past budget. Fix the regression, or raise the budget in application/ui/src/specs/counters/budgets.json and say why in the pull request.`
+      ? `${over.length} counter(s) past budget. Fix the regression, or, for work that really costs more, raise the budget in application/ui/src/specs/counters/budgets.json, written ${raiseForm}.`
       : under.length
         ? `Every counter within budget; ${under.length} now under it: lower the budget in application/ui/src/specs/counters/budgets.json to lock the gain in.`
         : "Every counter within budget.",
