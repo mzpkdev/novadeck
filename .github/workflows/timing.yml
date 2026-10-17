@@ -14,14 +14,20 @@ on:
 permissions:
   contents: read
 
+# A label other than `bench` gets a group of its own, so the run it skips doesn't cancel
+# one in flight.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.action == 'labeled' && github.event.label.name != 'bench' && github.run_id || 'run' }}
   cancel-in-progress: true
 
 jobs:
   timing:
     name: Timing run
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'bench')
+    # On a pull request labelled `bench`; adding another label to it starts nothing.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (contains(github.event.pull_request.labels.*.name, 'bench') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'bench'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -30,8 +36,11 @@ jobs:
       actions: read
       pull-requests: write
     steps:
+      # The code it builds and runs never sees the job's token.
       - name: Check Out Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set Up Toolchain
         id: toolchain
@@ -113,9 +122,13 @@ jobs:
             gh run download "$run" --repo "$GITHUB_REPOSITORY" --name timing --dir "$RUNNER_TEMP/main"
           fi
 
+      # A pull request's report also goes to the file its comment posts.
       - name: Report Timings
         shell: bash
-        run: node scripts/benchmark/timing-main.ts "$RUNNER_TEMP/timing.json" "$RUNNER_TEMP/main/timing.json" "$RUNNER_TEMP/comment.md"
+        run: |
+          report=(node scripts/benchmark/timing-main.ts "$RUNNER_TEMP/timing.json" "$RUNNER_TEMP/main/timing.json")
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then report+=("$RUNNER_TEMP/comment.md"); fi
+          "${report[@]}"
 
       # One comment per pull request, updated in place. A fork's pull request gets a
       # read-only token, so its numbers stay in the job summary.
@@ -128,8 +141,10 @@ jobs:
         shell: bash
         run: |
           marker="<!-- novadeck-benchmark-timing -->"
+          # The workflow's own comment, never another author's that starts the same way.
           existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
-            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" |
+            sed -n 1p)
           if [ -n "$existing" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F "body=@$RUNNER_TEMP/comment.md"
           else
@@ -146,3 +161,4 @@ jobs:
           path: ${{ runner.temp }}/timing.json
           if-no-files-found: ignore
           retention-days: 90
+          overwrite: true
