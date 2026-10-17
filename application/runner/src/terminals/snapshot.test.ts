@@ -1,9 +1,9 @@
 import { createScreen, trackMouse, type Screen } from "@novadeck/emulator/headless"
 import type { TerminalSummary } from "@novadeck/protocol"
+import { Subscription } from "@novadeck/terminal/host"
 
 import { describe, expect, it } from "../test.js"
 import { snapshot } from "./snapshot.js"
-import { Subscription } from "./subscription.js"
 
 const summary: TerminalSummary = {
   id: "terminal",
