@@ -28,6 +28,19 @@ know: the app's procedures and their codes stay the app's.
     its handshake, if any. `websocket(url, { token })` reaches a server deployed on its own,
     the token kept out of the URL; `messagePort(port)` reaches one its host hands a port to.
     A single port connects once; pass a function that asks for a fresh port to reconnect.
+- `./server` (Node only): the server's side.
+  - `KeyedChanges<Key, Change>`, one reader's stream of keyed state: the current state, then
+    `synced`, then later changes, holding only the latest unread change per key, each in the
+    place its key first changed. A key the reader was never told of leaves without a removal.
+  - `Versioned<State>`, whole state for any number of readers: each reads it now and again
+    after every change, however many changes came between; `progress()` tells a change in
+    progress at most once every `throttleMs`. `release(owner)` ends one owner's streams.
+  - `Latest<T>`, a stream of snapshots that keeps only the newest unread one, and never sends
+    again the one the reader has.
+
+  None slows a reader that can't keep up: it skips to what's latest. On a socket, a reader
+  that still falls behind fills the send budget and loses the socket.
+
 - `./testing`: channels held in memory, for tests that need no socket or port.
   `memoryPorts()` is the two ends of a port, delivering on a microtask, cloned, in the same
   order every run; `fakeChannel()` is a channel whose far end is the test, which sees what
