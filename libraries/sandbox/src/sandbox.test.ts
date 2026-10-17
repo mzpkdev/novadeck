@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process"
 import { rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 
 import { describe, expect, it, onTestFinished } from "vitest"
@@ -28,16 +29,44 @@ describe("a sandbox", { timeout: 60_000 }, () => {
   })
 
   it("passes on nothing of the caller's environment", () => {
+    // A folder of the caller's own on its PATH, which the sandbox's mustn't hold.
+    const own = join(tmpdir(), "sandbox-test-callers-own")
+    const path = process.env.PATH
     process.env.SANDBOX_TEST_SECRET = "leaked"
+    process.env.PATH = [own, path].join(delimiter)
     onTestFinished(() => {
       delete process.env.SANDBOX_TEST_SECRET
+      if (path === undefined) delete process.env.PATH
+      else process.env.PATH = path
     })
 
     const { env } = made()
 
     expect(Object.values(env)).not.toContain("leaked")
-    expect(env.PATH).not.toContain(process.env.PATH)
+    expect(env.PATH!.split(delimiter)).not.toContain(own)
   })
+
+  it.skipIf(!windows)("moves the user's folders inside its root on Windows", () => {
+    const { root, home, env } = made()
+
+    for (const name of ["USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP"])
+      expect(env[name]?.startsWith(root)).toBe(true)
+    expect(`${env.HOMEDRIVE}${env.HOMEPATH}`).toBe(home)
+  })
+
+  it.skipIf(windows)(
+    "has a PATH of the programs under test, Node's folder and the system's alone",
+    () => {
+      const sandbox = made({ bins: ["/opt/under-test/bin"] })
+
+      expect(sandbox.env.PATH!.split(delimiter)).toEqual([
+        "/opt/under-test/bin",
+        join(sandbox.root, "node"),
+        "/usr/bin",
+        "/bin",
+      ])
+    },
+  )
 
   it("puts the programs under test first on PATH, then Node through a folder of its own", () => {
     const sandbox = made({ bins: ["/opt/under-test/bin"] })

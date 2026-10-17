@@ -157,7 +157,7 @@ network:
   temporary folder, with a home, a project, XDG folders and a private `XDG_RUNTIME_DIR`.
   Every process the test starts gets only the sandbox's environment, with nothing copied
   from the developer's. Its PATH is the pinned harnesses, a folder holding just `node`,
-  and `/usr/bin:/bin`. On Windows the sandbox also moves the user's folders into itself
+  and `/usr/bin:/bin`, with, on macOS, the keychain guard's folder first. On Windows the sandbox also moves the user's folders into itself
   (USERPROFILE, APPDATA, LOCALAPPDATA, TEMP, as Node, Go and Rust find a home and
   configuration by them there, never HOME), and copies Windows' own variables from the
   tests' environment (`SystemRoot`, `ComSpec`, `PATHEXT`, `ProgramFiles` and the like:
