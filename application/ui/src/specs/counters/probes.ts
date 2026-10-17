@@ -6,7 +6,7 @@ import { countListenersWoken } from "#core/store"
 
 export type Counts = {
   // Store listeners woken: each subscriber called once per change it hears of, in every
-  // store `model/store` makes. A store built by hand elsewhere isn't counted.
+  // store `core/store` makes. A store built by hand elsewhere isn't counted.
   notifications: number
   // MutationObserver records anywhere under the page's body.
   mutations: number
