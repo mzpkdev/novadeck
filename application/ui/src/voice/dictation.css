@@ -25,10 +25,9 @@
    "bottom". Parts: `.dictation-dot` (recording), `.dictation-wave` (its `i` bars, each
    from `--dictation-bar`, 0 to 1), `.dictation-text`, `.dictation-shimmer` (with its
    `.dictation-shimmer-glint`), `.dictation-setup` (the Addons button), and the overlay's
-   icon, hint and elapsed time,
-   whose `data-ending` marks a clip's last seconds. While a clip records or transcribes the
-   strip floats over the terminal's foot; in setup (data-phase="setup") it is a row of its
-   own and the terminal above it shrinks.
+   icon, hint and elapsed time, whose `data-ending` marks a clip's last seconds. While a
+   clip records or transcribes the strip floats over the terminal's foot; in setup
+   (data-phase="setup") it is a row of its own and the terminal above it shrinks.
    Setup's parts: `.dictation-link` (a quiet button), `.dictation-button` (the primary one),
    `.dictation-muted` (the muted rest of a line), `.dictation-fixed` (a part that never
    shrinks), `.dictation-long` and `.dictation-short` (the words, and their short form in
