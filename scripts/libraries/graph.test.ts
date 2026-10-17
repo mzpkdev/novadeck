@@ -70,6 +70,10 @@ describe("a library's dependencies", () => {
           relativeDrive: "C:../application/ui",
           share: "\\\\server\\share\\ui",
           packed: "vendor/ui.tgz",
+          tarred: "vendor/ui.tar",
+          gzipped: "vendor/ui.tar.gz",
+          // A tarball fetched from an address is a package's, from no folder here.
+          fetched: "https://example.com/ui.tgz",
         },
       }),
     ).toEqual([
@@ -83,6 +87,8 @@ describe("a library's dependencies", () => {
       "devDependencies relativeDrive",
       "devDependencies share",
       "devDependencies packed",
+      "devDependencies tarred",
+      "devDependencies gzipped",
     ])
   })
 

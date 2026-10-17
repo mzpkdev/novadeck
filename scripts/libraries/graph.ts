@@ -33,8 +33,8 @@ const installed = (key: string, spec: string): string =>
  * package.json outside its order, each as `kind key`: every one that installs an
  * `@novadeck/` package but the libraries its design depends on, and every one installed
  * from a path (`link:`, `file:`, `portal:`, `workspace:` with a path, or a bare path as pnpm
- * reads one: `./`, `../`, `/`, `~/`, a backslash, a drive letter, or a tarball's name), which may be any folder of
- * the workspace. A library not in the order may name none.
+ * reads one: `./`, `../`, `/`, `~/`, a backslash, a drive letter, or a tarball's name), which
+ * may be any folder of the workspace. A library not in the order may name none.
  */
 export const strayDependencies = (folder: string, manifest: Manifest): readonly string[] => {
   const allowed = new Set((order[folder] ?? []).map((name) => `@novadeck/${name}`))

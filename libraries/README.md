@@ -45,16 +45,16 @@ the build rules and the test sandbox. The app keeps the product.
   any oxlint config but the root's. It refuses ES imports, not `require()`, which the package graph
   and the typecheck stand behind.
 - **The package graph** (`scripts/libraries/graph.test.ts`): a library's package.json installs no
-  workspace package but the libraries its design depends on, in any kind of dependency, under
-  its own name or an alias, and nothing from a path (`link:`, `file:`, `portal:`, `workspace:`
-  with a path, or a bare path as pnpm reads one, a drive letter or a backslash included). pnpm
-  links no workspace package at the root, so a library imports only the workspace packages it
-  declares. What the root installs (its dev tools, and the hoisted `electron`) still resolves
-  from a library without being declared: nothing checks that a library declares those.
+  workspace package but the libraries its design depends on, in any kind of dependency, under its
+  own name or an alias, and nothing from a path (`link:`, `file:`, `portal:`, `workspace:` with a
+  path, or a bare path as pnpm reads one, a drive letter, a backslash or a tarball's name included).
+  pnpm links no workspace package at the root, so a library imports only the workspace packages it
+  declares. What the root installs (its dev tools, and the hoisted `electron`) still resolves from a
+  library without being declared: nothing checks that a library declares those.
 - **The typecheck's `rootDir`**: a relative import that leaves the library's `src`, as
   `../../wire/src` into a sibling's sources, names no folder the lint knows, and fails `tsc`
-  instead, tests included. One into a sibling's build (`../../wire/dist`), whose declaration
-  files `rootDir` doesn't see, the lint refuses, as it does every relative path up into a
+  instead, tests included. One into a sibling's build (`../../wire/dist`), whose declaration files
+  `rootDir` doesn't see, the lint refuses, as it does a relative path up into another folder's
   `dist`; a package's own `dist` (`katex/dist/katex.min.css`) is a package's import, and allowed.
 - **The browser build check** (`scripts/libraries/browser.test.ts`): the lint sees direct imports
   only, so each library's browser subpaths are bundled for the browser, and the check fails on
