@@ -1,7 +1,7 @@
 import { vi } from "vitest"
 
 import { describe, expect, it } from "../../test"
-import { createRenderers, probeWebgl, wantsWebgl, type Drawing } from "./renderer"
+import { contextCap, createRenderers, probeWebgl, wantsWebgl, type Drawing } from "./renderer"
 
 const setup = ({ cap = 2, supported = true, failing = false } = {}) => {
   const state = { ligatures: false, failing, loads: 0 }
@@ -63,6 +63,11 @@ const setup = ({ cap = 2, supported = true, failing = false } = {}) => {
 }
 
 describe("the renderer budget", () => {
+  it("fits a Grid of 13 terminals, two contexts short of Chromium's 16", () => {
+    expect(contextCap).toBeGreaterThanOrEqual(13)
+    expect(contextCap).toBeLessThanOrEqual(16 - 2)
+  })
+
   it("gives shown screens a context up to the cap and leaves the rest on the DOM", () => {
     const { pool, live } = setup()
     for (const name of ["a", "b", "c"]) pool.screen(name).take()

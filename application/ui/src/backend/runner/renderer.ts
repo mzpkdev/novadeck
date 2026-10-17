@@ -7,12 +7,15 @@ import type { ViewMode } from "../../model/types"
 // fraction of the main thread's time on a busy Grid. This module is all the WebGL
 // handling: which screens hold a context, and when one goes back to the DOM renderer.
 
-// Chromium keeps about 16 live WebGL contexts per renderer process, which is this page's,
-// and loses the oldest when more are asked for (it warns on the console and fires
-// webglcontextlost), which would blank a terminal that is still shown. Staying under that
-// leaves room for the page's own canvases; a shown screen past the cap draws with the DOM
+// Chromium keeps 16 live WebGL contexts per renderer process on desktop, which is this
+// page's, and loses the oldest when more are asked for (it warns on the console and fires
+// webglcontextlost), which would blank a terminal that is still shown. The app draws
+// nothing else with WebGL, so the screens take all but two, kept for a canvas the page
+// doesn't own (an extension's, devtools') and as a margin while a lost context is freed.
+// That is a Grid of 13 or 14 all on WebGL, where one busy terminal left on the DOM costs
+// about as much as the other twelve; a shown screen past the cap draws with the DOM
 // renderer until a slot frees.
-export const contextCap = 12
+export const contextCap = 14
 // Whether a view's screens draw with WebGL. Canvas zooms its windows with a CSS transform,
 // which the DOM renderer's text is drawn again at but WebGL's canvas is stretched by, soft
 // above one and ragged below, so Canvas keeps the DOM renderer.
