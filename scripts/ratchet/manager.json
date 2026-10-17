@@ -8,7 +8,7 @@
   "lines": {
     "budget": 5077,
     "reason": "Step 2's T1 moves the pty and shell helpers manager.ts imports into @novadeck/terminal: the code is unchanged, but five imports become two from the library, listed a name to a line, 10 lines more.",
-    "from": "task/arch-step-2@terminal-moves (T1)"
+    "from": "#229"
   },
   "methods": 175,
   "slack": { "lines": 100, "methods": 5 }
