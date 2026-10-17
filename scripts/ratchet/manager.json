@@ -1,6 +1,6 @@
 {
   "notes": [
-    "Budgets for application/runner/src/terminals/manager.ts, which only go down: scripts/ratchet/manager.test.ts fails when the file grows past one, and when it shrinks under one, so the budget comes down with it. Set from main at a1fbfdaf (2026-10-17).",
+    "Budgets for application/runner/src/terminals/manager.ts, which only go down: scripts/ratchet/manager.test.ts fails when the file grows past one, and when it shrinks under one, so the budget comes down with it. That is stricter than the counter budgets, which only ask: a budget with room to spare would let the file grow back with no reason given. Set from main at a1fbfdaf (2026-10-17).",
     "lines counts the file's lines. methods counts every function the Terminals class defines in its body: methods, accessors, the constructor and properties that hold a function, read from its syntax tree, so formatting never moves it.",
     "New behaviour goes in a sibling module under application/runner/src/terminals/, as closes.ts, opens.ts and naming.ts do, with the class calling it. Work that can't is raised in the same pull request, written { \"budget\": n, \"reason\": \"why\", \"from\": \"#PR or commit\" }."
   ],

@@ -20,17 +20,20 @@ import {
 const root = join(import.meta.dirname, "..", "..")
 const read = (path: string): string => readFileSync(join(root, path), "utf8")
 
-// The budgets as the base branch has them, where git can see it; a shallow checkout or a
-// base without the file has none to compare with.
+// The budgets as the base branch has them: in a pull request's CI, the merge commit's first
+// parent (the Quality workflow checks out two commits deep); elsewhere, where this branch
+// left main. A base without the file has none to compare with.
 const baseBudgets = (): Budgets | undefined => {
   const git = (...args: string[]): string =>
     execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
-  for (const branch of ["origin/main", "main"]) {
+  const bases = process.env.GITHUB_BASE_REF
+    ? [() => "HEAD^1"]
+    : ["origin/main", "main"].map((branch) => () => git("merge-base", "HEAD", branch).trim())
+  for (const base of bases) {
     try {
-      const base = git("merge-base", "HEAD", branch).trim()
-      return JSON.parse(git("show", `${base}:${budgetsPath}`)) as Budgets
+      return JSON.parse(git("show", `${base()}:${budgetsPath}`)) as Budgets
     } catch {
-      // Not this branch: try the next, or compare with none.
+      // Not this one: try the next, or compare with none.
     }
   }
   return undefined
@@ -80,6 +83,17 @@ describe("counting the Terminals class", () => {
     expect(() => countManager("export class Other {}")).toThrow(/one Terminals class/)
   })
 
+  it("refuses a file with more than one, saying how many", () => {
+    const two = "export class Terminals { a() { class Terminals {} } }"
+    expect(() => countManager(two)).toThrow(/it defines 2/)
+  })
+
+  it("refuses code its parser can't read, naming the file", () => {
+    expect(() => countManager("export class Terminals { accessor x = 1 }")).toThrow(
+      /manager.ts has syntax the ratchet's parser can't read/,
+    )
+  })
+
   it("refuses syntax it can't read, saying what to write instead", () => {
     const enumerated = "enum Kind { A }\nexport class Terminals {}"
     expect(() => countManager(enumerated)).toThrow(/without enums, namespaces or parameter/)
@@ -96,7 +110,7 @@ describe("the ratchet", () => {
 
   it("sends new code past a budget to a sibling module under terminals/", () => {
     const [problem] = ratchetProblems({ ...counts, methods: 11 }, budgets)
-    expect(problem).toMatch(/11 functions in the Terminals class, past its budget of 10/)
+    expect(problem).toMatch(/11 methods in the Terminals class, past its budget of 10/)
     expect(problem).toMatch(/sibling module under application\/runner\/src\/terminals\//)
   })
 
@@ -123,6 +137,20 @@ describe("the ratchet", () => {
       expect.stringMatching(
         /is written \{ "budget": n, "reason": "why", "from": "#PR or commit" \}/,
       ),
+    ])
+  })
+
+  it("refuses a raise that names the earlier raise's source", () => {
+    const earlier: Budgets = {
+      ...budgets,
+      methods: { budget: 11, reason: "A protocol call", from: "#240" },
+    }
+    const again: Budgets = {
+      ...budgets,
+      methods: { budget: 15, reason: "A protocol call", from: "#240" },
+    }
+    expect(ratchetProblems({ ...counts, methods: 15 }, again, earlier)).toEqual([
+      expect.stringMatching(/under the earlier raise's source, #240/),
     ])
   })
 

@@ -25,6 +25,11 @@ documentation when behavior changes.
 `pnpm format` and `pnpm lint` cover the relay's Rust in `application/relay` too, as CI
 does.
 
+`application/runner/src/terminals/manager.ts` only shrinks: `scripts/ratchet/manager.test.ts`
+holds its lines and the methods of its `Terminals` class to the budgets in
+`scripts/ratchet/manager.json`. Put new behaviour in a sibling module under `terminals/`,
+and lower a budget in the same change when the file shrinks.
+
 ## Pull Requests
 
 Use the [PR template](.github/pull_request_template.md), even when submitting

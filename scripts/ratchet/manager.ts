@@ -56,17 +56,29 @@ const stripped = (source: string): string => {
   }
 }
 
+// Its syntax tree; code the parser can't read is refused the same way, naming the file.
+const parsed = (code: string): ReturnType<typeof parseAst> => {
+  try {
+    return parseAst(code)
+  } catch (error) {
+    throw new Error(`${managerPath} has syntax the ratchet's parser can't read.`, { cause: error })
+  }
+}
+
 // The file's lines, and the functions its `Terminals` class defines, read from its syntax
 // tree, so formatting never moves the count.
 export const countManager = (source: string): Counts => {
-  const tree = parseAst(stripped(source))
+  const tree = parsed(stripped(source))
   const classes = [...nodes(tree)].filter(
     (node) =>
       (node.type === "ClassDeclaration" || node.type === "ClassExpression") &&
       isNode(node.id) &&
       node.id.name === "Terminals",
   )
-  if (classes.length !== 1) throw new Error(`${managerPath} should define one Terminals class.`)
+  if (classes.length !== 1)
+    throw new Error(
+      `${managerPath} should define one Terminals class; it defines ${classes.length}.`,
+    )
   const body = (classes[0]!.body as { readonly body: readonly Node[] }).body
   return {
     lines: source.endsWith("\n") ? source.split("\n").length - 1 : source.split("\n").length,
@@ -84,27 +96,37 @@ const isCount = (value: unknown): value is number =>
 
 const advice: Record<Measure, string> = {
   lines: "lines",
-  methods: "functions in the Terminals class",
+  methods: "methods in the Terminals class",
 }
 
 // What's wrong with the counts against the budgets, and with the budgets against the base
 // branch's where they can be read; nothing when the ratchet holds. A count past its budget
 // asks for the code to go to a sibling module; one under it asks for the budget to come
 // down; a raise must say why and where it came from.
+// Why a raise against the base branch's budget can't stand: it says neither why nor where
+// it came from, or names the earlier raise's source, as when only the number was edited.
+const raiseProblem = (measure: Measure, entry: Budget, was: Budget): string | undefined => {
+  const from = budgetOf(was)
+  const to = budgetOf(entry)
+  if (!isCount(from) || !isCount(to) || to <= from) return undefined
+  if (typeof entry !== "object")
+    return `${budgetsPath} raises ${measure} from ${from} to ${to} without saying why: write it ${raiseForm}.`
+  if (typeof was === "object" && entry.from.trim() === was.from.trim())
+    return `${budgetsPath} raises ${measure} from ${from} to ${to} under the earlier raise's source, ${was.from}: name this one's pull request or commit.`
+  return undefined
+}
+
 export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets): string[] =>
   measures.flatMap((measure) => {
     const entry = budgets[measure]
     const budget = budgetOf(entry)
     if (!isCount(budget)) return [`${budgetsPath} sets no budget for ${measure}.`]
     if (typeof entry === "object" && (!said(entry.reason) || !said(entry.from)))
-      return [`A raised budget in ${budgetsPath} is written ${raiseForm}; ${measure}'s isn't.`]
-    const was = budgetOf(base?.[measure])
-    const raised =
-      isCount(was) && budget > was && typeof entry !== "object"
-        ? [
-            `${budgetsPath} raises ${measure} from ${was} to ${budget} without saying why: write it ${raiseForm}.`,
-          ]
-        : []
+      return [
+        `A raised budget in ${budgetsPath} is written ${raiseForm}; the one for ${measure} isn't.`,
+      ]
+    const raise = base ? raiseProblem(measure, entry, base[measure]) : undefined
+    const raised = raise ? [raise] : []
     const count = counts[measure]
     if (count > budget)
       return [
