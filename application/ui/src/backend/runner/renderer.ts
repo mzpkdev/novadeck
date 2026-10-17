@@ -1,0 +1,214 @@
+import { WebglAddon } from "@xterm/addon-webgl"
+import type { IEvent, Terminal } from "@xterm/xterm"
+
+// xterm draws with its DOM renderer unless the WebGL addon takes over, which costs a
+// fraction of the main thread's time on a busy Grid. This module is all the WebGL
+// handling: which screens hold a context, and when one goes back to the DOM renderer.
+
+// Chromium keeps about 16 live WebGL contexts per page and silently loses the oldest when
+// a page asks for more, which would blank a terminal that is still shown. Staying under
+// that leaves room for the page's own canvases; a shown screen past the cap draws with the
+// DOM renderer until a slot frees.
+export const contextCap = 12
+// How many times a screen's context may be lost; it takes another when it is shown again,
+// once, and stays on the DOM renderer after that.
+const lossesAllowed = 2
+
+// What a loaded addon gives back; xterm's WebglAddon is one.
+export type Drawing = {
+  readonly onContextLoss: IEvent<void>
+  readonly clearTextureAtlas: () => void
+  readonly dispose: () => void
+}
+
+export type RendererDeps<Target> = {
+  // Loads the addon into a target, or throws, leaving the target on the DOM renderer.
+  readonly load: (target: Target) => Drawing
+  // Whether a real GPU context can be had; asked once.
+  readonly supported: () => boolean
+  readonly cap: number
+  // Whether ligatures are on, and a way to hear when that changes.
+  readonly ligatures: () => boolean
+  readonly watchLigatures: (changed: () => void) => () => void
+}
+
+// One screen's side of the pool.
+export type ScreenRenderer = {
+  // The screen is shown: it takes a context when one is free, or waits for one.
+  readonly take: () => void
+  // The screen is parked and draws nothing: it gives its context back.
+  readonly release: () => void
+  // The font may have changed under glyphs already drawn.
+  readonly refresh: () => void
+  readonly dispose: () => void
+}
+
+type Member<Target> = {
+  readonly target: Target
+  shown: boolean
+  drawing?: Drawing | undefined
+  // When the screen began waiting, among the shown ones; the longest waiting goes first.
+  since: number
+  losses: number
+  // Lost its context and waits for the next take.
+  lost: boolean
+  // The addon threw while loading; this screen stays on the DOM renderer.
+  failed: boolean
+}
+
+export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
+  const members = new Set<Member<Target>>()
+  let held = 0
+  let clock = 0
+  let supported: boolean | undefined
+  let unwatch: (() => void) | undefined
+
+  const usable = (): boolean => {
+    supported ??= deps.supported()
+    return supported && !deps.ligatures()
+  }
+
+  const drop = (member: Member<Target>): void => {
+    const { drawing } = member
+    if (!drawing) return
+    member.drawing = undefined
+    held -= 1
+    // Disposing the addon returns xterm to the DOM renderer.
+    drawing.dispose()
+  }
+
+  // Gives free slots to the shown screens on the DOM renderer, longest waiting first.
+  const fill = (): void => {
+    while (held < deps.cap && usable()) {
+      let next: Member<Target> | undefined
+      for (const member of members) {
+        if (!member.shown || member.drawing || member.lost || member.failed) continue
+        if (member.losses >= lossesAllowed) continue
+        if (!next || member.since < next.since) next = member
+      }
+      if (!next) return
+      const member = next
+      try {
+        const drawing = deps.load(member.target)
+        member.drawing = drawing
+        held += 1
+        drawing.onContextLoss(() => {
+          if (member.drawing !== drawing) return
+          member.losses += 1
+          member.lost = true
+          drop(member)
+          fill()
+        })
+      } catch {
+        member.failed = true
+      }
+    }
+  }
+
+  const changed = (): void => {
+    if (usable()) return fill()
+    for (const member of members) drop(member)
+  }
+
+  return {
+    screen: (target: Target): ScreenRenderer => {
+      const member: Member<Target> = {
+        target,
+        shown: false,
+        since: 0,
+        losses: 0,
+        lost: false,
+        failed: false,
+      }
+      members.add(member)
+      unwatch ??= deps.watchLigatures(changed)
+      const leave = (): void => {
+        member.shown = false
+        drop(member)
+        fill()
+      }
+      return {
+        take: () => {
+          if (!member.shown) member.since = clock++
+          member.shown = true
+          member.lost = false
+          fill()
+        },
+        release: leave,
+        refresh: () => member.drawing?.clearTextureAtlas(),
+        dispose: () => {
+          leave()
+          members.delete(member)
+          if (members.size > 0) return
+          unwatch?.()
+          unwatch = undefined
+        },
+      }
+    },
+  }
+}
+
+export type Renderers = ReturnType<typeof createRenderers<Terminal>>
+
+let probed: boolean | undefined
+const software = /swiftshader|llvmpipe|softpipe|software|basic render/i
+// Whether the page can have a hardware WebGL 2 context, found once. Software WebGL draws
+// slower than the DOM renderer, and two checks tell it apart: `failIfMajorPerformanceCaveat`
+// makes Chromium refuse a context that would run on software, but it does not always flag
+// SwiftShader as a major caveat (headless Chromium gets a context anyway), so the
+// context's renderer name is read as well; Microsoft's Basic Render Driver is the Windows
+// one. The probe's context is freed at once so it doesn't take one of the page's slots.
+export const probeWebgl = (): boolean => {
+  if (probed !== undefined) return probed
+  probed = false
+  if (typeof WebGL2RenderingContext === "undefined") return probed
+  try {
+    const context = document
+      .createElement("canvas")
+      .getContext("webgl2", { failIfMajorPerformanceCaveat: true })
+    if (!context) return probed
+    const info = context.getExtension("WEBGL_debug_renderer_info")
+    const renderer: unknown = context.getParameter(
+      info ? info.UNMASKED_RENDERER_WEBGL : context.RENDERER,
+    )
+    probed = !software.test(String(renderer))
+    context.getExtension("WEBGL_lose_context")?.loseContext()
+  } catch {
+    // No context, as without a GPU.
+  }
+  return probed
+}
+
+// The ligatures setting is one attribute on the page's root, set from Preferences.
+const watchRoot = (changed: () => void): (() => void) => {
+  const observer = new MutationObserver(changed)
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-ligatures"],
+  })
+  return () => observer.disconnect()
+}
+
+const browserDeps: RendererDeps<Terminal> = {
+  load: (xterm) => {
+    const addon = new WebglAddon()
+    try {
+      xterm.loadAddon(addon)
+    } catch (error) {
+      addon.dispose()
+      throw error
+    }
+    return addon
+  },
+  supported: probeWebgl,
+  cap: contextCap,
+  // The trade-off: ligatures render through CSS `font-variant-ligatures`, which only the
+  // DOM renderer gets; WebGL draws per cell and cannot join glyphs. So every screen stays on
+  // the DOM renderer while they are on (no ligatures addon for now).
+  ligatures: () => document.documentElement.dataset.ligatures === "on",
+  watchLigatures: watchRoot,
+}
+
+let page: Renderers | undefined
+// The page's pool: the context budget is the page's, whichever backend's screens draw.
+export const pageRenderers = (): Renderers => (page ??= createRenderers(browserDeps))

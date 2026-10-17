@@ -12,6 +12,7 @@ import { followTerminal, type FollowedTerminal, type Screen } from "./follow"
 import { linkTerminal } from "./links"
 import { clipboardAccess, takeCtrlV, takeFilePastes, type PasteTarget } from "./paste"
 import { silenceQueries } from "./queries"
+import { pageRenderers, type ScreenRenderer } from "./renderer"
 
 // The sizes the runner accepts.
 const clamp = (value: number, min: number, max: number): number =>
@@ -94,6 +95,8 @@ export type RunnerScreen = {
   readonly host: HTMLDivElement
   readonly xterm: Terminal
   readonly followed: FollowedTerminal
+  // Which renderer draws it: WebGL while shown and a context is free, else the DOM one.
+  readonly renderer: ScreenRenderer
   readonly stream: Store<ScreenStream>
   // Why the last paste failed, for a few seconds after it did.
   readonly notice: Store<string | null>
@@ -171,6 +174,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     xterm.unicode.activeVersion = "15-graphemes"
     linkTerminal(xterm)
     xterm.open(element)
+    const renderer = pageRenderers().screen(xterm)
     const queries = silenceQueries(xterm)
     xterm.textarea?.setAttribute("data-terminal-input", "")
     xterm.textarea?.setAttribute("aria-label", `Input for ${name}`)
@@ -205,6 +209,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       host: element,
       xterm,
       followed,
+      renderer,
       stream,
       notice,
       waiting,
@@ -287,6 +292,8 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     const measure = (font: string): void => {
       if (xterm.options.fontFamily === font) xterm.options.fontFamily = "monospace"
       xterm.options.fontFamily = font
+      // Glyphs the WebGL atlas drew in the family's fallback stay cached under its name.
+      renderer.refresh()
       followed.refit()
     }
     // The theme's font, once it has loaded: a bundled font still on its way arrives later,
@@ -350,6 +357,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       clearTimeout(noticed)
       queries.dispose()
       followed.stop()
+      renderer.dispose()
       xterm.dispose()
       element.remove()
     }
@@ -390,6 +398,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       entry.parking = undefined
       entry.screen ??= open(key, entry, options)
       entry.screen.followed.unpark()
+      entry.screen.renderer.take()
       return entry.screen
     },
     release: (key: TerminalKey): void => {
@@ -401,7 +410,9 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       clearTimeout(entry.parking)
       entry.parking = setTimeout(() => {
         entry.parking = undefined
-        if (entry.users === 0) entry.screen?.followed.park()
+        if (entry.users !== 0) return
+        entry.screen?.followed.park()
+        entry.screen?.renderer.release()
       }, parkMs)
     },
     // Pastes text into the terminal's screen as the person's own paste: bracketed when its
