@@ -5,6 +5,9 @@ import { createRenderers, probeWebgl, wantsWebgl, type Drawing } from "./rendere
 
 const setup = ({ cap = 2, supported = true, failing = false } = {}) => {
   const state = { ligatures: false, failing, loads: 0 }
+  // Work the pool leaves until the moment is over, run when the test says it is.
+  const deferred: (() => void)[] = []
+  const log: string[] = []
   let changed = (): void => {}
   const drawings = new Map<string, FakeDrawing>()
   class FakeDrawing implements Drawing {
@@ -16,13 +19,18 @@ const setup = ({ cap = 2, supported = true, failing = false } = {}) => {
       return { dispose: () => {} }
     }
     clearTextureAtlas = () => void (this.cleared += 1)
-    dispose = () => void (this.disposed = true)
+    constructor(readonly name: string) {}
+    dispose = () => {
+      this.disposed = true
+      log.push(`drop ${this.name}`)
+    }
   }
   const pool = createRenderers<string>({
     load: (name) => {
       state.loads += 1
+      log.push(`load ${name}`)
       if (state.failing) throw new Error("no context")
-      const drawing = new FakeDrawing()
+      const drawing = new FakeDrawing(name)
       drawings.set(name, drawing)
       return drawing
     },
@@ -33,6 +41,7 @@ const setup = ({ cap = 2, supported = true, failing = false } = {}) => {
       changed = listener
       return () => {}
     },
+    defer: (work) => void deferred.push(work),
   })
   const live = (name: string): boolean => {
     const drawing = drawings.get(name)
@@ -42,6 +51,9 @@ const setup = ({ cap = 2, supported = true, failing = false } = {}) => {
     pool,
     state,
     live,
+    log,
+    // The moment is over: what the pool left for then runs.
+    settle: () => deferred.splice(0).forEach((work) => work()),
     drawing: (name: string) => drawings.get(name)!,
     ligatures: (on: boolean) => {
       state.ligatures = on
@@ -192,14 +204,16 @@ describe("the renderer budget", () => {
       expect([live("a"), live("b")]).toEqual([true, true])
     })
 
-    it("gives a waiting screen the context of the one idle longest", () => {
-      const { pool, live } = setup()
+    it("gives a waiting screen the context of the one idle longest, once the moment is over", () => {
+      const { pool, live, settle } = setup()
       const [a, b, c] = ["a", "b", "c"].map((name) => pool.screen(name))
       a!.take()
       b!.take()
       b!.idle()
       a!.idle()
       c!.take()
+      expect(live("c")).toBe(false)
+      settle()
       expect([live("a"), live("b"), live("c")]).toEqual([true, false, true])
     })
 
@@ -212,13 +226,14 @@ describe("the renderer budget", () => {
       expect([live("a"), live("b"), live("c")]).toEqual([true, true, false])
     })
 
-    it("lets the screen that lost its context draw again when it is shown", () => {
-      const { pool, live } = setup()
+    it("lets a screen whose context went to a waiter draw again when it is shown", () => {
+      const { pool, live, settle } = setup()
       const [a, b, c] = ["a", "b", "c"].map((name) => pool.screen(name))
       a!.take()
       b!.take()
       a!.idle()
       c!.take()
+      settle()
       expect(live("a")).toBe(false)
       c!.release()
       a!.take()
@@ -234,6 +249,30 @@ describe("the renderer budget", () => {
       c!.idle()
       a!.release()
       expect(live("c")).toBe(false)
+    })
+
+    it("gives an idle screen's context to a screen already waiting", () => {
+      const { pool, live, settle } = setup()
+      const [a, b, c] = ["a", "b", "c"].map((name) => pool.screen(name))
+      a!.take()
+      b!.take()
+      c!.take()
+      a!.idle()
+      settle()
+      expect([live("a"), live("c")]).toEqual([false, true])
+    })
+
+    it("takes nothing from screens shown again in the same moment, waiter or not", () => {
+      const { pool, live, log, settle } = setup({ cap: 3 })
+      const [t1, t2, t3, t4] = ["t1", "t2", "t3", "t4"].map((name) => pool.screen(name))
+      for (const screen of [t1, t2, t3, t4]) screen!.take()
+      log.length = 0
+      // A view switch: every surface goes, and all come back, the waiter first.
+      for (const screen of [t1, t2, t3, t4]) screen!.idle()
+      for (const screen of [t4, t1, t2, t3]) screen!.take()
+      settle()
+      expect(log).toEqual([])
+      expect([live("t1"), live("t2"), live("t3"), live("t4")]).toEqual([true, true, true, false])
     })
 
     it("does not churn when screens are released and taken again in one go", () => {
@@ -253,12 +292,13 @@ describe("the renderer budget", () => {
     })
 
     it("tells the screen that loses its context", () => {
-      const { pool } = setup({ cap: 1 })
+      const { pool, settle } = setup({ cap: 1 })
       const told: string[] = []
       const a = pool.screen("a", () => told.push("a"))
       a.take()
       a.idle()
       pool.screen("b").take()
+      settle()
       expect(told).toEqual(["a", "a"])
     })
   })

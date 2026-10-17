@@ -37,6 +37,8 @@ export type RendererDeps<Target> = {
   // Whether ligatures are on, and a way to hear when that changes.
   readonly ligatures: () => boolean
   readonly watchLigatures: (changed: () => void) => () => void
+  // Runs work once the current task's synchronous work is over; a microtask by default.
+  readonly defer?: (work: () => void) => void
 }
 
 // One screen's side of the pool.
@@ -45,7 +47,8 @@ export type ScreenRenderer = {
   // where WebGL isn't wanted, it stays on the DOM renderer and gives back one it holds.
   readonly take: (webgl?: boolean) => void
   // Nothing shows the screen now, though it may be shown again at once, as in a view
-  // switch: it keeps its context unless a shown screen is waiting for one. `take` ends it.
+  // switch: once that moment is over, a shown screen waiting for a context takes its own.
+  // `take` ends it.
   readonly idle: () => void
   // The screen is parked and draws nothing: it gives its context back.
   readonly release: () => void
@@ -79,6 +82,8 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
   let clock = 0
   let supported: boolean | undefined
   let unwatch: (() => void) | undefined
+  let stealing = false
+  const defer = deps.defer ?? queueMicrotask
 
   // Ligatures keep every screen on the DOM renderer (see `browserDeps.ligatures`).
   const usable = (): boolean => {
@@ -108,9 +113,23 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
     return true
   }
 
+  // Takes idle screens' contexts for waiting ones, once the moment is over. A view switch
+  // releases every surface and acquires them again in one go: stealing in its middle
+  // would take the context of a screen about to be shown again, which would take the next
+  // one's, down the line.
+  const later = (): void => {
+    if (stealing) return
+    stealing = true
+    defer(() => {
+      stealing = false
+      fill(true)
+    })
+  }
+
   // Gives free slots to the shown screens on the DOM renderer, longest waiting first. A
-  // screen nobody shows at the moment keeps its context until one of them has none to take.
-  const fill = (): void => {
+  // screen nobody shows at the moment keeps its context until one of them has none to
+  // take, and then only once the moment is over (`later`).
+  const fill = (fromIdle = false): void => {
     while (usable()) {
       let next: Member<Target> | undefined
       for (const member of members) {
@@ -119,7 +138,10 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
         if (!next || member.since < next.since) next = member
       }
       if (!next) return
-      if (held >= deps.cap && !steal()) return
+      if (held >= deps.cap) {
+        if (!fromIdle) return later()
+        if (!steal()) return
+      }
       const member = next
       try {
         const drawing = deps.load(member.target)
@@ -184,6 +206,7 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
           if (!member.shown || member.idle) return
           member.idle = true
           member.idleSince = clock++
+          later()
         },
         release: leave,
         refresh: () => member.drawing?.clearTextureAtlas(),
