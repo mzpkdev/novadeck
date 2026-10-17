@@ -46,7 +46,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
 
 const budgetOf = (budget: Budget): number => (typeof budget === "object" ? budget.budget : budget)
-const raiseForm = '{ "budget": n, "reason": "why", "from": "#PR or commit" }'
+const raiseForm = '{ "budget": n, "reason": "why", "from": "#PR" }'
 
 // Reads a reading file's contents, failing on anything the gate couldn't see whole: a
 // counter it can't see must not pass as within budget.
@@ -159,25 +159,29 @@ export type BudgetChange = {
   readonly problem?: string
 }
 
-// Why a raise can't stand, if it can't: it must say why, and name where it came from: the
-// pull request it is in, when that is known, or else anything but the source of the raise
-// it replaces.
+// Why a raise, or a new budget in a phase the base has, can't stand, if it can't: it must
+// say why, and name where it came from: the pull request it is in, when that is known, or
+// else anything but the source of the raise it replaces.
 const raiseProblem = (
   entry: Budget,
-  was: Budget,
+  was: Budget | undefined,
   pullRequest: number | undefined,
 ): string | undefined => {
   const why = typeof entry === "object" ? entry : undefined
-  if (!said(why?.reason) || !said(why.from)) return `A raised budget is written ${raiseForm}.`
+  if (!said(why?.reason) || !said(why.from))
+    return `${was === undefined ? "A new" : "A raised"} budget is written ${raiseForm}.`
   if (pullRequest !== undefined && !new RegExp(`#${pullRequest}\\b`).test(why.from))
     return `This raise is in #${pullRequest}; name it in "from".`
   if (typeof was === "object" && why.from.trim() === was.from.trim())
-    return `This raise names the earlier raise's source (${why.from}); name its own pull request or commit.`
+    return `This raise names the earlier raise's source (${why.from}); name its own pull request.`
   return undefined
 }
 
-// Every budget this change moves against the base branch's. A cut needs no reason; a
-// budget the base doesn't have, as a counter added or renamed, shows as new. `pullRequest` is the number of the pull request the change is in, if any.
+// Every budget this change moves against the base branch's. A cut needs no reason. A
+// budget the base doesn't have shows as new: one in a phase the base has, as a counter
+// added or renamed, needs a reason as a raise does; one in a phase it doesn't, as after
+// the phases' rename, doesn't. `pullRequest` is the number of the pull request the change
+// is in, if any.
 export const budgetChanges = (
   budgets: Budgets,
   base: BaseBudgets,
@@ -187,18 +191,19 @@ export const budgetChanges = (
     gated.flatMap((counter) => {
       const was = base[phase]?.[counter]
       const entry = budgets[phase][counter]
-      if (was === undefined) return [{ phase, counter, to: budgetOf(entry) }]
       const to = budgetOf(entry)
-      const from = budgetOf(was)
-      if (to === from) return []
-      if (to < from) return [{ phase, counter, from, to }]
+      const from = was === undefined ? undefined : budgetOf(was)
+      if (from === to) return []
+      if (from !== undefined && to < from) return [{ phase, counter, from, to }]
       const why = typeof entry === "object" ? entry : undefined
-      const problem = raiseProblem(entry, was, pullRequest)
+      const known = gated.some((other) => base[phase]?.[other] !== undefined)
+      const problem =
+        from === undefined && !known ? undefined : raiseProblem(entry, was, pullRequest)
       return [
         {
           phase,
           counter,
-          from,
+          ...(from === undefined ? {} : { from }),
           to,
           ...(said(why?.reason) ? { reason: why.reason } : {}),
           ...(said(why?.from) ? { source: why.from } : {}),
@@ -207,6 +212,24 @@ export const budgetChanges = (
       ]
     }),
   )
+
+// The budgets the base branch's file has that this one doesn't, as a counter or phase
+// renamed or dropped, read from the file as it is: "phase counter n".
+export const goneBudgets = (budgets: Budgets, base: unknown): string[] => {
+  if (!isRecord(base)) return []
+  return Object.entries(base).flatMap(([phase, counters]) =>
+    phase === "notes" || !isRecord(counters)
+      ? []
+      : Object.entries(counters).flatMap(([counter, entry]) => {
+          if (counter === "ticks") return []
+          const count = isRecord(entry) ? entry.budget : entry
+          const kept = (budgets as unknown as Record<string, Record<string, unknown> | undefined>)[
+            phase
+          ]?.[counter]
+          return isCount(count) && kept === undefined ? [`${phase} ${counter} ${count}`] : []
+        }),
+  )
+}
 
 // Whether the base has any budget the comparison can use: one with none, as after a
 // rename of every phase, compares with nothing.
@@ -238,11 +261,14 @@ export const countersSummary = (
     changes = [],
     scripts = [],
     tickNotes = [],
+    gone = [],
     compared = true,
   }: {
     readonly changes?: readonly BudgetChange[]
     readonly scripts?: readonly string[]
     readonly tickNotes?: readonly string[]
+    // Budgets the base has that this change drops, as "phase counter n".
+    readonly gone?: readonly string[]
     // Whether the budgets were compared with the base branch's.
     readonly compared?: boolean
   } = {},
@@ -270,12 +296,13 @@ export const countersSummary = (
       ? []
       : ["> ⚠️ No base budgets to compare with: budget changes aren't checked.", ""]),
     ...scripts.flatMap((script) => [`> ❌ ${script}`, ""]),
-    ...(changes.length || tickNotes.length
+    ...(changes.length || tickNotes.length || gone.length
       ? [
           "This pull request changes budgets:",
           "",
           ...tickNotes.map((note) => `- ${note}: its counts are totals over the new number.`),
-          ...(tickNotes.length ? [""] : []),
+          ...gone.map((budget) => `- ${cell(budget)}: no longer budgeted.`),
+          ...(tickNotes.length || gone.length ? [""] : []),
           "| Phase | Counter | Budget | Why | From |",
           "| --- | --- | --- | --- | --- |",
           ...changeRows,

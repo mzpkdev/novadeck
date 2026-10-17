@@ -1272,7 +1272,9 @@ or, for work that really costs more, raise the budget in the same pull request, 
 (on main, any source but the raise it replaces). The job summary shows every budget the pull request changes, old to new, and a
 raise without its reason and its own pull request fails. The base branch's budgets are
 read only as far as the comparison needs, so a change to the file's form lands in one pull
-request; a budget the base lacks shows as new. A count under its budget asks for the
+request. A budget the base lacks shows as new, and needs a reason as a raise does when its
+phase is one the base has; one the base has and the change drops shows as no longer
+budgeted. A base that shares no budget with the change only warns. A count under its budget asks for the
 budget to come down, so the gain stays. Each phase's budgets record the ticks its script
 plays, so a script that plays another number fails until its budgets are set for it.
 Commits and component renders are reported in the job summary, never gated. Each run's

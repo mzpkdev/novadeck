@@ -7,6 +7,7 @@ import {
   countersSummary,
   parseBaseBudgets,
   parseBudgets,
+  goneBudgets,
   parseReading,
   sharesBudgets,
   tickChanges,
@@ -30,25 +31,27 @@ export const main = (basePath = process.argv[2]): void => {
   const reading = parseReading(readJson(readingPath))
   const budgets = parseBudgets(readJson(budgetsPath), budgetsPath)
   if (basePath && !existsSync(basePath)) throw new Error(`No base budgets at ${basePath}.`)
-  const read = basePath
-    ? parseBaseBudgets(readJson(basePath), "The base branch's budget file")
-    : undefined
-  // A base that shares no budget with this change compares with nothing.
-  const base = read && sharesBudgets(read) ? read : undefined
+  const raw = basePath ? readJson(basePath) : undefined
+  const base = basePath ? parseBaseBudgets(raw, "The base branch's budget file") : undefined
+  // A base that shares no budget with this change compares with nothing: every budget
+  // shows as new, and the gate warns.
+  const compared = base !== undefined && sharesBudgets(base)
   const pullRequest = Number(process.env.PULL_REQUEST) || undefined
   const rows = checkCounters(reading, budgets)
   const scripts = changedScripts(reading, budgets)
   const changes = base ? budgetChanges(budgets, base, pullRequest) : []
   const tickNotes = base ? tickChanges(budgets, base) : []
+  const gone = base ? goneBudgets(budgets, raw) : []
   const summary = countersSummary(reading, rows, {
     changes,
     scripts,
     tickNotes,
-    compared: Boolean(base),
+    gone,
+    compared,
   })
   console.log(summary)
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary)
-  if (!base)
+  if (!compared)
     console.error(
       "::warning title=Budgets not compared::No base budgets to compare with, so budget changes aren't checked.",
     )
@@ -65,7 +68,7 @@ export const main = (basePath = process.argv[2]): void => {
   const unexplained = changes.filter((change) => change.problem)
   for (const { phase, counter, from, to, problem } of unexplained)
     console.error(
-      `::error title=Budget raise not explained::${oneLine(`${phase} ${counter} went from ${from} to ${to}. ${problem}`)}`,
+      `::error title=Budget raise not explained::${oneLine(`${phase} ${counter} ${from === undefined ? `is new at ${to}` : `went from ${from} to ${to}`}. ${problem}`)}`,
     )
   process.exitCode = over.length || scripts.length || unexplained.length ? 1 : 0
 }

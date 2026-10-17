@@ -6,6 +6,7 @@ import {
   countersSummary,
   parseBaseBudgets,
   parseBudgets,
+  goneBudgets,
   parseReading,
   sharesBudgets,
   tickChanges,
@@ -224,15 +225,40 @@ describe("the counter run's budgets", () => {
     it("compares the budgets both have, so a change of form can land", () => {
       const { ticks: _, streamingPeak: __, ...older } = budget
       const base = parseBaseBudgets({ grid: older, focus: older }, "base")
-      const next = { ...budgets, grid: { ...budget, streamingPeak: 99 } }
-      expect(budgetChanges(next, base)).toEqual([
-        { phase: "grid", counter: "streamingPeak", to: 99 },
-        { phase: "focus", counter: "streamingPeak", to: 13 },
-        ...["notifications", "mutations", "bytes", "streamingPeak", "streamingSettled"].map(
-          (counter) => ({ phase: "switches", counter, to: budget[counter as keyof typeof budget] }),
-        ),
+      const changes = budgetChanges(budgets, base)
+      expect(changes.filter((change) => change.phase !== "switches")).toEqual([
+        expect.objectContaining({ phase: "grid", counter: "streamingPeak", to: 13 }),
+        expect.objectContaining({ phase: "focus", counter: "streamingPeak", to: 13 }),
       ])
-      expect(tickChanges(next, base)).toEqual([])
+      expect(tickChanges(budgets, base)).toEqual([])
+    })
+
+    it("asks a counter new to a phase the base has for its reason, as a raise", () => {
+      const { streamingPeak: _, ...older } = budget
+      const base = parseBaseBudgets({ ...budgets, grid: older }, "base")
+      expect(budgetChanges(budgets, base)[0]).toMatchObject({
+        counter: "streamingPeak",
+        problem: expect.stringContaining("A new budget is written"),
+      })
+      const explained = {
+        ...budgets,
+        grid: { ...budget, streamingPeak: { budget: 13, reason: "Counted now", from: "#260" } },
+      }
+      const [change] = budgetChanges(explained, base, 260)
+      expect(change).toEqual({
+        phase: "grid",
+        counter: "streamingPeak",
+        to: 13,
+        reason: "Counted now",
+        source: "#260",
+      })
+    })
+
+    it("takes a whole new phase as new, needing no reason", () => {
+      const { switches: _, ...older } = budgets
+      const changes = budgetChanges(budgets, parseBaseBudgets(older, "base"))
+      expect(changes.every((change) => change.phase === "switches" && !change.problem)).toBe(true)
+      expect(changes).toHaveLength(5)
     })
 
     it("still fails on a budget it has that doesn't read", () => {
@@ -265,6 +291,18 @@ describe("the counter run's budgets", () => {
       expect(countersSummary(reading, checkCounters(reading, budgets), { changes })).toContain(
         "| switches | bytes | new → 500 | not in the base |  |",
       )
+    })
+  })
+
+  context("when the change drops a budget the base has", () => {
+    it("lists it as no longer budgeted, renamed or not", () => {
+      const base = { ...budgets, grid: { ...budget, wireBytes: 480 }, legacy: { bytes: 9 } }
+      const gone = goneBudgets(budgets, base)
+      expect(gone).toEqual(["grid wireBytes 480", "legacy bytes 9"])
+      expect(countersSummary(reading, checkCounters(reading, budgets), { gone })).toContain(
+        "- grid wireBytes 480: no longer budgeted.",
+      )
+      expect(goneBudgets(budgets, budgets)).toEqual([])
     })
   })
 })
