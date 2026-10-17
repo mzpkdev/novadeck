@@ -66,7 +66,10 @@ export const startClock = (changes: () => number): Clock => {
   })
   // Real frames, while the page keeps changing since `seen`.
   const settle = async (seen: number): Promise<void> => {
-    for (let round = 0; round < realFramesAtMost && changes() !== seen; round += 1) {
+    for (let round = 0; changes() !== seen; round += 1) {
+      // A page that never settles would spill into the frames after: fail rather than count.
+      if (round === realFramesAtMost)
+        throw new Error(`The page still changed after ${realFramesAtMost} real frames`)
       seen = changes()
       // eslint-disable-next-line no-await-in-loop -- One real frame after another.
       await inAct(nextRealFrame)

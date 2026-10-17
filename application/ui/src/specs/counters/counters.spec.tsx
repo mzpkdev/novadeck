@@ -28,14 +28,22 @@ const loadFonts = async (): Promise<void> => {
 
 // The views' code loads when a view first shows, in real time. A warm-up on the real clock
 // shows each view the script does, so in the run their code is there at once, whatever the
-// machine's speed; then the page starts over, as the run expects.
+// machine's speed. Then it all goes, still on the real clock: its terminals close, so their
+// screens and streams go; the app and its connection close; and the timers they leave (a
+// screen parks 5 s after it was last shown, closing waits up to 2 s for the last saves)
+// run out before the counted run starts.
+const leftoverMs = 6_000
 const warmUp = async (): Promise<void> => {
-  const connection = await scriptedRunner({ terminals: 13 }).connect(new AbortController().signal)
+  const runner = scriptedRunner({ terminals: 13 })
+  const connection = await runner.connect(new AbortController().signal)
   await render(<App createBackend={connection.createBackend} />)
   await layoutSettled()
   await chooseView("Focus")
+  runner.closeAll()
+  await expect.poll(() => runner.streaming()).toBe(0)
   await cleanup()
   connection.close()
+  await new Promise((resolve) => setTimeout(resolve, leftoverMs))
   localStorage.clear()
   sessionStorage.clear()
   window.history.replaceState(null, "", "/")
@@ -48,10 +56,10 @@ describe("Counter run", () => {
     const runner = scriptedRunner({ terminals: 13 })
     const stopMutations = observeMutations()
     const clock = startClock(() => counts.commits + counts.mutations)
-    const connecting = new AbortController()
+    let connection: Awaited<ReturnType<typeof runner.connect>> | undefined
     try {
       // The app connects and loads the workspace on the clock, as everything after does.
-      const connection = await clock.until(runner.connect(connecting.signal))
+      connection = await clock.until(runner.connect(new AbortController().signal))
       // Rendering takes its own `act`; the clock's frames then let the app settle.
       await render(<App createBackend={connection.createBackend} />)
       await clock.frames(60)
@@ -64,8 +72,10 @@ describe("Counter run", () => {
       expect(reading.grid.bytes).toBe(reading.grid.written)
       // Focus parks what it doesn't show, so most of the output never arrives.
       expect(reading.focus.bytes).toBeLessThan(reading.focus.written)
+      // The app called nothing the script doesn't play.
+      expect(runner.unscripted()).toEqual([])
     } finally {
-      connecting.abort()
+      connection?.close()
       stopMutations()
       clock.stop()
     }

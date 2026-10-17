@@ -1243,14 +1243,16 @@ checks validate both entry assets and deferred chunks with relative packaged pat
 
 `src/specs/counters/` measures what busy agents cost the UI. It isn't a behaviour spec. It
 boots the real app, its runner adapter and the real runner client over a scripted runner
-(`backend/runner/scripted.ts`): the contract served by oRPC over an in-memory port. It
-is the one spec that may reach that adapter. It runs on a fake clock: timers, animation
+(`backend/runner/scripted.ts`): the whole contract served by oRPC over an in-memory port,
+so a procedure the contract adds is a type error there. It is the one spec that may reach
+that adapter. A warm-up on the real clock loads the views' code first and lets its timers
+run out. It runs on a fake clock: timers, animation
 frames, `Date` and `performance` move only when the script moves them, React works inside
 `act`, and a frame that changed the page waits real frames until it is still. The fixed
 script plays 13 Claude terminals' status-line ticks and output in Grid, then in Focus once
 the terminals Focus doesn't show have parked, then switches between them in Focus. It
-counts store listeners woken and DOM mutation records per tick, output bytes reaching
-the UI, and terminals streaming at once. React commits and component renders per tick
+counts store listeners woken and DOM mutation records per tick, output bytes the runner
+sends the UI, and terminals streaming at once. React commits and component renders per tick
 are counted beside them. To count, it wraps `model/store`'s factories and stands in for
 React DevTools' hook. Every run gives the same counts. Run it with
 `pnpm --filter @novadeck/ui exec vitest run --project counters`; it leaves its reading in
