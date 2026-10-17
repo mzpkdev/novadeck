@@ -11,7 +11,7 @@ import { Terminal } from "@novadeck/emulator/headless"
 import { box as agyBox } from "@novadeck/harness-agy/box"
 import { box as claudeBox } from "@novadeck/harness-claude/box"
 import { box as codexBox } from "@novadeck/harness-codex/box"
-import { compact } from "@novadeck/harness-core/box"
+import { compact } from "@novadeck/tui-input/box"
 
 import { screenText } from "../../terminals/screen.js"
 import { setups } from "../agents/index.js"

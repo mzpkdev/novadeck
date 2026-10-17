@@ -6,7 +6,7 @@ import {
   ruledBox,
   type BoxProfile,
   type Markers,
-} from "@novadeck/harness-core/box"
+} from "@novadeck/tui-input/box"
 
 /** The markers leading its box's first row: `>` as a prompt, `!` in its shell mode. */
 const markers: Markers = { prompt: ">", shell: "!" }

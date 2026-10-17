@@ -13,7 +13,6 @@ import {
   type Terminal as Screen,
 } from "@novadeck/emulator/headless"
 import { applyWidths } from "@novadeck/emulator/width"
-import { isEmpty, type BoxProfile } from "@novadeck/harness-core/box"
 import type { RequestFacts } from "@novadeck/harness-core/dialogs"
 import type {
   ActivityEvent,
@@ -74,6 +73,7 @@ import {
   withLocale,
   type Line,
 } from "@novadeck/terminal/shell"
+import { isEmpty, type BoxProfile } from "@novadeck/tui-input/box"
 import * as pty from "node-pty"
 
 import { readPlanFile, type PlanText } from "../companions/content.js"

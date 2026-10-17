@@ -1,8 +1,8 @@
 import { setTimeout as sleep } from "node:timers/promises"
 
 import type { ScreenText } from "@novadeck/emulator/headless"
-import { isEmpty, sameText, wrappedRows, type BoxProfile } from "@novadeck/harness-core/box"
 import { normalisedText, promptRefusal, shellCommand } from "@novadeck/protocol"
+import { isEmpty, sameText, wrappedRows, type BoxProfile } from "@novadeck/tui-input/box"
 
 import { DomainError } from "../errors.js"
 import type { HoldBudget, InputEntry, InputQueue } from "./input-queue.js"
