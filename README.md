@@ -1246,7 +1246,7 @@ boots the real app, its runner adapter and the real runner client over a scripte
 (`backend/runner/scripted.ts`): the whole contract served by oRPC over an in-memory port,
 so a procedure the contract adds is a type error there. It is the one spec that may reach
 that adapter. A warm-up on the real clock loads the views' code first, then closes and
-waits out its timers. The run itself is on a fake clock: timers, animation frames, `Date`
+waits out the timers that act (a screen parks 5 s after it was last shown). The run itself is on a fake clock: timers, animation frames, `Date`
 and `performance` move only when the script moves them, React works inside `act`, and a
 frame that changed the page waits real frames until it is still. The fixed script plays
 13 Claude terminals' status-line ticks and output in Grid, then in Focus once the

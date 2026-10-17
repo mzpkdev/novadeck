@@ -12,10 +12,14 @@ export type Store<S> = {
 export type MutableStore<S> = Store<S> & { readonly update: (change: (state: S) => S) => S }
 
 // Test instrumentation: told of each listener a store wakes. The counter run counts them
-// through it; it does nothing otherwise.
+// through it, until the returned restore; it does nothing otherwise.
 let woken = (): void => {}
-export const countListenersWoken = (count: () => void): void => {
+export const countListenersWoken = (count: () => void): (() => void) => {
+  const previous = woken
   woken = count
+  return () => {
+    woken = previous
+  }
 }
 
 const createListeners = () => {

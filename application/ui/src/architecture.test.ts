@@ -234,7 +234,7 @@ const importViolation = (file: string, layer: string | undefined) => {
     if (targetLayer && adapterOf(targetLayer) && targetLayer !== layer)
       return file === adapterSelection ||
         ((isTest(file) || layer === "specs/") && target === specBackend) ||
-        (file.startsWith(counterRun) && target === scriptedRunner)
+        (file.startsWith(counterRun) && counterRunReaches.includes(target))
         ? []
         : [`${file} -> ${target} (only ${adapterSelection} selects an adapter)`]
     if (file.startsWith(counterRun) && counterRunReaches.includes(target)) return []
@@ -299,6 +299,16 @@ describe("UI architecture", () => {
       )
       .map((reached) => `${counterRun} -> ${reached}`)
     expect([...deadLayers, ...deadVendors, ...deadExceptions]).toEqual([])
+  })
+
+  it("keeps the stores' instrumentation hook to the counter run", () => {
+    const found = files.filter(
+      (file) =>
+        /\bcountListenersWoken\b/.test(source(file)) &&
+        file !== "model/store.ts" &&
+        !file.startsWith(counterRun),
+    )
+    expect(found).toEqual([])
   })
 
   it("keeps imports statically resolvable", () => {

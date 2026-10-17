@@ -58,7 +58,7 @@ const warmUp = async (): Promise<void> => {
 
 describe("Counter run", () => {
   it("counts what 13 busy agents cost the UI", async () => {
-    countNotifications()
+    const stopNotifications = countNotifications()
     await loadFonts()
     await warmUp()
     const runner = scriptedRunner({ terminals: 13 })
@@ -89,10 +89,18 @@ describe("Counter run", () => {
       expect(reading.focus.bytes).toBeLessThan(reading.focus.written)
     } finally {
       stopMutations()
+      stopNotifications()
       clock.stop()
-      if (connection) await close(runner, connection)
+      // Soft, so a run that already failed reports its own failure first.
+      const closing =
+        connection &&
+        (await close(runner, connection).then(
+          () => undefined,
+          (error: unknown) => error,
+        ))
+      expect.soft(closing, "closing the app and its connection").toBeUndefined()
+      // The app called nothing the script doesn't play, the run failing or not.
+      expect.soft(runner.unscripted()).toEqual([])
     }
-    // The app called nothing the script doesn't play, the run failing or not.
-    expect(runner.unscripted()).toEqual([])
   })
 })

@@ -477,7 +477,7 @@ export const scriptedRunner = ({ terminals: count }: { readonly terminals: numbe
       attach: api.terminals.attach.handler(async function* ({ input, signal }) {
         const { terminalId } = input
         const summary = summaries.get(terminalId)
-        if (!summary) throw new Error(`No terminal ${terminalId}`)
+        if (!summary) throw new ORPCError("TERMINAL_NOT_FOUND", { status: 404 })
         const events = channel<TerminalEvent>()
         const held = streams.get(terminalId) ?? new Set()
         streams.set(terminalId, held.add(events))

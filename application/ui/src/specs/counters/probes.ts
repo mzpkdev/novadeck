@@ -17,8 +17,9 @@ export type Counts = {
 
 export const counts: Counts = { notifications: 0, mutations: 0, commits: 0, renders: 0 }
 
-// Counts every listener a store wakes, through the stores' own hook.
-export const countNotifications = (): void =>
+// Counts every listener a store wakes, through the stores' own hook, until the returned
+// stop.
+export const countNotifications = (): (() => void) =>
   countListenersWoken(() => {
     counts.notifications += 1
   })
