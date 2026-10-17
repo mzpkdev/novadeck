@@ -179,7 +179,7 @@ const textual = [...moves].map(
   ([from, to]) => [from.slice(from.indexOf("ui/src/")), to.slice(to.indexOf("ui/src/"))] as const,
 )
 const anchored = (path: string): RegExp =>
-  new RegExp(`(?<![\\w/.-])${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")
+  new RegExp(`(?<![\\w.-])${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")
 const ignored =
   /(?:^|\/)(?:pnpm-lock\.yaml|node_modules|scripts\/core\/)|\.(?:png|jpe?g|webp|ico|woff2?|zip)$/
 
