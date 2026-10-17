@@ -5,13 +5,14 @@ import type { IEvent, Terminal } from "@xterm/xterm"
 // fraction of the main thread's time on a busy Grid. This module is all the WebGL
 // handling: which screens hold a context, and when one goes back to the DOM renderer.
 
-// Chromium keeps about 16 live WebGL contexts per page and silently loses the oldest when
-// a page asks for more, which would blank a terminal that is still shown. Staying under
+// Chromium keeps about 16 live WebGL contexts per page and loses the oldest when a page
+// asks for more (it warns on the console and fires webglcontextlost), which would blank a
+// terminal that is still shown. Staying under
 // that leaves room for the page's own canvases; a shown screen past the cap draws with the
 // DOM renderer until a slot frees.
 export const contextCap = 12
-// How many times a screen's context may be lost; it takes another when it is shown again,
-// once, and stays on the DOM renderer after that.
+// How many times a screen may lose its context, or fail to load one; it tries again when
+// it is shown again, once, and stays on the DOM renderer after that.
 const lossesAllowed = 2
 
 // What a loaded addon gives back; xterm's WebglAddon is one.
@@ -50,10 +51,8 @@ type Member<Target> = {
   // When the screen began waiting, among the shown ones; the longest waiting goes first.
   since: number
   losses: number
-  // Lost its context and waits for the next take.
+  // Lost its context, or failed to load one, and waits for the next take.
   lost: boolean
-  // The addon threw while loading; this screen stays on the DOM renderer.
-  failed: boolean
 }
 
 export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
@@ -63,6 +62,7 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
   let supported: boolean | undefined
   let unwatch: (() => void) | undefined
 
+  // Ligatures keep every screen on the DOM renderer (see `browserDeps.ligatures`).
   const usable = (): boolean => {
     supported ??= deps.supported()
     return supported && !deps.ligatures()
@@ -82,7 +82,7 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
     while (held < deps.cap && usable()) {
       let next: Member<Target> | undefined
       for (const member of members) {
-        if (!member.shown || member.drawing || member.lost || member.failed) continue
+        if (!member.shown || member.drawing || member.lost) continue
         if (member.losses >= lossesAllowed) continue
         if (!next || member.since < next.since) next = member
       }
@@ -100,7 +100,9 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
           fill()
         })
       } catch {
-        member.failed = true
+        // As a lost context: a GPU process restarting can refuse one for a moment.
+        member.losses += 1
+        member.lost = true
       }
     }
   }
@@ -118,7 +120,6 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
         since: 0,
         losses: 0,
         lost: false,
-        failed: false,
       }
       members.add(member)
       unwatch ??= deps.watchLigatures(changed)
@@ -129,9 +130,12 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
       }
       return {
         take: () => {
-          if (!member.shown) member.since = clock++
+          // Shown afresh, after a park: a screen that lost its context tries again then.
+          if (!member.shown) {
+            member.since = clock++
+            member.lost = false
+          }
           member.shown = true
-          member.lost = false
           fill()
         },
         release: leave,
@@ -189,17 +193,35 @@ const watchRoot = (changed: () => void): (() => void) => {
   return () => observer.disconnect()
 }
 
-const browserDeps: RendererDeps<Terminal> = {
-  load: (xterm) => {
-    const addon = new WebglAddon()
-    try {
-      xterm.loadAddon(addon)
-    } catch (error) {
+// Loads xterm's WebGL addon into a screen, as a drawing whose dispose frees its context.
+export const loadWebgl = (xterm: Terminal): Drawing => {
+  const addon = new WebglAddon()
+  try {
+    xterm.loadAddon(addon)
+  } catch (error) {
+    addon.dispose()
+    throw error
+  }
+  // The addon's own context, on the one canvas of xterm's that holds WebGL; asking the
+  // others, which hold 2D contexts, for WebGL gives nothing and creates nothing.
+  const gl = [...(xterm.element?.querySelectorAll("canvas") ?? [])]
+    .map((canvas) => canvas.getContext("webgl2"))
+    .find((context) => context !== null)
+  return {
+    onContextLoss: addon.onContextLoss,
+    clearTextureAtlas: () => addon.clearTextureAtlas(),
+    // The addon's dispose leaves its context to the garbage collector, and until then
+    // Chromium counts it against the page's contexts and drops live ones for it; the
+    // context is lost on the way out instead.
+    dispose: () => {
       addon.dispose()
-      throw error
-    }
-    return addon
-  },
+      gl?.getExtension("WEBGL_lose_context")?.loseContext()
+    },
+  }
+}
+
+const browserDeps: RendererDeps<Terminal> = {
+  load: loadWebgl,
   supported: probeWebgl,
   cap: contextCap,
   // The trade-off: ligatures render through CSS `font-variant-ligatures`, which only the

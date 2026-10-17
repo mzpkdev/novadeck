@@ -85,13 +85,18 @@ describe("the renderer budget", () => {
     expect(state.loads).toBe(0)
   })
 
-  it("stays on the DOM renderer where loading throws", () => {
+  it("retries once where loading throws, on the next take, then stays on the DOM", () => {
     const { pool, state } = setup({ failing: true })
     const a = pool.screen("a")
     a.take()
-    a.release()
     a.take()
     expect(state.loads).toBe(1)
+    a.release()
+    a.take()
+    expect(state.loads).toBe(2)
+    a.release()
+    a.take()
+    expect(state.loads).toBe(2)
   })
 
   it("retries once after a lost context, on the next take, then stays on the DOM", () => {
