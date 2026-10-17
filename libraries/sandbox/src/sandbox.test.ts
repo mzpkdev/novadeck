@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process"
 import { rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 
 import { describe, expect, it, onTestFinished } from "vitest"
@@ -28,15 +29,21 @@ describe("a sandbox", { timeout: 60_000 }, () => {
   })
 
   it("passes on nothing of the caller's environment", () => {
+    // A folder of the caller's own on its PATH, which the sandbox's mustn't hold.
+    const own = join(tmpdir(), "sandbox-test-callers-own")
+    const path = process.env.PATH
     process.env.SANDBOX_TEST_SECRET = "leaked"
+    process.env.PATH = [own, path].join(delimiter)
     onTestFinished(() => {
       delete process.env.SANDBOX_TEST_SECRET
+      if (path === undefined) delete process.env.PATH
+      else process.env.PATH = path
     })
 
     const { env } = made()
 
     expect(Object.values(env)).not.toContain("leaked")
-    expect(env.PATH).not.toContain(process.env.PATH)
+    expect(env.PATH!.split(delimiter)).not.toContain(own)
   })
 
   it.skipIf(!windows)("moves the user's folders inside its root on Windows", () => {
