@@ -17,8 +17,8 @@ export const scenario = {
   windowMs: 15_000,
   switchPasses: 2,
   // Each revisit comes within Focus's last 4 shown, so it lands on a kept window; the rest
-  // land on parked ones.
-  switchTargets: [1, 8, 1, 3, 12, 3, 5, 9, 5, 2, 13, 2, 4, 7, 4],
+  // land on parked ones. None starts on agent 1, which the steady window leaves shown.
+  switchTargets: [8, 3, 8, 12, 5, 12, 9, 2, 9, 13, 4, 13, 7, 1, 7],
   viewport: { width: 1440, height: 900 },
 } as const
 

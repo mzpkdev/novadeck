@@ -91,11 +91,15 @@ const start = (file: string, args: readonly string[], options: SpawnOptions): Ch
   return child
 }
 
-/** Runs a program to its end, its output passed through; rejects should it fail. */
+/**
+ * Runs a program to its end, its output passed through, handing it to `track` as it starts;
+ * rejects should it fail.
+ */
 const run = (
   file: string,
   args: readonly string[],
   options: { cwd: string; env: NodeJS.ProcessEnv },
+  track: (child: ChildProcess) => void,
 ) =>
   new Promise<void>((resolve, reject) => {
     const child = spawn(file, [...args], { ...options, stdio: ["ignore", "inherit", "inherit"] })
@@ -103,6 +107,7 @@ const run = (
     child.once("exit", (code) =>
       code === 0 ? resolve() : reject(new Error(`${args.join(" ")} exited with ${code}`)),
     )
+    track(child)
   })
 
 /**
@@ -178,10 +183,22 @@ export const openStack = (): Stack => {
   ])
   const children: ChildProcess[] = []
   let stopped: Promise<readonly string[]> | undefined
+  // Once stopping, nothing more starts: what a start still under way just started ends at
+  // once, as `stop` may be past ending the rest.
+  const track = (child: ChildProcess) => {
+    if (!stopped) {
+      children.push(child)
+      return
+    }
+    child.kill("SIGKILL")
+    throw new Error("the stack is stopping")
+  }
   const stop = () =>
     (stopped ??= (async () => {
-      for (const child of children.toReversed())
-        // eslint-disable-next-line no-await-in-loop -- The preview before the runner it serves.
+      // The latest first, the preview before the runner it serves, until none is left, as a
+      // start under way may have added one meanwhile.
+      for (let child = children.pop(); child; child = children.pop())
+        // eslint-disable-next-line no-await-in-loop -- One after another, as above.
         await halt(child, 10_000)
       const leftovers = await reap(sandbox).catch((error: unknown) => [
         `reaping failed: ${String(error)}`,
@@ -208,14 +225,19 @@ export const openStack = (): Stack => {
       const origin = `http://127.0.0.1:${uiPort}`
       const dist = join(sandbox.root, "ui")
       // The runner's address and token are baked into the build, as the dev-web path does.
-      await run(process.execPath, [vite, "build", "--outDir", dist, "--emptyOutDir"], {
-        cwd: ui,
-        env: {
-          ...process.env,
-          VITE_NOVADECK_RUNNER_URL: `ws://127.0.0.1:${runnerPort}/api/rpc`,
-          VITE_NOVADECK_RUNNER_TOKEN: token,
+      await run(
+        process.execPath,
+        [vite, "build", "--outDir", dist, "--emptyOutDir"],
+        {
+          cwd: ui,
+          env: {
+            ...process.env,
+            VITE_NOVADECK_RUNNER_URL: `ws://127.0.0.1:${runnerPort}/api/rpc`,
+            VITE_NOVADECK_RUNNER_TOKEN: token,
+          },
         },
-      })
+        track,
+      )
       const runner = start(
         process.execPath,
         [join(root, "application", "runner", "dist", "cli.js")],
@@ -232,7 +254,7 @@ export const openStack = (): Stack => {
           stdio: ["ignore", "inherit", "inherit"],
         },
       )
-      children.push(runner)
+      track(runner)
       await ready(`http://127.0.0.1:${runnerPort}/`, runner, 60_000)
       const preview = start(
         process.execPath,
@@ -249,7 +271,7 @@ export const openStack = (): Stack => {
         ],
         { cwd: ui, env: process.env, stdio: ["ignore", "ignore", "inherit"] },
       )
-      children.push(preview)
+      track(preview)
       await ready(origin, preview, 60_000)
       return {
         url: `${origin}/`,
