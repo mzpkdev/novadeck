@@ -15,9 +15,9 @@ export type Budget =
   | number
   | { readonly budget: number; readonly reason: string; readonly from: string }
 // The budget file: each measure's budget, how far under it the file may sit before the
-// budget must come down, and notes for the reader.
+// budget must come down (raised as a budget is, with why), and notes for the reader.
 export type Budgets = Readonly<Record<Measure, Budget>> & {
-  readonly slack: Readonly<Record<Measure, number>>
+  readonly slack: Readonly<Record<Measure, Budget>>
   readonly notes?: readonly string[]
 }
 
@@ -107,9 +107,10 @@ const advice: Record<Measure, string> = {
   methods: "methods in the Terminals class",
 }
 
-// Why a raise against the base branch's budget can't stand: it says neither why nor where
+// Why a raise against the base branch's value can't stand: it says neither why nor where
 // it came from, or names the earlier raise's source, as when only the number was edited.
-const raiseProblem = (measure: Measure, entry: Budget, was: Budget): string | undefined => {
+// `measure` names what is raised: a budget, or a slack.
+const raiseProblem = (measure: string, entry: Budget, was: Budget): string | undefined => {
   const from = budgetOf(was)
   const to = budgetOf(entry)
   if (!isCount(from) || !isCount(to) || to <= from) return undefined
@@ -129,15 +130,32 @@ export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets
     const entry = budgets[measure]
     const budget = budgetOf(entry)
     if (!isCount(budget)) return [`${budgetsPath} sets no budget for ${measure}.`]
-    const slack = budgets.slack?.[measure]
-    if (!isCount(slack)) return [`${budgetsPath} sets no slack for ${measure}.`]
-    if (typeof entry === "object" && (!said(entry.reason) || !said(entry.from)))
+    const slackEntry = budgets.slack?.[measure]
+    const slack = budgetOf(slackEntry)
+    if (!isCount(slack))
       return [
-        `A raised budget in ${budgetsPath} is written ${raiseForm}; the one for ${measure} isn't.`,
+        `${budgetsPath} sets no slack for ${measure}: write "slack": { "lines": n, "methods": n }.`,
       ]
-    const raise = base ? raiseProblem(measure, entry, base[measure]) : undefined
-    const raised = raise ? [raise] : []
+    for (const [what, given] of [
+      ["budget", entry],
+      ["slack", slackEntry],
+    ] as const)
+      if (typeof given === "object" && (!said(given.reason) || !said(given.from)))
+        return [
+          `A raised ${what} in ${budgetsPath} is written ${raiseForm}; the one for ${measure} isn't.`,
+        ]
     const count = counts[measure]
+    const raised = [
+      base ? raiseProblem(measure, entry, base[measure]) : undefined,
+      base?.slack ? raiseProblem(`${measure} slack`, slackEntry!, base.slack[measure]) : undefined,
+      // A raise in this change gives the file what it needs now, never headroom for later.
+      base &&
+      isCount(budgetOf(base[measure])) &&
+      budget > budgetOf(base[measure])! &&
+      budget > count
+        ? `${budgetsPath} raises ${measure} to ${budget}, past the ${count} the file has: raise it only to ${count}.`
+        : undefined,
+    ].filter((problem): problem is string => problem !== undefined)
     if (count > budget)
       return [
         ...raised,
@@ -152,12 +170,13 @@ export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets
   })
 
 // The budgets that could come down, though the file sits within their slack: worth doing
-// in a change that touches the budget file anyway.
+// in a change that touches the budget file anyway. Past the slack, the failure says it.
 export const ratchetNotes = (counts: Counts, budgets: Budgets): string[] =>
   measures.flatMap((measure) => {
     const budget = budgetOf(budgets[measure])
+    const slack = budgetOf(budgets.slack?.[measure])
     const count = counts[measure]
-    return isCount(budget) && count < budget
+    return isCount(budget) && isCount(slack) && count < budget && budget - count <= slack
       ? [
           `${managerPath} has ${count} ${advice[measure]}, under its budget of ${budget}: it could be lowered to ${count} in ${budgetsPath}.`,
         ]

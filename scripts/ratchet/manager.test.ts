@@ -64,7 +64,7 @@ const baseBudgets = (): Budgets | undefined => {
 }
 
 describe("manager.ts", () => {
-  it("stays within its budgets, which come down as it shrinks", () => {
+  it("stays within its budgets, and no further under them than their slack", () => {
     const budgets = JSON.parse(read(budgetsPath)) as Budgets
     const counts = countManager(read(managerPath))
     // Straight to stderr: Vitest keeps a passing test's console output to itself.
@@ -200,6 +200,36 @@ describe("the ratchet", () => {
     expect(ratchetProblems({ ...counts, methods: 15 }, again, earlier)).toEqual([
       expect.stringMatching(/under the earlier raise's source, #240/),
     ])
+  })
+
+  it("refuses a raise past what the file needs, which would bank headroom", () => {
+    const padded: Budgets = {
+      ...budgets,
+      lines: { budget: 103, reason: "Headroom", from: "#240" },
+    }
+    expect(ratchetProblems({ ...counts, lines: 101 }, padded, budgets)).toEqual([
+      expect.stringMatching(/raises lines to 103, past the 101 the file has: raise it only to 101/),
+    ])
+  })
+
+  it("keeps an earlier raise standing as the file shrinks within its slack", () => {
+    const raised: Budgets = { ...budgets, lines: { budget: 103, reason: "A call", from: "#240" } }
+    expect(ratchetProblems({ ...counts, lines: 101 }, raised, raised)).toEqual([])
+    expect(ratchetProblems({ ...counts, lines: 101 }, raised)).toEqual([])
+  })
+
+  it("guards a slack's raise as a budget's, and lets it come down freely", () => {
+    const wider: Budgets = { ...budgets, slack: { lines: 50, methods: 1 } }
+    expect(ratchetProblems(counts, wider, budgets)).toEqual([
+      expect.stringMatching(/raises lines slack from 5 to 50 without saying why/),
+    ])
+    const said: Budgets = {
+      ...budgets,
+      slack: { lines: { budget: 50, reason: "Big extractions", from: "#250" }, methods: 1 },
+    }
+    expect(ratchetProblems(counts, said, budgets)).toEqual([])
+    const narrower: Budgets = { ...budgets, slack: { lines: 2, methods: 0 } }
+    expect(ratchetProblems(counts, narrower, budgets)).toEqual([])
   })
 
   it("lets a budget come down with no reason", () => {
