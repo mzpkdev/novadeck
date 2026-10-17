@@ -958,14 +958,7 @@ export const connectRunner = async (
   const connection = await connect({
     contract,
     transport,
-    // The runner's id names its lifetime: the epoch a terminal's cursor belongs to.
-    handshake: async (client, { clientId, token, signal }) => {
-      const { runnerId } = await client.runner.handshake(
-        { protocolVersion, clientId, ...(token !== undefined && { token }) },
-        { signal },
-      )
-      return { epoch: runnerId }
-    },
+    protocolVersion,
     fatal: (code) => code === "WORKSPACE_TOO_NEW",
     ...(options.signal && { signal: options.signal }),
     ...(options.retryDelay && { retryDelay: options.retryDelay }),

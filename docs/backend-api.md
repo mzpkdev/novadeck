@@ -358,19 +358,28 @@ without controlling it; its `write` and `resize` reject with `CONTROL_REQUIRED`.
 
 ### Serving a runner
 
-`@novadeck/runner` separates the runner from how clients reach it:
+`@novadeck/runner` separates the runner from how clients reach it: the runner holds its
+clients' sessions (`runner.sessions`), and the wire's transports serve them:
 
 ```ts
-import { createRunner, servePort, serveWebSocket } from "@novadeck/runner"
+import { createRunner } from "@novadeck/runner"
+import { servePort, serveWebSocket } from "@novadeck/wire/server"
 
 const runner = createRunner({ database })
 
 // Deployed: token-authenticated WebSockets at /api/rpc on an HTTP server.
-serveWebSocket(runner, { token, origins }).attach(httpServer)
+const sockets = serveWebSocket(runner.sessions, {
+  path: "/api/rpc",
+  token,
+  origins,
+  maxPayloadBytes: maxWebSocketMessageBytes,
+  sendBudgetBytes: runner.snapshotBytes + 8 * 1024 * 1024,
+})
+httpServer.on("upgrade", sockets.upgrade)
 
 // Bundled: one trusted client per MessagePort, such as an Electron renderer's port
 // to a utility process. Holding the port is the credential.
-const dispose = servePort(runner, port)
+const dispose = servePort(runner.sessions, port)
 ```
 
 The CLI (`pnpm --filter @novadeck/runner start`) and `startServer` from
@@ -413,8 +422,9 @@ adapter that settles pending calls when a socket or port closes, and its
 wire's own error codes (`wireErrors`) beside the runner's. Applications use
 `connectRunner`.
 
-Every connection starts with `runner.handshake({ protocolVersion, token })`, which
-returns `runnerId` and the protocol version. WebSocket connections
+Every connection starts with the wire's handshake, `wire.handshake({ protocolVersion,
+token, clientId })`, which returns the runner's `epoch` (its lifetime: terminal cursors
+are valid only within one) and the protocol version. WebSocket connections
 require the token in the handshake, never in a URL, and time out after ten seconds
 without it. MessagePort connections omit it. Each `terminals.attach` stream begins
 with an unsequenced `attached` marker confirming the granted mode, followed by
