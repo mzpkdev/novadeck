@@ -106,6 +106,9 @@ jobs:
     name: Package
     if: needs.prepare.outputs.package == 'true'
     needs: prepare
+    permissions:
+      actions: read
+      contents: read
     uses: ./.github/workflows/package.yml
     with:
       version: ${{ needs.prepare.outputs.version }}

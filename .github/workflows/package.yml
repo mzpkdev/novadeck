@@ -24,6 +24,12 @@ permissions:
   actions: read
   contents: read
 
+# A draft marked ready again replaces its own earlier run. A called run is its caller's to
+# cancel, so it takes a group of its own.
+concurrency:
+  group: package-${{ github.event.action == 'ready_for_review' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event.action == 'ready_for_review' }}
+
 jobs:
   # Whether the change can affect the packaged app (scripts/package/plan): yes for anything
   # but a pull request, and for one unless it changes tests, docs or what the app isn't
@@ -39,7 +45,7 @@ jobs:
       - name: Check Out Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          fetch-depth: 0
 
       - name: Set Up Toolchain
         id: toolchain

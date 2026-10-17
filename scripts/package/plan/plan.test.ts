@@ -47,7 +47,7 @@ describe("packaging a pull request", () => {
       "turbo.json",
       "tsconfig.base.json",
       "patches/node-pty@1.2.0-beta.14.patch",
-      ".github/workflows/release.yml",
+      ".github/workflows/package.yml",
       ".github/workflows/quality.yml",
       "scripts/install/install.sh",
       "scripts/package/plan/plan.ts",
@@ -78,6 +78,7 @@ describe("packaging a pull request", () => {
         "scripts/e2e/plan/plan.ts",
         "scripts/flakes/register.json",
         ".github/workflows/e2e.yml",
+        ".github/workflows/release.yml",
       ]),
     ).toBe(false)
   })

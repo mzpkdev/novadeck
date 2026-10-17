@@ -14,11 +14,11 @@ export type Facts = {
 
 // What lies outside every package yet decides what the packages build into, or how the
 // packaging runs: the toolchain and dependency pins, the patches pnpm applies, the shared
-// compiler settings, the workflows that package (Quality calls Release for a pull request)
-// and the installer the Linux package's smoke test runs.
+// compiler settings, the workflows that package a pull request (Package, which Quality
+// calls) and the installer the Linux package's smoke test runs.
 const packagingFiles = new Set([
+  ".github/workflows/package.yml",
   ".github/workflows/quality.yml",
-  ".github/workflows/release.yml",
   ".npmrc",
   "package.json",
   "pnpm-lock.yaml",
