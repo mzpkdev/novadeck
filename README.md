@@ -1244,6 +1244,53 @@ checks in colocated `*.test.ts` files. Files in `src/specs/` keep
 the `*.spec.tsx` suffix. Use `--project motion` for transition behavior. The build
 checks validate both entry assets and deferred chunks with relative packaged paths.
 
+### UI counter run
+
+`src/specs/counters/` measures what busy agents cost the UI. It isn't a behaviour spec. It
+boots the real app, its runner adapter and the real runner client over a scripted runner
+(`backend/runner/scripted-server.ts`): the whole contract served by oRPC over an in-memory
+port, so a procedure the contract adds is a type error there. It is the one spec that may
+reach that adapter. A warm-up on the real clock loads the views' code first, then closes
+and waits out the timers that act (a screen parks 5 s after it was last shown). The run
+itself is on a fake clock: timers, animation frames, `Date` and `performance` move only
+when the script moves them, React works inside `act`, and a frame that changed the page
+waits real frames until it is still. The fixed script plays 13 Claude terminals'
+status-line ticks and output in Grid, then in Focus once the terminals Focus doesn't show
+have parked, then switches between them in Focus. It counts store listeners woken (through
+`countListenersWoken` in `model/store.ts`, test instrumentation that does nothing
+otherwise) and DOM mutation records per tick, output bytes the runner sends the UI, and
+terminals streaming at once. React commits and component renders per tick are counted
+beside them, through a stand-in for React DevTools' hook. Every run gives the same counts,
+and a probe that hears nothing in a phase fails the run. Run it with `pnpm --filter
+@novadeck/ui exec vitest run --project counters`; it leaves its reading in
+`application/ui/test-results/counters.json`. It runs in `pnpm test` on every platform:
+its own checks hold on each.
+
+The Benchmark workflow runs it on Linux for every pull request whose change can move a
+count (the UI, the runner, their contract, `libraries/`, the lockfile or the checker), and
+on main for the trend. It warns when a count goes past its budget in
+`application/ui/src/specs/counters/budgets.json` and fails when one goes past twice it
+(`failsAt` in `scripts/benchmark/counters.ts`: loose by choice while the product is early),
+or when a phase's script plays another number of ticks than its budgets record. Commits and component renders are reported in the
+job summary, never gated, and each run's reading is kept as an artifact. Locally, after
+the counter run, `node scripts/benchmark/main.ts` checks the reading the same way, and
+`node scripts/benchmark/main.ts <base budgets.json>` checks budget changes too, as CI does
+against the base branch.
+
+A count past its budget is a regression, never noise: fix it, or, for work that really
+costs more, raise the budget in the same pull request (past twice it, one of the two must
+happen before it merges), written `{ "budget": n, "reason":
+"why", "from": "#PR" }`, where `from` names that pull request (on main, any source but the
+raise it replaces). A count under its budget asks for the budget to come down, so the gain
+stays. The job summary shows every budget a change moves, old to new, and a raise without
+its reason and its own pull request fails.
+
+The base branch's budgets are read only as far as the comparison needs, so a change to the
+file's form lands in one pull request. A budget the base lacks shows as new, and needs a
+reason as a raise does when its phase is one the base has; one the base has and the change
+drops shows as no longer budgeted; a base that has none of the phases only warns. The
+check always reports, so it can be required.
+
 ## Configuration
 
 For standalone UI/runner configuration, copy the environment templates:
