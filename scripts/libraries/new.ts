@@ -25,6 +25,12 @@ const taken = ["application", "engines", "harnesses", "libraries"]
     (JSON.parse(readFileSync(file, "utf8")) as { name: string }).name.split("/").at(-1)!,
   )
 
+// One there already is the name's first, before it counts as taken.
+if (name && existsSync(join(root, "libraries", name))) {
+  console.error(`libraries/${name} already exists.`)
+  process.exit(1)
+}
+
 if (!name || !isLibraryName(name, taken) || !description) {
   console.error(
     "usage: pnpm new:library <name> <description>, the name in lower-case-words, neither a workspace package's nor harness-*",
@@ -33,10 +39,6 @@ if (!name || !isLibraryName(name, taken) || !description) {
 }
 
 const folder = join(root, "libraries", name)
-if (existsSync(folder)) {
-  console.error(`libraries/${name} already exists.`)
-  process.exit(1)
-}
 
 const { devDependencies } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
   devDependencies: Versions
