@@ -140,9 +140,10 @@ jobs:
           "${report[@]}"
 
       # One comment per pull request, updated in place. A fork's pull request gets a
-      # read-only token, so its numbers stay in the job summary.
+      # read-only token, so its numbers stay in the job summary. A run cancelled, as by
+      # the next push, leaves the last comment as it was.
       - name: Comment on Pull Request
-        if: always() && github.event_name == 'pull_request' && steps.report.outcome == 'success'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.report.outcome == 'success' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

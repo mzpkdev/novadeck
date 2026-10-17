@@ -49,6 +49,13 @@ describe("the timing run's comment", () => {
       expect(comment).toContain("| Switch p90 | 35 ms | 50 ms |")
     })
 
+    it("tells of main's sandbox problems without failing this job for them", () => {
+      const main = { ...report, problems: ["\nleaked a process\n  at reap", "wrote outside"] }
+      expect(timingComment(report, { main })).toContain(
+        "> ⚠️ Main's run: the sandbox found a problem: leaked a process; wrote outside\n",
+      )
+    })
+
     it("says when main's own run stopped short", () => {
       const main = { ...report, error: "Agents never started\n    at run (main.ts:1)" }
       const comment = timingComment(report, { main })

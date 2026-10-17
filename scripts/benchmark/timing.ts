@@ -40,13 +40,14 @@ const count = (value: number | null | undefined): string =>
 const steadyOf = (report: TimingReport | undefined, layout: string): Steady | undefined =>
   report?.summary?.steady?.find((entry) => entry.layout === layout)
 
-// What failed the run's job: the sandbox leaked, or couldn't be made, which `pnpm
-// bench:timing` fails on as a boundary failing. Each problem shows its first line.
-const leaksOf = (report: TimingReport, whose: string): string[] =>
+// What the sandbox found: a leak, or a sandbox that couldn't be made, which `pnpm
+// bench:timing` fails on as a boundary failing, so this run's job fails with it. Each
+// problem shows its first line.
+const leaksOf = (report: TimingReport, whose: string, failing: boolean): string[] =>
   Array.isArray(report.problems) && report.problems.length
     ? [
-        `${whose}: the sandbox found a problem, so the job fails: ${report.problems
-          .map((problem) => String(problem).split("\n")[0]?.trim())
+        `${whose}: the sandbox found a problem${failing ? ", so the job fails" : ""}: ${report.problems
+          .map((problem) => String(problem).trim().split("\n")[0]?.trim())
           .join("; ")}`,
       ]
     : []
@@ -80,10 +81,10 @@ export const timingComment = (
   report: TimingReport,
   { main, label = "This run" }: { readonly main?: TimingReport; readonly label?: string } = {},
 ): string => {
-  const leaks = leaksOf(report, label)
+  const leaks = leaksOf(report, label, true)
   const warnings = [
     ...warningsOf(report, label),
-    ...(main ? [...leaksOf(main, "Main's run"), ...warningsOf(main, "Main's run")] : []),
+    ...(main ? [...leaksOf(main, "Main's run", false), ...warningsOf(main, "Main's run")] : []),
   ]
   const mainColumn = main ? ` Main${main.commit ? ` (${main.commit.slice(0, 7)})` : ""} |` : ""
   const layouts = ["Grid", "Focus"]
