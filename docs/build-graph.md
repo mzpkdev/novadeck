@@ -13,7 +13,8 @@ and the relay its binary's path. Tests and typechecks read the source; builds re
   run against its dependencies' source with nothing built first.
 - **tsc** takes it from `customConditions: ["development"]` in the app's and the harnesses'
   `tsconfig.json`, so a typecheck reads the same files the tests do. The host's adds `node`,
-  which its `Bundler` resolution leaves out, as the sandbox exports only under `node`.
+  which its `Bundler` resolution leaves out, so a `node`-only export such as the sandbox's
+  resolves.
 - **Builds** reset it (`customConditions: []` in `tsconfig.build.json`) and read their
   dependencies' built types, as a published consumer would. So `build` keeps `^build`.
 - **Libraries' typechecks read the libraries they import as built**: a library's `rootDir` is
@@ -55,9 +56,9 @@ short and run beside each other, so a new package or library adds its time to th
 part, not to a serial chain. A package whose tests are as timing-sensitive joins the second
 list in the root `package.json`'s `test`.
 
-The three are most of a cold run (here about 200 s for the runner's, 125 s for the UI's), so
+The three are most of a cold run (here about 200 s for the runner's, 120 s for the UI's), so
 this saves little over one package at a time. Running them together too took a cold
-`pnpm test` from about 380 s to 230 s on a 22-thread machine, and passed; whether CI's 3- and
+`pnpm test` from about 355 s to 230 s on a 22-thread machine, and passed; whether CI's 3- and
 4-core runners stand it is what would decide dropping the second list.
 
 ## Caching
