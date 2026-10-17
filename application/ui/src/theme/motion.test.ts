@@ -35,7 +35,8 @@ const definitions = stylesheets.flatMap((file) => {
     const body = blockAt(css, match.index + match[0].length - 1)
     const properties = new Set(
       [...body.matchAll(/([\w-]+)\s*:[^;{}]*[;}]/g)]
-        .map((declaration) => declaration[1]!.toLowerCase())
+        // A prefixed property is the property: `-webkit-transform` is a transform.
+        .map((declaration) => declaration[1]!.toLowerCase().replace(/^-webkit-/, ""))
         .filter((property) => property !== "animation-timing-function"),
     )
     return { name: match[1]!, file, properties }
@@ -85,6 +86,7 @@ const infinite = stylesheets.flatMap((file) =>
   [...read(file).matchAll(/(?:^|[\s;{])(?:-webkit-)?animation\s*:([^;{}]+)/gi)].flatMap((match) =>
     layers(match[1]!).flatMap((layer) => {
       const tokens = layer
+        .replace(/!\s*important/gi, " ")
         .replace(/(?<![\w-])(?!var\()[\w-]*\([^()]*(?:\([^()]*\)[^()]*)*\)/gi, " ")
         .trim()
         .split(/\s+/)

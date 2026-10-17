@@ -23,8 +23,9 @@
    A terminal's window shows the same in a strip along an edge of its content,
    `.dictation-strip`, with the same hooks plus data-tone="done" and data-edge="top" |
    "bottom". Parts: `.dictation-dot` (recording), `.dictation-wave` (its `i` bars, each
-   from `--dictation-bar`, 0 to 1), `.dictation-text`, `.dictation-shimmer` (with its `.dictation-shimmer-glint`),
-   `.dictation-setup` (the Addons button), and the overlay's icon, hint and elapsed time,
+   from `--dictation-bar`, 0 to 1), `.dictation-text`, `.dictation-shimmer` (with its
+   `.dictation-shimmer-glint`), `.dictation-setup` (the Addons button), and the overlay's
+   icon, hint and elapsed time,
    whose `data-ending` marks a clip's last seconds. While a clip records or transcribes the
    strip floats over the terminal's foot; in setup (data-phase="setup") it is a row of its
    own and the terminal above it shrinks.
