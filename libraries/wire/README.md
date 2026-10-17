@@ -38,7 +38,8 @@ know: the app's procedures and their codes stay the app's.
   - `Latest<T>`, a stream of snapshots that keeps only the newest unread one, and never sends
     again the one the reader has.
 
-  None holds changes for a reader: changes made while it hasn't read yet come to it as one.
+  None holds changes for a reader: changes made while it hasn't read yet come to it as one
+  (one per key, for `KeyedChanges`).
   A remote reader that can't keep up isn't slowed either: the server's socket sends what it
   reads, and cuts off a reader whose unsent bytes outgrow its send budget (the app's, for
   now).
