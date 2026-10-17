@@ -164,7 +164,7 @@ export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets
     if (count > budget)
       return [
         ...raised,
-        `${managerPath} has ${count} ${advice[measure]}, past its budget of ${budget}. Put new code in a sibling module under application/runner/src/terminals/ (as closes.ts, opens.ts and naming.ts are) and call it from the class, instead of growing the Terminals class. If it really can't go there, raise the budget in ${budgetsPath} to ${count}, written ${raiseForm}. Where main was already past it, after changes that left the file alone merged one after the other, not all of it is this change's: say so in the reason.`,
+        `${managerPath} has ${count} ${advice[measure]}, past its budget of ${budget}. Put new code in a sibling module under application/runner/src/terminals/ (as closes.ts, opens.ts and naming.ts are) and call it from the class, instead of growing the Terminals class. If it really can't go there, raise the budget in ${budgetsPath} to ${count}, written ${raiseForm}. Where changes to it merged one after the other had already put the base branch past the budget, not all of the overrun is this change's: say so in the reason.`,
       ]
     if (budget - count > slack)
       return [
