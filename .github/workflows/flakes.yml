@@ -65,8 +65,8 @@ jobs:
         shell: bash
         run: node scripts/flakes/main.ts "$RUNNER_TEMP/logs" "$RUNNER_TEMP/verdict.json" "$RUNNER_TEMP/comment.md"
 
-      # The one rerun a run of known flakes gets; its next attempt, if it fails, is judged
-      # again and left failed. Not when someone has rerun it meanwhile, nor when its pull
+      # The one rerun a run of known flakes gets; its next attempt, if it fails, stays
+      # failed (and may go unjudged, as GitHub starts no workflow from a rerun this makes). Not when someone has rerun it meanwhile, nor when its pull
       # request has moved on, whose newer run the rerun would cancel.
       - name: Rerun Failed Jobs
         id: rerun
@@ -75,13 +75,13 @@ jobs:
           [ "$(jq -r .rerun "$RUNNER_TEMP/verdict.json")" = true ] || exit 0
           latest=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .run_attempt)
           if [ "$latest" != "$RUN_ATTEMPT" ]; then
-            echo "Not rerun: attempt $latest has started since." | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/comment.md"
+            printf '\n**Not rerun:** attempt %s has started since.\n' "$latest" | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/comment.md"
             exit 0
           fi
           for pr in $PULL_REQUESTS; do
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
             if [ "$head" != "$HEAD_SHA" ]; then
-              echo "Not rerun: #$pr has moved on to $head." | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/comment.md"
+              printf '\n**Not rerun:** #%s has moved on to %s.\n' "$pr" "$head" | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/comment.md"
               exit 0
             fi
           done
@@ -101,7 +101,7 @@ jobs:
         run: |
           jq -e '[.jobs[].flakes[]] | length > 0' "$RUNNER_TEMP/verdict.json" > /dev/null || exit 0
           if [ "$RERUN" = failure ]; then
-            echo "Not rerun: the rerun couldn't be started; see this run's log." >> "$RUNNER_TEMP/comment.md"
+            printf '\n**Not rerun:** the rerun could not be started; see this run.\n' >> "$RUNNER_TEMP/comment.md"
           fi
           for pr in $PULL_REQUESTS; do
             gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/comment.md"
