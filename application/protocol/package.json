@@ -46,6 +46,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@novadeck/terminal": "workspace:*",
     "@orpc/client": "1.15.5",
     "@orpc/contract": "1.15.5",
     "@orpc/standard-server-peer": "1.15.5",

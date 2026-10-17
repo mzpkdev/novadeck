@@ -1,3 +1,4 @@
+import { columns, rows, sequence } from "@novadeck/terminal"
 import { eventIterator, oc, type ContractRouterClient } from "@orpc/contract"
 import { z } from "zod"
 
@@ -11,7 +12,6 @@ import {
   transcriptChange,
   agentName,
   clientState,
-  columns,
   companionChange,
   companionItem,
   companionWindow,
@@ -26,9 +26,7 @@ import {
   name,
   project,
   protocolVersion,
-  rows,
   runnerSettings,
-  sequence,
   startupCommand,
   terminalAttached,
   terminalChange,
