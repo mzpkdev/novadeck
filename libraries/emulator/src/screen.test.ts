@@ -32,7 +32,7 @@ describe("a screen read as text", () => {
     const screen = createScreen({ cols: 8, rows: 8, scrollback: 1000 })
     await write(
       screen,
-      `\u001b[2J${draw(1, "abcdefgh")}${draw(2, "abc")}${draw(3, "abcdefg ")}${draw(4, "あいうえ")}${draw(5, "abcdefgé")}${draw(6, "abcdefg")}`,
+      `\u001b[2J${draw(1, "abcdefgh")}${draw(2, "abc")}${draw(3, "abcdefg ")}${draw(4, "あいうえ")}${draw(5, "abcdefge\u0301")}${draw(6, "abcdefg")}`,
     )
     const text = readScreen(screen)
     expect(text.wrapped?.some(Boolean)).toBe(false)
