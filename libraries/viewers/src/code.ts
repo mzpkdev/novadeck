@@ -61,6 +61,12 @@ const keyOf = (language: string, lines: readonly string[]): string | null => {
 const languageFor = (content: CodeContent): string | undefined =>
   content.language ?? (content.path === undefined ? undefined : languageOf(content.path))
 
+// The same lines emphasized, at the same place in the listing.
+const sameEmphasis = (one: CodeContent, other: CodeContent): boolean =>
+  one.firstLine === other.firstLine &&
+  one.emphasis?.from === other.emphasis?.from &&
+  one.emphasis?.to === other.emphasis?.to
+
 const sameLines = (one: readonly string[], other: readonly string[]): boolean =>
   one === other || (one.length === other.length && one.every((line, at) => line === other[at]))
 
@@ -124,7 +130,10 @@ export const mountCode: Mount<CodeContent> = (element, { content, label, saved }
     highlightLines(language, lines).then(
       (found) => {
         if (found && key !== null) highlighted.keep(key, found)
-        if (found && current === listing) paint(found)
+        // A language it has no parser for reads as plain text.
+        if (current !== listing) return
+        if (found) paint(found)
+        else plain()
       },
       // Plain text is the fallback when a parser can't load.
       () => {
@@ -197,9 +206,11 @@ export const mountCode: Mount<CodeContent> = (element, { content, label, saved }
     // Moved since it put it there, unless only cut short as the listing shrank: a scroll
     // whose event may not have come yet.
     const moved = (): boolean => {
-      const { scrollTop: top, scrollLeft: left, scrollHeight, clientHeight } = root
-      const clamped = top < placed.top && top >= scrollHeight - clientHeight - 1
-      return (top !== placed.top && !clamped) || left !== placed.left
+      const { scrollTop: top, scrollLeft: left } = root
+      const { scrollHeight, clientHeight, scrollWidth, clientWidth } = root
+      const clampedTop = top < placed.top && top >= scrollHeight - clientHeight - 1
+      const clampedLeft = left < placed.left && left >= scrollWidth - clientWidth - 1
+      return (top !== placed.top && !clampedTop) || (left !== placed.left && !clampedLeft)
     }
     const observer = new Observer(() => {
       if (moved()) return holding?.()
@@ -242,19 +253,23 @@ export const mountCode: Mount<CodeContent> = (element, { content, label, saved }
 
   return {
     update: (next) => {
-      holding?.()
       const previous = shown
       shown = next
       if (previous.firstLine === next.firstLine && sameLines(previous.lines, next.lines)) {
         emphasize()
         // The same lines in another language highlight again.
         if (languageFor(previous) !== languageFor(next)) highlight()
-        return
+      } else {
+        // A place still to be set out of sight is set once the listing has a size; on
+        // sight, the new lines keep where it is.
+        if (root.clientHeight) holding?.()
+        const { scrollTop, scrollLeft } = root
+        render()
+        root.scrollTop = scrollTop
+        root.scrollLeft = scrollLeft
       }
-      const { scrollTop, scrollLeft } = root
-      render()
-      root.scrollTop = scrollTop
-      root.scrollLeft = scrollLeft
+      // Other lines emphasized are lines to show, as when its agent points elsewhere.
+      if (next.emphasis && !sameEmphasis(previous, next)) hold(revealEmphasis)
     },
     state: () =>
       ({
@@ -265,13 +280,14 @@ export const mountCode: Mount<CodeContent> = (element, { content, label, saved }
         },
       }) satisfies CodeState as unknown as ViewerState,
     restore,
+    // Out of sight, it lands once the listing has a size.
     jumpTo: (target) => {
-      holding?.()
-      if ("line" in target) return reveal(target.line)
+      if ("line" in target) return hold(() => reveal(target.line))
       // The line the offset falls in, counting each line's break.
       let left = target.offset
       const index = shown.lines.findIndex((line) => (left -= line.length + 1) < 0)
-      reveal(shown.firstLine + (index < 0 ? shown.lines.length - 1 : index))
+      const line = shown.firstLine + (index < 0 ? shown.lines.length - 1 : index)
+      hold(() => reveal(line))
     },
     focus: () => root.focus({ preventScroll: true }),
     destroy: () => {
