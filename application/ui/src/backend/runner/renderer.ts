@@ -62,7 +62,7 @@ type Member<Target> = {
   // Told when the screen changes renderer, either way.
   switched: () => void
   shown: boolean
-  // Shown by no surface for the moment; its context is the first to go to a waiter.
+  // Shown by no surface for the moment; its context, alone, may go to a waiter.
   idle: boolean
   // When it went idle; the longest idle goes first.
   idleSince: number
@@ -143,23 +143,25 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
         if (!steal()) return
       }
       const member = next
+      let drawing: Drawing
       try {
-        const drawing = deps.load(member.target)
-        member.drawing = drawing
-        held += 1
-        member.switched()
-        drawing.onContextLoss(() => {
-          if (member.drawing !== drawing) return
-          member.losses += 1
-          member.lost = true
-          drop(member)
-          fill()
-        })
+        drawing = deps.load(member.target)
       } catch {
         // As a lost context: a GPU process restarting can refuse one for a moment.
         member.losses += 1
         member.lost = true
+        continue
       }
+      member.drawing = drawing
+      held += 1
+      drawing.onContextLoss(() => {
+        if (member.drawing !== drawing) return
+        member.losses += 1
+        member.lost = true
+        drop(member)
+        fill()
+      })
+      member.switched()
     }
   }
 
