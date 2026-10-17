@@ -13,7 +13,7 @@ import {
   type RunnerStatus,
   type TerminalWatchItem,
 } from "@novadeck/protocol/client"
-import { implement } from "@orpc/server"
+import { implement, ORPCError } from "@orpc/server"
 import { RPCHandler } from "@orpc/server/message-port"
 
 import { workspaceFromSeed } from "../../model/seed"
@@ -389,7 +389,8 @@ export const scriptedRunner = ({ terminals: count }: { readonly terminals: numbe
       }),
     ]),
   )
-  const rows = new Map(terminalIds.map((terminalId) => [terminalId, [] as string[]]))
+  // Each terminal's screen: the rows of output it keeps for a snapshot.
+  const screens = new Map(terminalIds.map((terminalId) => [terminalId, [] as string[]]))
   // Each attached stream's queue, by terminal.
   const streams = new Map<string, Set<ReturnType<typeof channel<TerminalEvent>>>>()
   const watchers = new Set<ReturnType<typeof channel<TerminalChange>>>()
@@ -417,6 +418,12 @@ export const scriptedRunner = ({ terminals: count }: { readonly terminals: numbe
   }
   const toStreams = (terminalId: string, event: TerminalEvent): void => {
     for (const events of streams.get(terminalId) ?? []) events.push(event)
+  }
+  // The terminal goes: its streams end, and watchers hear of it.
+  const remove = (terminalId: string): void => {
+    summaries.delete(terminalId)
+    for (const events of streams.get(terminalId) ?? []) events.end()
+    announce({ type: "removed", terminalId, sessionId })
   }
   // Counts what a stream sends the UI.
   const sent = (event: TerminalEvent): TerminalEvent => {
@@ -482,7 +489,7 @@ export const scriptedRunner = ({ terminals: count }: { readonly terminals: numbe
             terminalId,
             sequence: (sequence += 1),
             type: "snapshot",
-            data: (rows.get(terminalId) ?? []).join(""),
+            data: (screens.get(terminalId) ?? []).join(""),
             cols: summary.cols,
             rows: summary.rows,
             exit: null,
@@ -499,24 +506,29 @@ export const scriptedRunner = ({ terminals: count }: { readonly terminals: numbe
         }
       }),
       write: api.terminals.write.handler(() => {}),
-      // As the runner does: the terminal takes the size, its streams hear of it, and the
-      // watch announces it.
-      resize: api.terminals.resize.handler(({ input: { terminalId, cols, rows: height } }) => {
+      // As the runner does: the terminal takes the size, the watch announces it, then its
+      // streams hear of it, the same size included.
+      resize: api.terminals.resize.handler(({ input: { terminalId, cols, rows } }) => {
         const current = summaries.get(terminalId)
-        if (!current || (current.cols === cols && current.rows === height)) return
-        const terminal = { ...current, cols, rows: height }
+        if (!current) throw new ORPCError("TERMINAL_NOT_FOUND", { status: 404 })
+        const terminal = { ...current, cols, rows }
         summaries.set(terminalId, terminal)
+        announce({ type: "changed", terminal })
         toStreams(terminalId, {
           terminalId,
           sequence: (sequence += 1),
           type: "resized",
           cols,
-          rows: height,
+          rows,
         })
-        announce({ type: "changed", terminal })
       }),
       ack: api.terminals.ack.handler(() => {}),
-      close: api.terminals.close.handler(unplayed("terminals.close")),
+      // As the runner does: a terminal it has goes, and watchers hear of it; one it doesn't
+      // is not found.
+      close: api.terminals.close.handler(({ input: { terminalId } }) => {
+        if (!summaries.has(terminalId)) throw new ORPCError("TERMINAL_NOT_FOUND", { status: 404 })
+        remove(terminalId)
+      }),
       rename: api.terminals.rename.handler(unplayed("terminals.rename")),
       resetTitle: api.terminals.resetTitle.handler(unplayed("terminals.resetTitle")),
       upload: api.terminals.upload.handler(unplayed("terminals.upload")),
@@ -584,8 +596,11 @@ export const scriptedRunner = ({ terminals: count }: { readonly terminals: numbe
       set: api.settings.set.handler(() => {}),
     },
   })
+  let connections = 0
   const connect = (signal: AbortSignal) => {
     const [server, client] = memoryChannel()
+    connections += 1
+    server.addEventListener("close", () => (connections -= 1))
     new RPCHandler(router).upgrade(server, { context: {} })
     return connectRunnerBackend(
       signal,
@@ -609,17 +624,11 @@ export const scriptedRunner = ({ terminals: count }: { readonly terminals: numbe
     },
     // Closes every terminal, as another window closing them would: the app lets go of
     // their screens and streams.
-    closeAll: () => {
-      for (const terminalId of summaries.keys()) {
-        summaries.delete(terminalId)
-        for (const events of streams.get(terminalId) ?? []) events.end()
-        announce({ type: "removed", terminalId, sessionId })
-      }
-    },
+    closeAll: () => [...summaries.keys()].forEach(remove),
     // Writes output to the terminal's screen and every stream attached to it.
     write: (terminalId: string, data: string) => {
       written += encoder.encode(data).length
-      rows.set(terminalId, [...(rows.get(terminalId) ?? []), data].slice(-screenRows))
+      screens.set(terminalId, [...(screens.get(terminalId) ?? []), data].slice(-screenRows))
       toStreams(terminalId, { terminalId, sequence: (sequence += 1), type: "output", data })
     },
     // The bytes the terminals' streams have sent the UI, snapshots included.
@@ -628,6 +637,8 @@ export const scriptedRunner = ({ terminals: count }: { readonly terminals: numbe
     written: () => written,
     // How many terminals' streams are attached now.
     streaming: () => streaming,
+    // Whether a connection is open.
+    connected: () => connections > 0,
     // The procedures the app called that the script doesn't play.
     unscripted: (): readonly string[] => unscripted,
   }

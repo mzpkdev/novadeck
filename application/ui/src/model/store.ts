@@ -11,10 +11,21 @@ export type Store<S> = {
 // same value notifies nobody.
 export type MutableStore<S> = Store<S> & { readonly update: (change: (state: S) => S) => S }
 
+// Test instrumentation: told of each listener a store wakes. The counter run counts them
+// through it; it does nothing otherwise.
+let woken = (): void => {}
+export const countListenersWoken = (count: () => void): void => {
+  woken = count
+}
+
 const createListeners = () => {
   const listeners = new Set<() => void>()
   return {
-    notify: (): void => listeners.forEach((listener) => listener()),
+    notify: (): void =>
+      listeners.forEach((listener) => {
+        woken()
+        listener()
+      }),
     subscribe: (listener: () => void): (() => void) => {
       listeners.add(listener)
       return () => listeners.delete(listener)

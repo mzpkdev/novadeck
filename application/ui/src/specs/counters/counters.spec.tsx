@@ -6,15 +6,11 @@ import { App } from "../../app/App"
 import { scriptedRunner } from "../../backend/runner/scripted"
 import { chooseView, layoutSettled } from "../support/workspace"
 import { startClock } from "./clock"
-import { counts, observeMutations } from "./probes"
+import { countNotifications, counts, observeMutations } from "./probes"
 import { playScript } from "./script"
 
 // React reports commits to a DevTools hook only if one is there before react-dom loads.
 await vi.hoisted(async () => (await import("./probes")).installRenderCount())
-// Every store counts the listeners it wakes.
-vi.mock("../../model/store", async (importOriginal) =>
-  (await import("./probes")).countedStores(await importOriginal<Record<string, unknown>>()),
-)
 
 // Where the run leaves its reading, for the gate and for comparing runs.
 const readingPath = `${server.config.root}/test-results/counters.json`
@@ -26,12 +22,23 @@ const loadFonts = async (): Promise<void> => {
   await document.fonts.ready
 }
 
+// Closes the app and its connection on the real clock, and waits until the runner has let
+// go of it: closing waits up to 2 s for the last saves first.
+const close = async (
+  runner: ReturnType<typeof scriptedRunner>,
+  connection: { readonly close: () => void },
+): Promise<void> => {
+  await cleanup()
+  connection.close()
+  await expect.poll(() => runner.connected()).toBe(false)
+}
+
 // The views' code loads when a view first shows, in real time. A warm-up on the real clock
 // shows each view the script does, so in the run their code is there at once, whatever the
 // machine's speed. Then it all goes, still on the real clock: its terminals close, so their
-// screens and streams go; the app and its connection close; and the timers they leave (a
-// screen parks 5 s after it was last shown, closing waits up to 2 s for the last saves)
-// run out before the counted run starts.
+// screens and streams go, then the app and its connection; and the timers they leave run
+// out (a screen parks 5 s after it was last shown). One outlasts the wait: boot progress's
+// 15 s cap, which by then finds its boot long done and does nothing.
 const leftoverMs = 6_000
 const warmUp = async (): Promise<void> => {
   const runner = scriptedRunner({ terminals: 13 })
@@ -41,9 +48,9 @@ const warmUp = async (): Promise<void> => {
   await chooseView("Focus")
   runner.closeAll()
   await expect.poll(() => runner.streaming()).toBe(0)
-  await cleanup()
-  connection.close()
+  await close(runner, connection)
   await new Promise((resolve) => setTimeout(resolve, leftoverMs))
+  expect(runner.unscripted()).toEqual([])
   localStorage.clear()
   sessionStorage.clear()
   window.history.replaceState(null, "", "/")
@@ -51,6 +58,7 @@ const warmUp = async (): Promise<void> => {
 
 describe("Counter run", () => {
   it("counts what 13 busy agents cost the UI", async () => {
+    countNotifications()
     await loadFonts()
     await warmUp()
     const runner = scriptedRunner({ terminals: 13 })
@@ -67,17 +75,24 @@ describe("Counter run", () => {
       const reading = await playScript(runner, clock, { terminalNames: names })
       await commands.writeFile(readingPath, `${JSON.stringify(reading, null, 2)}\n`)
       console.log(JSON.stringify(reading))
+      // Every probe heard something in every phase: one that went dead, as when the code it
+      // hooks moves, fails here rather than passing under budget.
+      for (const phase of Object.values(reading)) {
+        expect(phase.tickTotals.notifications).toBeGreaterThan(0)
+        expect(phase.tickTotals.mutations).toBeGreaterThan(0)
+        expect(phase.tickTotals.renders).toBeGreaterThan(0)
+      }
       // Grid shows every terminal, so every one streams and all their output arrives.
       expect(reading.grid.streamingSettled).toBe(13)
       expect(reading.grid.bytes).toBe(reading.grid.written)
       // Focus parks what it doesn't show, so most of the output never arrives.
       expect(reading.focus.bytes).toBeLessThan(reading.focus.written)
-      // The app called nothing the script doesn't play.
-      expect(runner.unscripted()).toEqual([])
     } finally {
-      connection?.close()
       stopMutations()
       clock.stop()
+      if (connection) await close(runner, connection)
     }
+    // The app called nothing the script doesn't play, the run failing or not.
+    expect(runner.unscripted()).toEqual([])
   })
 })

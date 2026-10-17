@@ -1,5 +1,8 @@
-// What the counter run counts, each from outside the code it watches: store listeners
-// woken, DOM mutation records, and the components React renders on each commit.
+import { countListenersWoken } from "../../model/store"
+
+// What the counter run counts: store listeners woken, through the stores' instrumentation
+// hook, and from outside the code it watches, DOM mutation records and the components
+// React renders on each commit.
 
 export type Counts = {
   // Store listeners woken: each subscriber called once per change it hears of, in every
@@ -14,36 +17,11 @@ export type Counts = {
 
 export const counts: Counts = { notifications: 0, mutations: 0, commits: 0, renders: 0 }
 
-// Wraps a store module's factories so every listener a store calls counts as woken. It
-// takes the module's exports as they are, so it needs no types of the stores it wraps.
-export const countedStores = (module: Record<string, unknown>): Record<string, unknown> =>
-  Object.fromEntries(
-    Object.entries(module).map(([name, value]) => [
-      name,
-      typeof value === "function" && name.startsWith("create")
-        ? (...input: unknown[]) => countedStore(value(...input))
-        : value,
-    ]),
-  )
-
-const countedStore = (store: unknown): unknown => {
-  if (typeof store !== "object" || store === null || !("subscribe" in store)) return store
-  const subscribe = store.subscribe as (listener: () => void) => () => void
-  // One wrapper per listener, so subscribing it again stays one subscription, as it is
-  // in the store's own set.
-  const wrapped = new WeakMap<() => void, () => void>()
-  const wrap = (listener: () => void): (() => void) => {
-    const known = wrapped.get(listener)
-    if (known) return known
-    const counted = (): void => {
-      counts.notifications += 1
-      listener()
-    }
-    wrapped.set(listener, counted)
-    return counted
-  }
-  return { ...store, subscribe: (listener: () => void) => subscribe(wrap(listener)) }
-}
+// Counts every listener a store wakes, through the stores' own hook.
+export const countNotifications = (): void =>
+  countListenersWoken(() => {
+    counts.notifications += 1
+  })
 
 // Counts mutation records under the body from now on, each batch as its callback hears of
 // it, until the returned stop.

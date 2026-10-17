@@ -1245,16 +1245,18 @@ checks validate both entry assets and deferred chunks with relative packaged pat
 boots the real app, its runner adapter and the real runner client over a scripted runner
 (`backend/runner/scripted.ts`): the whole contract served by oRPC over an in-memory port,
 so a procedure the contract adds is a type error there. It is the one spec that may reach
-that adapter. A warm-up on the real clock loads the views' code first and lets its timers
-run out. It runs on a fake clock: timers, animation
-frames, `Date` and `performance` move only when the script moves them, React works inside
-`act`, and a frame that changed the page waits real frames until it is still. The fixed
-script plays 13 Claude terminals' status-line ticks and output in Grid, then in Focus once
-the terminals Focus doesn't show have parked, then switches between them in Focus. It
-counts store listeners woken and DOM mutation records per tick, output bytes the runner
-sends the UI, and terminals streaming at once. React commits and component renders per tick
-are counted beside them. To count, it wraps `model/store`'s factories and stands in for
-React DevTools' hook. Every run gives the same counts. Run it with
+that adapter. A warm-up on the real clock loads the views' code first, then closes and
+waits out its timers. The run itself is on a fake clock: timers, animation frames, `Date`
+and `performance` move only when the script moves them, React works inside `act`, and a
+frame that changed the page waits real frames until it is still. The fixed script plays
+13 Claude terminals' status-line ticks and output in Grid, then in Focus once the
+terminals Focus doesn't show have parked, then switches between them in Focus. It counts
+store listeners woken (through `countListenersWoken` in `model/store.ts`, test
+instrumentation that does nothing otherwise) and DOM mutation records per tick, output
+bytes the runner sends the UI, and terminals streaming at once. React commits and
+component renders per tick are counted beside them, through a stand-in for React
+DevTools' hook. Every run gives the same counts, and a probe that hears nothing in a
+phase fails the run. Run it with
 `pnpm --filter @novadeck/ui exec vitest run --project counters`; it leaves its reading in
 `application/ui/test-results/counters.json`.
 

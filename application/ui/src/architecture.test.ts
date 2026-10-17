@@ -116,9 +116,11 @@ const adapterSelection = "app/backend.ts"
 // Tests and specs open the demo through its spec entry, never another adapter module.
 const specBackend = "backend/demo/spec-variants.ts"
 // The counter run drives the real UI over the runner adapter, scripted: the one spec
-// that may reach that adapter, through its scripted runner alone.
+// that may reach that adapter, through its scripted runner alone, and the stores, through
+// their instrumentation hook.
 const counterRun = "specs/counters/"
 const scriptedRunner = "backend/runner/scripted.ts"
+const counterRunReaches = [scriptedRunner, "model/store.ts"]
 const adapterSelectionExports = ["selectBackend"]
 // Packages are denied unless listed here, owned through `vendors`, or used by an
 // adapter or test code. model/, theme/, interaction/ and app/commands/ use none; core
@@ -235,6 +237,7 @@ const importViolation = (file: string, layer: string | undefined) => {
         (file.startsWith(counterRun) && target === scriptedRunner)
         ? []
         : [`${file} -> ${target} (only ${adapterSelection} selects an adapter)`]
+    if (file.startsWith(counterRun) && counterRunReaches.includes(target)) return []
     // Root-level tests exercise the root modules beside them.
     if (!layer)
       return target.includes("/") && !target.startsWith("test/") ? [`${file} -> ${target}`] : []
@@ -285,13 +288,16 @@ describe("UI architecture", () => {
         )
         .map((owner) => `${vendor} in ${owner}`),
     )
-    const deadExceptions = files.some(
-      (file) =>
-        file.startsWith(counterRun) &&
-        imports(file).some(({ specifier }) => resolveFile(file, specifier) === scriptedRunner),
-    )
-      ? []
-      : [`${counterRun} -> ${scriptedRunner}`]
+    const deadExceptions = counterRunReaches
+      .filter(
+        (reached) =>
+          !files.some(
+            (file) =>
+              file.startsWith(counterRun) &&
+              imports(file).some(({ specifier }) => resolveFile(file, specifier) === reached),
+          ),
+      )
+      .map((reached) => `${counterRun} -> ${reached}`)
     expect([...deadLayers, ...deadVendors, ...deadExceptions]).toEqual([])
   })
 
