@@ -35,7 +35,7 @@ const definitions = stylesheets.flatMap((file) => {
     const body = blockAt(css, match.index + match[0].length - 1)
     const properties = new Set(
       [...body.matchAll(/([\w-]+)\s*:[^;{}]*[;}]/g)]
-        .map((declaration) => declaration[1]!)
+        .map((declaration) => declaration[1]!.toLowerCase())
         .filter((property) => property !== "animation-timing-function"),
     )
     return { name: match[1]!, file, properties }
