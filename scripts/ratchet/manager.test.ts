@@ -8,6 +8,7 @@ import {
   budgetsPath,
   countManager,
   managerPath,
+  ratchetNotes,
   ratchetProblems,
   type Budgets,
   type Counts,
@@ -65,7 +66,10 @@ const baseBudgets = (): Budgets | undefined => {
 describe("manager.ts", () => {
   it("stays within its budgets, which come down as it shrinks", () => {
     const budgets = JSON.parse(read(budgetsPath)) as Budgets
-    expect(ratchetProblems(countManager(read(managerPath)), budgets, baseBudgets())).toEqual([])
+    const counts = countManager(read(managerPath))
+    // Straight to stderr: Vitest keeps a passing test's console output to itself.
+    for (const note of ratchetNotes(counts, budgets)) process.stderr.write(`${note}\n`)
+    expect(ratchetProblems(counts, budgets, baseBudgets())).toEqual([])
   })
 })
 
@@ -125,7 +129,7 @@ describe("counting the Terminals class", () => {
 
 describe("the ratchet", () => {
   const counts: Counts = { lines: 100, methods: 10 }
-  const budgets: Budgets = { lines: 100, methods: 10 }
+  const budgets: Budgets = { lines: 100, methods: 10, slack: { lines: 5, methods: 1 } }
 
   it("holds while the counts meet their budgets", () => {
     expect(ratchetProblems(counts, budgets)).toEqual([])
@@ -137,9 +141,30 @@ describe("the ratchet", () => {
     expect(problem).toMatch(/sibling module under application\/runner\/src\/terminals\//)
   })
 
-  it("asks for a budget to come down once the file shrinks under it", () => {
-    expect(ratchetProblems({ ...counts, lines: 90 }, budgets)).toEqual([
-      expect.stringMatching(/90 lines, under its budget of 100: lower the budget .* to 90/),
+  it("lets the file sit a little under a budget, saying it could come down", () => {
+    const shrunk = { ...counts, lines: 95 }
+    expect(ratchetProblems(shrunk, budgets)).toEqual([])
+    expect(ratchetNotes(shrunk, budgets)).toEqual([
+      expect.stringMatching(/95 lines, under its budget of 100: it could be lowered to 95/),
+    ])
+  })
+
+  it("asks for a budget to come down once the file sits further under it than its slack", () => {
+    expect(ratchetProblems({ ...counts, lines: 94, methods: 8 }, budgets)).toEqual([
+      expect.stringMatching(
+        /94 lines, 6 under its budget of 100, past the 5 .* lower the budget .* to 94/,
+      ),
+      expect.stringMatching(
+        /8 methods in the Terminals class, 2 under its budget of 10, past the 1/,
+      ),
+    ])
+  })
+
+  it("refuses a budget file without slack", () => {
+    const { slack: _none, ...without } = budgets
+    expect(ratchetProblems(counts, without as Budgets)).toEqual([
+      expect.stringMatching(/sets no slack for lines/),
+      expect.stringMatching(/sets no slack for methods/),
     ])
   })
 

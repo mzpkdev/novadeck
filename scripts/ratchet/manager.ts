@@ -14,7 +14,12 @@ export type Counts = Readonly<Record<Measure, number>>
 export type Budget =
   | number
   | { readonly budget: number; readonly reason: string; readonly from: string }
-export type Budgets = Readonly<Record<Measure, Budget>> & { readonly notes?: readonly string[] }
+// The budget file: each measure's budget, how far under it the file may sit before the
+// budget must come down, and notes for the reader.
+export type Budgets = Readonly<Record<Measure, Budget>> & {
+  readonly slack: Readonly<Record<Measure, number>>
+  readonly notes?: readonly string[]
+}
 
 export const managerPath = "application/runner/src/terminals/manager.ts"
 export const budgetsPath = "scripts/ratchet/manager.json"
@@ -117,13 +122,15 @@ const raiseProblem = (measure: Measure, entry: Budget, was: Budget): string | un
 
 // What's wrong with the counts against the budgets, and with the budgets against the base
 // branch's where they can be read; nothing when the ratchet holds. A count past its budget
-// asks for the code to go to a sibling module; one under it asks for the budget to come
-// down; a raise must say why and where it came from.
+// asks for the code to go to a sibling module; one further under it than its slack asks for
+// the budget to come down; a raise must say why and where it came from.
 export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets): string[] =>
   measures.flatMap((measure) => {
     const entry = budgets[measure]
     const budget = budgetOf(entry)
     if (!isCount(budget)) return [`${budgetsPath} sets no budget for ${measure}.`]
+    const slack = budgets.slack?.[measure]
+    if (!isCount(slack)) return [`${budgetsPath} sets no slack for ${measure}.`]
     if (typeof entry === "object" && (!said(entry.reason) || !said(entry.from)))
       return [
         `A raised budget in ${budgetsPath} is written ${raiseForm}; the one for ${measure} isn't.`,
@@ -136,10 +143,23 @@ export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets
         ...raised,
         `${managerPath} has ${count} ${advice[measure]}, past its budget of ${budget}. Put new code in a sibling module under application/runner/src/terminals/ (as closes.ts, opens.ts and naming.ts are) and call it from the class, instead of growing the Terminals class. If it really can't go there, raise the budget in ${budgetsPath}, written ${raiseForm}.`,
       ]
-    if (count < budget)
+    if (budget - count > slack)
       return [
         ...raised,
-        `${managerPath} has ${count} ${advice[measure]}, under its budget of ${budget}: lower the budget in ${budgetsPath} to ${count}, so the ratchet holds what was won.`,
+        `${managerPath} has ${count} ${advice[measure]}, ${budget - count} under its budget of ${budget}, past the ${slack} it may sit under: lower the budget in ${budgetsPath} to ${count}, so the ratchet holds what was won.`,
       ]
     return raised
+  })
+
+// The budgets that could come down, though the file sits within their slack: worth doing
+// in a change that touches the budget file anyway.
+export const ratchetNotes = (counts: Counts, budgets: Budgets): string[] =>
+  measures.flatMap((measure) => {
+    const budget = budgetOf(budgets[measure])
+    const count = counts[measure]
+    return isCount(budget) && count < budget
+      ? [
+          `${managerPath} has ${count} ${advice[measure]}, under its budget of ${budget}: it could be lowered to ${count} in ${budgetsPath}.`,
+        ]
+      : []
   })
