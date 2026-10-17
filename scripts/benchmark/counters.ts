@@ -239,10 +239,10 @@ export const goneBudgets = (budgets: Budgets, base: unknown): string[] => {
   })
 }
 
-// Whether the base has any budget the comparison can use: one with none, as after a
-// rename of every phase, compares with nothing.
+// Whether the base has any phase the counter run plays: one with none, as after a rename
+// of every phase, compares with nothing, and every budget shows as new.
 export const sharesBudgets = (base: BaseBudgets): boolean =>
-  phases.some((phase) => gated.some((counter) => base[phase]?.[counter] !== undefined))
+  phases.some((phase) => base[phase] !== undefined)
 
 // The phases whose script this change makes play another number of ticks, for the
 // summary: their counts measure something else, so their budgets change with it.

@@ -284,6 +284,8 @@ describe("the counter run's budgets", () => {
       expect(sharesBudgets(parseBaseBudgets({}, "base"))).toBe(false)
       expect(sharesBudgets(parseBaseBudgets({ phases: budgets }, "base"))).toBe(false)
       expect(sharesBudgets(budgets)).toBe(true)
+      // A phase it has, its counters renamed or only its ticks, is compared.
+      expect(sharesBudgets(parseBaseBudgets({ grid: { ticks: 10 } }, "base"))).toBe(true)
     })
 
     it("shows a budget the base lacks as new", () => {

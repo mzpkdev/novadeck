@@ -33,8 +33,8 @@ export const main = (basePath = process.argv[2]): void => {
   if (basePath && !existsSync(basePath)) throw new Error(`No base budgets at ${basePath}.`)
   const raw = basePath ? readJson(basePath) : undefined
   const base = basePath ? parseBaseBudgets(raw, "The base branch's budget file") : undefined
-  // A base that shares no budget with this change compares with nothing: every budget
-  // shows as new, and the gate warns.
+  // A base that has none of the phases compares with nothing: every budget shows as new,
+  // and the gate warns.
   const compared = base !== undefined && sharesBudgets(base)
   const pullRequest = Number(process.env.PULL_REQUEST) || undefined
   const rows = checkCounters(reading, budgets)
