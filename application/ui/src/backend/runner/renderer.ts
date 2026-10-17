@@ -52,6 +52,8 @@ export type ScreenRenderer = {
 
 type Member<Target> = {
   readonly target: Target
+  // Told when the screen changes renderer, either way.
+  switched: () => void
   shown: boolean
   // Whether where it's shown wants WebGL.
   webgl: boolean
@@ -83,6 +85,7 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
     held -= 1
     // Disposing the addon returns xterm to the DOM renderer.
     drawing.dispose()
+    member.switched()
   }
 
   // Gives free slots to the shown screens on the DOM renderer, longest waiting first.
@@ -100,6 +103,7 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
         const drawing = deps.load(member.target)
         member.drawing = drawing
         held += 1
+        member.switched()
         drawing.onContextLoss(() => {
           if (member.drawing !== drawing) return
           member.losses += 1
@@ -121,9 +125,10 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
   }
 
   return {
-    screen: (target: Target): ScreenRenderer => {
+    screen: (target: Target, switched: () => void = () => {}): ScreenRenderer => {
       const member: Member<Target> = {
         target,
+        switched,
         shown: false,
         webgl: true,
         since: 0,
@@ -152,6 +157,8 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
         release: leave,
         refresh: () => member.drawing?.clearTextureAtlas(),
         dispose: () => {
+          // A screen that closes has nothing to fit again.
+          member.switched = () => {}
           leave()
           members.delete(member)
           if (members.size > 0) return

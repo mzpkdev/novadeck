@@ -58,7 +58,7 @@ describe("the renderer budget", () => {
   it("gives a freed slot to the longest waiting shown screen", () => {
     const { pool, live } = setup()
     const a = pool.screen("a")
-    const [b, c, d] = ["b", "c", "d"].map(pool.screen)
+    const [b, c, d] = ["b", "c", "d"].map((name) => pool.screen(name))
     a.take()
     b!.take()
     c!.take()
@@ -71,7 +71,7 @@ describe("the renderer budget", () => {
 
   it("keeps a screen shown where WebGL isn't wanted on the DOM, its slot to a waiter", () => {
     const { pool, live } = setup()
-    const [a, b, c] = ["a", "b", "c"].map(pool.screen)
+    const [a, b, c] = ["a", "b", "c"].map((name) => pool.screen(name))
     a!.take()
     b!.take()
     c!.take()
@@ -88,6 +88,17 @@ describe("the renderer budget", () => {
       true,
       false,
     ])
+  })
+
+  it("tells a screen each time it changes renderer, but not as it closes", () => {
+    const { pool } = setup()
+    const told: string[] = []
+    const a = pool.screen("a", () => told.push("a"))
+    a.take()
+    a.release()
+    a.take()
+    a.dispose()
+    expect(told).toEqual(["a", "a", "a"])
   })
 
   it("takes nothing for a parked screen", () => {

@@ -176,7 +176,6 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     xterm.unicode.activeVersion = "15-graphemes"
     linkTerminal(xterm)
     xterm.open(element)
-    const renderer = pageRenderers().screen(xterm)
     const queries = silenceQueries(xterm)
     xterm.textarea?.setAttribute("data-terminal-input", "")
     xterm.textarea?.setAttribute("aria-label", `Input for ${name}`)
@@ -207,6 +206,9 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       exited: (waits) => stream.update((state) => ({ ...state, waits })),
       live: (live, resuming = false) => stream.update((state) => ({ ...state, live, resuming })),
     })
+    // The two renderers measure a cell apart (WebGL to whole device pixels), so a screen
+    // that changes renderer fits its slot again.
+    const renderer = pageRenderers().screen(xterm, () => followed.refit())
     const screen: RunnerScreen = {
       host: element,
       xterm,
