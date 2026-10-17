@@ -67,13 +67,8 @@ const connection = () => {
 
 // A stream the test feeds, item by item.
 const feed = <T>() => {
-  const queue: (
-    | { readonly value: T }
-    | { readonly end: true }
-    | { readonly error: unknown }
-  )[] = []
+  const queue: ({ readonly value: T } | { readonly end: true } | { readonly error: unknown })[] = []
   let wake = () => {}
-  const state = { returned: false }
   const iterator: AsyncIterableIterator<T> = {
     [Symbol.asyncIterator]: () => iterator,
     async next() {
@@ -88,10 +83,7 @@ const feed = <T>() => {
       if ("end" in item) return { value: undefined, done: true }
       return { value: item.value, done: false }
     },
-    return() {
-      state.returned = true
-      return Promise.resolve({ value: undefined, done: true })
-    },
+    return: () => Promise.resolve({ value: undefined, done: true }),
   }
   const push = (item: (typeof queue)[number]) => {
     queue.push(item)
@@ -99,7 +91,6 @@ const feed = <T>() => {
   }
   return {
     iterator,
-    state,
     push: (...values: T[]) => {
       for (const value of values) push({ value })
     },
@@ -231,7 +222,8 @@ describe("follow, restarting", () => {
     refusals.push(new WireError("CLOSING"))
     const items = follow(link.wire, { open, resume: { restart: true } })
     const first = items.next()
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    // Past a refusal's first retry: a closing server isn't asked again.
+    await new Promise((resolve) => setTimeout(resolve, 300))
     expect(opened).toHaveLength(0)
     session.drop()
     link.connect()
@@ -298,9 +290,9 @@ describe("follow, from a cursor", () => {
     const items = follow(link.wire, { open, resume: cursor(acks) })
     const first = items.next()
     await vi.waitFor(() => expect(last()).toBeDefined())
-    expect(items.session).toBe(session)
     last().feed.push(marker, event(1), event(2))
     expect(await first).toEqual({ value: marker, done: false })
+    expect(items.session).toBe(session)
     expect(await items.next()).toEqual({ value: event(1), done: false })
     expect(acks).toEqual([])
     expect(await items.next()).toEqual({ value: event(2), done: false })
@@ -314,19 +306,130 @@ describe("follow, from a cursor", () => {
   it("retries a refused acknowledgement, keeping the latest position", async () => {
     const link = connection()
     link.connect()
-    const acks: number[] = []
-    const refuse = { count: 1 }
+    const sent: number[] = []
+    const answers: ((refused: boolean) => void)[] = []
     const { open, last } = streams<Event>()
-    const items = follow(link.wire, { open, resume: cursor(acks, refuse) })
+    const items = follow(link.wire, {
+      open,
+      resume: {
+        cursor: (value: Event) => (value.type === "event" ? value.sequence : undefined),
+        ack: (_client: Client, position: number) => {
+          sent.push(position)
+          return new Promise<void>((resolve, reject) =>
+            answers.push((refused) =>
+              refused ? reject(new WireError("RESOURCE_LIMIT")) : resolve(),
+            ),
+          )
+        },
+      },
+    })
     const first = items.next()
     await vi.waitFor(() => expect(last()).toBeDefined())
-    last().feed.push(event(1), event(2))
+    last().feed.push(event(1), event(2), event(3))
     await first
-    void items.next()
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(acks).toEqual([])
-    void items.next()
-    await vi.waitFor(() => expect(acks).toEqual([2]), { timeout: 1_000 })
+    await items.next()
+    await items.next()
+    // 1 is refused once 3 has been asked for, so 2 is read too: the retry tells 2.
+    answers.shift()!(true)
+    await vi.waitFor(() => expect(sent).toEqual([1, 2]), { timeout: 1_000 })
+  })
+
+  it("has one acknowledgement in flight at a time", async () => {
+    const link = connection()
+    link.connect()
+    const sent: number[] = []
+    const answers: (() => void)[] = []
+    const { open, last } = streams<Event>()
+    const items = follow(link.wire, {
+      open,
+      resume: {
+        cursor: (value: Event) => (value.type === "event" ? value.sequence : undefined),
+        ack: (_client: Client, position: number) => {
+          sent.push(position)
+          return new Promise<void>((resolve) => answers.push(resolve))
+        },
+      },
+    })
+    const first = items.next()
+    await vi.waitFor(() => expect(last()).toBeDefined())
+    last().feed.push(event(1), event(2), event(3), event(4))
+    await first
+    await items.next()
+    await items.next()
+    await items.next()
+    expect(sent).toEqual([1])
+    answers.shift()!()
+    await vi.waitFor(() => expect(sent).toEqual([1, 3]))
+  })
+
+  it("has a session only once its stream yields on it", async () => {
+    const link = connection()
+    link.connect()
+    const { opened, open, last } = streams<Event>()
+    const items = follow(link.wire, { open, resume: cursor([]) })
+    const first = items.next()
+    await vi.waitFor(() => expect(opened).toHaveLength(1))
+    expect(items.session).toBeUndefined()
+    last().feed.push(event(1))
+    await first
+    link.drop()
+    last().feed.fail(new WireError("DISCONNECTED"))
+    const next = items.next()
+    const reconnected = link.connect()
+    await vi.waitFor(() => expect(opened).toHaveLength(2))
+    // Reopening, not yet granted anything: write and the like must wait.
+    expect(items.session).toBeUndefined()
+    last().feed.push(event(2))
+    await next
+    expect(items.session).toBe(reconnected)
+  })
+
+  it("opens again when a generator's stream fails before its first item, once it has read", async () => {
+    const link = connection()
+    link.connect()
+    let opens = 0
+    // Fails the stream that's open, as its lost socket does.
+    let lose = (_error: unknown) => {}
+    const items = follow<Contract, Event>(link.wire, {
+      async *open() {
+        opens += 1
+        if (opens === 2) throw new WireError("DISCONNECTED", "Ended before granting it.")
+        yield marker
+        yield event(opens)
+        await new Promise<never>((_resolve, reject) => {
+          lose = reject
+        })
+      },
+      resume: cursor([]),
+    })
+    expect(await items.next()).toEqual({ value: marker, done: false })
+    expect(await items.next()).toEqual({ value: event(1), done: false })
+    // Drop the first: the second fails as it opens, and the third serves.
+    link.drop()
+    const next = items.next()
+    lose(new WireError("DISCONNECTED"))
+    link.connect()
+    expect(await next).toEqual({ value: marker, done: false })
+    expect(await items.next()).toEqual({ value: event(3), done: false })
+    await items.return()
+  })
+
+  it("ends a read waiting for its stream to open when returned", async () => {
+    const link = connection()
+    link.connect()
+    let signal: AbortSignal | undefined
+    const items = follow<Contract, Event>(link.wire, {
+      open: (_client, options) => {
+        signal = options.signal
+        return new Promise<never>(() => {})
+      },
+      resume: { restart: true },
+    })
+    const pending = items.next()
+    await vi.waitFor(() => expect(signal).toBeDefined())
+    await items.return()
+    expect(await pending).toEqual({ value: undefined, done: true })
+    expect(signal?.aborted).toBe(true)
   })
 
   it("resumes after the last item read on the next session of its epoch", async () => {
@@ -375,7 +478,7 @@ describe("follow, from a cursor", () => {
   it("throws what it can't resume from, and ends when its server ends it", async () => {
     const link = connection()
     link.connect()
-    const { open, last } = streams<Event>()
+    const { opened, open, last } = streams<Event>()
     const failing = follow(link.wire, { open, resume: cursor([]) })
     const first = failing.next()
     await vi.waitFor(() => expect(last()).toBeDefined())
@@ -386,8 +489,9 @@ describe("follow, from a cursor", () => {
     expect(failing.finished).toBe("failed")
 
     const ending = follow(link.wire, { open, resume: cursor([]) })
+    const count = opened.length
     const pending = ending.next()
-    await vi.waitFor(() => expect(last().feed.state.returned).toBe(false))
+    await vi.waitFor(() => expect(opened).toHaveLength(count + 1))
     last().feed.end()
     expect(await pending).toEqual({ value: undefined, done: true })
     expect(ending.finished).toBe("ended")
@@ -398,8 +502,11 @@ describe("follow, from a cursor", () => {
     const link = connection()
     link.connect()
     const { refusals, open } = streams<Event>()
-    refusals.push(new WireError("TERMINAL_NOT_FOUND"))
+    refusals.push(new WireError("TERMINAL_NOT_FOUND"), new WireError("DISCONNECTED"))
     const items = follow(link.wire, { open, resume: cursor([]) })
     await expect(items.next()).rejects.toMatchObject({ code: "TERMINAL_NOT_FOUND" })
+    // Even a lost connection: there's no position to resume from.
+    const again = follow(link.wire, { open, resume: cursor([]) })
+    await expect(again.next()).rejects.toMatchObject({ code: "DISCONNECTED" })
   })
 })

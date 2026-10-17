@@ -43,6 +43,8 @@ export type FollowOptions<C extends AnyContractRouter, T> = {
 
 /** A followed stream, as its reader holds it. */
 export type Following<C extends AnyContractRouter, T> = AsyncIterableIterator<T, undefined> & {
+  /** Stops following, ending a pending read and cancelling the stream. */
+  return(): Promise<IteratorResult<T, undefined>>
   /** The session the stream is open on, until it closes; undefined while it opens again. */
   readonly session: Session<C> | undefined
   /**
@@ -86,10 +88,8 @@ class Follower<C extends AnyContractRouter, T> implements Following<C, T> {
   private stream: Open<C, T> | undefined
   finished: Following<C, T>["finished"]
   private readonly stopping = new AbortController()
-  // Settles once finished, ending any wait.
-  private readonly stopped = new Promise<undefined>((resolve) => {
-    this.stopping.signal.addEventListener("abort", () => resolve(undefined), { once: true })
-  })
+  // Whether the stream has yielded on its session, which only then is its.
+  private live = false
 
   // Restarts: the session whose stream ended or was lost, which the next one waits past.
   private spent: Session<C> | undefined
@@ -114,7 +114,7 @@ class Follower<C extends AnyContractRouter, T> implements Following<C, T> {
   ) {}
 
   get session(): Session<C> | undefined {
-    return this.stream?.session
+    return this.live ? this.stream?.session : undefined
   }
 
   [Symbol.asyncIterator](): this {
@@ -141,11 +141,8 @@ class Follower<C extends AnyContractRouter, T> implements Following<C, T> {
         return { value: resume.reset as T, done: false }
       }
       try {
-        // A cursor's stream is busy, so its reads don't each wait on `stopped` too: aborting the
-        // stream ends a read. A restarting one's reads may wait long on a quiet stream.
-        const reading = stream.items.next()
         // eslint-disable-next-line no-await-in-loop -- Items are delivered in order.
-        const result = await (isCursor(resume) ? reading : Promise.race([reading, this.stopped]))
+        const result = await this.until(stream.items.next())
         if (this.finished || !result) break
         if (result.done) {
           this.ended(stream)
@@ -166,9 +163,27 @@ class Follower<C extends AnyContractRouter, T> implements Following<C, T> {
     return Promise.resolve(done)
   }
 
+  /** Waits for `promise`, or resolves undefined once finished. */
+  private async until<V>(promise: Promise<V>): Promise<V | undefined> {
+    const signal = this.stopping.signal
+    if (signal.aborted) return undefined
+    // A listener of its own, removed after: a long stream's reads leave nothing behind.
+    let stop = () => {}
+    const stopped = new Promise<undefined>((resolve) => {
+      stop = () => resolve(undefined)
+    })
+    signal.addEventListener("abort", stop, { once: true })
+    try {
+      return await Promise.race([promise, stopped])
+    } finally {
+      signal.removeEventListener("abort", stop)
+    }
+  }
+
   private deliver(value: T): IteratorResult<T, undefined> {
     const { resume } = this.options
     this.refusals = 0
+    this.live = true
     if (isCursor(resume)) {
       this.read = true
       const position = resume.cursor(value)
@@ -196,10 +211,7 @@ class Follower<C extends AnyContractRouter, T> implements Following<C, T> {
       session =
         cursor && !this.read
           ? this.wire.session()
-          : await Promise.race([
-              cursor ? this.wire.ready() : this.wire.ready().catch(() => undefined),
-              this.stopped,
-            ])
+          : await this.until(cursor ? this.wire.ready() : this.wire.ready().catch(() => undefined))
     } catch (error) {
       throw this.fail(error)
     }
@@ -208,7 +220,7 @@ class Follower<C extends AnyContractRouter, T> implements Following<C, T> {
       return
     }
     if (session === this.spent) {
-      await Promise.race([session.channel.closed, this.stopped])
+      await this.until(session.channel.closed)
       return
     }
     if (cursor && session.epoch !== this.epoch) {
@@ -219,17 +231,20 @@ class Follower<C extends AnyContractRouter, T> implements Following<C, T> {
     const cancel = new AbortController()
     try {
       const after = cursor ? this.position : undefined
-      const items = await this.options.open(session.client, {
-        ...(after !== undefined && { after }),
-        signal: cancel.signal,
-      })
-      if (this.finished) {
+      const items = await this.until(
+        Promise.resolve(
+          this.options.open(session.client, {
+            ...(after !== undefined && { after }),
+            signal: cancel.signal,
+          }),
+        ),
+      )
+      if (this.finished || !items) {
         cancel.abort()
         return
       }
       this.stream = { items: items[Symbol.asyncIterator](), session, cancel }
-      this.delivered = undefined
-      this.unacked = undefined
+      this.live = false
       if (!cursor && resume.reset !== undefined) {
         this.resetDue = !resume.holdReset || this.subscribed
       }
