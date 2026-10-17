@@ -5,9 +5,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
+import { Terminal } from "@novadeck/emulator/headless"
 import { protocolVersion, type TerminalEvent, type WireClient } from "@novadeck/protocol"
 import { createWireClient, socketChannel } from "@novadeck/protocol/wire"
-import headless from "@xterm/headless"
 import { WebSocket as NodeWebSocket } from "ws"
 
 import { startServer, type ServerOptions } from "./server.js"
@@ -171,7 +171,7 @@ const print = (client: WireClient, terminalId: string, first: string, second: st
   })
 
 const screen = (resources: Resources, cols: number, rows: number) => {
-  const terminal = new headless.Terminal({ cols, rows, allowProposedApi: true })
+  const terminal = new Terminal({ cols, rows, allowProposedApi: true })
   resources.defer(() => terminal.dispose())
   const apply = async (event: TerminalEvent) => {
     if (event.type === "resized" || event.type === "snapshot") {

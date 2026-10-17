@@ -41,9 +41,12 @@ const app = [
   "../../../../libraries",
 ]
 const library = (name: string) => [`@novadeck/${name}`, `@novadeck/${name}/sub`]
-const node = ["pty", "host", "server", "electron", "browser/host", "shell"].map(
-  (sub) => `@novadeck/terminal/${sub}`,
-)
+const node = [
+  ...["pty", "host", "server", "electron", "browser/host", "shell"].map(
+    (sub) => `@novadeck/terminal/${sub}`,
+  ),
+  "@novadeck/emulator/headless",
+]
 const browser = [
   "@novadeck/terminal",
   "@novadeck/terminal/view",

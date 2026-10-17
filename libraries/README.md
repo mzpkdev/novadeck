@@ -36,7 +36,7 @@ the build rules and the test sandbox. The app keeps the product.
   (`../../wire/dist`), or up to one of the first four by name (`../atlas`, so a library's own module
   one folder up takes another name), and the libraries outside its order; one on
   `application/ui/src` refuses the Node subpaths of any `@novadeck` package (`/pty`, `/host`,
-  `/server`, `/electron`, `/browser/host`, `/shell`). oxlint takes `no-restricted-imports` from the
+  `/server`, `/electron`, `/browser/host`, `/shell`, `/headless`). oxlint takes `no-restricted-imports` from the
   last matching override alone, and a `!` pattern in one group allows the name in every group, so
   each library's override repeats the bans they all share as plain lists, and
   `scripts/libraries/fence.test.ts` lints probe files with the real config to check what each file

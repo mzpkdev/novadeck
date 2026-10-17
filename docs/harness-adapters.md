@@ -98,7 +98,7 @@ harnesses/core/src/          # @novadeck/harness-core
   dialogs.ts       # DialogAdapter, for answering a harness's dialogs
   hook-command.ts  # The hook command line, per shell dialect
   follow.ts        # The shared JSONL follower
-  items.ts, report.ts, screen.ts, width.ts, header.ts
+  items.ts, report.ts, header.ts
   testing/         # Test helpers: probes.ts (`loadProbe`), screens.ts, dialogs.ts
 harnesses/claude/src/        # @novadeck/harness-claude
   index.ts         # claude: Harness
