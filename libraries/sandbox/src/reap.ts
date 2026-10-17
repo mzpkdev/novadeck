@@ -27,8 +27,10 @@ export type Trees = {
 
 export type ReapOptions = {
   /**
-   * On Windows, the tree reader a forcible end goes through; without one, or where it can't
-   * read the tree, taskkill ends it by recorded parent pids.
+   * On Windows, the tree reader a forcible end goes through: it ends the process and what it
+   * started, each only as the one it read, and taskkill ends the tree by recorded parent pids
+   * only where it can't read it. Without one, a forcible end takes the process alone, and the
+   * next round finds what it started.
    */
   readonly trees?: Trees
 }
@@ -267,21 +269,33 @@ const windows = (trees: Trees | undefined): Table => ({
   // ended parent's pid isn't, and each is ended only as the process it was (see `Trees`).
   // Only a tree whose root is the process found, by its start, is ended, and waited for,
   // so nothing of it holds the sandbox's files once `reap` returns.
-  end: async (one, forcibly) => {
-    if (!forcibly) {
-      try {
-        process.kill(one.pid)
-      } catch {
-        // Gone meanwhile.
-      }
-      return
-    }
-    await endTree(one, trees)
-  },
+  end: (one, forcibly) => endWindows(one, forcibly, trees),
 })
 
 /**
- * Ends a Windows process and what it started (see the Windows table's `end`): the tree
+ * Ends a Windows process, as the Windows table's `end`: asking ends it alone; forcibly, its
+ * tree (see `endTree`). Without a reader a forcible end takes the process alone too, as
+ * asking does: taskkill's tree goes by recorded parent pids, which may name an unrelated
+ * process, and what the process started is still in the sandbox, for the next round to
+ * find. `terminate` is TerminateProcess unless a test gives another. Exported for its tests,
+ * as no process on Windows outlives the first ask long enough to reach a forcible end there.
+ */
+export const endWindows = async (
+  one: { readonly pid: number; readonly start: number },
+  forcibly: boolean,
+  trees: Trees | undefined,
+  terminate: (pid: number) => void = (pid) => process.kill(pid),
+): Promise<void> => {
+  if (forcibly && trees) return endTree(one, trees)
+  try {
+    terminate(one.pid)
+  } catch {
+    // Gone meanwhile.
+  }
+}
+
+/**
+ * Ends a Windows process and what it started (see `endWindows`): the tree
  * `trees` reads, only should its root still be the process found, by its start, and waited
  * for; where it can't be read, the tree `kill` ends by recorded parent pids, taskkill unless
  * a test gives another. Exported for its tests, as no process on Windows outlives the first
@@ -289,15 +303,15 @@ const windows = (trees: Trees | undefined): Table => ({
  */
 export const endTree = async (
   one: { readonly pid: number; readonly start: number },
-  trees: Trees | undefined,
+  trees: Trees,
   kill: (pid: number) => Promise<void> = taskkillTree,
 ): Promise<void> => {
-  const tree = await trees?.read(one.pid)
+  const tree = await trees.read(one.pid)
   // Where it can't be read, the tree is ended by recorded parents, awaited: only the root is
   // checked, just before, by its start.
   if (tree === undefined) return kill(one.pid).catch(() => {})
   if (tree[0]?.startedAt !== one.start) return
-  await trees!.end(tree)
+  await trees.end(tree)
   const deadline = Date.now() + 30_000
   while (anyRunning(tree) && Date.now() < deadline)
     // eslint-disable-next-line no-await-in-loop -- Waits for them to end.

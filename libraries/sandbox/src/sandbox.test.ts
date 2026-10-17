@@ -39,6 +39,28 @@ describe("a sandbox", { timeout: 60_000 }, () => {
     expect(env.PATH).not.toContain(process.env.PATH)
   })
 
+  it.skipIf(!windows)("moves the user's folders inside its root on Windows", () => {
+    const { root, home, env } = made()
+
+    for (const name of ["USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP"])
+      expect(env[name]?.startsWith(root)).toBe(true)
+    expect(`${env.HOMEDRIVE}${env.HOMEPATH}`).toBe(home)
+  })
+
+  it.skipIf(windows)(
+    "has a PATH of the programs under test, Node's folder and the system's alone",
+    () => {
+      const sandbox = made({ bins: ["/opt/under-test/bin"] })
+
+      expect(sandbox.env.PATH!.split(delimiter)).toEqual([
+        "/opt/under-test/bin",
+        join(sandbox.root, "node"),
+        "/usr/bin",
+        "/bin",
+      ])
+    },
+  )
+
   it("puts the programs under test first on PATH, then Node through a folder of its own", () => {
     const sandbox = made({ bins: ["/opt/under-test/bin"] })
     const path = sandbox.env.PATH!.split(delimiter)
