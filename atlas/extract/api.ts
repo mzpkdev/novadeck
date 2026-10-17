@@ -148,7 +148,7 @@ const errorsIn = (body: string, wire: () => ApiError[]): ApiError[] => {
     if (text.startsWith("//")) note.push(text.replace(/^\/\/\s?/, ""))
     else if (text.startsWith("/**")) note.push(text.replace(/^\/\*\*\s?|\s?\*\/$/g, ""))
     else {
-      if (text === "...wireErrors,") found.push(...wire())
+      if (/^\.\.\.wireErrors,?$/.test(text)) found.push(...wire())
       const match = /^([A-Z_]+): \{ status: (\d+)/.exec(text)
       if (match)
         found.push({ code: match[1]!, status: Number(match[2]), note: note.join(" ") || null })
