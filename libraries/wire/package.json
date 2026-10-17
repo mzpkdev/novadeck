@@ -20,6 +20,13 @@
       "development": "./src/testing.ts",
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
+    },
+    "./server": {
+      "node": {
+        "development": "./src/server.ts",
+        "types": "./dist/server.d.ts",
+        "default": "./dist/server.js"
+      }
     }
   },
   "scripts": {
