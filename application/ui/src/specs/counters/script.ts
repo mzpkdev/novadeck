@@ -2,7 +2,7 @@ import { expect } from "vitest"
 
 import type { scriptedRunner } from "../../backend/runner/scripted"
 import { terminalTab, view, viewSwitcher } from "../support/workspace"
-import type { Clock } from "./clock"
+import { frameMs, type Clock } from "./clock"
 import { counts, type Counts } from "./probes"
 
 // The counter run's fixed script: 13 agents' terminals in Grid, then Focus, then switches
@@ -26,10 +26,12 @@ export type PhaseReading = {
 
 export type Reading = Readonly<Record<"grid" | "focus" | "switches", PhaseReading>>
 
-// Rounds of ticks and output per phase, and how long a phase waits at its end: past the
-// 5 s a screen nobody shows keeps streaming before it parks.
+// Rounds of ticks and output per phase, and how long the script waits for screens to
+// park: past the 5 s a screen nobody shows keeps streaming before it parks, in steps of a
+// half second, each checking how many stream.
 const rounds = 3
-const settleMs = 6_000
+const parkFrames = Math.ceil(6_000 / frameMs)
+const checkFrames = Math.ceil(500 / frameMs)
 
 type Summary = Parameters<Parameters<Runner["report"]>[1]>[0]
 
@@ -85,12 +87,15 @@ export const playScript = async (
       )
     }
   }
-  const reading = async (): Promise<PhaseReading> => {
-    for (let waited = 0; waited < settleMs; waited += 500) {
+  const waitForParking = async (): Promise<void> => {
+    for (let waited = 0; waited < parkFrames; waited += checkFrames) {
       // eslint-disable-next-line no-await-in-loop -- The clock moves in order.
-      await clock.advance(500)
+      await clock.frames(checkFrames)
       streamingPeak = Math.max(streamingPeak, runner.streaming())
     }
+  }
+  const reading = async (): Promise<PhaseReading> => {
+    await waitForParking()
     return {
       ticks,
       tickTotals: { ...tick },
@@ -108,9 +113,11 @@ export const playScript = async (
   await play()
   const grid = await reading()
 
-  reset()
+  // Focus is measured as it stays: once the terminals it doesn't show have parked.
   await step(() => viewSwitcher().getByText("Focus", { exact: true }).click(), 10)
   expect(view("Focus").element()).toBeChecked()
+  await waitForParking()
+  reset()
   await play()
   const focus = await reading()
 
@@ -119,8 +126,16 @@ export const playScript = async (
     // eslint-disable-next-line no-await-in-loop -- The script plays in order.
     await step(() => terminalTab(name).click(), 10)
     expect(terminalTab(name).element()).toHaveAttribute("aria-current", "true")
+    const index = terminalNames.indexOf(name)
     // eslint-disable-next-line no-await-in-loop -- The script plays in order.
-    await telemetryTick(runner.terminalIds[terminalNames.indexOf(name)]!, rounds)
+    await telemetryTick(runner.terminalIds[index]!, rounds)
+    // Every agent writes on, shown or not.
+    // eslint-disable-next-line no-await-in-loop -- The script plays in order.
+    await step(() =>
+      runner.terminalIds.forEach((terminalId, other) =>
+        runner.write(terminalId, line(other, rounds + index)),
+      ),
+    )
   }
   const switches = await reading()
 

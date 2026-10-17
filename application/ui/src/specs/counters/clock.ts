@@ -4,19 +4,19 @@ import { vi } from "vitest"
 // The counter run's clock. Timers, animation frames, Date and performance are fake, so
 // time moves only when the script moves it: the park timer, xterm's writes (a timer) and
 // its paints (an animation frame) land on the same frame every run. React works inside
-// `act`, which renders and runs effects at the end of each frame instead of whenever the
+// `act`, which renders and runs effects as each frame's `act` ends instead of whenever the
 // browser schedules it. What the browser still does in real time, as a ResizeObserver
-// reporting a new size, happens on a real frame awaited inside each fake one, so it falls
-// in that frame too.
+// reporting a new size, follows a frame that changed the page: the frame then awaits real
+// frames, each in an `act` of its own, until one changes nothing, so what they set off
+// falls in that frame too.
 
 export const frameMs = 16
 // The epoch the clock starts at, so dates read the same every run.
 const start = new Date("2026-01-01T00:00:00Z")
 
 export type Clock = {
-  // Moves the clock one frame, or as many as `ms` takes, letting everything due run.
-  readonly frames: (count: number, real?: boolean) => Promise<void>
-  readonly advance: (ms: number) => Promise<void>
+  // Moves the clock `count` frames, letting everything due in each run.
+  readonly frames: (count: number) => Promise<void>
   // Does something as one step: what it changes renders and paints over `frames` frames.
   readonly step: (action: () => unknown, frames?: number) => Promise<void>
   readonly stop: () => void
@@ -31,7 +31,12 @@ const nextTask = () =>
     port2.postMessage(undefined)
   })
 
-export const startClock = (): Clock => {
+// How many real frames a frame awaits at most for the page to stop changing.
+const realFramesAtMost = 8
+
+// `changes` is a count that moves whenever the page may have changed, as React commits and
+// DOM mutations do.
+export const startClock = (changes: () => number): Clock => {
   const realFrame = window.requestAnimationFrame.bind(window)
   const nextRealFrame = () => new Promise<void>((resolve) => realFrame(() => resolve()))
   const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -56,33 +61,38 @@ export const startClock = (): Clock => {
       "performance",
     ],
   })
+  // Real frames, while the page keeps changing since `seen`.
+  const settle = async (seen: number): Promise<void> => {
+    for (let round = 0; round < realFramesAtMost && changes() !== seen; round += 1) {
+      seen = changes()
+      // eslint-disable-next-line no-await-in-loop -- One real frame after another.
+      await inAct(nextRealFrame)
+    }
+  }
   // One frame: the fake clock's timers and animation frames due in it, inside one `act`,
-  // then a real frame for the browser's own observers where something may have moved, or
-  // else a real task's turn.
-  const frame = (real: boolean) =>
-    inAct(async () => {
+  // with a real task's turn for promise chains that cross one; then real frames if it
+  // changed the page.
+  const frame = async (): Promise<void> => {
+    const seen = changes()
+    await inAct(async () => {
       vi.advanceTimersByTime(frameMs)
       await nextTask()
-      if (real) await nextRealFrame()
     })
-  const frames = async (count: number, real = true): Promise<void> => {
+    await settle(seen)
+  }
+  const frames = async (count: number): Promise<void> => {
     // eslint-disable-next-line no-await-in-loop -- Frames run one after another.
-    for (let index = 0; index < count; index += 1) await frame(real)
+    for (let index = 0; index < count; index += 1) await frame()
   }
   return {
     frames,
-    // Waits as nothing new happens: real frames only at the end, as the browser has nothing
-    // of its own to report until then.
-    advance: async (ms) => {
-      const count = Math.ceil(ms / frameMs)
-      await frames(Math.max(0, count - 2), false)
-      await frames(Math.min(count, 2))
-    },
     step: async (action, count = 2) => {
+      const seen = changes()
       await inAct(async () => {
         await action()
-        await nextRealFrame()
+        await nextTask()
       })
+      await settle(seen)
       await frames(count)
     },
     stop: () => {

@@ -2,7 +2,8 @@
 // woken, DOM mutation records, and the components React renders on each commit.
 
 export type Counts = {
-  // Store listeners woken: each subscriber called once per change it hears of.
+  // Store listeners woken: each subscriber called once per change it hears of, in every
+  // store `model/store` makes. A store built by hand elsewhere isn't counted.
   notifications: number
   // MutationObserver records anywhere under the page's body.
   mutations: number
@@ -28,18 +29,24 @@ export const countedStores = (module: Record<string, unknown>): Record<string, u
 const countedStore = (store: unknown): unknown => {
   if (typeof store !== "object" || store === null || !("subscribe" in store)) return store
   const subscribe = store.subscribe as (listener: () => void) => () => void
-  return {
-    ...store,
-    subscribe: (listener: () => void) =>
-      subscribe(() => {
-        counts.notifications += 1
-        listener()
-      }),
+  // One wrapper per listener, so subscribing it again stays one subscription, as it is
+  // in the store's own set.
+  const wrapped = new WeakMap<() => void, () => void>()
+  const wrap = (listener: () => void): (() => void) => {
+    const known = wrapped.get(listener)
+    if (known) return known
+    const counted = (): void => {
+      counts.notifications += 1
+      listener()
+    }
+    wrapped.set(listener, counted)
+    return counted
   }
+  return { ...store, subscribe: (listener: () => void) => subscribe(wrap(listener)) }
 }
 
-// Counts mutation records under the body from now on; the returned read takes the ones
-// still queued, so a read right after a change sees it.
+// Counts mutation records under the body from now on, each batch as its callback hears of
+// it, until the returned stop.
 export const observeMutations = (): (() => void) => {
   const observer = new MutationObserver((records) => {
     counts.mutations += records.length
@@ -67,7 +74,8 @@ type Fiber = {
 
 // Function, class, forwardRef and simple memo components: what a "render" calls.
 const componentTags = new Set([0, 1, 11, 15])
-// React's flag for a fiber whose component ran in this render.
+// React's flag for a component that ran in this render and didn't bail out; one whose
+// hooks found nothing changed goes uncounted.
 const performedWork = 1
 
 const children = function* (fiber: Fiber): Generator<Fiber> {
