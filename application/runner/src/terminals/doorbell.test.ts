@@ -816,19 +816,26 @@ describe("the doorbell's word on every refusal and look", () => {
   })
 
   it("looks less often at a screen that keeps changing, up to its cap", async () => {
-    const { host, screens, stop } = terminal({ ringable: false, stalled: "draft", tickMs: 40 })
-    const doorbell = new Doorbell(host, host.queue, {
-      ...recheck,
-      calmMs: 100,
-      recheckMs: 40,
-      recheckMaxMs: 160,
-    })
-    const changing = setInterval(() => doorbell.changed("t"), 20)
-    await sleep(700)
-    clearInterval(changing)
-    expect(screens()).toBeLessThanOrEqual(5)
-    stop()
-    doorbell.close()
+    // On a fake clock: a loaded machine runs real timers late, and the count is what's told.
+    vi.useFakeTimers()
+    try {
+      const { host, screens, stop } = terminal({ ringable: false, stalled: "draft", tickMs: 40 })
+      const doorbell = new Doorbell(host, host.queue, {
+        ...recheck,
+        calmMs: 100,
+        recheckMs: 40,
+        recheckMaxMs: 160,
+      })
+      const changing = setInterval(() => doorbell.changed("t"), 20)
+      await vi.advanceTimersByTimeAsync(700)
+      clearInterval(changing)
+      // At 40, 80, then 160 ms apart: once a recheck can't shorten, the cap holds it at 160.
+      expect(screens()).toBe(5)
+      stop()
+      doorbell.close()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
