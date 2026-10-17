@@ -30,10 +30,12 @@ const loadFonts = async (): Promise<void> => {
 // shows each view the script does, so in the run their code is there at once, whatever the
 // machine's speed; then the page starts over, as the run expects.
 const warmUp = async (): Promise<void> => {
-  await render(<App createBackend={scriptedRunner({ terminals: 13 }).createBackend} />)
+  const connection = await scriptedRunner({ terminals: 13 }).connect(new AbortController().signal)
+  await render(<App createBackend={connection.createBackend} />)
   await layoutSettled()
   await chooseView("Focus")
   await cleanup()
+  connection.close()
   localStorage.clear()
   sessionStorage.clear()
   window.history.replaceState(null, "", "/")
@@ -46,9 +48,12 @@ describe("Counter run", () => {
     const runner = scriptedRunner({ terminals: 13 })
     const stopMutations = observeMutations()
     const clock = startClock(() => counts.commits + counts.mutations)
+    const connecting = new AbortController()
     try {
+      // The app connects and loads the workspace on the clock, as everything after does.
+      const connection = await clock.until(runner.connect(connecting.signal))
       // Rendering takes its own `act`; the clock's frames then let the app settle.
-      await render(<App createBackend={runner.createBackend} />)
+      await render(<App createBackend={connection.createBackend} />)
       await clock.frames(60)
       const names = runner.terminalIds.map((_, index) => `Agent ${index + 1}`)
       const reading = await playScript(runner, clock, { terminalNames: names })
@@ -60,6 +65,7 @@ describe("Counter run", () => {
       // Focus parks what it doesn't show, so most of the output never arrives.
       expect(reading.focus.bytes).toBeLessThan(reading.focus.written)
     } finally {
+      connecting.abort()
       stopMutations()
       clock.stop()
     }

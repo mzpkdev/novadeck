@@ -113,6 +113,8 @@ export default mergeConfig(
             name: "counters",
             include: ["src/specs/counters/**/*.spec.tsx"],
             setupFiles: ["./src/specs/setup.ts"],
+            // The warm-up loads the views' code in real time, cold and under load in a full run.
+            expect: { poll: { timeout: 30_000 } },
             // One long run: 13 terminals through three phases, a real frame per scripted step.
             testTimeout: 180_000,
             browser: {

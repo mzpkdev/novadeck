@@ -17,6 +17,9 @@ const start = new Date("2026-01-01T00:00:00Z")
 export type Clock = {
   // Moves the clock `count` frames, letting everything due in each run.
   readonly frames: (count: number) => Promise<void>
+  // Moves the clock a frame at a time until `work` settles, as many frames as it takes,
+  // failing after `most`.
+  readonly until: <T>(work: Promise<T>, most?: number) => Promise<T>
   // Does something as one step: what it changes renders and paints over `frames` frames.
   readonly step: (action: () => unknown, frames?: number) => Promise<void>
   readonly stop: () => void
@@ -86,6 +89,17 @@ export const startClock = (changes: () => number): Clock => {
   }
   return {
     frames,
+    until: async (work, most = 200) => {
+      let settled = false
+      const done = work.finally(() => {
+        settled = true
+      })
+      const waiting = (): boolean => !settled
+      // eslint-disable-next-line no-await-in-loop -- Frames run one after another.
+      for (let index = 0; index < most && waiting(); index += 1) await frame()
+      if (waiting()) throw new Error(`Still waiting after ${most} frames`)
+      return done
+    },
     step: async (action, count = 2) => {
       const seen = changes()
       await inAct(async () => {
