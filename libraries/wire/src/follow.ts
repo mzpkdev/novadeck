@@ -34,7 +34,7 @@ export type FollowOptions<C extends AnyContractRouter, T> = {
   ) => Promise<AsyncIterable<T>> | AsyncIterable<T>
   readonly resume: CursorResume<C, T> | RestartResume<T>
   /**
-   * Whether a failure says the stream's subject is gone, which ends the stream. A stream that
+   * For a restarting stream: whether a failure says its subject is gone, which ends it. A stream that
    * can lose its subject is opened again as soon as it ends, to learn whether it's still there;
    * one that can't ends only as its server goes, and is opened again on the next connection.
    */
@@ -350,7 +350,7 @@ class Follower<C extends AnyContractRouter, T> implements Following<C, T> {
  * up after the last item read, acknowledging each once the next is asked for, and throws when
  * it can't go on; one that restarts opens again on each new session and never throws, backing
  * off (`min(200·2ⁿ, 3000)` ms) after refusals. Either ends once its reader returns it or the
- * connection closes.
+ * connection closes; a cursor's stream throws why, if it closed with an error.
  *
  * A restarting stream's reader should keep what it has until the stream says `reset`, then
  * replace it with what follows (up to a marker of its own, such as `synced`): the stream

@@ -56,8 +56,9 @@ beside the wire's own handshake.
       read (`after`), unless the epoch changed or the server refused the reader as too slow
       (`SLOW_CONSUMER`), which start it afresh. Each item counts as read once the next is
       asked for, and `ack` tells the server, one acknowledgement in flight at a time, a
-      refused one retried after 50 ms. Its first stream opens on the live session or fails,
-      and any failure but a lost connection ends it, thrown to the reader;
+      refused one retried after 50 ms. Its first stream opens on the live session or fails.
+      Once it has yielded, only a lost connection is resumed: any other failure, or why the
+      connection closed, ends it, thrown to the reader;
     - by starting over (`{ restart: true, reset, holdReset }`): each new subscription says
       `reset` first, so the reader replaces what it has with what follows, up to its own
       marker (such as `synced`). With `holdReset`, `reset` waits for the new subscription's
@@ -65,9 +66,9 @@ beside the wire's own handshake.
       a closing server (`CLOSING`) is followed to the next session, and any other refusal is
       retried after `min(200·2ⁿ, 3000)` ms.
 
-    `gone(error)` says the stream's subject was removed, which ends it. A stream that can lose
-    its subject is opened again as soon as its server ends it, to learn whether it's still
-    there; one that can't is opened again on the next session. The `Following` it gives says
+    For a restarting stream, `gone(error)` says its subject was removed, which ends it. One
+    that can lose its subject is opened again as soon as its server ends it, to learn whether
+    it's still there; one that can't is opened again on the next session. The `Following` it gives says
     which `session` its stream is open on, and why it `finished`: `ended` by the server,
     `stopped` by `return()` or the connection's close, or `failed`.
 
