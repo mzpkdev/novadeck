@@ -57,6 +57,18 @@ Wayland socket. The unpacked package's `chrome-sandbox` isn't setuid, so on Linu
 the window must stay shown, as Chromium throttles a hidden one (each phase records whether the
 page was visible and focused at its end).
 
+Turn the desktop's display sleep and screen lock off for the run (on GNOME: Settings → Power →
+Screen Blank, Never, which is `org.gnome.desktop.session idle-delay`; on macOS, the display's
+sleep in Lock Screen settings): the run's input is synthetic, Playwright's, which the desktop
+doesn't count as activity, so the screen blanks and locks a few minutes in, and Chromium then
+draws the page at about a frame a second, though it still reads as visible and focused. A lock
+started by hand does the same. The app can't hold the screen awake itself, as the sandbox gives
+it no session bus. A phase whose compositor drew under 5 frames a second (its page's animation
+frames, where its trace couldn't be read) is marked throttled: its numbers are left out of the
+summary, its run out of the triggers, and profile.md lists it. The compositor tells a dark
+screen from a busy page, as it draws on while the main thread is saturated; a screen that goes
+dark partway through a phase isn't caught, so the run is best left alone with blanking off.
+
 ## A smoke test under a virtual display
 
 ```sh
@@ -77,11 +89,12 @@ In the output folder:
 - `profile.md`: the machine (CPU, GPU, display, window), the triggers a scenario, React's
   profiling build's overhead, then a table a scenario and build, a row a number and a column a
   phase, each cell the median and the range (min–max) across the runs, phases of runs that
-  failed part way included;
-- `profile.json`: the same with every run's values, each phase's full breakdown, the switches
-  and the agents' phases, the machine as Electron (`getGPUInfo("complete")`,
-  `getGPUFeatureStatus()`, the displays) and the trace (Chromium's own CPU, GPU and OS) record
-  it, the scenarios, the trace's categories, the comparisons, and `problems`;
+  failed part way included, and the throttled phases left out, listed;
+- `profile.json`: the same with every run's values, each phase's full breakdown, the switches and
+  the agents' phases, the machine as Electron (`getGPUInfo("complete")`, `getGPUFeatureStatus()`,
+  the displays, read at the end of the first run that can, as right after a launch the GPU process
+  may not have come up) and the trace (Chromium's own CPU, GPU and OS) record it, the scenarios, the
+  trace's categories, the comparisons, the throttled phases, and `problems`;
 - `traces/<scenario>-<variant>-<run>-<phase>.json.gz`: each phase's trace, of every process the
   app runs, which Chrome DevTools' Performance panel and ui.perfetto.dev open;
 - `maps/<variant>/`: each build of the UI the source maps came from.

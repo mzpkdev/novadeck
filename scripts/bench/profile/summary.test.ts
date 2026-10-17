@@ -5,6 +5,7 @@ import {
   compared,
   pageNumbers,
   summarize,
+  throttledPhases,
   triggers,
   type PhaseResult,
   type RunResult,
@@ -199,6 +200,36 @@ describe("summarize", () => {
     expect(grid?.reactOfBusy).toBeUndefined()
     expect(summary.production?.heavy?.triggers.statePropagationOfBusy).toBeUndefined()
     expect(markdown(summary, { title: "Profile", lines: [] })).toContain("(saturated)")
+  })
+})
+
+describe("throttled phases", () => {
+  it("leave their numbers out, and their run out of the triggers", () => {
+    const runs = [
+      run("heavy", 1, [phase("grid", 80), phase("focus", 20)]),
+      run("heavy", 2, [
+        phase("grid", 40),
+        {
+          ...phase("focus", 2),
+          fps: 1,
+          breakdown: { ...breakdown(2), compositorFps: 1 },
+        },
+      ]),
+      // Slow but drawing: a main thread too busy for its own frames, the compositor still
+      // drawing, isn't throttled.
+      run("heavy", 3, [{ ...phase("grid", 99), fps: 0, frames: 0 }]),
+    ]
+    const summary = summarize(runs).production?.heavy
+    // The second run's Grid counts, its Focus doesn't.
+    expect(summary?.phases.grid?.mainThread?.values).toEqual([80, 40, 99])
+    expect(summary?.phases.focus?.mainThread?.values).toEqual([20])
+    expect(summary?.triggers.transportOfBusy?.values).toHaveLength(2)
+    expect(throttledPhases(runs)).toEqual(["heavy, production, run 2: focus"])
+    // Without a trace, the page's own frames tell.
+    const { breakdown: _, ...untraced } = { ...phase("grid", 0), fps: 1 }
+    expect(throttledPhases([run("heavy", 4, [untraced])])).toEqual([
+      "heavy, production, run 4: grid",
+    ])
   })
 })
 

@@ -251,7 +251,31 @@ const spreadOf = <T>(items: readonly T[], read: (item: T) => number | undefined)
     }),
   )
 
-/** Each build's scenarios' numbers across their runs. */
+/**
+ * Frames a second under which a phase ran throttled, as Chromium runs a page whose screen has
+ * gone dark, as the desktop's idle blanking does: its numbers measure the throttling, not the
+ * app. It's the compositor's frames that tell: they go on while the main thread is busy, even
+ * saturated, and only slow to about one a second once the screen is dark. Without a trace,
+ * the page's own animation frames stand in.
+ */
+export const throttledFps = 5
+
+/** Whether the phase ran throttled (see `throttledFps`). */
+export const throttled = (one: PhaseResult): boolean =>
+  (one.breakdown?.compositorFps ?? one.fps) < throttledFps
+
+/** Each run's phases that ran throttled, as `<scenario>, <variant>, run <n>: <phase>`. */
+export const throttledPhases = (runs: readonly RunResult[]): readonly string[] =>
+  runs.flatMap((run) =>
+    run.phases
+      .filter(throttled)
+      .map((one) => `${run.scenario}, ${run.variant}, run ${run.run}: ${one.phase}`),
+  )
+
+/**
+ * Each build's scenarios' numbers across their runs: a throttled phase's are left out, and
+ * a run with one is left out of the triggers, which take a run's phases together.
+ */
 export const summarize = (runs: readonly RunResult[]): Summary => {
   const summary: Partial<Record<Variant, Partial<Record<ScenarioName, ScenarioSummary>>>> = {}
   for (const variant of new Set(runs.map((run) => run.variant)))
@@ -264,7 +288,7 @@ export const summarize = (runs: readonly RunResult[]): Summary => {
         const of = (mapped: boolean) =>
           these
             .filter((run) => !mapped || run.attributed)
-            .flatMap((run) => run.phases.filter((one) => one.phase === phase))
+            .flatMap((run) => run.phases.filter((one) => one.phase === phase && !throttled(one)))
         const numbers: Partial<Record<Metric, Spread>> = {}
         for (const [name, read] of Object.entries(metrics) as [
           Metric,
@@ -281,7 +305,9 @@ export const summarize = (runs: readonly RunResult[]): Summary => {
         (run: RunResult) => number | undefined,
       ][]) {
         const each = spreadOf(
-          these.filter((run) => !split.has(name) || run.attributed),
+          these.filter(
+            (run) => (!split.has(name) || run.attributed) && !run.phases.some(throttled),
+          ),
           read,
         )
         if (each) found[name] = each

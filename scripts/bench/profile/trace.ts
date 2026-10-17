@@ -147,8 +147,11 @@ export type Breakdown = {
   readonly storeSpans?: Part
   /** Busy time on the other threads that draw: the renderer's compositor and raster, the GPU process. */
   readonly threads: Readonly<Record<string, Part>>
-  /** Frames the renderer's compositor drew, a second. */
-  readonly compositorFps: number
+  /**
+   * Frames the renderer's compositor drew, a second; absent where the trace names no
+   * compositor thread.
+   */
+  readonly compositorFps?: number
   /** The event names whose self time went to other, longest first. */
   readonly otherNames: readonly { readonly name: string; readonly ms: number }[]
 }
@@ -497,7 +500,7 @@ export const breakdown = (events: readonly TraceEvent[], attribution: Attributio
     }),
     ...(stores !== undefined && { storeSpans: part(stores, windowUs) }),
     threads,
-    compositorFps: windowUs > 0 ? drawn / (windowUs / 1e6) : 0,
+    ...(compositor && { compositorFps: windowUs > 0 ? drawn / (windowUs / 1e6) : 0 }),
     otherNames: [...other]
       .map(([name, us]) => ({ name, ms: us / 1000 }))
       .toSorted((a, b) => b.ms - a.ms)

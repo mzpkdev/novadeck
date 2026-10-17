@@ -276,5 +276,7 @@ describe("breakdown", () => {
     expect(result.threads.CompositorTileWorker).toEqual({ ms: 400, share: 40 })
     expect(result.threads.VizCompositorThread).toEqual({ ms: 10, share: 1 })
     expect(result.compositorFps).toBe(3)
+    // A trace that names no compositor thread tells nothing of its frames.
+    expect(breakdown(marks(0, 1000), none).compositorFps).toBeUndefined()
   })
 })

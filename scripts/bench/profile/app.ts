@@ -62,7 +62,10 @@ export type OpenedApp = {
   readonly page: Page
   readonly busy: (seed: number, on: boolean) => void
   readonly agent: (seed: number) => string
+  /** The machine as the app saw it on launch, before its GPU process may have come up. */
   readonly machine: Machine
+  /** The machine as the app sees it now: read once the run is done, its GPU status is the run's. */
+  readonly readMachine: () => Promise<Machine>
   /** A folder inside the sandbox the app may write into, as its traces. */
   readonly scratch: string
 }
@@ -168,27 +171,29 @@ export const openApp = (executable = packaged().executable): AppRun => {
         const [width = 0, height = 0] = shown.getContentSize()
         return { width, height }
       }, size)
-      const machine = await launched.evaluate(async ({ app: electron, screen }) => {
-        const primary = screen.getPrimaryDisplay().id
-        return {
-          gpu: await electron.getGPUInfo("complete").catch((error: unknown) => String(error)),
-          gpuFeatures: { ...electron.getGPUFeatureStatus() } as Record<string, string>,
-          displays: screen.getAllDisplays().map((each) => ({
-            size: each.size,
-            scaleFactor: each.scaleFactor,
-            frequency: each.displayFrequency,
-            colorDepth: each.colorDepth,
-            primary: each.id === primary,
-          })),
-        }
-      })
+      const read = () =>
+        launched.evaluate(async ({ app: electron, screen }) => {
+          const primary = screen.getPrimaryDisplay().id
+          return {
+            gpu: await electron.getGPUInfo("complete").catch((error: unknown) => String(error)),
+            gpuFeatures: { ...electron.getGPUFeatureStatus() } as Record<string, string>,
+            displays: screen.getAllDisplays().map((each) => ({
+              size: each.size,
+              scaleFactor: each.scaleFactor,
+              frequency: each.displayFrequency,
+              colorDepth: each.colorDepth,
+              primary: each.id === primary,
+            })),
+          }
+        })
       return {
         app: launched,
         page,
         busy,
         agent,
         scratch,
-        machine: { ...machine, window, switches },
+        machine: { ...(await read()), window, switches },
+        readMachine: async () => ({ ...(await read()), window, switches }),
       }
     },
   }

@@ -24,6 +24,8 @@ import {
   markdown,
   pageNumbers,
   summarize,
+  throttledFps,
+  throttledPhases,
   type PhaseResult,
   type RunResult,
   type Variant,
@@ -207,6 +209,8 @@ const startedAt = new Date().toISOString()
 const results: RunResult[] = []
 const problems: string[] = []
 let machine: Machine | undefined
+// Whether `machine` is a finished run's reading, not a launch's.
+let machineRead = false
 const seen: { metadata?: Record<string, unknown> } = {}
 let current: AppRun | undefined
 let stoppedBy: string | undefined
@@ -240,6 +244,7 @@ const write = () => {
     shared,
     traceConfig,
     summary,
+    throttled: throttledPhases(results),
     profilingOverhead: {
       busyShare: compared(summary, "profiling"),
       busyMsPerFrame: compared(summary, "profiling", "busyMsPerFrame"),
@@ -265,6 +270,13 @@ const write = () => {
     `- GPU: ${String(seen.metadata?.["gpu-gl-renderer"] ?? "unknown")}; GPU compositing ${machine?.gpuFeatures.gpu_compositing ?? "unknown"}`,
     `- Display: ${display ? `${display.size.width}×${display.size.height} at ${display.scaleFactor}×, ${display.frequency || "?"} Hz` : "unknown"}; window ${machine?.window.width ?? "?"}×${machine?.window.height ?? "?"}`,
     `- Runs: ${runs} of each scenario on each build (${variants.join(", ")}); cells are the median (min–max) across runs; shares are of the phase's window unless they say "of busy".`,
+    ...(throttledPhases(results).length > 0
+      ? [
+          "",
+          `**Throttled, left out:** phases whose compositor drew under ${throttledFps} frames a second, as Chromium draws a page whose screen has gone dark (the desktop's idle blanking or a lock does it), measure the throttling, not the app. Their numbers are left out, and their runs out of the triggers:`,
+          ...throttledPhases(results).map((one) => `- ${one}`),
+        ]
+      : []),
     ...(problems.length > 0 || results.some((run) => run.error)
       ? [
           "",
@@ -341,6 +353,16 @@ for (let run = 1; run <= runs; run += 1)
             agentPhases,
             variant === "webgl",
           )
+          // The GPU status right after a launch may be from before the GPU process came up:
+          // the first run to finish that can read it records the one it ran with.
+          if (!machineRead)
+            try {
+              // eslint-disable-next-line no-await-in-loop -- As above.
+              machine = await opened.readMachine()
+              machineRead = true
+            } catch {
+              // The next run reads it again.
+            }
         } catch (cause) {
           error = describe(cause)
         }
