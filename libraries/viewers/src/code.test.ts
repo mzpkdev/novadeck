@@ -51,6 +51,15 @@ describe("the code viewer", () => {
     await expect.poll(() => host.querySelector(".tok-keyword")?.textContent).toBe("let")
   })
 
+  it("reads as plain text in a language it has no parser for", async () => {
+    const host = hostIn()
+    const lines = ["let x = 1"]
+    const viewer = mount({ lines, firstLine: 1, path: "a.ts" }, host)
+    await expect.poll(() => host.querySelector(".tok-keyword")).not.toBeNull()
+    viewer.update({ lines, firstLine: 1, path: "a.ts", language: "ruby" })
+    await expect.poll(() => host.querySelector(".tok-keyword")).toBeNull()
+  })
+
   it("emphasizes the lines in its range, both ends included", () => {
     const host = hostIn()
     mount({ lines: numbered(5), firstLine: 10, emphasis: { from: 11, to: 13 } }, host)
@@ -219,16 +228,62 @@ describe("the code viewer", () => {
     expect(listingOf(host).scrollTop).toBe(0)
   })
 
-  it("keeps its place and its rows when only the emphasis changes", () => {
+  it("keeps its place and its rows when only the emphasis changes, to lines in view", () => {
     const host = hostIn()
     const lines = numbered(300)
     const viewer = mount({ lines, firstLine: 1 }, host)
     listingOf(host).scrollTop = 500
-    const before = rowsOf(host)[3]
-    viewer.update({ lines: [...lines], firstLine: 1, emphasis: { from: 4, to: 4 } })
-    expect(rowsOf(host)[3]).toBe(before)
-    expect(before!.hasAttribute("data-emphasized")).toBe(true)
+    const before = rowsOf(host)
+    const inView = before.findIndex((row) => row.offsetTop > 520)
+    viewer.update({
+      lines: [...lines],
+      firstLine: 1,
+      emphasis: { from: inView + 1, to: inView + 1 },
+    })
+    expect(rowsOf(host)[inView]).toBe(before[inView])
+    expect(before[inView]!.hasAttribute("data-emphasized")).toBe(true)
     expect(listingOf(host).scrollTop).toBe(500)
+  })
+
+  it("shows other lines emphasized, as when its agent points elsewhere in the file", () => {
+    const host = hostIn()
+    const lines = numbered(300)
+    const viewer = mount({ lines, firstLine: 1, emphasis: { from: 2, to: 3 } }, host)
+    expect(listingOf(host).scrollTop).toBe(0)
+    viewer.update({ lines, firstLine: 1, emphasis: { from: 250, to: 251 } })
+    const row = rowsOf(host)[249]!
+    const listing = listingOf(host)
+    expect(row.offsetTop).toBeGreaterThan(listing.scrollTop)
+    expect(row.offsetTop + row.offsetHeight).toBeLessThan(listing.scrollTop + listing.clientHeight)
+  })
+
+  it("still shows its emphasized lines once it has a size, though updated out of sight", async () => {
+    const host = hostIn()
+    host.style.display = "none"
+    const content = { lines: numbered(300), firstLine: 1, emphasis: { from: 200, to: 202 } }
+    const viewer = mount(content, host)
+    viewer.update({ ...content, lines: [...content.lines] })
+    host.style.display = "flex"
+    await expect.poll(() => listingOf(host).scrollTop).toBeGreaterThan(0)
+  })
+
+  it("still picks up its saved place once it has a size, though its lines change out of sight", async () => {
+    const first = hostIn()
+    const viewer = mount({ lines: numbered(300), firstLine: 1 }, first)
+    listingOf(first).scrollTop = 1234
+    const state = viewer.state()
+    viewer.destroy()
+
+    const hidden = hostIn()
+    hidden.style.display = "none"
+    const next = mountCode(hidden, {
+      content: { lines: numbered(300), firstLine: 1 },
+      label: "src/app.ts",
+      saved: state,
+    })
+    next.update({ lines: numbered(310), firstLine: 1 })
+    hidden.style.display = "flex"
+    await expect.poll(() => listingOf(hidden).scrollTop).toBe(1234)
   })
 
   it("keeps its place when the lines change", () => {
@@ -259,6 +314,18 @@ describe("the code viewer", () => {
     const offset = lines.slice(0, 150).join("\n").length + 1
     viewer.jumpTo({ offset })
     expect(showing(150)).toBe(true)
+  })
+
+  it("lands a jump made out of sight once it has a size", async () => {
+    const host = hostIn()
+    host.style.display = "none"
+    const viewer = mount({ lines: numbered(300), firstLine: 1 }, host)
+    viewer.jumpTo({ line: 250 })
+    host.style.display = "flex"
+    const row = rowsOf(host)[249]!
+    const listing = listingOf(host)
+    await expect.poll(() => listing.scrollTop).toBeGreaterThan(0)
+    expect(row.offsetTop + row.offsetHeight).toBeLessThan(listing.scrollTop + listing.clientHeight)
   })
 
   it("takes focus without scrolling", () => {

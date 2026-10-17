@@ -84,7 +84,7 @@ describe("a viewer in React", () => {
     ])
   })
 
-  it("mounts once under StrictMode, which runs effects twice", () => {
+  it("mounts once under StrictMode, its doubled ref and effects coming before the element", () => {
     render(true)
     expect(calls).toEqual(["mount a first saved:none"])
   })
