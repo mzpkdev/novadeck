@@ -17,6 +17,7 @@ catalog:
   "@orpc/standard-server-peer": 1.15.5
   electron: ^44.7.0
   node-pty: 1.2.0-beta.14
+  ws: 8.22.0
   zod: 4.6.5
 
 publicHoistPattern:
