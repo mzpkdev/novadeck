@@ -48,7 +48,15 @@ const shown = async () => {
   await act(async () => {
     await vi.dynamicImportSettled()
   })
-  return { panes, container, emit: (content: ItemContent) => act(() => emit(content)) }
+  // A new content applies once what it loads has, as revising a plan imports its sync.
+  const emitted = async (content: ItemContent): Promise<void> => {
+    await act(async () => {
+      emit(content)
+      await vi.dynamicImportSettled()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+  return { panes, container, emit: emitted }
 }
 
 describe("a plan whose file can't be read for now", () => {
