@@ -213,7 +213,7 @@ describe("the counter run's budgets", () => {
   context("when the change is in a pull request", () => {
     it("asks a raise to name that pull request", () => {
       const next = withGridMutations({ budget: 30, reason: "A readout", from: "#240" })
-      expect(budgetChanges(next, budgets, 251)[0]?.problem).toContain("This raise is in #251")
+      expect(budgetChanges(next, budgets, 251)[0]?.problem).toContain("This change is in #251")
       const own = withGridMutations({ budget: 30, reason: "A readout", from: "#251, #240" })
       expect(budgetChanges(own, budgets, 251)[0]?.problem).toBeUndefined()
       const longer = withGridMutations({ budget: 30, reason: "A readout", from: "#2510" })
@@ -296,13 +296,44 @@ describe("the counter run's budgets", () => {
 
   context("when the change drops a budget the base has", () => {
     it("lists it as no longer budgeted, renamed or not", () => {
-      const base = { ...budgets, grid: { ...budget, wireBytes: 480 }, legacy: { bytes: 9 } }
+      const base = {
+        ...budgets,
+        grid: { ...budget, wireBytes: 480 },
+        legacy: { bytes: 9, toString: "x" },
+        broken: [1],
+      }
       const gone = goneBudgets(budgets, base)
-      expect(gone).toEqual(["grid wireBytes 480", "legacy bytes 9"])
+      expect(gone).toEqual([
+        "grid wireBytes 480",
+        "legacy bytes 9",
+        "legacy toString (unreadable)",
+        "broken (unreadable)",
+      ])
       expect(countersSummary(reading, checkCounters(reading, budgets), { gone })).toContain(
         "- grid wireBytes 480: no longer budgeted.",
       )
       expect(goneBudgets(budgets, budgets)).toEqual([])
+    })
+  })
+
+  context("when the budget file has a key the gate doesn't read", () => {
+    it("fails, so a leftover block can't stand in for a budget renamed away", () => {
+      expect(() => parseBudgets({ ...budgets, swaps: { bytes: 100 } }, "budgets.json")).toThrow(
+        "budgets.json has swaps, which is no phase the counter run plays.",
+      )
+      expect(() =>
+        parseBudgets({ ...budgets, grid: { ...budget, wireBytes: 1 } }, "budgets.json"),
+      ).toThrow("budgets.json's grid has wireBytes, which the gate doesn't budget.")
+      expect(parseBudgets({ ...budgets, notes: ["a note"] }, "budgets.json")).toBeDefined()
+    })
+  })
+
+  context("when the base has a phase with nothing but its ticks", () => {
+    it("still asks its new budgets for a reason", () => {
+      const base = parseBaseBudgets({ ...budgets, switches: { ticks: 10 } }, "base")
+      const changes = budgetChanges(budgets, base)
+      expect(changes).toHaveLength(5)
+      expect(changes.every((change) => change.problem)).toBe(true)
     })
   })
 })

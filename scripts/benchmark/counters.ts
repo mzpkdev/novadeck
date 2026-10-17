@@ -78,7 +78,14 @@ export const parseBudgets = (data: unknown, name: string): Budgets => {
     if (!isCount(budgets.ticks))
       throw new Error(`${name} doesn't say how many ticks ${phase} plays.`)
     for (const counter of gated) checkEntry(budgets[counter], `${name}'s ${phase} ${counter}`)
+    // A key the gate doesn't read would stand in for a budget renamed away.
+    for (const key of Object.keys(budgets))
+      if (key !== "ticks" && !(gated as readonly string[]).includes(key))
+        throw new Error(`${name}'s ${phase} has ${key}, which the gate doesn't budget.`)
   }
+  for (const key of Object.keys(data))
+    if (key !== "notes" && !(phases as readonly string[]).includes(key))
+      throw new Error(`${name} has ${key}, which is no phase the counter run plays.`)
   return data as Budgets
 }
 
@@ -171,7 +178,7 @@ const raiseProblem = (
   if (!said(why?.reason) || !said(why.from))
     return `${was === undefined ? "A new" : "A raised"} budget is written ${raiseForm}.`
   if (pullRequest !== undefined && !new RegExp(`#${pullRequest}\\b`).test(why.from))
-    return `This raise is in #${pullRequest}; name it in "from".`
+    return `This change is in #${pullRequest}; name it in "from".`
   if (typeof was === "object" && why.from.trim() === was.from.trim())
     return `This raise names the earlier raise's source (${why.from}); name its own pull request.`
   return undefined
@@ -196,7 +203,7 @@ export const budgetChanges = (
       if (from === to) return []
       if (from !== undefined && to < from) return [{ phase, counter, from, to }]
       const why = typeof entry === "object" ? entry : undefined
-      const known = gated.some((other) => base[phase]?.[other] !== undefined)
+      const known = base[phase] !== undefined
       const problem =
         from === undefined && !known ? undefined : raiseProblem(entry, was, pullRequest)
       return [
@@ -214,21 +221,22 @@ export const budgetChanges = (
   )
 
 // The budgets the base branch's file has that this one doesn't, as a counter or phase
-// renamed or dropped, read from the file as it is: "phase counter n".
+// renamed or dropped, read from the file as it is: "phase counter n", or "(unreadable)"
+// for an entry that isn't a budget.
 export const goneBudgets = (budgets: Budgets, base: unknown): string[] => {
   if (!isRecord(base)) return []
-  return Object.entries(base).flatMap(([phase, counters]) =>
-    phase === "notes" || !isRecord(counters)
-      ? []
-      : Object.entries(counters).flatMap(([counter, entry]) => {
-          if (counter === "ticks") return []
-          const count = isRecord(entry) ? entry.budget : entry
-          const kept = (budgets as unknown as Record<string, Record<string, unknown> | undefined>)[
-            phase
-          ]?.[counter]
-          return isCount(count) && kept === undefined ? [`${phase} ${counter} ${count}`] : []
-        }),
-  )
+  const kept = (phase: string, counter: string): boolean =>
+    Object.hasOwn(budgets, phase) &&
+    Object.hasOwn(budgets[phase as Phase] as Record<string, unknown>, counter)
+  return Object.entries(base).flatMap(([phase, counters]) => {
+    if (phase === "notes") return []
+    if (!isRecord(counters)) return Object.hasOwn(budgets, phase) ? [] : [`${phase} (unreadable)`]
+    return Object.entries(counters).flatMap(([counter, entry]) => {
+      if (counter === "ticks" || kept(phase, counter)) return []
+      const count = isRecord(entry) ? entry.budget : entry
+      return [`${phase} ${counter} ${isCount(count) ? count : "(unreadable)"}`]
+    })
+  })
 }
 
 // Whether the base has any budget the comparison can use: one with none, as after a

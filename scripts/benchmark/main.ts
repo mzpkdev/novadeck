@@ -55,6 +55,8 @@ export const main = (basePath = process.argv[2]): void => {
     console.error(
       "::warning title=Budgets not compared::No base budgets to compare with, so budget changes aren't checked.",
     )
+  for (const budget of gone)
+    console.error(`::warning title=Budget dropped::${oneLine(budget)} is no longer budgeted.`)
   for (const script of scripts) console.error(`::error title=Script changed::${oneLine(script)}`)
   const over = rows.filter((row) => row.verdict === "over")
   for (const { phase, counter, value, budget } of over)
