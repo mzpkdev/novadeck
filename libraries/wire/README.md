@@ -18,7 +18,7 @@ know: the app's procedures and their codes stay the app's, beside the wire's own
     matches one by code.
   - `wireErrors`, the codes the wire's own server side refuses with, as an oRPC error map
     for the app to spread into its contract's: `UNAUTHORIZED`, `INCOMPATIBLE_PROTOCOL`,
-    `RESOURCE_LIMIT`, `SLOW_CONSUMER`, `INVALID_CURSOR`. The client adds `DISCONNECTED` and
+    `RESOURCE_LIMIT`, `CLOSING` (shutting down), `SLOW_CONSUMER`, `INVALID_CURSOR`. The client adds `DISCONNECTED` and
     `CLOSED`, and oRPC `BAD_REQUEST` and `INTERNAL_SERVER_ERROR` (`WireErrorCode`).
   - `wireContract`, the wire's own procedure for the app to spread into its contract:
     `wire.handshake({ protocolVersion, token?, clientId? })`, which opens every connection

@@ -109,7 +109,7 @@ export type Runner = {
      * Closes every terminal of the project's sessions, whichever connection controls
      * them, so watchers see each `removed`, then forgets the project, its sessions and its
      * agents' messages. Rejects with `NOT_FOUND` for a project the runner doesn't have, as
-     * one already removed, and with `RUNTIME_CLOSING` when the runner shuts down first.
+     * one already removed, and with `CLOSING` when the runner shuts down first.
      */
     remove(input: { readonly projectId: string }): Promise<void>
   }
@@ -778,7 +778,7 @@ class Resubscription<T> implements AsyncIterableIterator<T, undefined> {
       return
     }
     this.drop()
-    if (hasCode(cause, "DISCONNECTED", "RUNTIME_CLOSING") || !link.channel.open) {
+    if (hasCode(cause, "DISCONNECTED", "CLOSING") || !link.channel.open) {
       this.spent = link
       return
     }
@@ -906,7 +906,7 @@ class Watch<Change> implements AsyncIterableIterator<
    * live link, such as `RESOURCE_LIMIT`, is retried there after a growing delay.
    */
   private async recover(cause: unknown, link: Link): Promise<void> {
-    const lost = hasCode(cause, "DISCONNECTED", "RUNTIME_CLOSING") || !link.channel.open
+    const lost = hasCode(cause, "DISCONNECTED", "CLOSING") || !link.channel.open
     if (lost) {
       this.spent = link
       this.drop(true)

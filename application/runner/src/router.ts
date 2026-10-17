@@ -87,7 +87,7 @@ export const createRouter = (options: {
       save: api.sessions.save.handler(({ input }) => {
         // Shells exiting during shutdown would otherwise overwrite the last state saved
         // before it with one where nothing runs.
-        if (options.closing()) throw new DomainError("RUNTIME_CLOSING")
+        if (options.closing()) throw new DomainError("CLOSING")
         store.saveSession(input)
       }),
     },
@@ -266,7 +266,7 @@ export const createRouter = (options: {
     settings: {
       get: api.settings.get.handler(() => store.settings()),
       set: api.settings.set.handler(({ input }) => {
-        if (options.closing()) throw new DomainError("RUNTIME_CLOSING")
+        if (options.closing()) throw new DomainError("CLOSING")
         store.saveSettings(input)
         if (input.transcripts !== undefined) terminals.keepTranscripts(input.transcripts)
       }),

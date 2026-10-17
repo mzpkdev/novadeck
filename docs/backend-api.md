@@ -194,7 +194,7 @@ goes, `projects.list` leaves it out, creating a session or terminal in it reject
 with `NOT_FOUND`, and restarting one of its terminals with `TERMINAL_NOT_FOUND`. A
 second call while it goes shares the first, and one after it, like one for a project
 the runner never had, rejects with `NOT_FOUND`. A runner that shuts down before the
-removal is done rejects it with `RUNTIME_CLOSING` and keeps the project, for a client to
+removal is done rejects it with `CLOSING` and keeps the project, for a client to
 remove again from the next runner.
 `sessions.save({ sessionId, state })` replaces a session's `state`, a string the
 runner stores with the session without reading it, such as a UI layout. It holds only
@@ -204,7 +204,7 @@ report `null` until the first save. A state holds at most `maxClientStateLength`
 (196,608) characters, and over WebSocket the whole call must also fit in one
 `maxWebSocketMessageBytes` (256 KiB) message; both limits are exported from
 `@novadeck/protocol`. Once the runner starts shutting down it refuses saves with
-`RUNTIME_CLOSING`, so shells ending on the way out cannot overwrite the last state; it
+`CLOSING`, so shells ending on the way out cannot overwrite the last state; it
 saves nothing of its terminals either, after one last save while they still run.
 
 `runner.terminals.watch()` follows every terminal on the runner, across sessions:
@@ -336,7 +336,7 @@ until 10 minutes after the later of the stop and the thread's last message (a re
 does not extend them) or the person releases it, the listing's `stopped` holding only
 meanwhile; a leased message is left to finish, the recipient is told nothing,
 stopping a stopped thread does nothing, and an unknown thread is `NOT_FOUND`. Each refuses with
-`RUNTIME_CLOSING` once the runner is stopping. `messages.watch(terminalId)` streams what
+`CLOSING` once the runner is stopping. `messages.watch(terminalId)` streams what
 `list` says, then again on each change to the terminal's threads, messages or delivery
 state, and on each pause or resume, a burst of changes within one tick as one listing;
 a reader that falls behind gets only the newest listing, never one equal to the last it
@@ -492,7 +492,7 @@ not command completion.
   the shell has exited does not bring it back. It then ends the shell; attached viewers
   still receive `exited`, and later calls report `TERMINAL_NOT_FOUND`. A close reaches a
   runner that is shutting down too; only a stopped one refuses it, with
-  `RUNTIME_CLOSING`. A shell that exits on its own keeps its record until eviction, and
+  `CLOSING`. A shell that exits on its own keeps its record until eviction, and
   the terminal itself until it is closed. A terminal kept only as saved closes the same
   way. The runner refuses to create a terminal closed in its lifetime again, restoring
   or not, even one a `create` was restoring as it closed, with `TERMINAL_NOT_FOUND`: a

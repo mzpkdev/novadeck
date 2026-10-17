@@ -66,7 +66,6 @@ export const errors = {
   SNAPSHOT_TOO_LARGE: { status: 413 },
   UPLOAD_TOO_LARGE: { status: 413 },
   SPAWN_FAILED: { status: 500 },
-  RUNTIME_CLOSING: { status: 503 },
   AGENT_SETUP_FAILED: { status: 500 },
   PROMPT_FAILED: { status: 409 },
   // A prompt a TUI would read as more than text (`promptRefusal`): a control character, a

@@ -1200,7 +1200,7 @@ describe("runner client over MessagePort", () => {
     await expect(client.sessions.save({ sessionId, state: "before" })).resolves.toBeUndefined()
     const closing = app.runner.close()
     await expect(client.sessions.save({ sessionId, state: "after" })).rejects.toMatchObject({
-      code: "RUNTIME_CLOSING",
+      code: "CLOSING",
     })
     await closing
   })
