@@ -31,6 +31,12 @@ const serve = () => {
 }
 
 describe("servePort", () => {
+  it("refuses a call limit that isn't a positive integer", () => {
+    const sessions = createSessions({ protocolVersion, router: {} })
+    const [end] = memoryPorts()
+    expect(() => servePort(sessions, end as ServedPort, { maxCalls: 0 })).toThrow("maxCalls")
+  })
+
   it("serves the port's holder without a token", async () => {
     const { client } = serve()
     const wire = await connect({ contract, transport: messagePort(client), protocolVersion })

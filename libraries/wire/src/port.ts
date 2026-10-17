@@ -1,6 +1,6 @@
 import { RPCHandler } from "@orpc/server/message-port"
 
-import type { Sessions } from "./sessions.js"
+import { positive, type Sessions } from "./sessions.js"
 
 /** A port to serve one client over: a DOM `MessagePort` or Electron's `MessagePortMain`. */
 export type ServedPort = Parameters<RPCHandler<object>["upgrade"]>[0] & {
@@ -34,7 +34,7 @@ export const servePort = (
     verify: () => true,
     terminate: () => port.close(),
     authenticated: () => {},
-    maxCalls: options.maxCalls ?? 1024,
+    maxCalls: positive("maxCalls", options.maxCalls ?? 1024),
   })
   const close = () => sessions.close(session)
   new RPCHandler(sessions.router).upgrade(port, { context: { session } })

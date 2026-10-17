@@ -5,7 +5,7 @@ import type { Duplex } from "node:stream"
 import { RPCHandler } from "@orpc/server/ws"
 import { WebSocket, WebSocketServer } from "ws"
 
-import type { Sessions } from "./sessions.js"
+import { positive, type Sessions } from "./sessions.js"
 
 export type WebSocketOptions = {
   /** Where clients connect; any other path is refused. */
@@ -34,12 +34,6 @@ const digest = (value: string): Buffer => createHash("sha256").update(value).dig
 
 const refuse = (socket: Duplex, status: number, message: string): void => {
   socket.end(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`)
-}
-
-const positive = (name: string, value: number): number => {
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new Error(`${name} must be a positive integer`)
-  return value
 }
 
 const tokenCheck = (token: string | undefined): ((token: string | undefined) => boolean) => {

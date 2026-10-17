@@ -156,7 +156,7 @@ describe("serveWebSocket", () => {
     await expect(client.echo("hi")).resolves.toBe("hi")
   })
 
-  it("releases a session before it answers its peer's close", async () => {
+  it("releases a session when its peer closes", async () => {
     const closed = vi.fn<(session: Session) => void>()
     const { url } = await serve({}, { closed })
     const { socket, client } = await raw(url)

@@ -76,6 +76,13 @@ export type Sessions = {
   close(session: Session): void
 }
 
+/** Checks a limit given as an option. */
+export const positive = (name: string, value: number): number => {
+  if (!Number.isSafeInteger(value) || value < 1)
+    throw new Error(`${name} must be a positive integer`)
+  return value
+}
+
 const isStream = (value: unknown): value is AsyncIterable<unknown> =>
   typeof value === "object" &&
   value !== null &&
@@ -88,6 +95,8 @@ export const createSessions = (
   const { protocolVersion, admit, error: mapError = (error) => error } = options
   // The handshake sits beside the app's procedures, which a lazy router would hide it behind.
   if (isLazy(options.router)) throw new Error("The sessions' router can't be lazy")
+  if ("wire" in options.router)
+    throw new Error("The app's router can't serve the wire's procedures")
   const epoch = options.epoch ?? randomUUID()
   const clients = new Map<string, Record>()
 
@@ -137,9 +146,9 @@ export const createSessions = (
   const gate = os.$context<SessionContext>().middleware(async ({ context, next }) => {
     const session = record(context.session)
     if (!session.authenticated || session.closed)
-      throw new ORPCError("UNAUTHORIZED", wireErrors.UNAUTHORIZED)
+      throw new ORPCError("UNAUTHORIZED", { status: wireErrors.UNAUTHORIZED.status })
     if (session.calls >= session.transport.maxCalls)
-      throw new ORPCError("RESOURCE_LIMIT", wireErrors.RESOURCE_LIMIT)
+      throw new ORPCError("RESOURCE_LIMIT", { status: wireErrors.RESOURCE_LIMIT.status })
     // A stream holds its call only until the procedure hands it back, not while it runs.
     session.calls += 1
     try {

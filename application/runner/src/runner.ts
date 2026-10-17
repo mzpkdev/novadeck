@@ -216,7 +216,7 @@ const refusingRunner = (): Runner => ({
     protocolVersion,
     router: {},
     admit: () => {
-      throw new ORPCError("WORKSPACE_TOO_NEW", errors.WORKSPACE_TOO_NEW)
+      throw new ORPCError("WORKSPACE_TOO_NEW", { status: errors.WORKSPACE_TOO_NEW.status })
     },
   }),
   snapshotBytes: 0,

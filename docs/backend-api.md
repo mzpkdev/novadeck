@@ -362,6 +362,7 @@ without controlling it; its `write` and `resize` reject with `CONTROL_REQUIRED`.
 clients' sessions (`runner.sessions`), and the wire's transports serve them:
 
 ```ts
+import { maxWebSocketMessageBytes } from "@novadeck/protocol"
 import { createRunner } from "@novadeck/runner"
 import { servePort, serveWebSocket } from "@novadeck/wire/server"
 

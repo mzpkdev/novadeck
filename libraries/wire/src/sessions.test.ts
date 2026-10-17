@@ -206,6 +206,12 @@ describe("createSessions", () => {
     ).toThrow("can't be lazy")
   })
 
+  it("refuses an app router that serves the wire's procedures itself", () => {
+    expect(() => createSessions({ protocolVersion, router: { wire: {} } })).toThrow(
+      "can't serve the wire's procedures",
+    )
+  })
+
   it("limits the calls one session may have running", async () => {
     const { open, held } = serve()
     const { client, handshake } = open({ maxCalls: 2 })
