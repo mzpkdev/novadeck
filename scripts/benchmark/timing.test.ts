@@ -62,12 +62,14 @@ describe("the timing run's comment", () => {
       const short: TimingReport = {
         ...report,
         summary: { ...report.summary, switchP90Ms: null, agentsHeard: 3, steady: [] },
-        problems: ["reaped 2 processes"],
+        problems: ["reaped 2 processes\n    at reap (reap.ts:1)"],
         error: "Chromium crashed",
       }
       const comment = timingComment(short, { label: "This pull request" })
       expect(comment).toContain("This pull request: the run stopped short: Chromium crashed")
-      expect(comment).toContain("1 problem(s)")
+      expect(comment).toContain(
+        "> ❌ This pull request: the sandbox found a problem, so the job fails: reaped 2 processes",
+      )
       expect(comment).toContain("heard 3 of 5 fake agents")
       expect(comment).toContain("| Switch p90 | – |")
       expect(comment).toContain("| Grid main-thread share | – |")

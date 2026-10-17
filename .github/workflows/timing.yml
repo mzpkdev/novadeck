@@ -3,7 +3,8 @@ name: Benchmark Timing
 # The timing run (architecture rule 16): the real app in the sandbox, timed. Real time on
 # a shared machine makes its numbers too noisy to gate on, and it needs the relay's Rust
 # build, so it runs nightly on main, as a trend, and on pull requests labelled `bench`,
-# reported beside main's last run. It never fails on its numbers.
+# reported beside main's last run. It never fails on its numbers, only when the sandbox
+# leaked or couldn't be made.
 on:
   schedule:
     - cron: "41 2 * * *"
@@ -103,14 +104,15 @@ jobs:
         if: steps.browser-cache.outputs.cache-hit == 'true'
         run: pnpm --filter @novadeck/ui exec playwright install-deps chromium
 
-      # Builds the runner and the sandbox, then times the app; it writes its report even
-      # when the run stops short, saying why in the report.
+      # Builds the runner and the sandbox, then times the app. It writes its report even
+      # when the run stops short, saying why in the report, and fails when the sandbox
+      # leaked or couldn't be made: the steps after still report it.
       - name: Play Timing Run
         run: pnpm bench:timing --output "$RUNNER_TEMP/timing.json"
 
       # Main's last nightly report, if one is still kept.
       - name: Fetch Main's Report
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,8 +126,15 @@ jobs:
 
       # A pull request's report also goes to the file its comment posts.
       - name: Report Timings
+        id: report
+        if: always()
         shell: bash
         run: |
+          # No report means the build failed before the run, as the step before says.
+          if [ ! -f "$RUNNER_TEMP/timing.json" ]; then
+            echo "No timing report: the timing run didn't get as far as writing one." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           report=(node scripts/benchmark/timing-main.ts "$RUNNER_TEMP/timing.json" "$RUNNER_TEMP/main/timing.json")
           if [ "$GITHUB_EVENT_NAME" = pull_request ]; then report+=("$RUNNER_TEMP/comment.md"); fi
           "${report[@]}"
@@ -133,13 +142,14 @@ jobs:
       # One comment per pull request, updated in place. A fork's pull request gets a
       # read-only token, so its numbers stay in the job summary.
       - name: Comment on Pull Request
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request' && steps.report.outcome == 'success'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
+          [ -f "$RUNNER_TEMP/comment.md" ] || exit 0
           marker="<!-- novadeck-benchmark-timing -->"
           # The workflow's own comment, never another author's that starts the same way.
           existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \

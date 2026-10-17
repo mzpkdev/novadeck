@@ -40,20 +40,25 @@ const count = (value: number | null | undefined): string =>
 const steadyOf = (report: TimingReport | undefined, layout: string): Steady | undefined =>
   report?.summary?.steady?.find((entry) => entry.layout === layout)
 
+// What failed the run's job: the sandbox leaked, or couldn't be made, which `pnpm
+// bench:timing` fails on as a boundary failing. Each problem shows its first line.
+const leaksOf = (report: TimingReport, whose: string): string[] =>
+  Array.isArray(report.problems) && report.problems.length
+    ? [
+        `${whose}: the sandbox found a problem, so the job fails: ${report.problems
+          .map((problem) => String(problem).split("\n")[0]?.trim())
+          .join("; ")}`,
+      ]
+    : []
+
 // What makes a report's numbers less than they seem, each on one line: a run that stopped
-// short (its first line; the rest is in the artifact), what the sandbox reported, and
-// agents the runner didn't hear.
+// short (its first line; the rest is in the artifact) and agents the runner didn't hear.
 const warningsOf = (report: TimingReport, whose: string): string[] => {
   const error = report.error?.split("\n")[0]?.trim()
   const heard = report.summary?.agentsHeard
   const agents = report.scenario?.agents
   return [
     ...(error ? [`${whose}: the run stopped short: ${error}`] : []),
-    ...(Array.isArray(report.problems) && report.problems.length
-      ? [
-          `${whose}: the sandbox reported ${report.problems.length} problem(s): processes it had to reap or writes outside it. Look at the report artifact.`,
-        ]
-      : []),
     ...(typeof heard === "number" && typeof agents === "number" && heard < agents
       ? [`${whose}: the runner heard ${heard} of ${agents} fake agents, so less load was measured.`]
       : []),
@@ -69,12 +74,17 @@ const row = (
 ): string => `| ${name} | ${value(report)} |${main ? ` ${value(main)} |` : ""}`
 
 // The report as Markdown, its column headed `label` ("This pull request", "This run"),
-// with main's last report beside it when given.
+// with main's last report beside it when given. Its numbers are never gated; a sandbox
+// problem, which fails the job, leads it.
 export const timingComment = (
   report: TimingReport,
   { main, label = "This run" }: { readonly main?: TimingReport; readonly label?: string } = {},
 ): string => {
-  const warnings = [...warningsOf(report, label), ...(main ? warningsOf(main, "Main's run") : [])]
+  const leaks = leaksOf(report, label)
+  const warnings = [
+    ...warningsOf(report, label),
+    ...(main ? [...leaksOf(main, "Main's run"), ...warningsOf(main, "Main's run")] : []),
+  ]
   const mainColumn = main ? ` Main${main.commit ? ` (${main.commit.slice(0, 7)})` : ""} |` : ""
   const layouts = ["Grid", "Focus"]
   return [
@@ -82,6 +92,7 @@ export const timingComment = (
     "## Timing run",
     "",
     "Real time on a shared CI machine: reported as a trend, never gated.",
+    ...leaks.map((leak) => `\n> ❌ ${leak}`),
     ...warnings.map((warning) => `\n> ⚠️ ${warning}`),
     "",
     `| Measure | ${label} |${mainColumn}`,
