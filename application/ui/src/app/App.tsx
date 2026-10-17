@@ -78,6 +78,7 @@ const DebugSection = (): React.JSX.Element | null => {
   const Panel = debugPanelFor(backend)
   if (!Panel) return null
   return (
+    // oxlint-disable-next-line react/static-components -- Made once with its backend, not here: the same panel each render.
     <Panel
       addTerminal={() => {
         const terminalId = commands.add()
