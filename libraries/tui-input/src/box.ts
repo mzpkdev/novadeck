@@ -259,7 +259,8 @@ export const footerRows = (screen: ScreenText, count = 4, reach = 12): readonly 
 export const rule = (row: string | undefined): boolean => /^─{8,}$/.test((row ?? "").trim())
 
 /**
- * A box drawn between two horizontal rules, its first row led by `marker` (`❯`, `>`): the lowest pair of rules on the screen, the cursor between them.
+ * A box drawn between two horizontal rules, its first row led by `marker` (`❯`, `>`): the
+ * lowest pair of rules on the screen, the cursor between them.
  * It starts at the nearest row led by the marker at or above the cursor, so rows a TUI's
  * redraw left stale between the rules above its first row (it counts a wide character's
  * width differently, and erases the wrong rows) are no part of it. History above the

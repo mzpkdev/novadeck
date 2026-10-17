@@ -115,10 +115,10 @@ application/runner/src/harnesses/
 ```
 
 An adapter imports only `@novadeck/harness-core`, `@novadeck/protocol`,
-`@novadeck/emulator`, `@novadeck/tui-input`, Node and its own files, never the runner's modules or another
-adapter, and harness-core depends on neither; `.oxlintrc.json` enforces both. A test
-that needs the runner's internals (the activity machine, say) stays in the runner and
-reads the adapter's fixtures from its package.
+`@novadeck/emulator`, `@novadeck/tui-input`, Node and its own files, never the runner's
+modules or another adapter, and harness-core depends on neither; `.oxlintrc.json` enforces
+both. A test that needs the runner's internals (the activity machine, say) stays in the
+runner and reads the adapter's fixtures from its package.
 
 Each of these packages builds to `dist`, which builds, packaging and `tsc` use. Their
 exports also name their sources under the `development` condition, which vitest, the
@@ -614,15 +614,15 @@ rule, footer or placeholder of any harness: `box` and `dialogs`.
 `box` is where the harness's input box is read, for what a prompt needs: whether it is
 empty, what it holds, and whether it is in its shell mode (`!`). A `BoxProfile`
 (`@novadeck/tui-input/box`, `libraries/tui-input/`, which also holds the shared readers
-`ruledBox` and `markedBox`) has `read(screen)`, which finds the box on a `ScreenText` (rows, the rows with dim cells
-blanked, the cursor, the columns) and says its `mode`, told by the marker leading its first
-row and checked against the harness's footer; `collapsed(box)`, which tells the placeholder
-a long paste shows as; `collapses(text)` and `room(rows)`, which say before a paste whether
-it will collapse and whether it fits; `shell`, whether a command shown as a placeholder runs
-as the text it stands for, and the footer reading; `queued(screen)`, which tells messages
-the person queued behind a turn; and for a harness that puts text back in its box (an
-interrupted prompt, queued messages), `clear(box)`, the keys that clear it. The terminal
-manager's prompts and interrupt use it.
+`ruledBox` and `markedBox`) has `read(screen)`, which finds the box on a `ScreenText`
+(rows, the rows with dim cells blanked, the cursor, the columns) and says its `mode`, told
+by the marker leading its first row and checked against the harness's footer;
+`collapsed(box)`, which tells the placeholder a long paste shows as; `collapses(text)` and
+`room(rows)`, which say before a paste whether it will collapse and whether it fits;
+`shell`, whether a command shown as a placeholder runs as the text it stands for, and the
+footer reading; `queued(screen)`, which tells messages the person queued behind a turn;
+and for a harness that puts text back in its box (an interrupted prompt, queued messages),
+`clear(box)`, the keys that clear it. The terminal manager's prompts and interrupt use it.
 
 `dialogs` (`DialogAdapter`) reads the dialogs of requests waiting on the person, and says
 what keys answer them. Its answers go through the terminal manager's answer driver, which

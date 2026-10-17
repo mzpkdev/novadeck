@@ -98,11 +98,14 @@ export const overlay = (screen: ScreenText): boolean =>
  * indented (probed 1.2.14 and 1.3.1, fixtures/input-box.probe.json). Its history above
  * echoes the person's turns the same way, rules and all, so only the lowest pair is the
  * box. A paste of more than 15 lines shows as `[Pasted text #1 +40 lines]`, a long line as
- * `[Pasted text #4 1499 chars]`.
+ * `[Pasted text #4 1499 chars]`. It leaves a ZWJ family sequence blank (probed), which the
+ * library compares text without.
  */
 export const box: BoxProfile = {
   read: (screen) => agreeing(ruledBox(screen, markers), shellFooter(screen.rows)),
-  // Enter would run a command shown as a placeholder as the placeholder's own text.
+  // Enter would run a command shown as a placeholder as the placeholder's own text (probed
+  // 2026-10-07). A `!` command creates the conversation and binds the session (`starts`;
+  // probed 2026-10-08).
   shell: { expands: false, starts: true, footer: shellFooter, command: shellCommandOf },
   collapsed: ({ text }) => /^\[Pasted text #\d+ (?:\+\d+ lines?|\d+ chars?)\]$/.test(text.trim()),
   // 15 lines showed whole, even of 100 characters each; 16 did not. One line of 1,000
