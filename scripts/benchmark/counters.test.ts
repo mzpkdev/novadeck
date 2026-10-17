@@ -4,6 +4,7 @@ import {
   changedScripts,
   checkCounters,
   countersSummary,
+  failsAt,
   parseBaseBudgets,
   parseBudgets,
   goneBudgets,
@@ -46,12 +47,41 @@ describe("the counter run's budgets", () => {
     })
   })
 
-  context("when a count goes past its budget", () => {
-    it("fails that counter alone", () => {
+  context("when a count goes past its budget, within its fail factor", () => {
+    it("warns on that counter alone, failing nothing", () => {
       const worse = { ...reading, focus: { ...phase, streamingSettled: 5 } }
-      expect(checkCounters(worse, budgets).filter((row) => row.verdict !== "within")).toEqual([
+      const rows = checkCounters(worse, budgets)
+      expect(rows.filter((row) => row.verdict !== "within")).toEqual([
         { phase: "focus", counter: "streamingSettled", value: 5, budget: 4, verdict: "over" },
       ])
+      const summary = countersSummary(worse, rows)
+      expect(summary).toContain("| focus | streamingSettled | 5 | 4 | ⚠️ over |")
+      expect(summary).toContain("a warning, not a failure")
+    })
+
+    it("still only warns at exactly the factor", () => {
+      const doubled = { ...reading, grid: { ...phase, bytes: 500 * failsAt } }
+      expect(checkCounters(doubled, budgets).find((row) => row.counter === "bytes")?.verdict).toBe(
+        "over",
+      )
+    })
+  })
+
+  context("when a count goes past its fail factor", () => {
+    it("fails the build, as a blow-up does", () => {
+      const blown = {
+        ...reading,
+        grid: {
+          ...phase,
+          tickTotals: { ...phase.tickTotals, notifications: 100 * failsAt + 1 },
+        },
+      }
+      const rows = checkCounters(blown, budgets)
+      expect(rows.find((row) => row.verdict === "fails")).toMatchObject({
+        phase: "grid",
+        counter: "notifications",
+      })
+      expect(countersSummary(blown, rows)).toContain("which fails the build")
     })
   })
 

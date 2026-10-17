@@ -1268,16 +1268,18 @@ its own checks hold on each.
 
 The Benchmark workflow runs it on Linux for every pull request whose change can move a
 count (the UI, the runner, their contract, `libraries/`, the lockfile or the checker), and
-on main for the trend. It fails when a count goes past its budget in
-`application/ui/src/specs/counters/budgets.json`, or when a phase's script plays another
-number of ticks than its budgets record. Commits and component renders are reported in the
+on main for the trend. It warns when a count goes past its budget in
+`application/ui/src/specs/counters/budgets.json` and fails when one goes past twice it
+(`failsAt` in `scripts/benchmark/counters.ts`: loose by choice while the product is early),
+or when a phase's script plays another number of ticks than its budgets record. Commits and component renders are reported in the
 job summary, never gated, and each run's reading is kept as an artifact. Locally, after
 the counter run, `node scripts/benchmark/main.ts` checks the reading the same way, and
 `node scripts/benchmark/main.ts <base budgets.json>` checks budget changes too, as CI does
 against the base branch.
 
 A count past its budget is a regression, never noise: fix it, or, for work that really
-costs more, raise the budget in the same pull request, written `{ "budget": n, "reason":
+costs more, raise the budget in the same pull request (past twice it, one of the two must
+happen before it merges), written `{ "budget": n, "reason":
 "why", "from": "#PR" }`, where `from` names that pull request (on main, any source but the
 raise it replaces). A count under its budget asks for the budget to come down, so the gain
 stays. The job summary shows every budget a change moves, old to new, and a raise without
