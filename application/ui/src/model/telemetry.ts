@@ -63,7 +63,7 @@ export const dropProject = (telemetry: Telemetry, projectId: string): Telemetry 
   return gone.reduce(dropContext, telemetry)
 }
 
-// Without a session's record, as when the session is gone.
+// Without a session's record, as when its last terminal's or its project's usage goes.
 export const dropContext = (telemetry: Telemetry, context: string): Telemetry => {
   if (!(context in telemetry)) return telemetry
   const { [context]: _gone, ...rest } = telemetry
