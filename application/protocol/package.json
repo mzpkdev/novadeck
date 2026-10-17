@@ -43,7 +43,7 @@
   "dependencies": {
     "@novadeck/wire": "workspace:*",
     "@orpc/contract": "catalog:",
-    "zod": "4.6.5"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "typescript": "^7.0.2"
