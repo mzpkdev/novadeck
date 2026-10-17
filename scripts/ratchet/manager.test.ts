@@ -216,7 +216,7 @@ describe("the ratchet", () => {
     const needless: Budgets = { ...budgets, lines: { budget: 102, reason: "Room", from: "#240" } }
     expect(ratchetProblems({ ...counts, lines: 98 }, needless, budgets)).toEqual([
       expect.stringMatching(
-        /raises lines to 102, though the file's 98 needs no raise: keep it at 100/,
+        /raises lines to 102, though the file's 98 needs no raise: keep it at most at 100/,
       ),
     ])
   })

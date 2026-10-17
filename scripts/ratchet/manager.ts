@@ -158,7 +158,7 @@ export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets
       budget > limit
         ? count > (was ?? count)
           ? `${budgetsPath} raises ${measure} to ${budget}, past the ${count} the file has: raise it only to ${count}.`
-          : `${budgetsPath} raises ${measure} to ${budget}, though the file's ${count} needs no raise: keep it at ${limit}.`
+          : `${budgetsPath} raises ${measure} to ${budget}, though the file's ${count} needs no raise: keep it at most at ${limit}.`
         : undefined,
     ].filter((problem): problem is string => problem !== undefined)
     if (count > budget)
