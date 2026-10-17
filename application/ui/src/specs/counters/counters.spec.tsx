@@ -74,7 +74,6 @@ describe("Counter run", () => {
       const names = runner.terminalIds.map((_, index) => `Agent ${index + 1}`)
       const reading = await playScript(runner, clock, { terminalNames: names })
       await commands.writeFile(readingPath, `${JSON.stringify(reading, null, 2)}\n`)
-      console.log(JSON.stringify(reading))
       // Every probe heard something in every phase: one that went dead, as when the code it
       // hooks moves, fails here rather than passing under budget.
       for (const phase of Object.values(reading)) {
