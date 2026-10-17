@@ -71,6 +71,7 @@ know: the app's procedures and their codes stay the app's, beside the wire's own
     for the bridge to expose.
 
   Forking, restarting and closing the service's process stay the app's.
+
 - `./server` (Node only): the server's side.
   - `createSessions({ protocolVersion, router, admit, closed, error, epoch })`, a server's
     sessions, and the router its transports serve: the wire's handshake beside the app's
