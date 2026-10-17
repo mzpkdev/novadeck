@@ -67,8 +67,8 @@ export const createView = (element: HTMLElement, options: ViewOptions): View => 
   })
   const fitting = new FitAddon()
   terminal.loadAddon(fitting)
-  // Widths as the runner's screen counts them, emoji sequences and CJK included, so a
-  // screen it gives back replays on the same rows.
+  // Widths as every other emulator here counts them, emoji sequences and CJK included, so a
+  // screen a headless one gives back replays on the same rows.
   applyWidths(terminal)
   if (links) {
     const activate = (event: MouseEvent, uri: string): void => links.open(uri, event)

@@ -1358,6 +1358,24 @@ describe("a surface's renderer", () => {
     expect(resized).toHaveBeenCalledTimes(2)
   })
 
+  it("fits the screen again once a font it waited for arrives", async () => {
+    const { resized, mount } = wired()
+    const root = document.documentElement
+    root.style.setProperty("--font-mono", "Bundled Mono")
+    const font = loading()
+    try {
+      mount("focus", "01")
+      resized.mockClear()
+
+      await act(async () => font.arrive())
+
+      expect(resized).toHaveBeenCalledTimes(1)
+    } finally {
+      root.style.removeProperty("--font-mono")
+      font.restore()
+    }
+  })
+
   it("gives the context back when the screen parks, not when a surface returns in time", () => {
     const { drawings, mount } = wired()
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })

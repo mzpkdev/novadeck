@@ -107,7 +107,7 @@ describe("a view", () => {
     expect(open({ minimumContrastRatio: 4.5 }).view.terminal.options.minimumContrastRatio).toBe(4.5)
   })
 
-  it("counts widths as the runner's screen does", async () => {
+  it("counts widths as every other emulator here does", async () => {
     const { view } = open()
     const text = "\u{1f468}‍\u{1f469}‍\u{1f467}\u{1f44d}\u{1f3fd}"
     await new Promise<void>((resolve) => view.terminal.write(text, resolve))
