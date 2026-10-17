@@ -1063,4 +1063,5 @@ other conflicts carrying none. `pending` (a request waits on the person), `ringi
 in the terminal) are for the person to settle in the terminal. Other conflicts carry no
 data, and a client takes a reason it doesn't know as none, so it words each one itself,
 by what the person did (send, stop, answer), rather than showing the runner's message. The schemas and contract in
-`application/protocol/src/` are the authoritative API definition.
+`application/protocol/src/` are the authoritative API definition, with the wire's own error
+codes (`wireErrors`) in `libraries/wire/src/errors.ts`.

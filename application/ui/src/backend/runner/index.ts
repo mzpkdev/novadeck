@@ -102,14 +102,14 @@ export const connectFailure = (error: unknown): ConnectFailure => {
   const detail = error.message
   if (hasCode(error, ...transient))
     return { kind: "transient", message: "The runner didn't start.", code, detail }
-  if (code === "INCOMPATIBLE_PROTOCOL")
+  if (hasCode(error, "INCOMPATIBLE_PROTOCOL"))
     return {
       kind: "incompatible",
       message: "This runner is from a different Novadeck version.",
       code,
       detail,
     }
-  if (code === "WORKSPACE_TOO_NEW")
+  if (hasCode(error, "WORKSPACE_TOO_NEW"))
     return {
       kind: "outdated",
       message:
@@ -117,7 +117,7 @@ export const connectFailure = (error: unknown): ConnectFailure => {
       code,
       detail,
     }
-  if (code === "UNAUTHORIZED")
+  if (hasCode(error, "UNAUTHORIZED"))
     return { kind: "unauthorized", message: "The runner didn't accept this app.", code, detail }
   return { kind: "unknown", message: "Something went wrong starting Novadeck.", code, detail }
 }
