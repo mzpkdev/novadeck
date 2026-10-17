@@ -1,6 +1,7 @@
 import { resolve } from "node:path"
 
 import { defineConfig } from "electron-vite"
+import { defaultServerConditions } from "vite"
 
 export default defineConfig({
   main: {
@@ -25,6 +26,9 @@ export default defineConfig({
     },
   },
   preload: {
+    // The preload runs in Electron, not a page: a library's Node-only subpath for it, as
+    // wire's `/electron`, names only the `node` condition.
+    ssr: { resolve: { conditions: ["node", ...defaultServerConditions] } },
     build: {
       rollupOptions: {
         input: resolve("src/preload/index.ts"),
