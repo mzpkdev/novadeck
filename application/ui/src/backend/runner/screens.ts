@@ -138,8 +138,9 @@ export const retainMs = 30 * 60 * 1000
 export const parkMs = 5_000
 // How many parked screens stay before the one parked longest closes. Each holds its emulator's
 // buffer, so without a count a long session's grows without bound. 16 lets every screen a
-// Grid shows come back parked, not closed, after a trip to another session or view; fewer would
-// close some of them, and a closed screen costs a full snapshot resync when it is shown again.
+// Grid of up to 16 shows come back parked, not closed, after a trip to another session or view;
+// fewer would close some of them, and a closed screen costs a full snapshot resync when it is
+// shown again.
 export const parkedCap = 16
 
 const id = ({ projectId, workspaceSessionId, terminalId }: TerminalKey): string =>
