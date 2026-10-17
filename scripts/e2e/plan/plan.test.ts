@@ -204,6 +204,9 @@ describe("E2E systems", () => {
     "scripts/e2e/plan/plan.ts",
     ".github/workflows/e2e.yml",
     ".github/actions/e2e-harness-cache/save/action.yml",
+    "libraries/sandbox/src/reap.ts",
+    "libraries/sandbox/src/reap-lister.cs",
+    "patches/node-pty@1.2.0-beta.14.patch",
   ])("runs all three for %s", (file) => {
     expect(selectSystems(pullRequest([], ["README.md", file]))).toEqual(all)
   })
@@ -211,7 +214,6 @@ describe("E2E systems", () => {
   it.each([
     "application/protocol/src/harnesses.ts",
     "engines/whisper/src/index.ts",
-    "libraries/sandbox/src/index.ts",
     "pnpm-lock.yaml",
     "package.json",
     "pnpm-workspace.yaml",

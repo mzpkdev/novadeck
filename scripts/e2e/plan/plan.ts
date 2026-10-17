@@ -33,7 +33,12 @@ const sharedFiles = new Set([
   "pnpm-workspace.yaml",
   "turbo.json",
 ])
-const sharedFolders = [".github/actions/e2e-harness-cache/", "application/runner/", "scripts/e2e/"]
+const sharedFolders = [
+  ".github/actions/e2e-harness-cache/",
+  "application/runner/",
+  "patches/",
+  "scripts/e2e/",
+]
 
 // Linux is where the suite runs for any change that can reach the runner. Windows and macOS
 // run it only where the system itself can tell: what starts processes, owns a pty, speaks
@@ -41,14 +46,16 @@ const sharedFolders = [".github/actions/e2e-harness-cache/", "application/runner
 // account runs about five macOS jobs at once), so what is platform-neutral stays off them:
 //
 // - Linux alone: the protocol (schemas and types, no system call), the engines (the suite
-//   builds none), `libraries/sandbox` (the suite's own sandbox, which the Linux job runs),
-//   the lockfile and the dependency configuration (`package.json`, `pnpm-workspace.yaml`,
-//   `turbo.json`: a moved version that breaks one system shows on every system that
-//   installs it, and the next change to the runner, a harness or the nightly run finds it).
+//   builds none), the lockfile and the dependency configuration (`package.json`,
+//   `pnpm-workspace.yaml`, `turbo.json`: a moved version that breaks one system shows on
+//   every system that installs it, and the next change to the runner, a harness or the
+//   nightly run finds it; node-pty, the one native module the suite loads, is pinned in
+//   the runner's and the terminal's own manifests, which run every system).
 // - Every system: the runner, `libraries/terminal` (the pty and the host), `libraries/wire`,
-//   the emulator's headless side, the harnesses, the relay, and the way CI runs the suite
-//   (`scripts/e2e/`, the workflow, the harness cache's actions), which changes how each
-//   system runs it.
+//   the emulator's headless side, the harnesses, the relay, `libraries/sandbox` (the suite's
+//   own sandbox, whose process tables and Git Bash lookup differ on each system), `patches/`
+//   (node-pty's patch is Windows code alone), and the way CI runs the suite (`scripts/e2e/`,
+//   the workflow, the harness cache's actions), which changes how each system runs it.
 //
 // The emulator has no folder yet; when it does, its browser-only view code is not the
 // headless side, so only the folders named here run macOS and Windows: add a folder of the
@@ -60,8 +67,10 @@ const allSystemsFolders = [
   "application/runner/",
   "harnesses/",
   "libraries/emulator/",
+  "libraries/sandbox/",
   "libraries/terminal/",
   "libraries/wire/",
+  "patches/",
   "scripts/e2e/",
 ]
 
