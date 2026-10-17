@@ -197,7 +197,7 @@ describe("the counter run's budgets", () => {
     it("says nothing of changes", () => {
       expect(budgetChanges(budgets, budgets)).toEqual([])
       expect(countersSummary(reading, checkCounters(reading, budgets))).not.toContain(
-        "changes budgets",
+        "moves budgets",
       )
     })
   })
@@ -305,6 +305,10 @@ describe("the counter run's budgets", () => {
         broken: [1],
       }
       const gone = goneBudgets(budgets, base)
+      // Nothing else moved: no empty table under the list.
+      expect(countersSummary(reading, checkCounters(reading, budgets), { gone })).not.toContain(
+        "| Phase | Counter | Budget |",
+      )
       expect(gone).toEqual([
         "grid wireBytes 480",
         "legacy bytes 9",

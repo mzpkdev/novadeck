@@ -1269,24 +1269,26 @@ its own checks hold on each.
 The Benchmark workflow runs it on Linux for every pull request whose change can move a
 count (the UI, the runner, their contract, `libraries/`, the lockfile or the checker), and
 on main for the trend. It fails when a count goes past its budget in
-`application/ui/src/specs/counters/budgets.json`. Locally, after the counter run,
-`node scripts/benchmark/main.ts` checks the reading the same way, and
+`application/ui/src/specs/counters/budgets.json`, or when a phase's script plays another
+number of ticks than its budgets record. Commits and component renders are reported in the
+job summary, never gated, and each run's reading is kept as an artifact. Locally, after
+the counter run, `node scripts/benchmark/main.ts` checks the reading the same way, and
 `node scripts/benchmark/main.ts <base budgets.json>` checks budget changes too, as CI does
-against the base branch. A count past its budget is a regression, never noise: fix it,
-or, for work that really costs more, raise the budget in the same pull request, written
-`{ "budget": n, "reason": "why", "from": "#PR" }`, where `from` names that pull request
-(on main, any source but the raise it replaces). The job summary shows every budget the pull request changes, old to new, and a
-raise without its reason and its own pull request fails. The base branch's budgets are
-read only as far as the comparison needs, so a change to the file's form lands in one pull
-request. A budget the base lacks shows as new, and needs a reason as a raise does when its
-phase is one the base has; one the base has and the change drops shows as no longer
-budgeted. A base that has none of the phases only warns. A count under its budget asks for the
-budget to come down, so the gain stays. Each phase's budgets record the ticks its script
-plays, so a script that plays another number fails until its budgets are set for it.
-Commits and component renders are reported in the job summary, never gated. Each run's
-reading is kept as an artifact. The check always reports, so it can be required; require
-branches to be up to date too, or two pull requests that each fit the budget can together
-pass it on main.
+against the base branch.
+
+A count past its budget is a regression, never noise: fix it, or, for work that really
+costs more, raise the budget in the same pull request, written `{ "budget": n, "reason":
+"why", "from": "#PR" }`, where `from` names that pull request (on main, any source but the
+raise it replaces). A count under its budget asks for the budget to come down, so the gain
+stays. The job summary shows every budget a change moves, old to new, and a raise without
+its reason and its own pull request fails.
+
+The base branch's budgets are read only as far as the comparison needs, so a change to the
+file's form lands in one pull request. A budget the base lacks shows as new, and needs a
+reason as a raise does when its phase is one the base has; one the base has and the change
+drops shows as no longer budgeted; a base that has none of the phases only warns. The
+check always reports, so it can be required; require branches to be up to date too, or two
+pull requests that each fit the budget can together pass it on main.
 
 ## Configuration
 

@@ -306,15 +306,19 @@ export const countersSummary = (
     ...scripts.flatMap((script) => [`> ❌ ${script}`, ""]),
     ...(changes.length || tickNotes.length || gone.length
       ? [
-          "This pull request changes budgets:",
+          "This change moves budgets:",
           "",
           ...tickNotes.map((note) => `- ${note}: its counts are totals over the new number.`),
           ...gone.map((budget) => `- ${cell(budget)}: no longer budgeted.`),
           ...(tickNotes.length || gone.length ? [""] : []),
-          "| Phase | Counter | Budget | Why | From |",
-          "| --- | --- | --- | --- | --- |",
-          ...changeRows,
-          "",
+          ...(changeRows.length
+            ? [
+                "| Phase | Counter | Budget | Why | From |",
+                "| --- | --- | --- | --- | --- |",
+                ...changeRows,
+                "",
+              ]
+            : []),
         ]
       : []),
     over.length
