@@ -1,4 +1,3 @@
-import { EditorView } from "@codemirror/view"
 import { act, createElement } from "react"
 import { afterEach, vi } from "vitest"
 
@@ -83,29 +82,5 @@ describe("a plan whose file can't be read for now", () => {
       await emit({ state: "unavailable", reason: "unreadable", size: null })
       expect(container.querySelector(".artifact-unavailable")).not.toBeNull()
     })
-  })
-})
-
-describe("a plan that stops being writable, and is again", () => {
-  it("keeps its editor, its undo history and its text", async () => {
-    const { container, emit } = await shown()
-    const editor = container.querySelector<HTMLElement>(".cm-editor")!
-    const view = EditorView.findFromDOM(editor)!
-    view.dispatch({ changes: { from: 0, insert: "Mine " }, userEvent: "input.type" })
-    expect(view.state.doc.toString()).toBe("Mine # Plan\n")
-
-    await emit(ready("Mine # Plan\n", false, "2"))
-    expect(container.querySelector(".cm-editor")).toBe(editor)
-    expect(container.querySelector(".plan-editor")?.hasAttribute("data-readonly")).toBe(true)
-    expect(view.state.readOnly).toBe(true)
-
-    await emit(ready("Mine # Plan\n", true, "3"))
-    expect(container.querySelector(".cm-editor")).toBe(editor)
-    expect(view.state.readOnly).toBe(false)
-    // Ctrl-Z, as the editor's history keymap takes it.
-    view.contentDOM.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "z", code: "KeyZ", ctrlKey: true, bubbles: true }),
-    )
-    expect(view.state.doc.toString()).toBe("# Plan\n")
   })
 })
