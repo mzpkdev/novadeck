@@ -5,6 +5,12 @@ packages:
   - libraries/*
   - atlas
 
+catalog:
+  "@orpc/client": 1.15.5
+  "@orpc/contract": 1.15.5
+  "@orpc/server": 1.15.5
+  "@orpc/standard-server-peer": 1.15.5
+
 publicHoistPattern:
   - electron
 

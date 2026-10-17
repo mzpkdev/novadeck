@@ -32,7 +32,7 @@
     "@novadeck/protocol": "workspace:*",
     "@novadeck/relay": "workspace:*",
     "@novadeck/whisper": "workspace:*",
-    "@orpc/server": "1.15.5",
+    "@orpc/server": "catalog:",
     "@xterm/addon-serialize": "0.14.0",
     "@xterm/addon-unicode-graphemes": "0.4.0",
     "@xterm/headless": "6.0.0",
@@ -43,6 +43,7 @@
   },
   "devDependencies": {
     "@novadeck/sandbox": "workspace:*",
+    "@novadeck/wire": "workspace:*",
     "@types/node": "^26.6.5",
     "@types/ws": "8.18.2",
     "fast-check": "4.10.2",

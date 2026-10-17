@@ -3,11 +3,11 @@ import {
   connectRunner,
   desktop,
   hasCode,
-  RunnerError,
-  websocket,
   type Runner,
-  type Transport,
+  type RunnerErrorCode,
 } from "@novadeck/protocol/client"
+import { WireError } from "@novadeck/wire"
+import { websocket, type Transport } from "@novadeck/wire/client"
 
 import { sessionName } from "../../model/session-name"
 import type { BackendConnection, ConnectFailure } from "../port"
@@ -29,7 +29,7 @@ const transport = (): Transport => {
   const url = import.meta.env.VITE_NOVADECK_RUNNER_URL
   const token = import.meta.env.VITE_NOVADECK_RUNNER_TOKEN
   if (!url || !token)
-    throw new RunnerError("CLOSED", "Set VITE_NOVADECK_RUNNER_URL and VITE_NOVADECK_RUNNER_TOKEN.")
+    throw new WireError("CLOSED", "Set VITE_NOVADECK_RUNNER_URL and VITE_NOVADECK_RUNNER_TOKEN.")
   return websocket(url, { token })
 }
 
@@ -74,7 +74,7 @@ export const loadListing = async (
   const loaded = listed.filter((item) => item !== undefined)
   if (loaded.length) return loaded
   const home = await load(await runner.projects.create({ id: newId(), name: "Home" }))
-  if (!home) throw new RunnerError("NOT_FOUND", "The runner removed the new Home project.")
+  if (!home) throw new WireError("NOT_FOUND", "The runner removed the new Home project.")
   return [home]
 }
 
@@ -84,14 +84,14 @@ const newId = (): string => crypto.randomUUID()
 const closeGraceMs = 2_000
 // What went wrong, sorted by what the person can do about it, in words for them and
 // with the code and the runner's own message for anyone reporting it.
-const transient: ReadonlySet<RunnerError["code"]> = new Set([
+const transient: readonly RunnerErrorCode[] = [
   "DISCONNECTED",
   "CLOSED",
   "RUNTIME_CLOSING",
   "RESOURCE_LIMIT",
-])
+]
 export const connectFailure = (error: unknown): ConnectFailure => {
-  if (!(error instanceof RunnerError))
+  if (!(error instanceof WireError))
     return {
       kind: "unknown",
       message: "Something went wrong starting Novadeck.",
@@ -100,7 +100,7 @@ export const connectFailure = (error: unknown): ConnectFailure => {
     }
   const { code } = error
   const detail = error.message
-  if (transient.has(code))
+  if (hasCode(error, ...transient))
     return { kind: "transient", message: "The runner didn't start.", code, detail }
   if (code === "INCOMPATIBLE_PROTOCOL")
     return {

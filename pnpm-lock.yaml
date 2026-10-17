@@ -4,6 +4,21 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@orpc/client':
+      specifier: 1.15.5
+      version: 1.15.5
+    '@orpc/contract':
+      specifier: 1.15.5
+      version: 1.15.5
+    '@orpc/server':
+      specifier: 1.15.5
+      version: 1.15.5
+    '@orpc/standard-server-peer':
+      specifier: 1.15.5
+      version: 1.15.5
+
 patchedDependencies:
   '@xterm/addon-unicode-graphemes@0.4.0': b0a9bbbcc53e94cabc762f35be7a9d628ad75ecb84ca1e26eae1e808f27f18b6
   '@xterm/xterm@6.0.0': 2cd53f4bf1af2ffd7e09dcb6b561f0c0176ae79956b5d91ac46024168cd237fa
@@ -83,6 +98,9 @@ importers:
       '@novadeck/ui':
         specifier: workspace:*
         version: link:../ui
+      '@novadeck/wire':
+        specifier: workspace:*
+        version: link:../../libraries/wire
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -116,14 +134,11 @@ importers:
 
   application/protocol:
     dependencies:
-      '@orpc/client':
-        specifier: 1.15.5
-        version: 1.15.5
+      '@novadeck/wire':
+        specifier: workspace:*
+        version: link:../../libraries/wire
       '@orpc/contract':
-        specifier: 1.15.5
-        version: 1.15.5
-      '@orpc/standard-server-peer':
-        specifier: 1.15.5
+        specifier: 'catalog:'
         version: 1.15.5
       zod:
         specifier: 4.6.5
@@ -172,7 +187,7 @@ importers:
         specifier: workspace:*
         version: link:../../engines/whisper
       '@orpc/server':
-        specifier: 1.15.5
+        specifier: 'catalog:'
         version: 1.15.5(ws@8.22.0)
       '@xterm/addon-serialize':
         specifier: 0.14.0
@@ -199,6 +214,9 @@ importers:
       '@novadeck/sandbox':
         specifier: workspace:*
         version: link:../../libraries/sandbox
+      '@novadeck/wire':
+        specifier: workspace:*
+        version: link:../../libraries/wire
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -295,6 +313,9 @@ importers:
       '@novadeck/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@novadeck/wire':
+        specifier: workspace:*
+        version: link:../../libraries/wire
       '@xterm/addon-fit':
         specifier: 0.11.0
         version: 0.11.0
@@ -342,7 +363,7 @@ importers:
         specifier: workspace:*
         version: link:../runner
       '@orpc/server':
-        specifier: 1.15.5
+        specifier: 'catalog:'
         version: 1.15.5(ws@8.22.0)
       '@tailwindcss/vite':
         specifier: ^4.3.3
@@ -553,6 +574,31 @@ importers:
 
   libraries/sandbox:
     devDependencies:
+      '@types/node':
+        specifier: ^26.6.5
+        version: 26.6.5
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^5.0.3
+        version: 5.0.3(@types/node@26.6.5)(@vitest/browser-playwright@5.0.3)(@vitest/ui@5.0.3)(jsdom@30.1.2(@noble/hashes@2.4.0))(msw@2.15.0(@types/node@26.6.5)(typescript@7.0.2))(vite@7.3.6(@types/node@26.6.5)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.15))
+
+  libraries/wire:
+    dependencies:
+      '@orpc/client':
+        specifier: 'catalog:'
+        version: 1.15.5
+      '@orpc/contract':
+        specifier: 'catalog:'
+        version: 1.15.5
+      '@orpc/standard-server-peer':
+        specifier: 'catalog:'
+        version: 1.15.5
+    devDependencies:
+      '@orpc/server':
+        specifier: 'catalog:'
+        version: 1.15.5(ws@8.22.0)
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
