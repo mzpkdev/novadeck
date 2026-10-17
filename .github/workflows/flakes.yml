@@ -19,7 +19,7 @@ jobs:
     name: Triage
     if: >-
       github.event.workflow_run.conclusion == 'failure' &&
-      (github.event.workflow_run.name != 'Release' || github.event.workflow_run.event == 'pull_request')
+      (github.event.workflow_run.path != '.github/workflows/release.yml' || github.event.workflow_run.event == 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -33,7 +33,9 @@ jobs:
       RUN_ID: ${{ github.event.workflow_run.id }}
       RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
       RUN_URL: ${{ github.event.workflow_run.html_url }}
-      WORKFLOW: ${{ github.event.workflow_run.name }}
+      WORKFLOW: ${{ github.event.workflow.name }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      PULL_REQUESTS: ${{ join(github.event.workflow_run.pull_requests.*.number, ' ') }}
     steps:
       - name: Check Out Repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,7 +55,10 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs" \
             --jq '.jobs[] | select(.conclusion == "failure") | [.id, .name] | @tsv' > "$RUNNER_TEMP/failed.tsv"
           while IFS=$'\t' read -r id name; do
-            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id/logs" > "$RUNNER_TEMP/logs/${name//\//-}.log"
+            file="$RUNNER_TEMP/logs/${name//\//-}.log"
+            # Two jobs of one name: the second's name no longer matches any flake's job.
+            if [ -e "$file" ]; then file="$RUNNER_TEMP/logs/${name//\//-} #$id.log"; fi
+            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id/logs" > "$file"
           done < "$RUNNER_TEMP/failed.tsv"
 
       - name: Judge Failures
@@ -61,22 +66,37 @@ jobs:
         run: node scripts/flakes/main.ts "$RUNNER_TEMP/logs" "$RUNNER_TEMP/verdict.json" "$RUNNER_TEMP/comment.md"
 
       # The one rerun a run of known flakes gets; its next attempt, if it fails, is judged
-      # again and left failed.
+      # again and left failed. Not when someone has rerun it meanwhile, nor when its pull
+      # request has moved on, whose newer run the rerun would cancel.
       - name: Rerun Failed Jobs
         shell: bash
         run: |
-          if [ "$(jq -r .rerun "$RUNNER_TEMP/verdict.json")" = true ]; then
-            gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"
+          [ "$(jq -r .rerun "$RUNNER_TEMP/verdict.json")" = true ] || exit 0
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .run_attempt)
+          if [ "$latest" != "$RUN_ATTEMPT" ]; then
+            echo "Not rerun: attempt $latest has started since." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+          for pr in $PULL_REQUESTS; do
+            head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
+            if [ "$head" != "$HEAD_SHA" ]; then
+              echo "Not rerun: #$pr has moved on to $head." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+          gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"
 
-      # The verdict on each pull request the run is for. A fork's pull request gets a
-      # read-only token, so its verdict stays in the job summary.
+      # The verdict on each pull request the run is for, when a registered flake is in it: a
+      # rerun, a known flake failing again, or a fixed one back. A failure no flake names
+      # is the pull request's own, and its checks say so already. A fork's pull request
+      # gets a read-only token, and no pull request is named for it, so its verdict stays
+      # in the job summary.
       - name: Record on Pull Request
+        if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
-        env:
-          PULL_REQUESTS: ${{ join(github.event.workflow_run.pull_requests.*.number, ' ') }}
         run: |
+          jq -e '[.jobs[].flakes[]] | length > 0' "$RUNNER_TEMP/verdict.json" > /dev/null || exit 0
           for pr in $PULL_REQUESTS; do
             gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/comment.md"
           done

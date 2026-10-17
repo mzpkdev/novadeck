@@ -75,28 +75,50 @@ export type Failure = { readonly test: string; readonly lines: string }
 const timestamp = /^\d{4}-\d\d-\d\dT[\d:.]+Z ?/
 // oxlint-disable-next-line no-control-regex -- Colour codes are what this removes.
 const colour = /\u001b\[[\d;]*m/g
-// Vitest's failed test: "FAIL  [project (browser)]  src/....ts > a > b". It prints each
-// twice, as it fails and in the summary.
+// Vitest's failed test or file: "FAIL  [project [(browser)]]  path > a > b", or a file
+// that failed whole as "path [ path ]". The browser projects print a test once, the end
+// to end runner once per error.
 const failedLine =
-  /\bFAIL\s+(?:\S+ \(\S+\)\s+)?((?:src|scripts)\/\S+\.(?:spec|test|e2e)\.[cm]?tsx?(?: > .+)?)$/
+  /^FAIL\s+(?:\S+(?: \(\S+\))?\s+)?(\S+\.(?:spec|test|e2e)\.[cm]?tsx?(?: > .+?)?)(?: \[ .* \])?$/
+// Any line that says a test failed, read or not.
+const failedMark = /^FAIL\s/
+// Errors Vitest catches outside any test: they fail the run, and name no test.
+const unhandled = /\bUnhandled (?:Errors?|Rejection)\b|\bVitest caught \d+ unhandled/
+// Where a failure's lines end: the next failure, Vitest's separator, or its summary.
+const blockEnd = /^(?:FAIL\s|⎯{3,}|Test Files\s)/
 // How many lines after a failed test's line still tell of it, at most.
 const blockLines = 40
 
 export const cleanLog = (log: string): string[] =>
   log.split(/\r?\n/).map((line) => line.replace(colour, "").replace(timestamp, ""))
 
-// The failed tests in a job's log, each once, with the lines that follow its last report.
-export const failuresOf = (log: string): Failure[] => {
-  const lines = cleanLog(log)
+// A job's log read for failures: each failed test once, with the lines that tell of its
+// last report, and what says something failed that names no test this can read.
+export type LogReading = { readonly failures: Failure[]; readonly unreadable: string[] }
+
+export const readLog = (log: string): LogReading => {
+  const lines = cleanLog(log).map((line) => line.trim())
   const found = new Map<string, string>()
+  const unreadable: string[] = []
   lines.forEach((line, index) => {
-    const match = failedLine.exec(line.trim())
-    if (!match) return
-    const test = match[1]!.replace(/\s*\[ .* \]$/, "").trim()
-    found.set(test, lines.slice(index, index + blockLines).join("\n"))
+    if (unhandled.test(line)) unreadable.push(`an error outside any test: ${line}`)
+    if (!failedMark.test(line)) return
+    const match = failedLine.exec(line)
+    if (!match) {
+      unreadable.push(`a failure this can't read: ${line}`)
+      return
+    }
+    const rest = lines.slice(index + 1, index + blockLines)
+    const end = rest.findIndex((next) => blockEnd.test(next))
+    found.set(match[1]!, [line, ...(end < 0 ? rest : rest.slice(0, end))].join("\n"))
   })
-  return [...found].map(([test, block]) => ({ test, lines: block }))
+  return {
+    failures: [...found].map(([test, block]) => ({ test, lines: block })),
+    unreadable: [...new Set(unreadable)],
+  }
 }
+
+export const failuresOf = (log: string): Failure[] => readLog(log).failures
 
 export type JobVerdict = {
   readonly job: string
@@ -108,11 +130,11 @@ export type JobVerdict = {
 const named = (job: string, flake: Flake): boolean =>
   flake.jobs.some((pattern) => new RegExp(pattern).test(job))
 
-// How a failed job failed: each failed test against the test flakes, or, with no failed
-// test in its log, the whole log against the job flakes.
+// How a failed job failed: each failed test against the test flakes, or, with no failure
+// in its log at all, the whole log against the job flakes.
 export const judgeJob = (register: Register, job: string, log: string): JobVerdict => {
-  const failures = failuresOf(log)
-  if (!failures.length) {
+  const { failures, unreadable } = readLog(log)
+  if (!failures.length && !unreadable.length) {
     const text = cleanLog(log).join("\n")
     const flake = register.flakes.find(
       (each) =>
@@ -123,7 +145,8 @@ export const judgeJob = (register: Register, job: string, log: string): JobVerdi
       : { job, flakes: [], unknown: ["no failed test in its log"] }
   }
   const flakes: string[] = []
-  const unknown: string[] = []
+  // What failed that this can't read is never a known flake.
+  const unknown: string[] = [...unreadable]
   for (const failure of failures) {
     const flake = register.flakes.find(
       (each) =>

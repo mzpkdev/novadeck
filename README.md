@@ -1310,12 +1310,15 @@ Tests that sometimes fail for reasons outside the change under test are register
 failure's log matches, what is known of its cause and where it was seen. When a Quality,
 E2E or pull request packaging run fails, the Known Flakes workflow reads its failed jobs'
 logs with main's register. If every failure is a known flake, it reruns the failed jobs
-once and records why in the job summary and on the pull request; a failure it can't
-explain, a known flake failing again on the rerun, or a flake registered as fixed coming
-back is left failed, to triage. Prefer fixing a flake at its cause over registering it;
-when it is fixed, mark it `fixed` rather than removing it, so its return is noticed. `node
-scripts/flakes/main.ts <logs dir> <verdict> <comment>` judges logs downloaded from a run
-the same way.
+once, unless the run was rerun meanwhile or its pull request has moved on, and records why
+in the job summary and on the pull request. A failure it can't explain or read, a known
+flake failing again on the rerun, or a flake registered as fixed coming back is left
+failed, to triage; the pull request hears of it only when a registered flake is involved.
+A packaging run that failed because the Quality checks it waits for failed isn't rerun
+with them: rerun it by hand once they pass. Prefer fixing a flake at its cause over
+registering it; when it is fixed, mark it `fixed` rather than removing it, so its return
+is noticed. `node scripts/flakes/main.ts <logs dir> <verdict> <comment>` judges logs
+downloaded from a run the same way.
 
 ## Packaging and releases
 

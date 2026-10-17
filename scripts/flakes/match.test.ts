@@ -5,7 +5,7 @@ import { failuresOf, judgeJob, judgeRun, parseRegister, verdictSummary } from ".
 
 const register = parseRegister(JSON.parse(readFileSync("scripts/flakes/register.json", "utf8")))
 // A failed job's log as CI caught it, by the flake it shows.
-const fixture = (id: string): string => readFileSync(`scripts/flakes/fixtures/${id}.log`, "utf8")
+const fixture = (id: string): string => readFileSync(`scripts/flakes/fixtures/${id}.txt`, "utf8")
 // The job each fixture's log is from.
 const fixtures: Record<string, string> = {
   "ui-companions-plan-reopen-place": "Test (macOS)",
@@ -113,6 +113,38 @@ describe("the known-flake register", () => {
         "src/specs/a.spec.tsx > A > b",
       ])
     })
+  })
+
+  context("when a known flake fails beside what this can't read", () => {
+    const known = fixture("ui-agents-pinned-drag-top")
+
+    it.each([
+      [" FAIL  unit  src/model/store.test.ts > a store > wakes its listeners", "store.test.ts"],
+      [" FAIL  src/specs/zen.spec.tsx [ src/specs/zen.spec.tsx ]", "zen.spec.tsx"],
+      [" FAIL  extract/routes.ts > reads them", "can't read"],
+      ["⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯", "outside any test"],
+    ])("leaves the job to be triaged: %s", (line, named) => {
+      const verdict = judgeJob(register, "Test (macOS)", `${known}\n${line}\n`)
+      expect(verdict.flakes).toEqual(["ui-agents-pinned-drag-top"])
+      expect(verdict.unknown).toEqual([expect.stringContaining(named)])
+    })
+  })
+
+  context("when two tests fail one after the other", () => {
+    it("reads each failure's own lines, not the next one's", () => {
+      const log = [
+        " FAIL  behaviour (chromium)  src/specs/companions.spec.tsx > Undocking an item into a window of its own > when dragged onto the Grid's free space > opens a window there",
+        "TypeError: Cannot read properties of null",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯",
+        known(),
+      ].join("\n")
+      expect(judgeJob(register, "Test (macOS)", log)).toMatchObject({
+        flakes: ["ui-agents-pinned-drag-top"],
+        unknown: [expect.stringContaining("opens a window there")],
+      })
+    })
+
+    const known = (): string => fixture("ui-agents-pinned-drag-top")
   })
 
   context("when the register is read", () => {
