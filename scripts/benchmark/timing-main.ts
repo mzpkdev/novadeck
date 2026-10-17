@@ -14,7 +14,7 @@ const readMain = (path: string | undefined): TimingReport | undefined => {
   if (!path || !existsSync(path)) return undefined
   try {
     const report = read(path)
-    if (report.version !== 1) throw new Error(`it is version ${String(report.version)}`)
+    if (report.version !== 1) throw new Error(`it is version ${JSON.stringify(report.version)}`)
     return report
   } catch (error) {
     console.error(
@@ -25,21 +25,23 @@ const readMain = (path: string | undefined): TimingReport | undefined => {
 }
 
 // The comment, beside main's report when it renders; one whose fields aren't what this
-// reads is left out as one that doesn't read is.
-const besideMain = (
+// reads is left out as one that doesn't read is. This run's own report renders first, so
+// a fault in it is never laid at main's door.
+export const besideMain = (
   report: TimingReport,
   main: TimingReport | undefined,
   label: string,
 ): string => {
-  if (main)
-    try {
-      return timingComment(report, { main, label })
-    } catch (error) {
-      console.error(
-        `::warning title=Main's timing report unread::${String(error).split("\n")[0]}; reported without it.`,
-      )
-    }
-  return timingComment(report, { label })
+  const alone = timingComment(report, { label })
+  if (!main) return alone
+  try {
+    return timingComment(report, { main, label })
+  } catch (error) {
+    console.error(
+      `::warning title=Main's timing report unread::${String(error).split("\n")[0]}; reported without it.`,
+    )
+    return alone
+  }
 }
 
 // `node scripts/benchmark/timing-main.ts <report> [main's report] [comment file]`: the
