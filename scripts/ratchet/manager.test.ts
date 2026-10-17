@@ -13,30 +13,51 @@ import {
   type Counts,
 } from "./manager"
 
-// application/runner/src/terminals/manager.ts holds a budget of lines and of functions in
+// application/runner/src/terminals/manager.ts holds a budget of lines and of methods in
 // its Terminals class that only goes down: new behaviour goes in a sibling module under
 // terminals/, and the class calls it.
 
 const root = join(import.meta.dirname, "..", "..")
 const read = (path: string): string => readFileSync(join(root, path), "utf8")
 
-// The budgets as the base branch has them: in a pull request's CI, the merge commit's first
-// parent (the Quality workflow checks out two commits deep); elsewhere, where this branch
-// left main. A base without the file has none to compare with.
-const baseBudgets = (): Budgets | undefined => {
-  const git = (...args: string[]): string =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
-  const bases = process.env.GITHUB_BASE_REF
-    ? [() => "HEAD^1"]
-    : ["origin/main", "main"].map((branch) => () => git("merge-base", "HEAD", branch).trim())
-  for (const base of bases) {
+const git = (...args: string[]): string =>
+  execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+
+// Where this change left its base: a merge commit's first parent, as a pull request's CI
+// checks out (the Quality workflow two commits deep); else where the branch left main.
+const baseCommit = (): string | undefined => {
+  try {
+    git("rev-parse", "--verify", "HEAD^2")
+    return git("rev-parse", "HEAD^1").trim()
+  } catch {
+    // Not a merge commit: where the branch left main, if git can see it.
+  }
+  for (const branch of ["origin/main", "main"]) {
     try {
-      return JSON.parse(git("show", `${base()}:${budgetsPath}`)) as Budgets
+      return git("merge-base", "HEAD", branch).trim()
     } catch {
-      // Not this one: try the next, or compare with none.
+      // Not this branch: try the next.
     }
   }
   return undefined
+}
+
+// The budgets as the base branch has them; none where the base has no file yet. A pull
+// request's CI must find its base, or a raise there would go unchecked.
+const baseBudgets = (): Budgets | undefined => {
+  const commit = baseCommit()
+  if (!commit) {
+    if (process.env.GITHUB_BASE_REF)
+      throw new Error(
+        `The ratchet reads the base branch's ${budgetsPath} from the pull request's merge commit, which this checkout can't see: check out two commits deep (fetch-depth: 2).`,
+      )
+    return undefined
+  }
+  try {
+    return JSON.parse(git("show", `${commit}:${budgetsPath}`)) as Budgets
+  } catch {
+    return undefined
+  }
 }
 
 describe("manager.ts", () => {

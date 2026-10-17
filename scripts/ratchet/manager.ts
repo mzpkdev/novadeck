@@ -61,7 +61,10 @@ const parsed = (code: string): ReturnType<typeof parseAst> => {
   try {
     return parseAst(code)
   } catch (error) {
-    throw new Error(`${managerPath} has syntax the ratchet's parser can't read.`, { cause: error })
+    throw new Error(
+      `${managerPath} has syntax the ratchet's parser can't read (${error instanceof Error ? error.message : String(error)}): write it as Node runs it, plain JavaScript once its types are stripped.`,
+      { cause: error },
+    )
   }
 }
 
@@ -99,10 +102,6 @@ const advice: Record<Measure, string> = {
   methods: "methods in the Terminals class",
 }
 
-// What's wrong with the counts against the budgets, and with the budgets against the base
-// branch's where they can be read; nothing when the ratchet holds. A count past its budget
-// asks for the code to go to a sibling module; one under it asks for the budget to come
-// down; a raise must say why and where it came from.
 // Why a raise against the base branch's budget can't stand: it says neither why nor where
 // it came from, or names the earlier raise's source, as when only the number was edited.
 const raiseProblem = (measure: Measure, entry: Budget, was: Budget): string | undefined => {
@@ -116,6 +115,10 @@ const raiseProblem = (measure: Measure, entry: Budget, was: Budget): string | un
   return undefined
 }
 
+// What's wrong with the counts against the budgets, and with the budgets against the base
+// branch's where they can be read; nothing when the ratchet holds. A count past its budget
+// asks for the code to go to a sibling module; one under it asks for the budget to come
+// down; a raise must say why and where it came from.
 export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets): string[] =>
   measures.flatMap((measure) => {
     const entry = budgets[measure]
