@@ -1,8 +1,8 @@
 # @novadeck/wire
 
 RPC calls and streams between processes over a WebSocket or a MessagePort: channels, a client
-generic over its contract, its transports and its errors. It carries an oRPC contract it doesn't
-know: the app's procedures and their codes stay the app's.
+generic over its contract, its transports, the server's streams of state, and its errors. It
+carries an oRPC contract it doesn't know: the app's procedures and their codes stay the app's.
 
 ## Subpaths
 
@@ -35,8 +35,8 @@ know: the app's procedures and their codes stay the app's.
   - `Versioned<State>`, whole state for any number of readers: each reads it now and again
     after every change, however many changes came between; `progress()` tells a change in
     progress at most once every `throttleMs`. `release(owner)` ends one owner's streams.
-  - `Latest<T>`, a stream of snapshots that keeps only the newest unread one, and never sends
-    again the one the reader has.
+  - `Latest<T>`, one reader's stream of snapshots that keeps only the newest unread one, and
+    never sends again the one the reader has.
 
   None holds changes for a reader: changes made while it hasn't read yet come to it as one
   (one per key, for `KeyedChanges`).

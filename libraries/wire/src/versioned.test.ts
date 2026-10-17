@@ -23,8 +23,11 @@ describe("versioned state", () => {
     const versioned = new Versioned<number>({ throttleMs: 100 })
     const stream = versioned.stream("a", () => state)
     await stream.next()
-    for (state = 1; state <= 5; state += 1) versioned.changed()
-    expect((await stream.next()).value).toBe(6)
+    for (let step = 1; step <= 5; step += 1) {
+      state = step
+      versioned.changed()
+    }
+    expect((await stream.next()).value).toBe(5)
     // Five changes were one new state: nothing more is waiting to be read.
     const more = await Promise.race([
       stream.next().then(() => "more"),
