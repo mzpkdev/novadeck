@@ -193,6 +193,12 @@ const libraries = new Set(
       : []
   }),
 )
+// What of a library the core may take: entries that run anywhere and need no framework, not
+// a React binding, browser views or styles, nor a subpath only Node may load.
+const outsideCore = /\/(react|browser|server|electron|pty|host|shell|reap|tripwire)(\/|$)|\.css$/
+const coreLibrary = (specifier: string): boolean =>
+  libraries.has(packageName(specifier)) &&
+  !outsideCore.test(specifier.slice(packageName(specifier).length))
 const files = (readdirSync(src, { recursive: true }) as string[])
   .map((file) => file.split("\\").join("/"))
   .filter((file) => /\.tsx?$/.test(file))
@@ -252,8 +258,7 @@ const importViolation = (file: string, layer: string | undefined) => {
       if (protocolData[file] === specifier) return []
       if (isTest(file) || (layer && (adapterOf(layer) || testLayers.has(layer)))) return []
       // The core takes the libraries and, through `protocolData`, the protocol's data entries.
-      if (layer === "core/")
-        return libraries.has(packageName(specifier)) ? [] : [`${file} -> ${specifier}`]
+      if (layer === "core/") return coreLibrary(specifier) ? [] : [`${file} -> ${specifier}`]
       const limited = layer ? typeOnlyPackages[layer] : undefined
       const ok = limited
         ? limited.includes(packageName(specifier)) && typeOnly
@@ -319,7 +324,7 @@ describe("UI architecture", () => {
               : [`${file} -> ${specifier}`]
           if (dataEntries.has(specifier)) return []
           // The protocol isn't a library, so only its data entries pass; its `/client` and `/wire` don't.
-          return libraries.has(packageName(specifier)) ? [] : [`${file} -> ${specifier}`]
+          return coreLibrary(specifier) ? [] : [`${file} -> ${specifier}`]
         }),
       )
     expect(found).toEqual([])
@@ -329,7 +334,7 @@ describe("UI architecture", () => {
     const found = files.flatMap((file) =>
       imports(file).flatMap(({ specifier }) => {
         const vendor = vendorOf(specifier)
-        const library = file.startsWith("core/") && libraries.has(packageName(specifier))
+        const library = file.startsWith("core/") && coreLibrary(specifier)
         return !vendor || library || vendors[vendor]!.some((owner) => file.startsWith(owner))
           ? []
           : [`${file} -> ${specifier}`]
@@ -342,6 +347,8 @@ describe("UI architecture", () => {
     const found = files.flatMap((file) =>
       imports(file)
         .filter(({ specifier }) => specifier.startsWith("@novadeck/") && !vendorOf(specifier))
+        // The core takes any library's entries for every environment, owner or not.
+        .filter(({ specifier }) => !(file.startsWith("core/") && coreLibrary(specifier)))
         .map(({ specifier }) => `${file} -> ${specifier}`),
     )
     expect(found).toEqual([])

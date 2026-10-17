@@ -30,7 +30,8 @@ The branch keeps its commits in this order so a redo is "re-apply the hand edits
    (the workspace-only selectors out of `app/selectors.ts`), `SchemePreference` defined in
    `model/types.ts`, the registry's `TerminalKey` taken from `model/types`, the `imports` field in
    `application/ui/package.json`. Merge or cherry-pick it onto the fresh main; it rarely conflicts.
-2. **The script commit** (`scripts/core/`): cherry-pick it too; it is its own commit, not part of the prep.
+2. **The script's commits**, every one that touches `scripts/core/` (`git log --oneline -- scripts/core`):
+   cherry-pick them too, oldest first; they aren't part of the prep.
 3. Run `node scripts/core/move.ts` on a clean tree and commit its output.
 4. **The architecture commit** (`architecture.test.ts` re-keyed for `core/`, `#core/*` read as the
    core layer, and the core's own rules): cherry-pick it; the tables it touches are additions, so
