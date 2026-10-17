@@ -1,20 +1,12 @@
-import { memo, useCallback, useEffect, useState, useSyncExternalStore } from "react"
+import { memo, useEffect, useState, useSyncExternalStore } from "react"
 
 import type { Backend, BackendConnectionState } from "../backend/port"
-import {
-  accountUsage,
-  movedOrder,
-  nextAccountReset,
-  runningSeats,
-  sameAccounts,
-  sameSeats,
-} from "../model/account-usage"
-import type { Telemetry } from "../model/telemetry"
+import { movedOrder, nextAccountReset, runningSeats, sameSeats } from "../model/account-usage"
 import { readSubscriptionOrder, writeSubscriptionOrder } from "../shell/shell-storage"
 import { SubscriptionUsage } from "../shell/SubscriptionUsage"
 import { WorkspaceFooter as Footer, type FooterStatus } from "../shell/WorkspaceFooter"
 import { useUiState, useWorkspaceServices, useWorkspaceState } from "./controller/context"
-import { useStoreSelector } from "./controller/useStoreSelector"
+import { useAccounts } from "./controller/footer-accounts"
 import { crashLoopQuestion, currentState, shallowEqual } from "./selectors"
 
 const always = (): (() => void) => () => {}
@@ -72,11 +64,7 @@ export const WorkspaceFooter = memo((): React.JSX.Element => {
   // The time windows are measured against, moved on as the soonest one resets, so it
   // drops out then though no agent reports anything new.
   const [now, setNow] = useState(Date.now)
-  const accounts = useStoreSelector(
-    backend.telemetry,
-    useCallback((held: Telemetry) => accountUsage(seats, held, now, order), [seats, now, order]),
-    sameAccounts,
-  )
+  const accounts = useAccounts(backend.telemetry, seats, now, order)
   const nextReset = nextAccountReset(accounts)
   useEffect(() => {
     if (nextReset === undefined) return undefined

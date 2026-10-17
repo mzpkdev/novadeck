@@ -1,13 +1,14 @@
 import { act, createElement } from "react"
 
-import { accountUsage, sameAccounts, type AgentAccount } from "../../model/account-usage"
+import type { AgentAccount } from "../../model/account-usage"
 import { createStore } from "../../model/store"
 import { noTelemetry, setUsage, type Telemetry } from "../../model/telemetry"
 import { describe, expect, it } from "../../test"
 import { render } from "../../test/render"
-import { useStoreSelector } from "./useStoreSelector"
+import { useAccounts } from "./footer-accounts"
 
 const seats = [{ context: "p/s", id: "1", program: "claude" }]
+const order: readonly string[] = []
 const report = (occupied: number, used: number): Telemetry =>
   setUsage(noTelemetry, "p/s", "1", {
     context: { occupied, capacity: 200_000 },
@@ -16,12 +17,12 @@ const report = (occupied: number, used: number): Telemetry =>
     effort: null,
   })
 
-// Renders the accounts as the footer selects them, and records each render.
+// Renders the accounts with the footer's own hook, and records each render.
 const footer = (telemetry: Telemetry) => {
   const store = createStore(telemetry)
   const seen: (readonly AgentAccount[])[] = []
   const Probe = (): null => {
-    seen.push(useStoreSelector(store, (held) => accountUsage(seats, held, 0), sameAccounts))
+    seen.push(useAccounts(store, seats, 0, order))
     return null
   }
   const rendered = render(createElement(Probe))
