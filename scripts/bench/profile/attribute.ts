@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
 
 import {
   GREATEST_LOWER_BOUND,
@@ -118,6 +117,10 @@ export const groupOf = (original: Original | undefined): Group => {
 export const declared = (text: string | undefined, line: number): string | undefined =>
   text?.split("\n")[line - 1]?.match(/\bfunction\s+([\w$]+)\s*\(/)?.[1]
 
+// A path with forward slashes, as Windows' are resolved with backslashes, and the
+// classifiers read sources by their folders.
+const slashed = (path: string): string => path.replaceAll("\\", "/")
+
 type Loaded = { readonly trace: TraceMap; readonly file: string }
 
 /** Attributes frames by the maps in `maps` (one `<chunk>.js.map` per chunk the page loads). */
@@ -150,8 +153,12 @@ export const sourceMapped = (maps: string): Attribution => {
     const key = `${frame.url}:${frame.lineNumber}:${frame.columnNumber}`
     if (originals.has(key)) return originals.get(key)
     let found: Original | undefined
-    const bundle = frame.url.startsWith("file:") ? fileURLToPath(frame.url) : frame.url
-    const map = load(join(maps, `${basename(bundle)}.map`))
+    // Only the bundle's name is wanted: read from the URL's path, it needs no drive, as
+    // a file URL's path on Windows would.
+    const bundle = basename(
+      frame.url.startsWith("file:") ? decodeURIComponent(new URL(frame.url).pathname) : frame.url,
+    )
+    const map = load(join(maps, `${bundle}.map`))
     if (map) {
       // The profile's lines and columns count from 0; the map's lines from 1.
       const position = at(map, frame.lineNumber + 1, frame.columnNumber)
@@ -163,16 +170,16 @@ export const sourceMapped = (maps: string): Attribution => {
           const deeper = at(inner, position.line, position.column)
           found =
             deeper.source === null
-              ? { file: source, source, name: undefined }
+              ? { file: slashed(source), source: slashed(source), name: undefined }
               : {
-                  file: source,
-                  source: resolve(dirname(inner.file), deeper.source),
+                  file: slashed(source),
+                  source: slashed(resolve(dirname(inner.file), deeper.source)),
                   name: deeper.name ?? undefined,
                 }
         } else
           found = {
-            file: source,
-            source,
+            file: slashed(source),
+            source: slashed(source),
             name:
               declared(content(map, position.source), position.line) ?? position.name ?? undefined,
           }
