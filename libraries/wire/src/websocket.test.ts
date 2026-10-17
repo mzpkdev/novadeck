@@ -141,18 +141,30 @@ describe("serveWebSocket", () => {
     expect(await refusal(url)).toContain("429")
   })
 
+  // The authentication deadline on a fake clock, so a slow machine's handshake still comes in
+  // time: only the server's timeouts are faked, and its sockets run as ever.
+  const authMs = 10_000
+  const onFakeClock = () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    onTestFinished(() => void vi.useRealTimers())
+  }
+
   it("closes a socket that doesn't authenticate in time", async () => {
-    const { url } = await serve({ authMs: 20 })
+    onFakeClock()
+    const { url } = await serve({ authMs })
     const { socket } = await raw(url)
-    const [code] = (await once(socket, "close")) as [number]
+    const closed = once(socket, "close")
+    await vi.advanceTimersByTimeAsync(authMs)
+    const [code] = (await closed) as [number]
     expect(code).toBe(1008)
   })
 
   it("keeps a socket that authenticated in time", async () => {
-    const { url } = await serve({ authMs: 20 })
+    onFakeClock()
+    const { url } = await serve({ authMs })
     const { client } = await raw(url)
     await client.wire.handshake({ protocolVersion, token })
-    await new Promise((resolve) => setTimeout(resolve, 60))
+    await vi.advanceTimersByTimeAsync(authMs)
     await expect(client.echo("hi")).resolves.toBe("hi")
   })
 
@@ -179,10 +191,17 @@ describe("serveWebSocket", () => {
 
   it("drops a peer that stops answering pings, releasing its session", async () => {
     const closed = vi.fn<(session: Session) => void>()
-    const { url } = await serve({ heartbeatMs: 20 }, { closed })
+    // On a fake clock, so the handshake comes before the first ping however slow the machine.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] })
+    onTestFinished(() => void vi.useRealTimers())
+    const heartbeatMs = 10_000
+    const { url } = await serve({ heartbeatMs }, { closed })
     const { socket, client } = await raw(url, { autoPong: false })
     await client.wire.handshake({ protocolVersion, token })
-    await once(socket, "close")
+    const ended = once(socket, "close")
+    // A ping unanswered by the next one drops the peer.
+    await vi.advanceTimersByTimeAsync(heartbeatMs * 2)
+    await ended
     expect(closed).toHaveBeenCalledOnce()
   })
 
