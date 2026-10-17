@@ -1243,7 +1243,7 @@ checks validate both entry assets and deferred chunks with relative packaged pat
 
 `src/specs/counters/` measures what busy agents cost the UI. It isn't a behaviour spec. It
 boots the real app, its runner adapter and the real runner client over a scripted runner
-(`backend/runner/scripted.ts`): the whole contract served by oRPC over an in-memory port,
+(`backend/runner/scripted-server.ts`): the whole contract served by oRPC over an in-memory port,
 so a procedure the contract adds is a type error there. It is the one spec that may reach
 that adapter. A warm-up on the real clock loads the views' code first, then closes and
 waits out the timers that act (a screen parks 5 s after it was last shown). The run itself is on a fake clock: timers, animation frames, `Date`

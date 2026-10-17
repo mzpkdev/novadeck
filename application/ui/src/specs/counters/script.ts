@@ -1,6 +1,6 @@
 import { expect } from "vitest"
 
-import type { scriptedRunner } from "../../backend/runner/scripted"
+import type { scriptedRunner } from "../../backend/runner/scripted-server"
 import { terminalTab, view, viewSwitcher } from "../support/workspace"
 import { frameMs, type Clock } from "./clock"
 import { counts, type Counts } from "./probes"

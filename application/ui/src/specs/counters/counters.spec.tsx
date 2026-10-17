@@ -3,7 +3,7 @@ import { cleanup, render } from "vitest-browser-react"
 import { commands, server } from "vitest/browser"
 
 import { App } from "../../app/App"
-import { scriptedRunner } from "../../backend/runner/scripted"
+import { scriptedRunner } from "../../backend/runner/scripted-server"
 import { chooseView, layoutSettled } from "../support/workspace"
 import { startClock } from "./clock"
 import { countNotifications, counts, observeMutations } from "./probes"
@@ -58,9 +58,9 @@ const warmUp = async (): Promise<void> => {
 
 describe("Counter run", () => {
   it("counts what 13 busy agents cost the UI", async () => {
-    const stopNotifications = countNotifications()
     await loadFonts()
     await warmUp()
+    const stopNotifications = countNotifications()
     const runner = scriptedRunner({ terminals: 13 })
     const stopMutations = observeMutations()
     const clock = startClock(() => counts.commits + counts.mutations)
@@ -91,7 +91,7 @@ describe("Counter run", () => {
       stopMutations()
       stopNotifications()
       clock.stop()
-      // Soft, so a run that already failed reports its own failure first.
+      // Soft, so a run that already failed still reports its own failure.
       const closing =
         connection &&
         (await close(runner, connection).then(
