@@ -116,8 +116,8 @@ const adapterSelection = "app/backend.ts"
 // Tests and specs open the demo through its spec entry, never another adapter module.
 const specBackend = "backend/demo/spec-variants.ts"
 // The counter run drives the real UI over the runner adapter, scripted: the one spec
-// that may reach that adapter, through its scripted server alone, and the stores, through
-// their instrumentation hook.
+// that may reach that adapter, through its scripted server alone, and model/store.ts, for
+// its instrumentation hook.
 const counterRun = "specs/counters/"
 const scriptedServer = "backend/runner/scripted-server.ts"
 const counterRunReaches = [scriptedServer, "model/store.ts"]
@@ -234,14 +234,13 @@ const importViolation = (file: string, layer: string | undefined) => {
     }
     const target = resolveFile(file, specifier)
     if (!target) return [`${file} -> ${specifier} (unresolved)`]
+    if (file.startsWith(counterRun) && counterRunReaches.includes(target)) return []
     const targetLayer = layerOf(target)
     if (targetLayer && adapterOf(targetLayer) && targetLayer !== layer)
       return file === adapterSelection ||
-        ((isTest(file) || layer === "specs/") && target === specBackend) ||
-        (file.startsWith(counterRun) && counterRunReaches.includes(target))
+        ((isTest(file) || layer === "specs/") && target === specBackend)
         ? []
         : [`${file} -> ${target} (only ${adapterSelection} selects an adapter)`]
-    if (file.startsWith(counterRun) && counterRunReaches.includes(target)) return []
     // Root-level tests exercise the root modules beside them.
     if (!layer)
       return target.includes("/") && !target.startsWith("test/") ? [`${file} -> ${target}`] : []
