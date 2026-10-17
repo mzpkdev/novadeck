@@ -1,7 +1,7 @@
 import { expect } from "vitest"
 import { page, userEvent, type Locator } from "vitest/browser"
 
-import { nameOf, terminal } from "./workspace"
+import { nameOf, stillFor, terminal } from "./workspace"
 
 // Canvas vocabulary: where things appear on screen and the pointer gestures a person
 // makes. Geometry is measured from rendered boxes, relative to the Canvas view.
@@ -165,7 +165,7 @@ export const settled = async <T,>(measure: () => T, frames = 5): Promise<T> => {
       still = next === previous ? still + 1 : 0
       previous = next
       return still >= frames
-    })
+    }, stillFor(frames))
     .toBe(true)
   return measure()
 }

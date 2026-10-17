@@ -1,7 +1,7 @@
 import { expect } from "vitest"
 import { page, type Locator } from "vitest/browser"
 
-import { terminal } from "./workspace"
+import { stillFor, terminal } from "./workspace"
 
 // Geometry vocabulary for Focus and Grid specs. Rendered rectangles are compared
 // with each other rather than with fixed pixel values, so specs survive changes to
@@ -68,7 +68,7 @@ export const expectStaysTrue = async (
         held += 1
         return !broken && held >= frames
       },
-      { message: `${description} changed` },
+      { message: `${description} changed`, ...stillFor(frames) },
     )
     .toBe(true)
 }
