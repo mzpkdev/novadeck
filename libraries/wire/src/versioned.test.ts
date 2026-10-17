@@ -25,6 +25,12 @@ describe("versioned state", () => {
     await stream.next()
     for (state = 1; state <= 5; state += 1) versioned.changed()
     expect((await stream.next()).value).toBe(6)
+    // Five changes were one new state: nothing more is waiting to be read.
+    const more = await Promise.race([
+      stream.next().then(() => "more"),
+      new Promise((resolve) => setTimeout(() => resolve("nothing"), 10)),
+    ])
+    expect(more).toBe("nothing")
   })
 
   it("tells progress at most once every throttleMs, unless forced", async () => {
