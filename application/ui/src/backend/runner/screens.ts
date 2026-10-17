@@ -109,6 +109,8 @@ export type RunnerScreen = {
 }
 
 type OpenOptions = { fontSize: number; name: string; waiting: boolean }
+// How a surface shows the screen: with WebGL where its view wants it.
+type ShowOptions = OpenOptions & { webgl: boolean }
 
 type Entry = {
   readonly host: HTMLDivElement
@@ -389,7 +391,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     // The host a surface places in its slot, the same element for the terminal's life.
     host: (key: TerminalKey): HTMLDivElement => entryOf(key).host,
     // The terminal's screen for a surface that shows it, opened on first use.
-    acquire: (key: TerminalKey, options: OpenOptions): RunnerScreen => {
+    acquire: (key: TerminalKey, { webgl, ...options }: ShowOptions): RunnerScreen => {
       const entry = entryOf(key)
       entry.users += 1
       if (entry.timer !== undefined) clearTimeout(entry.timer)
@@ -398,7 +400,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       entry.parking = undefined
       entry.screen ??= open(key, entry, options)
       entry.screen.followed.unpark()
-      entry.screen.renderer.take()
+      entry.screen.renderer.take(webgl)
       return entry.screen
     },
     release: (key: TerminalKey): void => {

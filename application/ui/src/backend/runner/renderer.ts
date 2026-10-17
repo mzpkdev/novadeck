@@ -1,6 +1,8 @@
 import { WebglAddon } from "@xterm/addon-webgl"
 import type { IEvent, Terminal } from "@xterm/xterm"
 
+import type { ViewMode } from "../../model/types"
+
 // xterm draws with its DOM renderer unless the WebGL addon takes over, which costs a
 // fraction of the main thread's time on a busy Grid. This module is all the WebGL
 // handling: which screens hold a context, and when one goes back to the DOM renderer.
@@ -10,6 +12,10 @@ import type { IEvent, Terminal } from "@xterm/xterm"
 // terminal that is still shown. Staying under that leaves room for the page's own
 // canvases; a shown screen past the cap draws with the DOM renderer until a slot frees.
 export const contextCap = 12
+// Whether a view's screens draw with WebGL. Canvas zooms its windows with a CSS transform,
+// which the DOM renderer's text is drawn again at but WebGL's canvas is stretched by, soft
+// above one and ragged below, so Canvas keeps the DOM renderer.
+export const wantsWebgl = (view: ViewMode): boolean => view !== "canvas"
 // How many times a screen may lose its context, or fail to load one; it tries again when
 // it is shown again, once, and stays on the DOM renderer after that.
 const lossesAllowed = 2
@@ -34,8 +40,9 @@ export type RendererDeps<Target> = {
 
 // One screen's side of the pool.
 export type ScreenRenderer = {
-  // The screen is shown: it takes a context when one is free, or waits for one.
-  readonly take: () => void
+  // The screen is shown: it takes a context when one is free, or waits for one. Shown
+  // where WebGL isn't wanted, it stays on the DOM renderer and gives back one it holds.
+  readonly take: (webgl?: boolean) => void
   // The screen is parked and draws nothing: it gives its context back.
   readonly release: () => void
   // The font may have changed under glyphs already drawn.
@@ -46,6 +53,8 @@ export type ScreenRenderer = {
 type Member<Target> = {
   readonly target: Target
   shown: boolean
+  // Whether where it's shown wants WebGL.
+  webgl: boolean
   drawing?: Drawing | undefined
   // When the screen began waiting, among the shown ones; the longest waiting goes first.
   since: number
@@ -81,7 +90,7 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
     while (held < deps.cap && usable()) {
       let next: Member<Target> | undefined
       for (const member of members) {
-        if (!member.shown || member.drawing || member.lost) continue
+        if (!member.shown || !member.webgl || member.drawing || member.lost) continue
         if (member.losses >= lossesAllowed) continue
         if (!next || member.since < next.since) next = member
       }
@@ -116,6 +125,7 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
       const member: Member<Target> = {
         target,
         shown: false,
+        webgl: true,
         since: 0,
         losses: 0,
         lost: false,
@@ -128,13 +138,15 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
         fill()
       }
       return {
-        take: () => {
+        take: (webgl = true) => {
           // Shown afresh, after a park: a screen that lost its context tries again then.
           if (!member.shown) {
             member.since = clock++
             member.lost = false
           }
           member.shown = true
+          member.webgl = webgl
+          if (!webgl) drop(member)
           fill()
         },
         release: leave,
@@ -199,6 +211,7 @@ const contextOf = (found: readonly HTMLCanvasElement[]): WebGL2RenderingContext 
   undefined
 
 // Loads xterm's WebGL addon into a screen, as a drawing whose dispose frees its context.
+// The terminal is open already, so its canvases are there to find.
 export const loadWebgl = (xterm: Terminal): Drawing => {
   const canvases = (): HTMLCanvasElement[] => [...(xterm.element?.querySelectorAll("canvas") ?? [])]
   const before = new Set(canvases())
@@ -209,7 +222,8 @@ export const loadWebgl = (xterm: Terminal): Drawing => {
     xterm.loadAddon(addon)
   } catch (error) {
     // A renderer that failed partway, as on a context lost mid-load, leaves its canvases
-    // and its context behind; they go with it.
+    // and its context behind; they go with it. Its listeners stay subscribed to the
+    // terminal until it closes, as the addon never got hold of the renderer to dispose.
     const left = added()
     contextOf(left)?.getExtension("WEBGL_lose_context")?.loseContext()
     for (const canvas of left) canvas.remove()

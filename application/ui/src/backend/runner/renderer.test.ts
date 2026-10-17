@@ -1,5 +1,5 @@
 import { describe, expect, it } from "../../test"
-import { createRenderers, type Drawing } from "./renderer"
+import { createRenderers, wantsWebgl, type Drawing } from "./renderer"
 
 const setup = ({ cap = 2, supported = true, failing = false } = {}) => {
   const state = { ligatures: false, failing, loads: 0 }
@@ -67,6 +67,27 @@ describe("the renderer budget", () => {
     expect([live("a"), live("b"), live("c"), live("d")]).toEqual([false, true, true, false])
     b!.dispose()
     expect(live("d")).toBe(true)
+  })
+
+  it("keeps a screen shown where WebGL isn't wanted on the DOM, its slot to a waiter", () => {
+    const { pool, live } = setup()
+    const [a, b, c] = ["a", "b", "c"].map(pool.screen)
+    a!.take()
+    b!.take()
+    c!.take()
+    a!.take(false)
+    expect([live("a"), live("b"), live("c")]).toEqual([false, true, true])
+    b!.release()
+    a!.take(true)
+    expect([live("a"), live("c")]).toEqual([true, true])
+  })
+
+  it("wants WebGL in Grid and Focus, never in Canvas, which zooms with a transform", () => {
+    expect([wantsWebgl("grid"), wantsWebgl("focus"), wantsWebgl("canvas")]).toEqual([
+      true,
+      true,
+      false,
+    ])
   })
 
   it("takes nothing for a parked screen", () => {
