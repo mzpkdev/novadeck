@@ -39,7 +39,7 @@ export const overlay = (screen: ScreenText): boolean =>
  * key changes the welcome screen wholesale, so the box is read from where the cursor is,
  * never against an earlier screen. Pastes of about a thousand characters show as
  * `[Pasted Content 1030 chars]`, however many lines (25 short lines show whole). It leaves a
- * ZWJ family sequence blank (probed), which the library compares text without.
+ * ZWJ family sequence blank (probed), so the library compares text without such emoji.
  */
 export const box: BoxProfile = {
   read: (screen) => agreeing(markedBox(screen, markers), shellFooter(screen.rows)),

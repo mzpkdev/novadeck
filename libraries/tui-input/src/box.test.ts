@@ -99,6 +99,8 @@ describe("ruledBox", () => {
     // The cursor away from home, or the rest not faint: a draft of one letter.
     expect(ruledBox(screen(hint, 1, 5, lit), markers)?.text).toBe("P")
     expect(ruledBox(screen([line, "❯ x", line], 1, 2), markers)?.text).toBe("x")
+    // A draft longer than a letter, with the cursor sent home: still the person's draft.
+    expect(ruledBox(screen([line, "❯ hello", line], 1, 2), markers)?.text).toBe("hello")
   })
 
   it("reads its mode off the marker leading the first row", () => {

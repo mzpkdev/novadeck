@@ -98,8 +98,8 @@ export const overlay = (screen: ScreenText): boolean =>
  * indented (probed 1.2.14 and 1.3.1, fixtures/input-box.probe.json). Its history above
  * echoes the person's turns the same way, rules and all, so only the lowest pair is the
  * box. A paste of more than 15 lines shows as `[Pasted text #1 +40 lines]`, a long line as
- * `[Pasted text #4 1499 chars]`. It leaves a ZWJ family sequence blank (probed), which the
- * library compares text without.
+ * `[Pasted text #4 1499 chars]`. It leaves a ZWJ family sequence blank (probed), so the
+ * library compares text without such emoji.
  */
 export const box: BoxProfile = {
   read: (screen) => agreeing(ruledBox(screen, markers), shellFooter(screen.rows)),
