@@ -41,6 +41,7 @@
     "@lezer/yaml": "^1.0.4",
     "@novadeck/emulator": "workspace:*",
     "@novadeck/protocol": "workspace:*",
+    "@novadeck/wire": "workspace:*",
     "@xyflow/react": "^12.12.0",
     "allotment": "^1.20.5",
     "clsx": "^2.1.1",
@@ -53,7 +54,7 @@
   },
   "devDependencies": {
     "@novadeck/runner": "workspace:*",
-    "@orpc/server": "1.15.5",
+    "@orpc/server": "catalog:",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
