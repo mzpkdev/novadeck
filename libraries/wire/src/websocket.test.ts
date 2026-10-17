@@ -172,7 +172,8 @@ describe("serveWebSocket", () => {
     const { url } = await serve({}, { closed })
     const { socket, client } = await raw(url)
     await client.wire.handshake({ protocolVersion, token })
-    ;(socket as unknown as { _socket: { destroy(): void } })._socket.destroy()
+    // Ends the TCP connection without a close frame, as a lost network does.
+    socket.terminate()
     await vi.waitFor(() => expect(closed).toHaveBeenCalledOnce())
   })
 
