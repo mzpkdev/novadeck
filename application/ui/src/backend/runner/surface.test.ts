@@ -1363,6 +1363,8 @@ describe("a surface's renderer", () => {
     const root = document.documentElement
     root.style.setProperty("--font-mono", "Bundled Mono")
     const font = loading()
+    // A resize's settling refit waits on a timer; held, only the font's refit counts.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
     try {
       mount("focus", "01")
       resized.mockClear()
@@ -1371,6 +1373,7 @@ describe("a surface's renderer", () => {
 
       expect(resized).toHaveBeenCalledTimes(1)
     } finally {
+      vi.useRealTimers()
       root.style.removeProperty("--font-mono")
       font.restore()
     }
