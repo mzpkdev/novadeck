@@ -1,6 +1,6 @@
-// The timing run's report: what it measured, summed up as the numbers the gate keeps as a
-// trend (switch p90, steady main-thread share, frames over 33 ms), with the samples behind
-// them. A run that failed part way still writes one, with what it got and why it stopped.
+// The timing run's report: what it measured, summed up as the numbers kept as a trend (switch
+// p90, steady main-thread share, frames over 33 ms), with the samples behind them. A run that
+// failed part way still writes one, with what it got and why it stopped.
 
 /** One steady window: a layout with every agent busy, measured over `seconds`. */
 export type Steady = {
@@ -87,7 +87,9 @@ export const summarize = (measured: Measured): Report["summary"] => {
     steady: measured.steady.map((window) => ({
       layout: window.layout,
       mainThreadShare: round((window.taskSeconds / window.seconds) * 100),
-      fps: round((window.frameGaps.length + 1) / window.seconds),
+      // No frame at all is none a second, whatever the window.
+      fps:
+        window.frameGaps.length === 0 ? 0 : round((window.frameGaps.length + 1) / window.seconds),
       framesOver33ms: window.frameGaps.filter((gap) => gap > 33).length,
       longTasks: window.longTasks.length,
     })),

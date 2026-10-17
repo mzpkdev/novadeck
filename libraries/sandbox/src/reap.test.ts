@@ -11,6 +11,7 @@ import {
   reap,
   sandboxed,
   endTree,
+  endWindows,
   sandboxProcesses,
 } from "./reap.js"
 
@@ -133,17 +134,31 @@ describe("ending a Windows process's tree", () => {
     expect(killed).toEqual([])
   })
 
-  it("ends it by recorded parents where its reader can't read the tree, or there is none", async () => {
-    const { trees } = reader(undefined)
-    const killed: number[] = []
-    const kill = async (pid: number) => {
-      killed.push(pid)
+  it("ends the process alone when asked, or forcibly with no reader to read its tree", async () => {
+    const { calls, trees } = reader([{ pid: gone, startedAt: 100 }])
+    const terminated: number[] = []
+    const terminate = (pid: number) => {
+      terminated.push(pid)
     }
 
-    await endTree({ pid: gone, start: 100 }, trees, kill)
-    await endTree({ pid: gone, start: 100 }, undefined, kill)
+    await endWindows({ pid: gone, start: 100 }, false, trees, terminate)
+    await endWindows({ pid: gone, start: 100 }, true, undefined, terminate)
+    await endWindows({ pid: gone, start: 100 }, true, trees, terminate)
 
-    expect(killed).toEqual([gone, gone])
+    // Only the forcible end with a reader went to the tree.
+    expect(terminated).toEqual([gone, gone])
+    expect(calls.read).toEqual([gone])
+  })
+
+  it("ends it by recorded parents where its reader can't read the tree", async () => {
+    const { trees } = reader(undefined)
+    const killed: number[] = []
+
+    await endTree({ pid: gone, start: 100 }, trees, async (pid) => {
+      killed.push(pid)
+    })
+
+    expect(killed).toEqual([gone])
   })
 })
 

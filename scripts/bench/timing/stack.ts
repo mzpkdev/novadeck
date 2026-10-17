@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto"
 import { createServer } from "node:net"
 import { join } from "node:path"
 
+import type { Sandbox } from "@novadeck/sandbox"
+
 import { openSandbox } from "./sandbox.ts"
 
 // What the timing run runs against: the UI's production build, served by `vite preview`, over
@@ -11,6 +13,19 @@ import { openSandbox } from "./sandbox.ts"
 
 const root = join(import.meta.dirname, "..", "..", "..")
 const ui = join(root, "application", "ui")
+
+/** The runner's environment: the sandbox's alone, with what the runner itself is told. */
+export const runnerEnv = (
+  sandbox: Pick<Sandbox, "env" | "root">,
+  runner: { readonly token: string; readonly port: number; readonly origin: string },
+): NodeJS.ProcessEnv => ({
+  ...sandbox.env,
+  NOVADECK_TOKEN: runner.token,
+  HOST: "127.0.0.1",
+  PORT: String(runner.port),
+  NOVADECK_DATABASE: join(sandbox.root, "data", "workspace.sqlite"),
+  CORS_ORIGINS: runner.origin,
+})
 
 /** Free ports on loopback, each held until all are known, so no two come out the same. */
 const freePorts = async (count: number): Promise<readonly number[]> => {
@@ -44,7 +59,7 @@ const ready = async (url: string, child: ChildProcess, ms: number): Promise<void
     if (ended(child))
       throw new Error(`${url}: its process ended (${child.exitCode ?? child.signalCode})`)
     // eslint-disable-next-line no-await-in-loop -- Asks again until it answers.
-    const answered = await fetch(url).then(
+    const answered = await fetch(url, { signal: AbortSignal.timeout(5000) }).then(
       () => true,
       () => false,
     )
@@ -155,11 +170,13 @@ export const openStack = (): Stack => {
       // The runner's address and token are baked into the build, as the dev-web path does.
       await run(
         process.execPath,
-        [vite, "build", "--outDir", dist, "--emptyOutDir"],
+        [vite, "build", "--mode", "production", "--outDir", dist, "--emptyOutDir"],
         {
           cwd: ui,
+          // A production build whatever the developer's shell says, as the numbers need one.
           env: {
             ...process.env,
+            NODE_ENV: "production",
             VITE_NOVADECK_RUNNER_URL: `ws://127.0.0.1:${runnerPort}/api/rpc`,
             VITE_NOVADECK_RUNNER_TOKEN: token,
           },
@@ -171,14 +188,7 @@ export const openStack = (): Stack => {
         [join(root, "application", "runner", "dist", "cli.js")],
         {
           cwd: sandbox.root,
-          env: {
-            ...sandbox.env,
-            NOVADECK_TOKEN: token,
-            HOST: "127.0.0.1",
-            PORT: String(runnerPort),
-            NOVADECK_DATABASE: join(sandbox.root, "data", "workspace.sqlite"),
-            CORS_ORIGINS: origin,
-          },
+          env: runnerEnv(sandbox, { token, port: runnerPort!, origin }),
           stdio: ["ignore", "inherit", "inherit"],
         },
       )

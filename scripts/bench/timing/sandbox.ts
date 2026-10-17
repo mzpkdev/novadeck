@@ -16,6 +16,17 @@ import { tripwire } from "@novadeck/sandbox/tripwire"
 // The agent CLIs a folder on the sandbox's PATH may not hold, besides the fake's own.
 const agents = ["claude", "codex", "agy"]
 
+/**
+ * The real agent CLIs in the folders of `path` but its first, the fake's own: the sandbox
+ * refuses to start while there are any.
+ */
+export const strays = (path: string): readonly string[] =>
+  path
+    .split(delimiter)
+    .slice(1)
+    .flatMap((folder) => agents.map((agent) => join(folder, agent)))
+    .filter((file) => existsSync(file))
+
 /** A word sh reads as the text itself, whatever it holds. */
 export const quoted = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`
 
@@ -46,13 +57,9 @@ export const openSandbox = (prefix: string): BenchSandbox => {
     )
     chmodSync(claude, 0o755)
     const path = [bin, base.env.PATH].join(delimiter)
-    const strays = path
-      .split(delimiter)
-      .slice(1)
-      .flatMap((folder) => agents.map((agent) => join(folder, agent)))
-      .filter((file) => existsSync(file))
-    if (strays.length > 0)
-      throw new Error(`the sandbox's PATH holds a real agent CLI: ${strays.join(", ")}`)
+    const found = strays(path)
+    if (found.length > 0)
+      throw new Error(`the sandbox's PATH holds a real agent CLI: ${found.join(", ")}`)
     // The runner counts Claude Code connected once Novadeck's plugin is on in its settings.
     mkdirSync(join(base.home, ".claude"), { recursive: true })
     writeFileSync(

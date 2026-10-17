@@ -113,13 +113,14 @@ const names = (path: string, texts: readonly string[]): boolean => {
  * by its name or its short name (see `spellings`), any case on Windows; the folders with an
  * entry named after the sandbox; and the stamped paths whose time or size changed, or that
  * appeared or went. Only paths are returned, never anything read. A path absent both times,
- * as all are in CI, is skipped.
+ * as all are in CI, is skipped. `home` is the developer's own unless a test gives another.
  */
 export const tripwire = (
   sandbox: Pick<Sandbox, "root">,
   watches: readonly Watch[],
+  home: string = userInfo().homedir,
 ): (() => readonly string[]) => {
-  const user = userInfo().homedir
+  const user = home
   const watched = (kind: keyof Watch) =>
     watches.flatMap((watch) => watch[kind]).map((path) => join(user, path))
   const stamped = watched("stamped")
