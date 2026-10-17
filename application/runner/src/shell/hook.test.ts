@@ -15,9 +15,10 @@ import { join } from "node:path"
 import { type Report } from "@novadeck/harness-core/report"
 import { relayPath } from "@novadeck/relay"
 
+import { payloadMetadata } from "../../../../scripts/flaky-capture/agy-approval-events.ts"
 import { agents, harnesses } from "../harnesses/registry.js"
 import { describe, expect, it as base } from "../test.js"
-import { relayHook } from "./hook.js"
+import { prune, relayHook } from "./hook.js"
 import { installShellFiles } from "./install.js"
 import { listenForReports, unanswered, unheard, type Ack, type HookAnswer } from "./reports.js"
 import { relayConfig } from "./scripts.js"
@@ -817,5 +818,22 @@ describe("reading a relay's hook", () => {
     expect(relayHook(hook({ agent: "gemini" }))).toBeUndefined()
     expect(relayHook(hook({ payload: "[1]" }))).toBeUndefined()
     expect(relayHook(hook({ seq: "soon" }))).toBeUndefined()
+  })
+})
+
+describe("approval capture metadata", () => {
+  base("records a confirmation flag omitted by the production pruning boundary", () => {
+    const fields = Object.fromEntries(
+      Array.from({ length: 100 }, (_, index) => [`field${index}`, index]),
+    )
+    const raw = { ...fields, tool_confirmation_pending: true }
+    expect(payloadMetadata(raw)).toMatchObject({
+      keys: 101,
+      confirmation: { present: true, type: "boolean", value: true },
+    })
+    expect(payloadMetadata(prune(raw, 0, 4096))).toMatchObject({
+      keys: 100,
+      confirmation: { present: false, type: "undefined" },
+    })
   })
 })

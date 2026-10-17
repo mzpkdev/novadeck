@@ -44,12 +44,28 @@ const main = async (): Promise<number> => {
   if (process.platform !== "linux")
     throw new Error("AGY capture requires the Linux network namespace wrapper")
   const { values } = parseArgs({
-    options: { output: { type: "string" }, attempts: { type: "string", default: "5" } },
+    options: {
+      output: { type: "string" },
+      attempts: { type: "string", default: "5" },
+      experiment: { type: "string", default: "natural" },
+    },
   })
   const attempts = Number(values.attempts)
   if (!Number.isInteger(attempts) || attempts < 1 || attempts > 5)
     throw new Error("--attempts must be an integer from 1 to 5")
   if (!values.output) throw new Error("--output is required")
+  if (!["natural", "staged-stop"].includes(values.experiment))
+    throw new Error("--experiment must be natural or staged-stop")
+  const phases =
+    values.experiment === "staged-stop"
+      ? [
+          "natural",
+          ...["stop-return", "stop-return", "busy-frame", "busy-frame", "clear-frame"].slice(
+            0,
+            attempts,
+          ),
+        ]
+      : Array.from({ length: attempts }, () => "natural")
   const output = resolve(values.output)
   if (existsSync(output) && readdirSync(output).length > 0)
     throw new Error("--output must be a new or empty directory")
@@ -59,13 +75,16 @@ const main = async (): Promise<number> => {
   const expected = process.env.NOVADECK_CAPTURE_HEAD
   if (expected && head.stdout.trim() !== expected)
     throw new Error("Capture checkout does not match NOVADECK_CAPTURE_HEAD")
-  const results: { attempt: number; code: number; outcome: string }[] = []
+  const results: { attempt: number; phase: string; code: number; outcome: string }[] = []
   const save = () =>
     writeFileSync(
       join(output, "capture.json"),
       JSON.stringify(
         {
-          scenario: "original-natural-order",
+          scenario:
+            values.experiment === "natural" ? "original-natural-order" : "staged-stop-boundary",
+          phases,
+          invalid: results.filter((one) => one.outcome === "invalid-precondition").length,
           head: head.stdout.trim(),
           node: process.version,
           platform: process.platform,
@@ -78,11 +97,12 @@ const main = async (): Promise<number> => {
       ),
     )
   save()
-  for (let attempt = 1; attempt <= attempts; attempt++) {
+  for (let attempt = 1; attempt <= phases.length; attempt++) {
+    const phase = phases[attempt - 1]!
     const folder = join(output, `attempt-${attempt}`)
     mkdirSync(folder, { recursive: true })
     const log = openSync(join(folder, "vitest.log"), "w")
-    console.log(`AGY natural-boundary capture ${attempt}/${attempts}: ${folder}`)
+    console.log(`AGY boundary capture ${attempt}/${phases.length} (${phase}): ${folder}`)
     let code: number
     try {
       // The standard CI wrapper creates a loopback-only namespace, as in the original run.
@@ -109,6 +129,7 @@ const main = async (): Promise<number> => {
           NOVADECK_E2E_TRACES: join(folder, "traces"),
           AGY_CAPTURE: "1",
           AGY_CAPTURE_OUT: folder,
+          AGY_CAPTURE_PHASE: phase,
         },
         log,
       )
@@ -124,12 +145,13 @@ const main = async (): Promise<number> => {
     const outcome = existsSync(summary)
       ? (JSON.parse(readFileSync(summary, "utf8")) as { outcome: string }).outcome
       : "infrastructure-before-scenario"
-    results.push({ attempt, code, outcome })
+    results.push({ attempt, phase, code, outcome })
     save()
     console.log(`AGY capture ${attempt}: ${outcome}, exit ${code}`)
-    if (code !== 0 || outcome !== "delivered") return code || 1
+    if (code !== 0 || !["delivered", "invalid-precondition"].includes(outcome)) return code || 1
+    if (outcome === "invalid-precondition" && values.experiment === "natural") return 2
   }
-  return 0
+  return results.some((one) => one.outcome === "invalid-precondition") ? 2 : 0
 }
 
 if (import.meta.main) {

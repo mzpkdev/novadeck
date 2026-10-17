@@ -15,7 +15,7 @@ const plugins = viteConfig.plugins?.filter(
   (plugin) => !(plugin && "name" in plugin && plugin.name === "novadeck-content-security-policy"),
 )
 
-export default mergeConfig(
+const config = mergeConfig(
   { ...viteConfig, plugins },
   defineConfig({
     test: {
@@ -113,3 +113,12 @@ export default mergeConfig(
     },
   }),
 )
+
+// Capture remains opt-in; ordinary Quality keeps the config above unchanged.
+export default process.env.NOVADECK_UNINSTALL_SCOPE === "quality"
+  ? (await import("../../scripts/flaky-capture/uninstall-config.mjs")).uninstallConfig(
+      config,
+      process.env.NOVADECK_UNINSTALL_OUTPUT,
+      "quality",
+    )
+  : config

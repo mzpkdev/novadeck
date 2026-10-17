@@ -18,7 +18,13 @@
     },
     "test": {
       "dependsOn": ["build", "^build", "^test"],
-      "env": ["VITE_API_URL", "VITE_NOVADECK_RUNNER_URL", "VITE_NOVADECK_RUNNER_TOKEN"],
+      "env": [
+        "VITE_API_URL",
+        "VITE_NOVADECK_RUNNER_URL",
+        "VITE_NOVADECK_RUNNER_TOKEN",
+        "NOVADECK_UNINSTALL_SCOPE",
+        "NOVADECK_UNINSTALL_OUTPUT"
+      ],
       "passThroughEnv": [
         "PLAYWRIGHT_BROWSERS_PATH",
         "CI",
