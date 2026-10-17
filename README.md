@@ -1289,8 +1289,7 @@ The base branch's budgets are read only as far as the comparison needs, so a cha
 file's form lands in one pull request. A budget the base lacks shows as new, and needs a
 reason as a raise does when its phase is one the base has; one the base has and the change
 drops shows as no longer budgeted; a base that has none of the phases only warns. The
-check always reports, so it can be required; require branches to be up to date too, or two
-pull requests that each fit the budget can together pass it on main.
+check always reports, so it can be required.
 
 The timing run, the real app in the sandbox (`pnpm bench:timing`), is too heavy and too
 noisy for every pull request: the Benchmark Timing workflow runs it nightly on main and on
