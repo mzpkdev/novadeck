@@ -1313,12 +1313,13 @@ logs with main's register. If every failure is a known flake, it reruns the fail
 once, unless the run was rerun meanwhile or its pull request has moved on, and records why
 in the job summary and on the pull request. A failure it can't explain or read, a known
 flake failing again on the rerun, or a flake registered as fixed coming back is left
-failed, to triage; the pull request hears of it only when a registered flake is involved.
-A packaging run that failed because the Quality checks it waits for failed isn't rerun
-with them: rerun it by hand once they pass. Prefer fixing a flake at its cause over
-registering it; when it is fixed, mark it `fixed` rather than removing it, so its return
-is noticed. `node scripts/flakes/main.ts <logs dir> <verdict> <comment>` judges logs
-downloaded from a run the same way.
+failed, to triage; the pull request hears of it only when a registered flake is involved,
+and a rerun's own failure may go unjudged, as GitHub starts no workflow from one. A
+packaging run that failed because the Quality checks it waits for failed isn't rerun with
+them: rerun it by hand once they pass. Prefer fixing a flake at its cause over registering
+it; when it is fixed, mark it `fixed` rather than removing it, so its return is noticed.
+`node scripts/flakes/main.ts <logs dir> <verdict> <comment>` judges logs downloaded from a
+run the same way.
 
 ## Packaging and releases
 

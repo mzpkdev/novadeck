@@ -69,7 +69,9 @@ export const parseRegister = (data: unknown): Register => {
 
 // One failed test in a job's log: its id, as "file > describe > ... > it", and the lines
 // that tell of its failure.
-export type Failure = { readonly test: string; readonly lines: string }
+// A test failed once per error it reports, each with the lines that tell of it; a report
+// with no lines of its own, as in a summary, only names it.
+export type Failure = { readonly test: string; readonly reports: readonly string[] }
 
 // GitHub's timestamp on each log line, and terminal colours.
 const timestamp = /^\d{4}-\d\d-\d\dT[\d:.]+Z ?/
@@ -92,13 +94,14 @@ const blockLines = 40
 export const cleanLog = (log: string): string[] =>
   log.split(/\r?\n/).map((line) => line.replace(colour, "").replace(timestamp, ""))
 
-// A job's log read for failures: each failed test once, with the lines that tell of its
-// last report, and what says something failed that names no test this can read.
+// A job's log read for failures: each failed test once, with every report of it, and what
+// says something failed that names no test this can read. A test is a known flake only if
+// each of its reports fails as the flake does.
 export type LogReading = { readonly failures: Failure[]; readonly unreadable: string[] }
 
 export const readLog = (log: string): LogReading => {
   const lines = cleanLog(log).map((line) => line.trim())
-  const found = new Map<string, string>()
+  const found = new Map<string, string[]>()
   const unreadable: string[] = []
   lines.forEach((line, index) => {
     if (unhandled.test(line)) unreadable.push(`an error outside any test: ${line}`)
@@ -110,10 +113,13 @@ export const readLog = (log: string): LogReading => {
     }
     const rest = lines.slice(index + 1, index + blockLines)
     const end = rest.findIndex((next) => blockEnd.test(next))
-    found.set(match[1]!, [line, ...(end < 0 ? rest : rest.slice(0, end))].join("\n"))
+    const own = end < 0 ? rest : rest.slice(0, end)
+    const reports = found.get(match[1]!) ?? []
+    if (own.some((each) => each !== "")) reports.push([line, ...own].join("\n"))
+    found.set(match[1]!, reports)
   })
   return {
-    failures: [...found].map(([test, block]) => ({ test, lines: block })),
+    failures: [...found].map(([test, reports]) => ({ test, reports })),
     unreadable: [...new Set(unreadable)],
   }
 }
@@ -153,7 +159,8 @@ export const judgeJob = (register: Register, job: string, log: string): JobVerdi
         each.test !== undefined &&
         failure.test.startsWith(each.test) &&
         named(job, each) &&
-        new RegExp(each.signature).test(failure.lines),
+        failure.reports.length > 0 &&
+        failure.reports.every((report) => new RegExp(each.signature).test(report)),
     )
     if (flake) flakes.push(flake.id)
     else unknown.push(failure.test)

@@ -3,7 +3,7 @@ name: Known Flakes
 # The known-flake register (scripts/flakes/register.json) against a failed run. A run whose
 # every failure is a registered known flake gets one recorded rerun of its failed jobs;
 # any other failure, a known flake failing again, or a flake registered as fixed coming
-# back is left failed and reported for triage. It runs main's register and code, never a
+# back is left failed for triage. It runs main's register and code, never a
 # pull request's, so a change can't excuse its own failures. Release reruns only when it
 # packaged a pull request, never when it published.
 on:
@@ -69,18 +69,19 @@ jobs:
       # again and left failed. Not when someone has rerun it meanwhile, nor when its pull
       # request has moved on, whose newer run the rerun would cancel.
       - name: Rerun Failed Jobs
+        id: rerun
         shell: bash
         run: |
           [ "$(jq -r .rerun "$RUNNER_TEMP/verdict.json")" = true ] || exit 0
           latest=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .run_attempt)
           if [ "$latest" != "$RUN_ATTEMPT" ]; then
-            echo "Not rerun: attempt $latest has started since." >> "$GITHUB_STEP_SUMMARY"
+            echo "Not rerun: attempt $latest has started since." | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/comment.md"
             exit 0
           fi
           for pr in $PULL_REQUESTS; do
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
             if [ "$head" != "$HEAD_SHA" ]; then
-              echo "Not rerun: #$pr has moved on to $head." >> "$GITHUB_STEP_SUMMARY"
+              echo "Not rerun: #$pr has moved on to $head." | tee -a "$GITHUB_STEP_SUMMARY" "$RUNNER_TEMP/comment.md"
               exit 0
             fi
           done
@@ -95,8 +96,13 @@ jobs:
         if: ${{ !cancelled() }}
         continue-on-error: true
         shell: bash
+        env:
+          RERUN: ${{ steps.rerun.outcome }}
         run: |
           jq -e '[.jobs[].flakes[]] | length > 0' "$RUNNER_TEMP/verdict.json" > /dev/null || exit 0
+          if [ "$RERUN" = failure ]; then
+            echo "Not rerun: the rerun couldn't be started; see this run's log." >> "$RUNNER_TEMP/comment.md"
+          fi
           for pr in $PULL_REQUESTS; do
             gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/comment.md"
           done

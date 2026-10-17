@@ -144,6 +144,18 @@ describe("the known-flake register", () => {
       })
     })
 
+    it("knows a test as a flake only if each of its errors is the flake's", () => {
+      const first = [
+        " FAIL  src/e2e/messaging.e2e.ts > Codex > drops a stopped thread's waiting message, and refuses the sender another",
+        "TypeError: Cannot read properties of null",
+      ].join("\n")
+      const log = `${first}\n${fixture("e2e-codex-quirks-stopped-thread")}`
+      expect(judgeJob(register, "Codex (Windows quirks)", log)).toMatchObject({
+        flakes: [],
+        unknown: [expect.stringContaining("drops a stopped thread's waiting message")],
+      })
+    })
+
     const known = (): string => fixture("ui-agents-pinned-drag-top")
   })
 
