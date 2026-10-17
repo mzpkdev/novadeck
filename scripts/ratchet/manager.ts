@@ -1,0 +1,120 @@
+import { stripTypeScriptTypes } from "node:module"
+
+import { parseAst } from "vitest/node"
+
+// The ratchet on application/runner/src/terminals/manager.ts: what it measures, and how a
+// measure stands against its budget.
+
+export const measures = ["lines", "methods"] as const
+export type Measure = (typeof measures)[number]
+export type Counts = Readonly<Record<Measure, number>>
+
+// A measure's budget: a count, or a raised one with why it was raised and the pull request
+// or commit it came from.
+export type Budget =
+  | number
+  | { readonly budget: number; readonly reason: string; readonly from: string }
+export type Budgets = Readonly<Record<Measure, Budget>> & { readonly notes?: readonly string[] }
+
+export const managerPath = "application/runner/src/terminals/manager.ts"
+export const budgetsPath = "scripts/ratchet/manager.json"
+const raiseForm = '{ "budget": n, "reason": "why", "from": "#PR or commit" }'
+
+type Node = { readonly type: string; readonly [key: string]: unknown }
+
+const isNode = (value: unknown): value is Node =>
+  typeof value === "object" && value !== null && typeof (value as Node).type === "string"
+
+// Every node of a syntax tree, depth first.
+const nodes = function* (node: unknown): Generator<Node> {
+  if (Array.isArray(node)) for (const each of node) yield* nodes(each)
+  if (!isNode(node)) return
+  yield node
+  for (const value of Object.values(node)) if (typeof value === "object") yield* nodes(value)
+}
+
+const isFunction = (node: unknown): boolean =>
+  isNode(node) && (node.type === "FunctionExpression" || node.type === "ArrowFunctionExpression")
+
+// A member that is a function: a method, an accessor or the constructor, or a property
+// holding a function.
+const isFunctionMember = (member: Node): boolean =>
+  member.type === "MethodDefinition" ||
+  (member.type === "PropertyDefinition" && isFunction(member.value))
+
+// Its code as JavaScript: types blanked out as Node strips them, keeping every position.
+// Syntax Node can't strip (an enum, a namespace, a parameter property) is refused, as no
+// parser for it is at hand here.
+const stripped = (source: string): string => {
+  try {
+    return stripTypeScriptTypes(source, { mode: "strip" })
+  } catch (error) {
+    throw new Error(
+      `${managerPath} uses TypeScript syntax the ratchet can't read, which Node can't strip: write it without enums, namespaces or parameter properties.`,
+      { cause: error },
+    )
+  }
+}
+
+// The file's lines, and the functions its `Terminals` class defines, read from its syntax
+// tree, so formatting never moves the count.
+export const countManager = (source: string): Counts => {
+  const tree = parseAst(stripped(source))
+  const classes = [...nodes(tree)].filter(
+    (node) =>
+      (node.type === "ClassDeclaration" || node.type === "ClassExpression") &&
+      isNode(node.id) &&
+      node.id.name === "Terminals",
+  )
+  if (classes.length !== 1) throw new Error(`${managerPath} should define one Terminals class.`)
+  const body = (classes[0]!.body as { readonly body: readonly Node[] }).body
+  return {
+    lines: source.endsWith("\n") ? source.split("\n").length - 1 : source.split("\n").length,
+    methods: body.filter(isFunctionMember).length,
+  }
+}
+
+const budgetOf = (budget: Budget | undefined): number | undefined =>
+  typeof budget === "object" ? budget.budget : budget
+
+const said = (text: unknown): text is string => typeof text === "string" && text.trim() !== ""
+
+const isCount = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0
+
+const advice: Record<Measure, string> = {
+  lines: "lines",
+  methods: "functions in the Terminals class",
+}
+
+// What's wrong with the counts against the budgets, and with the budgets against the base
+// branch's where they can be read; nothing when the ratchet holds. A count past its budget
+// asks for the code to go to a sibling module; one under it asks for the budget to come
+// down; a raise must say why and where it came from.
+export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets): string[] =>
+  measures.flatMap((measure) => {
+    const entry = budgets[measure]
+    const budget = budgetOf(entry)
+    if (!isCount(budget)) return [`${budgetsPath} sets no budget for ${measure}.`]
+    if (typeof entry === "object" && (!said(entry.reason) || !said(entry.from)))
+      return [`A raised budget in ${budgetsPath} is written ${raiseForm}; ${measure}'s isn't.`]
+    const was = budgetOf(base?.[measure])
+    const raised =
+      isCount(was) && budget > was && typeof entry !== "object"
+        ? [
+            `${budgetsPath} raises ${measure} from ${was} to ${budget} without saying why: write it ${raiseForm}.`,
+          ]
+        : []
+    const count = counts[measure]
+    if (count > budget)
+      return [
+        ...raised,
+        `${managerPath} has ${count} ${advice[measure]}, past its budget of ${budget}. Put new code in a sibling module under application/runner/src/terminals/ (as closes.ts, opens.ts and naming.ts are) and call it from the class, instead of growing the Terminals class. If it really can't go there, raise the budget in ${budgetsPath}, written ${raiseForm}.`,
+      ]
+    if (count < budget)
+      return [
+        ...raised,
+        `${managerPath} has ${count} ${advice[measure]}, under its budget of ${budget}: lower the budget in ${budgetsPath} to ${count}, so the ratchet holds what was won.`,
+      ]
+    return raised
+  })
