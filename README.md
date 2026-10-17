@@ -1260,6 +1260,16 @@ phase fails the run. Run it with
 `pnpm --filter @novadeck/ui exec vitest run --project counters`; it leaves its reading in
 `application/ui/test-results/counters.json`.
 
+The Benchmark workflow runs it on Linux for every pull request that touches the UI, the
+runner, their contract or `libraries/`, and fails when a count goes past its budget in
+`src/specs/counters/budgets.json`. `node scripts/benchmark/main.ts` checks a local
+reading the same way. A count past its budget is a regression, never noise: fix it, or,
+for work that really costs more, raise the budget in the same pull request, written
+`{ "budget": n, "reason": "why", "from": "#PR or commit" }`. The job summary shows every
+budget the pull request changes, old to new, and a raise without its reason or source
+fails. A count under its budget asks for the budget to come down, so the gain stays. Commits and component renders are reported in
+the job summary, never gated. Each run's reading is kept as an artifact.
+
 ## Configuration
 
 For standalone UI/runner configuration, copy the environment templates:

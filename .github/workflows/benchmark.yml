@@ -1,0 +1,109 @@
+name: Benchmark
+
+# The benchmark gate (architecture rule 16) for changes that can move what the UI costs:
+# the UI, the runner, their contract and the libraries. The counter run gives the same
+# counts every run, so a count past its budget fails the build.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - application/ui/**
+      - application/runner/**
+      - application/protocol/**
+      - libraries/**
+      - pnpm-lock.yaml
+      - scripts/benchmark/**
+      - .github/workflows/benchmark.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  counters:
+    name: Counter run
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check Out Repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set Up Toolchain
+        id: toolchain
+        continue-on-error: true
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      # An immediate retry hit the same registry outage in the flake audit.
+      - name: Wait Before Retrying Toolchain
+        if: steps.toolchain.outcome == 'failure'
+        shell: bash
+        run: sleep 180
+
+      - name: Set Up Toolchain Again
+        if: steps.toolchain.outcome == 'failure'
+        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+        with:
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+
+      - name: Locate Test Browser
+        id: playwright
+        shell: bash
+        run: |
+          echo "PLAYWRIGHT_BROWSERS_PATH=$RUNNER_TEMP/ms-playwright" >> "$GITHUB_ENV"
+          echo "version=$(pnpm --filter @novadeck/ui exec playwright --version | awk '{ print $2 }')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Test Browser
+        id: browser-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Test Browser
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @novadeck/ui exec playwright install --with-deps chromium
+
+      # A cached browser still needs its system libraries.
+      - name: Install Test Browser Dependencies
+        if: steps.browser-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @novadeck/ui exec playwright install-deps chromium
+
+      # The run boots the UI over a scripted runner: of the workspace it needs only the
+      # contract's build.
+      - name: Build Contract
+        run: pnpm --filter @novadeck/protocol build
+
+      - name: Play Counter Run
+        run: pnpm --filter @novadeck/ui exec vitest run --project counters
+
+      # Against the base branch's budgets too, so every budget this changes shows, old to
+      # new, and a raise must say why. A base without the file has nothing to compare.
+      - name: Check Budgets
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          base="$RUNNER_TEMP/base-budgets.json"
+          if ! { git fetch --depth=1 origin "$BASE_REF" &&
+            git show "FETCH_HEAD:application/ui/src/specs/counters/budgets.json" > "$base"; }; then
+            rm -f "$base"
+          fi
+          node scripts/benchmark/main.ts "$base"
+
+      # Each run's reading, kept as a trend.
+      - name: Upload Reading
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: counter-run
+          path: application/ui/test-results/counters.json
+          if-no-files-found: ignore
+          retention-days: 90
