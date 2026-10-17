@@ -48,6 +48,9 @@ const node = [
   "@novadeck/emulator/headless",
 ]
 const browser = [
+  "@novadeck/emulator/browser",
+  "@novadeck/emulator/browser.css",
+  "@novadeck/emulator/width",
   "@novadeck/terminal",
   "@novadeck/terminal/view",
   "@novadeck/wire/client",

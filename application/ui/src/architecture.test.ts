@@ -277,6 +277,15 @@ describe("UI architecture", () => {
     expect(found).toEqual([])
   })
 
+  it("imports no workspace package the table doesn't give an owner", () => {
+    const found = files.flatMap((file) =>
+      imports(file)
+        .filter(({ specifier }) => specifier.startsWith("@novadeck/") && !vendorOf(specifier))
+        .map(({ specifier }) => `${file} -> ${specifier}`),
+    )
+    expect(found).toEqual([])
+  })
+
   it("has no rule that matches nothing", () => {
     const deadLayers = Object.keys(rules).filter(
       (layer) => !files.some((file) => file.startsWith(layer)),

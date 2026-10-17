@@ -21,9 +21,9 @@ released together, so an upgrade moves all of them in one change.
 
 ## Patches
 
-pnpm reads patches from the workspace's root `pnpm-workspace.yaml`, which registers these two
-from `patches/`. pnpm refuses an install whose patch no longer matches its pinned version, so
-an upgrade can't drop one unnoticed; each is made again for the new version, or dropped once a
+pnpm reads patches from the workspace's root `pnpm-workspace.yaml`, which registers these two from
+this library's `patches/`. pnpm refuses an install whose patch no longer matches its pinned version,
+so an upgrade can't drop one unnoticed; each is made again for the new version, or dropped once a
 release fixes what it fixes.
 
 - `@xterm/addon-unicode-graphemes` 0.4.0: the width table is read with

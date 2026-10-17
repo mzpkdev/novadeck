@@ -115,8 +115,8 @@ application/runner/src/harnesses/
   activity.ts      # Accepted state → agent activity
 ```
 
-An adapter imports only `@novadeck/harness-core`, `@novadeck/protocol`, Node and its
-own files, never the runner's modules or another adapter, and harness-core depends on
+An adapter imports only `@novadeck/harness-core`, `@novadeck/protocol`,
+`@novadeck/emulator`, Node and its own files, never the runner's modules or another adapter, and harness-core depends on
 neither; `.oxlintrc.json` enforces both. A test that needs the runner's internals (the
 activity machine, say) stays in the runner and reads the adapter's fixtures from its
 package.
