@@ -7,6 +7,7 @@ import {
   parseBaseBudgets,
   parseBudgets,
   parseReading,
+  sharesBudgets,
   tickChanges,
   type Budget,
   type Budgets,
@@ -224,7 +225,13 @@ describe("the counter run's budgets", () => {
       const { ticks: _, streamingPeak: __, ...older } = budget
       const base = parseBaseBudgets({ grid: older, focus: older }, "base")
       const next = { ...budgets, grid: { ...budget, streamingPeak: 99 } }
-      expect(budgetChanges(next, base)).toEqual([])
+      expect(budgetChanges(next, base)).toEqual([
+        { phase: "grid", counter: "streamingPeak", to: 99 },
+        { phase: "focus", counter: "streamingPeak", to: 13 },
+        ...["notifications", "mutations", "bytes", "streamingPeak", "streamingSettled"].map(
+          (counter) => ({ phase: "switches", counter, to: budget[counter as keyof typeof budget] }),
+        ),
+      ])
       expect(tickChanges(next, base)).toEqual([])
     })
 
@@ -242,6 +249,21 @@ describe("the counter run's budgets", () => {
       expect(tickNotes).toEqual(["switches now plays 12 ticks, was 10"])
       expect(countersSummary(reading, checkCounters(reading, next), { tickNotes })).toContain(
         "- switches now plays 12 ticks, was 10: its counts are totals over the new number.",
+      )
+    })
+  })
+
+  context("when the base shares no budget with the change", () => {
+    it("compares with nothing, so the gate warns instead", () => {
+      expect(sharesBudgets(parseBaseBudgets({}, "base"))).toBe(false)
+      expect(sharesBudgets(parseBaseBudgets({ phases: budgets }, "base"))).toBe(false)
+      expect(sharesBudgets(budgets)).toBe(true)
+    })
+
+    it("shows a budget the base lacks as new", () => {
+      const changes = budgetChanges(budgets, { grid: budget, focus: budget })
+      expect(countersSummary(reading, checkCounters(reading, budgets), { changes })).toContain(
+        "| switches | bytes | new → 500 | not in the base |  |",
       )
     })
   })

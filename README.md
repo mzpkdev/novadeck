@@ -1268,11 +1268,11 @@ on main for the trend. It fails when a count goes past its budget in
 `node scripts/benchmark/main.ts <base budgets.json>` checks budget changes too, as CI does
 against the base branch. A count past its budget is a regression, never noise: fix it,
 or, for work that really costs more, raise the budget in the same pull request, written
-`{ "budget": n, "reason": "why", "from": "#PR or commit" }`, where `from` names that pull
-request. The job summary shows every budget the pull request changes, old to new, and a
+`{ "budget": n, "reason": "why", "from": "#PR" }`, where `from` names that pull request
+(on main, any source but the raise it replaces). The job summary shows every budget the pull request changes, old to new, and a
 raise without its reason and its own pull request fails. The base branch's budgets are
 read only as far as the comparison needs, so a change to the file's form lands in one pull
-request. A count under its budget asks for the
+request; a budget the base lacks shows as new. A count under its budget asks for the
 budget to come down, so the gain stays. Each phase's budgets record the ticks its script
 plays, so a script that plays another number fails until its budgets are set for it.
 Commits and component renders are reported in the job summary, never gated. Each run's

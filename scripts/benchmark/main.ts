@@ -8,6 +8,7 @@ import {
   parseBaseBudgets,
   parseBudgets,
   parseReading,
+  sharesBudgets,
   tickChanges,
 } from "./counters.ts"
 
@@ -29,9 +30,11 @@ export const main = (basePath = process.argv[2]): void => {
   const reading = parseReading(readJson(readingPath))
   const budgets = parseBudgets(readJson(budgetsPath), budgetsPath)
   if (basePath && !existsSync(basePath)) throw new Error(`No base budgets at ${basePath}.`)
-  const base = basePath
+  const read = basePath
     ? parseBaseBudgets(readJson(basePath), "The base branch's budget file")
     : undefined
+  // A base that shares no budget with this change compares with nothing.
+  const base = read && sharesBudgets(read) ? read : undefined
   const pullRequest = Number(process.env.PULL_REQUEST) || undefined
   const rows = checkCounters(reading, budgets)
   const scripts = changedScripts(reading, budgets)
@@ -47,7 +50,7 @@ export const main = (basePath = process.argv[2]): void => {
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary)
   if (!base)
     console.error(
-      "::warning title=Budgets not compared::No base budgets were given, so budget changes aren't checked.",
+      "::warning title=Budgets not compared::No base budgets to compare with, so budget changes aren't checked.",
     )
   for (const script of scripts) console.error(`::error title=Script changed::${oneLine(script)}`)
   const over = rows.filter((row) => row.verdict === "over")

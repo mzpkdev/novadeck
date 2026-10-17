@@ -150,7 +150,8 @@ export const checkCounters = (reading: Reading, budgets: Budgets): Row[] =>
 export type BudgetChange = {
   readonly phase: Phase
   readonly counter: Gated
-  readonly from: number
+  // Undefined for a budget the base doesn't have, as a counter added or renamed.
+  readonly from?: number
   readonly to: number
   readonly reason?: string
   readonly source?: string
@@ -176,8 +177,7 @@ const raiseProblem = (
 }
 
 // Every budget this change moves against the base branch's. A cut needs no reason; a
-// budget the base doesn't have yet, as a counter added since, is new and compares with
-// nothing. `pullRequest` is the number of the pull request the change is in, if any.
+// budget the base doesn't have, as a counter added or renamed, shows as new. `pullRequest` is the number of the pull request the change is in, if any.
 export const budgetChanges = (
   budgets: Budgets,
   base: BaseBudgets,
@@ -186,8 +186,8 @@ export const budgetChanges = (
   phases.flatMap((phase) =>
     gated.flatMap((counter) => {
       const was = base[phase]?.[counter]
-      if (was === undefined) return []
       const entry = budgets[phase][counter]
+      if (was === undefined) return [{ phase, counter, to: budgetOf(entry) }]
       const to = budgetOf(entry)
       const from = budgetOf(was)
       if (to === from) return []
@@ -207,6 +207,11 @@ export const budgetChanges = (
       ]
     }),
   )
+
+// Whether the base has any budget the comparison can use: one with none, as after a
+// rename of every phase, compares with nothing.
+export const sharesBudgets = (base: BaseBudgets): boolean =>
+  phases.some((phase) => gated.some((counter) => base[phase]?.[counter] !== undefined))
 
 // The phases whose script this change makes play another number of ticks, for the
 // summary: their counts measure something else, so their budgets change with it.
@@ -254,7 +259,7 @@ export const countersSummary = (
   })
   const changeRows = changes.map(
     ({ phase, counter, from, to, reason, source, problem }) =>
-      `| ${phase} | ${counter} | ${from} → ${to} | ${problem ? `❌ ${cell(problem)}` : cell(reason ?? "lowered")} | ${cell(source ?? "")} |`,
+      `| ${phase} | ${counter} | ${from ?? "new"} → ${to} | ${problem ? `❌ ${cell(problem)}` : cell(reason ?? (from === undefined ? "not in the base" : "lowered"))} | ${cell(source ?? "")} |`,
   )
   const over = rows.filter((row) => row.verdict === "over")
   const under = rows.filter((row) => row.verdict === "under")
