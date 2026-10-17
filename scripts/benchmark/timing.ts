@@ -49,7 +49,7 @@ const warningsOf = (report: TimingReport, whose: string): string[] => {
   const agents = report.scenario?.agents
   return [
     ...(error ? [`${whose} stopped short: ${error}`] : []),
-    ...(report.problems?.length
+    ...(Array.isArray(report.problems) && report.problems.length
       ? [
           `${whose} sandbox reported ${report.problems.length} problem(s): processes it had to reap or writes outside it. Look at the report artifact.`,
         ]
@@ -74,10 +74,7 @@ export const timingComment = (
   report: TimingReport,
   { main, label = "This run" }: { readonly main?: TimingReport; readonly label?: string } = {},
 ): string => {
-  const warnings = [
-    ...warningsOf(report, "This run"),
-    ...(main ? warningsOf(main, "Main's run") : []),
-  ]
+  const warnings = [...warningsOf(report, label), ...(main ? warningsOf(main, "Main's run") : [])]
   const mainColumn = main ? ` Main${main.commit ? ` (${main.commit.slice(0, 7)})` : ""} |` : ""
   const layouts = ["Grid", "Focus"]
   return [

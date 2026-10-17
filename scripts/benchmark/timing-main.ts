@@ -61,7 +61,7 @@ export const main = (
   const report = read(reportPath)
   if (report.version !== 1)
     console.error(
-      `::warning title=Unknown timing report::It says version ${String(report.version)}; this reads version 1.`,
+      `::warning title=Unknown timing report::It says version ${JSON.stringify(report.version)}; this reads version 1.`,
     )
   const mainReport = readMain(mainPath)
   const label = commentPath ? "This pull request" : "This run"

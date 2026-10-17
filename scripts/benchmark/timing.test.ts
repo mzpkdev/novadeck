@@ -61,8 +61,8 @@ describe("the timing run's comment", () => {
         problems: ["reaped 2 processes"],
         error: "Chromium crashed",
       }
-      const comment = timingComment(short)
-      expect(comment).toContain("This run stopped short: Chromium crashed")
+      const comment = timingComment(short, { label: "This pull request" })
+      expect(comment).toContain("This pull request stopped short: Chromium crashed")
       expect(comment).toContain("1 problem(s)")
       expect(comment).toContain("heard 3 of 5 fake agents")
       expect(comment).toContain("| Switch p90 | – |")
