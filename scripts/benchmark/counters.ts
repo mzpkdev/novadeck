@@ -1,5 +1,6 @@
 // The counter run's reading against its budgets. The run gives the same counts every
-// time, so a count past its budget is a regression, never noise: the gate fails on it.
+// time, so a count past its budget is a regression, never noise: the gate warns on it, and
+// fails on one past `failsAt` times it.
 // Commits and component renders are framework cost, reported beside them, never gated.
 // Work that really costs more may raise a budget in the same pull request, saying why and
 // where the cost comes from; every changed budget shows in the summary, old to new.
@@ -113,7 +114,15 @@ const checkEntry = (entry: unknown, label: string): void => {
     throw new Error(`${label} is written ${raiseForm}.`)
 }
 
-export type Verdict = "over" | "under" | "within"
+// How many times its budget a count may reach before the gate fails; past its budget but
+// no further than this, it only warns. Loose by choice: the product is early and still
+// being defined, and feature work must move without tripping hard gates, while a blow-up,
+// as the 11,271 notifications Grid once cost against a budget of 78, still fails. The
+// user's call, on 2026-10-17.
+export const failsAt = 2
+
+// Past `failsAt` times its budget, past its budget, under it, or at it.
+export type Verdict = "fails" | "over" | "under" | "within"
 export type Row = {
   readonly phase: Phase
   readonly counter: Gated
@@ -149,7 +158,14 @@ export const checkCounters = (reading: Reading, budgets: Budgets): Row[] =>
     return gated.map((counter) => {
       const value = values[counter]
       const budget = budgetOf(budgets[phase][counter])
-      const verdict: Verdict = value > budget ? "over" : value < budget ? "under" : "within"
+      const verdict: Verdict =
+        value > budget * failsAt
+          ? "fails"
+          : value > budget
+            ? "over"
+            : value < budget
+              ? "under"
+              : "within"
       return { phase, counter, value, budget, verdict }
     })
   })
@@ -257,7 +273,12 @@ const perTick = (total: number, ticks: number): string => (ticks ? (total / tick
 // Text from the budget file, safe in a Markdown table's cell.
 const cell = (text: string): string => text.replaceAll(/\s+/g, " ").replaceAll("|", "\\|")
 
-const mark: Record<Verdict, string> = { over: "❌ over", under: "⬇️ under", within: "✅" }
+const mark: Record<Verdict, string> = {
+  fails: `❌ over ${failsAt}×`,
+  over: "⚠️ over",
+  under: "⬇️ under",
+  within: "✅",
+}
 
 // The reading as Markdown, for the job summary: what stops the budgets standing, any
 // budgets the change moves, the gated counts against their budgets, then the framework
@@ -295,8 +316,10 @@ export const countersSummary = (
     ({ phase, counter, from, to, reason, source, problem }) =>
       `| ${phase} | ${counter} | ${from ?? "new"} → ${to} | ${problem ? `❌ ${cell(problem)}` : cell(reason ?? (from === undefined ? "not in the base" : "lowered"))} | ${cell(source ?? "")} |`,
   )
+  const fails = rows.filter((row) => row.verdict === "fails")
   const over = rows.filter((row) => row.verdict === "over")
   const under = rows.filter((row) => row.verdict === "under")
+  const raise = `raise the budget in application/ui/src/specs/counters/budgets.json, written ${raiseForm}`
   return [
     "## Counter run",
     "",
@@ -321,12 +344,25 @@ export const countersSummary = (
             : []),
         ]
       : []),
-    over.length
-      ? `${over.length} counter(s) past budget. Fix the regression, or, for work that really costs more, raise the budget in application/ui/src/specs/counters/budgets.json, written ${raiseForm}.`
-      : under.length
-        ? `Every counter within budget; ${under.length} now under it: lower the budget in application/ui/src/specs/counters/budgets.json to lock the gain in.`
-        : "Every counter within budget.",
-    "",
+    ...(fails.length
+      ? [
+          `${fails.length} counter(s) past ${failsAt}× their budget, which fails the build. Fix the regression, or, for work that really costs more, ${raise}.`,
+          "",
+        ]
+      : []),
+    ...(over.length
+      ? [
+          `${over.length} counter(s) past their budget, within ${failsAt}× it: a warning, not a failure. Look at what costs more, and ${raise} if it should.`,
+          "",
+        ]
+      : []),
+    ...(under.length
+      ? [
+          `${under.length} counter(s) under their budget: lower the budget in application/ui/src/specs/counters/budgets.json to lock the gain in.`,
+          "",
+        ]
+      : []),
+    ...(fails.length || over.length || under.length ? [] : ["Every counter within budget.", ""]),
     "| Phase | Counter | Count | Budget | |",
     "| --- | --- | --- | --- | --- |",
     ...gatedRows,

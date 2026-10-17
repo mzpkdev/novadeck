@@ -5,6 +5,7 @@ import {
   changedScripts,
   checkCounters,
   countersSummary,
+  failsAt,
   goneBudgets,
   parseBaseBudgets,
   parseBudgets,
@@ -23,7 +24,8 @@ const oneLine = (text: string): string => text.replaceAll(/\s+/g, " ")
 
 // `node scripts/benchmark/main.ts [base budgets]`, after the counter run: checks its
 // reading against the budgets, and the budgets against the base branch's when given;
-// writes the summary to the job's, and fails on a count past its budget, a script that
+// writes the summary to the job's, and fails on a count past `failsAt` times its budget
+// (warning on one past it), a script that
 // changed under its budgets, or a raise that doesn't say why. A base file given but not
 // there, or that doesn't read, is an error: it would let any raise through unseen. In a
 // pull request, PULL_REQUEST names its number, which a raise must name.
@@ -58,10 +60,14 @@ export const main = (basePath = process.argv[2]): void => {
   for (const budget of gone)
     console.error(`::warning title=Budget dropped::${oneLine(budget)} is no longer budgeted.`)
   for (const script of scripts) console.error(`::error title=Script changed::${oneLine(script)}`)
-  const over = rows.filter((row) => row.verdict === "over")
-  for (const { phase, counter, value, budget } of over)
+  const fails = rows.filter((row) => row.verdict === "fails")
+  for (const { phase, counter, value, budget } of fails)
     console.error(
-      `::error title=Counter past budget::${phase} ${counter} is ${value}, over its budget of ${budget}.`,
+      `::error title=Counter past ${failsAt}× its budget::${phase} ${counter} is ${value}, over ${failsAt}× its budget of ${budget}.`,
+    )
+  for (const { phase, counter, value, budget } of rows.filter((row) => row.verdict === "over"))
+    console.error(
+      `::warning title=Counter over budget::${phase} ${counter} is ${value}, over its budget of ${budget} but within ${failsAt}× it.`,
     )
   for (const { phase, counter, value, budget } of rows.filter((row) => row.verdict === "under"))
     console.error(
@@ -72,7 +78,7 @@ export const main = (basePath = process.argv[2]): void => {
     console.error(
       `::error title=Budget raise not explained::${oneLine(`${phase} ${counter} ${from === undefined ? `is new at ${to}` : `went from ${from} to ${to}`}. ${problem}`)}`,
     )
-  process.exitCode = over.length || scripts.length || unexplained.length ? 1 : 0
+  process.exitCode = fails.length || scripts.length || unexplained.length ? 1 : 0
 }
 
 if (import.meta.main) {

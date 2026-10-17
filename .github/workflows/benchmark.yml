@@ -2,7 +2,8 @@ name: Benchmark
 
 # The benchmark gate (architecture rule 16) for changes that can move what the UI costs:
 # the UI, the runner, their contract and the libraries. The counter run gives the same
-# counts every run, so a count past its budget fails the build. It runs on every pull
+# counts every run, so a count past its budget warns, and one past twice it fails the
+# build (`failsAt` in scripts/benchmark/counters.ts). It runs on every pull
 # request and decides inside the job whether the change can move a count, so the check
 # always reports and can be required; on main it runs for the trend.
 on:
