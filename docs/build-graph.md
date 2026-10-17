@@ -14,8 +14,9 @@ and the relay its binary's path. Tests and typechecks read the source; builds re
 - **tsc** takes it from `customConditions: ["development"]` in the app's and the harnesses'
   `tsconfig.json`, so a typecheck reads the same files the tests do. The host's and the UI's
   add `node`, which their `Bundler` resolution leaves out, so a `node`-only export such as the
-  sandbox's or the emulator's `/headless` resolves: the UI's typecheck follows its adapter's
-  test runner into the runner's source. The lint keeps the UI's own code off those subpaths.
+  sandbox's, the terminal library's or the emulator's `/headless` resolves (the UI's typecheck
+  follows the runner's source, which the UI's adapter tests start, into them). The lint keeps
+  the UI's own code off those subpaths.
 - **Builds** reset it (`customConditions: []` in `tsconfig.build.json`) and read their
   dependencies' built types, as a published consumer would. So `build` keeps `^build`.
 - **Libraries' typechecks read the libraries they import as built**: a library's `rootDir` is
