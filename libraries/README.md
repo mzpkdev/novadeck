@@ -59,6 +59,8 @@ the build rules and the test sandbox. The app keeps the product.
   So a library's typecheck reads the libraries it imports as built, and its `turbo.json` has it
   wait for their builds; its tests read their sources (see
   [docs/build-graph.md](../docs/build-graph.md)).
+- **The pins check** (`scripts/libraries/pins.test.ts`): the emulator's packages are installed by
+  the emulator library alone, pinned exactly, so xterm and its addons move together.
 - **The browser build check** (`scripts/libraries/browser.test.ts`): the lint sees direct imports
   only, so each library's browser subpaths are bundled for the browser, and the check fails on
   any Node built-in, native module (by its `gypfile` or its `binding.gyp`) or unresolvable package

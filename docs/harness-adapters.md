@@ -116,10 +116,10 @@ application/runner/src/harnesses/
 ```
 
 An adapter imports only `@novadeck/harness-core`, `@novadeck/protocol`,
-`@novadeck/emulator`, Node and its own files, never the runner's modules or another adapter, and harness-core depends on
-neither; `.oxlintrc.json` enforces both. A test that needs the runner's internals (the
-activity machine, say) stays in the runner and reads the adapter's fixtures from its
-package.
+`@novadeck/emulator`, Node and its own files, never the runner's modules or another
+adapter, and harness-core depends on neither; `.oxlintrc.json` enforces both. A test
+that needs the runner's internals (the activity machine, say) stays in the runner and
+reads the adapter's fixtures from its package.
 
 Each of these packages builds to `dist`, which builds, packaging and `tsc` use. Their
 exports also name their sources under the `development` condition, which vitest, the
