@@ -9,8 +9,8 @@ import { describe, expect, it } from "./test"
 // package's own `imports`, so that step 5 changes only configuration; inside the core its
 // files import one another by relative path.
 // theme/ (the theme file and how its scheme is applied) is open to every layer that
-// composes the page; it imports nothing but itself and the model's types, for the scheme
-// preference the core's types hold, and adapters resolve colour tokens with it for what they paint
+// composes the page; it imports nothing but itself and the core's types, for the scheme
+// preference they hold, and adapters resolve colour tokens with it for what they paint
 // outside CSS, such as the terminal emulator.
 const base = ["core/", "interaction/", "ui-toolkit/", "theme/"]
 const features = ["sidebar/", "projects/", "preferences/", "search/"]
@@ -129,12 +129,11 @@ const storeHook = "countListenersWoken"
 const hookOwners = ["core/store.ts", counterRun, "architecture.test.ts"]
 const adapterSelectionExports = ["debugPanelFor", "selectBackend"]
 // Packages are denied unless listed here, owned through `vendors`, or used by an
-// adapter or test code. core/, theme/, interaction/ and app/commands/ use none; the core's
-// protocol entries are `protocolData`, and `corePackages` says what it may ever import. Core
-// backend/ uses React types only.
+// adapter or test code. theme/, interaction/ and app/commands/ use none; backend/ uses React
+// types only. The core takes the workspace's libraries, and the protocol's data entries
+// that `protocolData` names, and no other package.
 const everywherePackages = new Set(["react", "lucide-react"])
 const typeOnlyPackages: Record<string, readonly string[]> = {
-  "core/": [],
   "theme/": [],
   "backend/": ["react"],
   "app/commands/": [],
@@ -184,7 +183,16 @@ const vendors: Record<string, readonly string[]> = {
 }
 
 const src = join(process.cwd(), "src")
+// The workspace's libraries, which the core may import beside the protocol's data entries.
 const libraryFolder = join(process.cwd(), "..", "..", "libraries")
+const libraries = new Set(
+  readdirSync(libraryFolder).flatMap((name) => {
+    const manifest = join(libraryFolder, name, "package.json")
+    return existsSync(manifest)
+      ? [(JSON.parse(readFileSync(manifest, "utf8")) as { name: string }).name]
+      : []
+  }),
+)
 const files = (readdirSync(src, { recursive: true }) as string[])
   .map((file) => file.split("\\").join("/"))
   .filter((file) => /\.tsx?$/.test(file))
@@ -201,15 +209,17 @@ const isCoreSpecifier = (specifier: string): boolean => specifier.startsWith(cor
 const resolveFile = (file: string, specifier: string): string | undefined => {
   // Vite query suffixes such as `?worker` or `?raw` name the same file.
   const bare = specifier.replace(/\?.*$/, "")
-  // `#core/*` maps to `src/core/*.ts` (see the UI's package.json).
-  const target = isCoreSpecifier(bare)
-    ? posix.join("core", bare.slice(coreSpecifier.length))
-    : posix.normalize(posix.join(posix.dirname(file), bare))
+  const isFile = (path: string): boolean =>
+    existsSync(join(src, path)) && statSync(join(src, path)).isFile()
+  // `#core/*` maps to `src/core/*.ts` (see the UI's package.json), and nothing else.
+  if (isCoreSpecifier(bare)) {
+    const mapped = `core/${bare.slice(coreSpecifier.length)}.ts`
+    return isFile(mapped) ? mapped : undefined
+  }
+  const target = posix.normalize(posix.join(posix.dirname(file), bare))
   const candidates = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"].map(
     (suffix) => `${target}${suffix}`,
   )
-  const isFile = (path: string): boolean =>
-    existsSync(join(src, path)) && statSync(join(src, path)).isFile()
   return candidates.find(isFile)
 }
 const isTest = (file: string): boolean => /\.test\.tsx?$/.test(file)
@@ -241,6 +251,9 @@ const importViolation = (file: string, layer: string | undefined) => {
     if (!specifier.startsWith(".") && !isCoreSpecifier(specifier)) {
       if (protocolData[file] === specifier) return []
       if (isTest(file) || (layer && (adapterOf(layer) || testLayers.has(layer)))) return []
+      // The core takes the libraries and, through `protocolData`, the protocol's data entries.
+      if (layer === "core/")
+        return libraries.has(packageName(specifier)) ? [] : [`${file} -> ${specifier}`]
       const limited = layer ? typeOnlyPackages[layer] : undefined
       const ok = limited
         ? limited.includes(packageName(specifier)) && typeOnly
@@ -290,15 +303,11 @@ describe("UI architecture", () => {
     expect(found).toEqual([])
   })
 
+  it("holds only .ts files in the core, which #core/* maps to", () => {
+    expect(files.filter((file) => file.startsWith("core/") && !file.endsWith(".ts"))).toEqual([])
+  })
+
   it("keeps the core to itself, the libraries and the protocol's data-only entries", () => {
-    const libraries = new Set(
-      readdirSync(libraryFolder).flatMap((name) => {
-        const manifest = join(libraryFolder, name, "package.json")
-        return existsSync(manifest)
-          ? [(JSON.parse(readFileSync(manifest, "utf8")) as { name: string }).name]
-          : []
-      }),
-    )
     const dataEntries = new Set(Object.values(protocolData))
     const found = files
       .filter((file) => file.startsWith("core/") && !isTest(file))
@@ -320,7 +329,8 @@ describe("UI architecture", () => {
     const found = files.flatMap((file) =>
       imports(file).flatMap(({ specifier }) => {
         const vendor = vendorOf(specifier)
-        return !vendor || vendors[vendor]!.some((owner) => file.startsWith(owner))
+        const library = file.startsWith("core/") && libraries.has(packageName(specifier))
+        return !vendor || library || vendors[vendor]!.some((owner) => file.startsWith(owner))
           ? []
           : [`${file} -> ${specifier}`]
       }),

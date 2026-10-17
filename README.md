@@ -1022,7 +1022,7 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `app/selectors.ts`                                 | Pure reads over the stores that sections, commands, and keys share.                     |
 | `app/commands/`                                    | Commands, key commands, and the navigator: plain functions over both stores.            |
 | `app/controller/`                                  | React glue: context, selector hook, route sync, keyboard dispatcher, effects.           |
-| `backend/`                                         | The UI-owned backend port and the shared terminal lifecycle registry.                   |
+| `backend/`                                         | The UI-owned backend port.                                                              |
 | `backend/demo/`                                    | The demo adapter for tests and specs: sample projects and simulated terminals.          |
 | `backend/demo/showcase/`                           | The content preview's sample agents: plans, artifacts, and their simulated work.        |
 | `backend/runner/`                                  | The runner adapter: connection, seed from the runner, saves, and the xterm surface.     |
@@ -1176,7 +1176,7 @@ each terminal frame. A surface marks the element that takes typed input with
 keeps drafts, output, and scroll offsets per terminal with one subscription
 each, so output does not trigger workspace-wide renders. A terminal's
 presentation can unmount during view or session changes without losing that
-state; closing the terminal removes it. `backend/registry.ts` provides this
+state; closing the terminal removes it. `core/registry.ts` provides this
 lifecycle for any adapter. An adapter opts into the port contract suite by
 calling `describeBackendContract` from `test/backend-contract.tsx` in a
 colocated `contract.test.ts`, with a probe of what it holds and the I/O it
