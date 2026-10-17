@@ -25,6 +25,7 @@ character-width rule every emulator shares, and helpers that need only an emulat
   - `transcript(screen, maxChars)`: the screen and its scrollback as text that draws them again,
     null when blank or too large to keep; `replay(screen, text, separator?)` draws it on a fresh
     screen, then the separator on the line below the last one drawn.
+  - `IMarker`: xterm's marker type, for a line kept track of as the screen scrolls.
 
 ## Pins
 

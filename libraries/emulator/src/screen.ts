@@ -7,17 +7,13 @@ import { applyWidths } from "./width.js"
 /** xterm's emulator without a view, as Node runs it. */
 export type Screen = HeadlessTerminal
 
-// Each screen's serializer, loaded once: callers never hold one.
+// Each screen's serializer, loaded as it is made: callers never hold one.
 const serializers = new WeakMap<Screen, SerializeAddon>()
 
-/** The screen's serializer, loaded on a screen that was built without one. */
+/** The serializer `createScreen` loaded on the screen. */
 export const serializerOf = (screen: Screen): SerializeAddon => {
-  let serializer = serializers.get(screen)
-  if (!serializer) {
-    serializer = new SerializeAddon()
-    screen.loadAddon(serializer)
-    serializers.set(screen, serializer)
-  }
+  const serializer = serializers.get(screen)
+  if (!serializer) throw new Error("A screen is made with createScreen, which loads its serializer")
   return serializer
 }
 
@@ -32,7 +28,9 @@ export const createScreen = (options: {
 }): Screen => {
   const screen = new headless.Terminal({ ...options, allowProposedApi: true })
   applyWidths(screen)
-  serializerOf(screen)
+  const serializer = new SerializeAddon()
+  screen.loadAddon(serializer)
+  serializers.set(screen, serializer)
   return screen
 }
 

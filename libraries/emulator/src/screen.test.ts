@@ -18,7 +18,7 @@ describe("a screen", () => {
     screen.dispose()
   })
 
-  it("serializes through one serializer of its own, which a screen built without one gets on demand", async () => {
+  it("serializes through one serializer of its own", async () => {
     const screen = createScreen({ cols: 10, rows: 2, scrollback: 10 })
     expect(serializerOf(screen)).toBe(serializerOf(screen))
     await write(screen, "hello")
