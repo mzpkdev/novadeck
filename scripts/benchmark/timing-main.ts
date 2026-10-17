@@ -8,18 +8,38 @@ const read = (path: string): TimingReport => {
   return report as TimingReport
 }
 
-// Main's last report, if one is there and reads; one that doesn't is noted and left out,
-// as it says nothing about this run.
+// Main's last report, if one is there and reads as version 1; one that doesn't is noted
+// and left out, as it says nothing about this run.
 const readMain = (path: string | undefined): TimingReport | undefined => {
   if (!path || !existsSync(path)) return undefined
   try {
-    return read(path)
+    const report = read(path)
+    if (report.version !== 1) throw new Error(`it is version ${String(report.version)}`)
+    return report
   } catch (error) {
     console.error(
       `::warning title=Main's timing report unread::${String(error).split("\n")[0]}; reported without it.`,
     )
     return undefined
   }
+}
+
+// The comment, beside main's report when it renders; one whose fields aren't what this
+// reads is left out as one that doesn't read is.
+const besideMain = (
+  report: TimingReport,
+  main: TimingReport | undefined,
+  label: string,
+): string => {
+  if (main)
+    try {
+      return timingComment(report, { main, label })
+    } catch (error) {
+      console.error(
+        `::warning title=Main's timing report unread::${String(error).split("\n")[0]}; reported without it.`,
+      )
+    }
+  return timingComment(report, { label })
 }
 
 // `node scripts/benchmark/timing-main.ts <report> [main's report] [comment file]`: the
@@ -43,7 +63,7 @@ export const main = (
     )
   const mainReport = readMain(mainPath)
   const label = commentPath ? "This pull request" : "This run"
-  const comment = timingComment(report, { ...(mainReport ? { main: mainReport } : {}), label })
+  const comment = besideMain(report, mainReport, label)
   console.log(comment)
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, comment)
   if (commentPath) writeFileSync(commentPath, comment)
