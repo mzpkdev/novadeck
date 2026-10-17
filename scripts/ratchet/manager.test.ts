@@ -23,15 +23,17 @@ const read = (path: string): string => readFileSync(join(root, path), "utf8")
 const git = (...args: string[]): string =>
   execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
 
-// Where this change left its base: a merge commit's first parent, as a pull request's CI
-// checks out (the Quality workflow two commits deep); else where the branch left main.
+// Where this change left its base. In a pull request's CI, the merge commit's first parent
+// (the Quality workflow checks out two commits deep); anywhere else, where the branch left
+// main, as a local merge of main into a branch has the branch's own tip first.
 const baseCommit = (): string | undefined => {
-  try {
-    git("rev-parse", "--verify", "HEAD^2")
-    return git("rev-parse", "HEAD^1").trim()
-  } catch {
-    // Not a merge commit: where the branch left main, if git can see it.
-  }
+  if (process.env.GITHUB_BASE_REF)
+    try {
+      git("rev-parse", "--verify", "HEAD^2")
+      return git("rev-parse", "HEAD^1").trim()
+    } catch {
+      // Not a merge commit: where the branch left main, if git can see it.
+    }
   for (const branch of ["origin/main", "main"]) {
     try {
       return git("merge-base", "HEAD", branch).trim()
