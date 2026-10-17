@@ -94,8 +94,9 @@ export const countManager = (source: string): Counts => {
   }
 }
 
-const budgetOf = (budget: Budget | undefined): number | undefined =>
-  typeof budget === "object" ? budget.budget : budget
+// A budget's number, from a count or a raise; anything else, as a hand-written null, has none.
+const budgetOf = (budget: Budget | null | undefined): number | undefined =>
+  typeof budget === "object" && budget !== null ? budget.budget : (budget ?? undefined)
 
 const said = (text: unknown): text is string => typeof text === "string" && text.trim() !== ""
 
@@ -116,7 +117,7 @@ const raiseProblem = (measure: string, entry: Budget, was: Budget): string | und
   if (!isCount(from) || !isCount(to) || to <= from) return undefined
   if (typeof entry !== "object")
     return `${budgetsPath} raises ${measure} from ${from} to ${to} without saying why: write it ${raiseForm}.`
-  if (typeof was === "object" && entry.from.trim() === was.from.trim())
+  if (typeof was === "object" && said(was.from) && entry.from.trim() === was.from.trim())
     return `${budgetsPath} raises ${measure} from ${from} to ${to} under the earlier raise's source, ${was.from}: name this one's pull request or commit.`
   return undefined
 }
@@ -145,21 +146,25 @@ export const ratchetProblems = (counts: Counts, budgets: Budgets, base?: Budgets
           `A raised ${what} in ${budgetsPath} is written ${raiseForm}; the one for ${measure} isn't.`,
         ]
     const count = counts[measure]
+    const was = base ? budgetOf(base[measure]) : undefined
+    // A raise in this change gives the file what it needs now, never headroom for later:
+    // at most its count, or the base's budget where the file needs no raise at all.
+    const limit = isCount(was) ? Math.max(count, was) : budget
     const raised = [
       base ? raiseProblem(measure, entry, base[measure]) : undefined,
-      base?.slack ? raiseProblem(`${measure} slack`, slackEntry!, base.slack[measure]) : undefined,
-      // A raise in this change gives the file what it needs now, never headroom for later.
-      base &&
-      isCount(budgetOf(base[measure])) &&
-      budget > budgetOf(base[measure])! &&
-      budget > count
-        ? `${budgetsPath} raises ${measure} to ${budget}, past the ${count} the file has: raise it only to ${count}.`
+      base?.slack && slackEntry !== undefined
+        ? raiseProblem(`${measure} slack`, slackEntry, base.slack[measure])
+        : undefined,
+      budget > limit
+        ? count > (was ?? count)
+          ? `${budgetsPath} raises ${measure} to ${budget}, past the ${count} the file has: raise it only to ${count}.`
+          : `${budgetsPath} raises ${measure} to ${budget}, though the file's ${count} needs no raise: keep it at ${limit}.`
         : undefined,
     ].filter((problem): problem is string => problem !== undefined)
     if (count > budget)
       return [
         ...raised,
-        `${managerPath} has ${count} ${advice[measure]}, past its budget of ${budget}. Put new code in a sibling module under application/runner/src/terminals/ (as closes.ts, opens.ts and naming.ts are) and call it from the class, instead of growing the Terminals class. If it really can't go there, raise the budget in ${budgetsPath}, written ${raiseForm}.`,
+        `${managerPath} has ${count} ${advice[measure]}, past its budget of ${budget}. Put new code in a sibling module under application/runner/src/terminals/ (as closes.ts, opens.ts and naming.ts are) and call it from the class, instead of growing the Terminals class. If it really can't go there, raise the budget in ${budgetsPath} to ${count}, written ${raiseForm}.`,
       ]
     if (budget - count > slack)
       return [

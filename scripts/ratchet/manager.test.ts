@@ -212,6 +212,22 @@ describe("the ratchet", () => {
     ])
   })
 
+  it("refuses a raise the file doesn't need, keeping the budget it had", () => {
+    const needless: Budgets = { ...budgets, lines: { budget: 102, reason: "Room", from: "#240" } }
+    expect(ratchetProblems({ ...counts, lines: 98 }, needless, budgets)).toEqual([
+      expect.stringMatching(
+        /raises lines to 102, though the file's 98 needs no raise: keep it at 100/,
+      ),
+    ])
+  })
+
+  it("reads a hand-written null as no budget or slack, not a crash", () => {
+    const blank = { ...budgets, slack: { lines: null, methods: 1 } } as unknown as Budgets
+    expect(ratchetProblems(counts, blank)).toEqual([
+      expect.stringMatching(/sets no slack for lines/),
+    ])
+  })
+
   it("keeps an earlier raise standing as the file shrinks within its slack", () => {
     const raised: Budgets = { ...budgets, lines: { budget: 103, reason: "A call", from: "#240" } }
     expect(ratchetProblems({ ...counts, lines: 101 }, raised, raised)).toEqual([])
