@@ -78,8 +78,11 @@ const finish = () =>
   })())
 
 // Stopped from outside, as a cancelled CI job is: what runs stops, and the report says so.
+// A signal while it stops, as a second Ctrl-C, is let be: stopping goes on, and so does
+// the report.
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const)
-  process.once(signal, () => {
+  process.on(signal, () => {
+    if (finished) return
     error ??= `stopped by ${signal}`
     void finish().finally(() => process.exit(problems.length > 0 ? 1 : 0))
   })
