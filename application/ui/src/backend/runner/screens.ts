@@ -2,7 +2,7 @@ import {
   createView,
   type ITheme,
   type Renderers,
-  type ScreenRenderer,
+  type ViewRenderer,
   type Terminal,
 } from "@novadeck/emulator/browser"
 
@@ -101,7 +101,7 @@ export type RunnerScreen = {
   readonly followed: FollowedTerminal
   // Which renderer draws it: WebGL while shown where its view wants it and a context is
   // free, else the DOM one.
-  readonly renderer: ScreenRenderer
+  readonly renderer: ViewRenderer
   readonly stream: Store<ScreenStream>
   // Why the last paste failed, for a few seconds after it did.
   readonly notice: Store<string | null>
@@ -172,10 +172,6 @@ export const createScreens = (runtime: SurfaceRuntime, renderers: Renderers = pa
       scrollback: 1000,
       links: linkOptions(),
       renderers,
-      // The two renderers measure a cell apart (WebGL to whole device pixels), so a screen
-      // that changes renderer fits its slot again. No surface takes a renderer before the
-      // screen is made, so `followed` exists by the time this runs.
-      onRendererChange: () => followed.refit(),
     })
     const xterm = view.terminal
     const queries = silenceQueries(xterm)
@@ -205,6 +201,9 @@ export const createScreens = (runtime: SurfaceRuntime, renderers: Renderers = pa
       exited: (waits) => stream.update((state) => ({ ...state, waits })),
       live: (live, resuming = false) => stream.update((state) => ({ ...state, live, resuming })),
     })
+    // The two renderers measure a cell apart (WebGL to whole device pixels), so a screen
+    // that changes renderer fits its slot again.
+    view.onRendererChange(() => followed.refit())
     const screen: RunnerScreen = {
       host: element,
       xterm,

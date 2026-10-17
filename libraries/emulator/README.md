@@ -11,7 +11,8 @@ character-width rule every emulator shares, and helpers that need only an emulat
   gives back on different rows.
 - `./browser`: `createView(element, options)`, xterm's browser `Terminal` opened in an element with
   the width rule applied, the fit and web-links addons loaded, and links, theme, font and fit behind
-  a `View`; and the pool that draws views with WebGL (`webglRenderers`, `createRenderers`,
+  a `View`, which tells of each change of renderer (`onRendererChange`) so its owner fits it again;
+  and the pool that draws views with WebGL (`webglRenderers`, `createRenderers`,
   `ScreenRenderer`). The app resolves its theme, its link policy and which views want WebGL, and
   passes them in. Types of xterm's `Terminal` and `ITheme` come from here too.
 - `./browser.css`: xterm's stylesheet, for the browser emulator's screens.

@@ -1,6 +1,6 @@
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
-import { Terminal, type ILinkHandler, type ITheme } from "@xterm/xterm"
+import { Terminal, type IDisposable, type ILinkHandler, type ITheme } from "@xterm/xterm"
 
 import type { Renderers, ScreenRenderer } from "./renderer.js"
 import { applyWidths } from "./width.js"
@@ -23,9 +23,10 @@ export type ViewOptions = {
   readonly links?: ViewLinks
   /** The page's pool of WebGL contexts. Without it the view stays on the DOM renderer. */
   readonly renderers?: Renderers
-  /** The view changed renderer, which may measure a cell differently: fit again. */
-  readonly onRendererChange?: () => void
 }
+
+/** The view's place in the page's pool: whoever shows it says when it is shown and when not. */
+export type ViewRenderer = Pick<ScreenRenderer, "take" | "idle" | "release">
 
 export type View = {
   /** xterm's own API for everything the view doesn't wrap. */
@@ -40,7 +41,12 @@ export type View = {
    */
   readonly setFont: (family: string) => Promise<boolean>
   /** Which renderer draws the view. */
-  readonly renderer: ScreenRenderer
+  readonly renderer: ViewRenderer
+  /**
+   * Tells `listener` each time the view changes renderer, which may measure a cell
+   * differently, so whoever fits it fits it again.
+   */
+  readonly onRendererChange: (listener: () => void) => IDisposable
   /** Closes the terminal and gives its context back; the element stays the caller's. */
   readonly dispose: () => void
 }
@@ -83,7 +89,10 @@ export const createView = (element: HTMLElement, options: ViewOptions): View => 
     terminal.loadAddon(new WebLinksAddon(activate, hint))
   }
   terminal.open(element)
-  const renderer = options.renderers?.screen(terminal, options.onRendererChange) ?? noRenderer
+  const changes = new Set<() => void>()
+  const renderer =
+    options.renderers?.screen(terminal, () => changes.forEach((listener) => listener())) ??
+    noRenderer
   let disposed = false
 
   // xterm measures its cells when its font changes, with whatever has loaded by then.
@@ -98,6 +107,7 @@ export const createView = (element: HTMLElement, options: ViewOptions): View => 
   // The family a font still loading is awaited for; a later call for another one takes over.
   let awaited: string | undefined
   const setFont = async (family: string): Promise<boolean> => {
+    if (disposed) return false
     const fonts = element.ownerDocument.fonts as FontFaceSet | undefined
     const font = `${terminal.options.fontSize}px ${family}`
     if (!fonts || fonts.check(font)) {
@@ -131,10 +141,15 @@ export const createView = (element: HTMLElement, options: ViewOptions): View => 
       terminal.options.theme = next
     },
     setFont,
-    renderer,
+    renderer: { take: renderer.take, idle: renderer.idle, release: renderer.release },
+    onRendererChange: (listener) => {
+      changes.add(listener)
+      return { dispose: () => void changes.delete(listener) }
+    },
     dispose: () => {
       disposed = true
       renderer.dispose()
+      changes.clear()
       terminal.dispose()
     },
   }

@@ -238,6 +238,14 @@ describe("a view's font", () => {
     expect(await done).toBe(false)
   })
 
+  it("measures nothing once the view has closed, even for a loaded font", async () => {
+    const { loaded } = fonts()
+    loaded.add("13px Other Mono")
+    const { view } = open()
+    view.dispose()
+    expect(await view.setFont("Other Mono")).toBe(false)
+  })
+
   it("clears the WebGL atlas when it measures", async () => {
     const { loaded } = fonts()
     loaded.add("13px Other Mono")
@@ -328,7 +336,8 @@ describe("a view's renderer", () => {
   it("tells of each change of renderer, but not as the view closes", () => {
     const { renderers } = pool()
     const changed = vi.fn<() => void>()
-    const { view } = open({ renderers, onRendererChange: changed })
+    const { view } = open({ renderers })
+    view.onRendererChange(changed)
     view.renderer.take()
     expect(changed).toHaveBeenCalledTimes(1)
     view.renderer.release()
@@ -343,8 +352,16 @@ describe("a view's renderer", () => {
     expect(() => {
       view.renderer.take()
       view.renderer.idle()
-      view.renderer.refresh()
       view.renderer.release()
     }).not.toThrow()
+  })
+
+  it("stops telling a listener that has stopped listening", () => {
+    const { renderers } = pool()
+    const changed = vi.fn<() => void>()
+    const { view } = open({ renderers })
+    view.onRendererChange(changed).dispose()
+    view.renderer.take()
+    expect(changed).not.toHaveBeenCalled()
   })
 })
