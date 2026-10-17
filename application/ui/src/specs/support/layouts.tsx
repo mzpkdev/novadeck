@@ -61,16 +61,15 @@ export const expectStaysTrue = async (
   let held = 0
   let broken = false
   await expect
-    .poll(
-      async () => {
-        await nextFrame()
-        broken ||= !check()
-        held += 1
-        return !broken && held >= frames
-      },
-      { message: `${description} changed`, ...stillFor(frames) },
-    )
+    .poll(async () => {
+      await nextFrame()
+      broken ||= !check()
+      held += 1
+      // Done once it breaks, rather than waiting out every frame it was given.
+      return broken || held >= frames
+    }, stillFor(frames))
     .toBe(true)
+  expect(broken, `${description} changed`).toBe(false)
 }
 
 /** Whether two rectangles match in size and position within a pixel. */
