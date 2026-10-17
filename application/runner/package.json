@@ -45,6 +45,7 @@
   },
   "devDependencies": {
     "@novadeck/sandbox": "workspace:*",
+    "@novadeck/wire": "workspace:*",
     "@types/node": "^26.6.5",
     "@types/ws": "8.18.2",
     "fast-check": "4.10.2",
