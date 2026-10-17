@@ -1226,7 +1226,12 @@ describe("a terminal in Windows' ConPTY", () => {
       },
       end: async () => {},
     }
-    const manager = terminals.manager({ pty: { native: standIn.spawn, platform: "win32", trees } })
+    // A shell that is a real program on every system, as the manager checks it is before the
+    // stand-in runs in its place.
+    const manager = terminals.manager({
+      shell: process.execPath,
+      pty: { native: standIn.spawn, platform: "win32", trees },
+    })
     const create = () =>
       manager.create({ id: randomUUID(), sessionId: "session", cwd, cols: 80, rows: 24 }, "owner")
     return { standIn, treeReads, manager, create }
