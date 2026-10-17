@@ -1282,6 +1282,12 @@ reading is kept as an artifact. The check always reports, so it can be required;
 branches to be up to date too, or two pull requests that each fit the budget can together
 pass it on main.
 
+The timing run, the real app in the sandbox (`pnpm bench:timing`), is too heavy and too
+noisy for every pull request: the Benchmark Timing workflow runs it nightly on main and on
+pull requests labelled `bench`. It reports switch p90, each layout's main-thread share and
+frames over 33 ms in the job summary and in one comment on the pull request, beside main's
+last nightly run, and keeps each report as an artifact. It never fails on its numbers.
+
 ## Configuration
 
 For standalone UI/runner configuration, copy the environment templates:
