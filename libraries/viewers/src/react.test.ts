@@ -48,8 +48,8 @@ const Host = () => {
   return shown && createElement(Shown, shown)
 }
 const Shown = ({ id, content }: { id: string; content: string }) => {
-  const ref = useViewer(mountText, { id, content, label: id, kept })
-  return createElement("div", { ref, id })
+  const { ref, viewer } = useViewer(mountText, { id, content, label: id, kept })
+  return createElement("div", { ref, id, "data-mounted": viewer ? "" : undefined })
 }
 
 const render = (strict = false) => {
@@ -93,5 +93,12 @@ describe("a viewer in React", () => {
     render()
     act(() => show({ id: "b", content: "other" }))
     expect(calls).toEqual(["mount a first saved:none", "destroy a", "mount b other saved:none"])
+  })
+
+  it("hands over the viewer once it's mounted, and none once it's gone", () => {
+    render()
+    expect(document.querySelector("#a")?.hasAttribute("data-mounted")).toBe(true)
+    act(() => show(null))
+    expect(document.querySelector("#a")).toBeNull()
   })
 })
