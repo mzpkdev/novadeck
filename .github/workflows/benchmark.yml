@@ -35,8 +35,10 @@ jobs:
         id: changes
         shell: bash
         run: |
-          if git diff --name-only HEAD^1 HEAD |
-            grep -qE '^(application/(ui|runner|protocol)/|libraries/|pnpm-lock\.yaml$|scripts/benchmark/|\.github/workflows/benchmark\.yml$)'; then
+          # Written out first, so a failing diff fails the step instead of reading as "no
+          # change"; without renames, so a file moved out of a watched folder counts too.
+          git diff --name-only --no-renames HEAD^1 HEAD > "$RUNNER_TEMP/changed"
+          if grep -qE '^(application/(ui|runner|protocol)/|libraries/|pnpm-lock\.yaml$|scripts/benchmark/|\.github/workflows/benchmark\.yml$)' "$RUNNER_TEMP/changed"; then
             echo "counts=true" >> "$GITHUB_OUTPUT"
           else
             echo "Nothing here can move a count: the counter run is skipped." >> "$GITHUB_STEP_SUMMARY"
@@ -108,14 +110,18 @@ jobs:
       - name: Check Budgets
         if: steps.changes.outputs.counts == 'true'
         shell: bash
+        env:
+          # A raise in a pull request must name it.
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
         run: |
           budgets=application/ui/src/specs/counters/budgets.json
-          base="$RUNNER_TEMP/base-budgets.json"
           git rev-parse --verify --quiet HEAD^1 > /dev/null
           if git cat-file -e "HEAD^1:$budgets" 2>/dev/null; then
-            git show "HEAD^1:$budgets" > "$base"
+            git show "HEAD^1:$budgets" > "$RUNNER_TEMP/base-budgets.json"
+            node scripts/benchmark/main.ts "$RUNNER_TEMP/base-budgets.json"
+          else
+            node scripts/benchmark/main.ts
           fi
-          node scripts/benchmark/main.ts "$base"
 
       # Each run's reading, kept as a trend.
       - name: Upload Reading

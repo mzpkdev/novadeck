@@ -5,8 +5,10 @@ import {
   changedScripts,
   checkCounters,
   countersSummary,
+  parseBaseBudgets,
   parseBudgets,
   parseReading,
+  tickChanges,
 } from "./counters.ts"
 
 const readingPath = "application/ui/test-results/counters.json"
@@ -14,29 +16,40 @@ const budgetsPath = "application/ui/src/specs/counters/budgets.json"
 
 const readJson = (path: string): unknown => JSON.parse(readFileSync(path, "utf8"))
 
+// An annotation's text on one line, as the workflow command needs.
+const oneLine = (text: string): string => text.replaceAll(/\s+/g, " ")
+
 // `node scripts/benchmark/main.ts [base budgets]`, after the counter run: checks its
 // reading against the budgets, and the budgets against the base branch's when given;
 // writes the summary to the job's, and fails on a count past its budget, a script that
-// changed under its budgets, or a raise that doesn't say why. A base file that doesn't
-// read is an error: it would let any raise through unseen.
+// changed under its budgets, or a raise that doesn't say why. A base file given but not
+// there, or that doesn't read, is an error: it would let any raise through unseen. In a
+// pull request, PULL_REQUEST names its number, which a raise must name.
 export const main = (basePath = process.argv[2]): void => {
   const reading = parseReading(readJson(readingPath))
   const budgets = parseBudgets(readJson(budgetsPath), budgetsPath)
-  const base =
-    basePath && existsSync(basePath)
-      ? parseBudgets(readJson(basePath), "The base branch's budgets")
-      : undefined
+  if (basePath && !existsSync(basePath)) throw new Error(`No base budgets at ${basePath}.`)
+  const base = basePath
+    ? parseBaseBudgets(readJson(basePath), "The base branch's budget file")
+    : undefined
+  const pullRequest = Number(process.env.PULL_REQUEST) || undefined
   const rows = checkCounters(reading, budgets)
   const scripts = changedScripts(reading, budgets)
-  const changes = base ? budgetChanges(budgets, base) : []
-  const summary = countersSummary(reading, rows, { changes, scripts, compared: Boolean(base) })
+  const changes = base ? budgetChanges(budgets, base, pullRequest) : []
+  const tickNotes = base ? tickChanges(budgets, base) : []
+  const summary = countersSummary(reading, rows, {
+    changes,
+    scripts,
+    tickNotes,
+    compared: Boolean(base),
+  })
   console.log(summary)
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary)
   if (!base)
     console.error(
       "::warning title=Budgets not compared::No base budgets were given, so budget changes aren't checked.",
     )
-  for (const script of scripts) console.error(`::error title=Script changed::${script}`)
+  for (const script of scripts) console.error(`::error title=Script changed::${oneLine(script)}`)
   const over = rows.filter((row) => row.verdict === "over")
   for (const { phase, counter, value, budget } of over)
     console.error(
@@ -49,7 +62,7 @@ export const main = (basePath = process.argv[2]): void => {
   const unexplained = changes.filter((change) => change.problem)
   for (const { phase, counter, from, to, problem } of unexplained)
     console.error(
-      `::error title=Budget raise not explained::${phase} ${counter} went from ${from} to ${to}. ${problem}`,
+      `::error title=Budget raise not explained::${oneLine(`${phase} ${counter} went from ${from} to ${to}. ${problem}`)}`,
     )
   process.exitCode = over.length || scripts.length || unexplained.length ? 1 : 0
 }

@@ -4,8 +4,10 @@ import {
   changedScripts,
   checkCounters,
   countersSummary,
+  parseBaseBudgets,
   parseBudgets,
   parseReading,
+  tickChanges,
   type Budget,
   type Budgets,
   type Reading,
@@ -92,14 +94,14 @@ describe("the counter run's budgets", () => {
     it("fails on a missing budget, naming the file", () => {
       const { streamingPeak: _, ...partial } = budget
       expect(() => parseBudgets({ ...budgets, switches: partial }, "budgets.json")).toThrow(
-        "budgets.json has no whole-number budget for switches streamingPeak.",
+        "budgets.json's switches streamingPeak is not a whole-number budget.",
       )
     })
 
     it("fails on a budget that isn't a whole number", () => {
       expect(() =>
         parseBudgets(withGridMutations({ budget: 20.5, reason: "r", from: "#1" }), "base"),
-      ).toThrow("base has no whole-number budget for grid mutations.")
+      ).toThrow("base's grid mutations is not a whole-number budget.")
     })
 
     it("fails on a phase without its ticks", () => {
@@ -203,6 +205,44 @@ describe("the counter run's budgets", () => {
       expect(
         countersSummary(reading, checkCounters(reading, budgets), { compared: false }),
       ).toContain("budget changes aren't checked")
+    })
+  })
+
+  context("when the change is in a pull request", () => {
+    it("asks a raise to name that pull request", () => {
+      const next = withGridMutations({ budget: 30, reason: "A readout", from: "#240" })
+      expect(budgetChanges(next, budgets, 251)[0]?.problem).toContain("This raise is in #251")
+      const own = withGridMutations({ budget: 30, reason: "A readout", from: "#251, #240" })
+      expect(budgetChanges(own, budgets, 251)[0]?.problem).toBeUndefined()
+      const longer = withGridMutations({ budget: 30, reason: "A readout", from: "#2510" })
+      expect(budgetChanges(longer, budgets, 251)[0]?.problem).toBeDefined()
+    })
+  })
+
+  context("when the base branch's budgets are in an older form", () => {
+    it("compares the budgets both have, so a change of form can land", () => {
+      const { ticks: _, streamingPeak: __, ...older } = budget
+      const base = parseBaseBudgets({ grid: older, focus: older }, "base")
+      const next = { ...budgets, grid: { ...budget, streamingPeak: 99 } }
+      expect(budgetChanges(next, base)).toEqual([])
+      expect(tickChanges(next, base)).toEqual([])
+    })
+
+    it("still fails on a budget it has that doesn't read", () => {
+      expect(() => parseBaseBudgets({ grid: { mutations: "20" } }, "base")).toThrow(
+        "base's grid mutations is not a whole-number budget.",
+      )
+    })
+  })
+
+  context("when the script's ticks change with the budgets", () => {
+    it("says so beside the budgets that changed", () => {
+      const next = { ...budgets, switches: { ...budget, ticks: 12 } }
+      const tickNotes = tickChanges(next, budgets)
+      expect(tickNotes).toEqual(["switches now plays 12 ticks, was 10"])
+      expect(countersSummary(reading, checkCounters(reading, next), { tickNotes })).toContain(
+        "- switches now plays 12 ticks, was 10: its counts are totals over the new number.",
+      )
     })
   })
 })

@@ -77,16 +77,33 @@ export const parseBudgets = (data: unknown, name: string): Budgets => {
     if (!isRecord(budgets)) throw new Error(`${name} has no ${phase} phase.`)
     if (!isCount(budgets.ticks))
       throw new Error(`${name} doesn't say how many ticks ${phase} plays.`)
-    for (const counter of gated) {
-      const entry = budgets[counter]
-      const count = isRecord(entry) ? entry.budget : entry
-      if (!isCount(count))
-        throw new Error(`${name} has no whole-number budget for ${phase} ${counter}.`)
-      if (isRecord(entry) && (typeof entry.reason !== "string" || typeof entry.from !== "string"))
-        throw new Error(`${name}'s ${phase} ${counter} is written ${raiseForm}.`)
-    }
+    for (const counter of gated) checkEntry(budgets[counter], `${name}'s ${phase} ${counter}`)
   }
   return data as Budgets
+}
+
+// The base branch's budgets, as far as comparing with them needs: each budget it has. It
+// may be in an older form, without a phase's ticks or a counter added since, so a change
+// to the file's form can land; a budget it has must still read.
+export type BaseBudgets = Readonly<Partial<Record<Phase, Partial<Record<Gated, Budget>>>>>
+export const parseBaseBudgets = (data: unknown, name: string): BaseBudgets => {
+  if (!isRecord(data)) throw new Error(`${name} is not an object.`)
+  for (const phase of phases) {
+    const budgets = data[phase]
+    if (budgets === undefined) continue
+    if (!isRecord(budgets)) throw new Error(`${name}'s ${phase} is not an object.`)
+    for (const counter of gated)
+      if (budgets[counter] !== undefined)
+        checkEntry(budgets[counter], `${name}'s ${phase} ${counter}`)
+  }
+  return data as BaseBudgets
+}
+
+const checkEntry = (entry: unknown, label: string): void => {
+  const count = isRecord(entry) ? entry.budget : entry
+  if (!isCount(count)) throw new Error(`${label} is not a whole-number budget.`)
+  if (isRecord(entry) && (typeof entry.reason !== "string" || typeof entry.from !== "string"))
+    throw new Error(`${label} is written ${raiseForm}.`)
 }
 
 export type Verdict = "over" | "under" | "within"
@@ -141,28 +158,42 @@ export type BudgetChange = {
   readonly problem?: string
 }
 
-// Why a raise can't stand, if it can't: it must say why, and name the pull request or
-// commit it came from, its own and not the earlier raise's it replaces.
-const raiseProblem = (entry: Budget, was: Budget): string | undefined => {
+// Why a raise can't stand, if it can't: it must say why, and name where it came from: the
+// pull request it is in, when that is known, or else anything but the source of the raise
+// it replaces.
+const raiseProblem = (
+  entry: Budget,
+  was: Budget,
+  pullRequest: number | undefined,
+): string | undefined => {
   const why = typeof entry === "object" ? entry : undefined
   if (!said(why?.reason) || !said(why.from)) return `A raised budget is written ${raiseForm}.`
-  if (typeof was === "object" && why.from === was.from)
+  if (pullRequest !== undefined && !new RegExp(`#${pullRequest}\\b`).test(why.from))
+    return `This raise is in #${pullRequest}; name it in "from".`
+  if (typeof was === "object" && why.from.trim() === was.from.trim())
     return `This raise names the earlier raise's source (${why.from}); name its own pull request or commit.`
   return undefined
 }
 
-// Every budget this change moves against the base branch's. A cut needs no reason.
-export const budgetChanges = (budgets: Budgets, base: Budgets): BudgetChange[] =>
+// Every budget this change moves against the base branch's. A cut needs no reason; a
+// budget the base doesn't have yet, as a counter added since, is new and compares with
+// nothing. `pullRequest` is the number of the pull request the change is in, if any.
+export const budgetChanges = (
+  budgets: Budgets,
+  base: BaseBudgets,
+  pullRequest?: number,
+): BudgetChange[] =>
   phases.flatMap((phase) =>
     gated.flatMap((counter) => {
+      const was = base[phase]?.[counter]
+      if (was === undefined) return []
       const entry = budgets[phase][counter]
-      const was = base[phase][counter]
       const to = budgetOf(entry)
       const from = budgetOf(was)
       if (to === from) return []
       if (to < from) return [{ phase, counter, from, to }]
       const why = typeof entry === "object" ? entry : undefined
-      const problem = raiseProblem(entry, was)
+      const problem = raiseProblem(entry, was, pullRequest)
       return [
         {
           phase,
@@ -176,6 +207,15 @@ export const budgetChanges = (budgets: Budgets, base: Budgets): BudgetChange[] =
       ]
     }),
   )
+
+// The phases whose script this change makes play another number of ticks, for the
+// summary: their counts measure something else, so their budgets change with it.
+export const tickChanges = (budgets: Budgets, base: BaseBudgets): string[] =>
+  phases.flatMap((phase) => {
+    const was = (base[phase] as { readonly ticks?: unknown } | undefined)?.ticks
+    const now = budgets[phase].ticks
+    return isCount(was) && was !== now ? [`${phase} now plays ${now} ticks, was ${was}`] : []
+  })
 
 const perTick = (total: number, ticks: number): string => (ticks ? (total / ticks).toFixed(1) : "–")
 // Text from the budget file, safe in a Markdown table's cell.
@@ -192,10 +232,12 @@ export const countersSummary = (
   {
     changes = [],
     scripts = [],
+    tickNotes = [],
     compared = true,
   }: {
     readonly changes?: readonly BudgetChange[]
     readonly scripts?: readonly string[]
+    readonly tickNotes?: readonly string[]
     // Whether the budgets were compared with the base branch's.
     readonly compared?: boolean
   } = {},
@@ -223,10 +265,12 @@ export const countersSummary = (
       ? []
       : ["> ⚠️ No base budgets to compare with: budget changes aren't checked.", ""]),
     ...scripts.flatMap((script) => [`> ❌ ${script}`, ""]),
-    ...(changes.length
+    ...(changes.length || tickNotes.length
       ? [
           "This pull request changes budgets:",
           "",
+          ...tickNotes.map((note) => `- ${note}: its counts are totals over the new number.`),
+          ...(tickNotes.length ? [""] : []),
           "| Phase | Counter | Budget | Why | From |",
           "| --- | --- | --- | --- | --- |",
           ...changeRows,
