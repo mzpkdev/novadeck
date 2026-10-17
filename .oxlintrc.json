@@ -213,7 +213,9 @@
                   "**/../harnesses",
                   "**/harnesses/**",
                   "**/../libraries",
-                  "**/libraries/**"
+                  "**/libraries/**",
+                  "**/../*/dist",
+                  "**/../*/dist/**"
                 ],
                 "message": "A library imports another library by its package name, and app code not at all."
               }
@@ -257,7 +259,9 @@
                   "**/../harnesses",
                   "**/harnesses/**",
                   "**/../libraries",
-                  "**/libraries/**"
+                  "**/libraries/**",
+                  "**/../*/dist",
+                  "**/../*/dist/**"
                 ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
@@ -318,7 +322,9 @@
                   "**/../harnesses",
                   "**/harnesses/**",
                   "**/../libraries",
-                  "**/libraries/**"
+                  "**/libraries/**",
+                  "**/../*/dist",
+                  "**/../*/dist/**"
                 ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
@@ -379,7 +385,9 @@
                   "**/../harnesses",
                   "**/harnesses/**",
                   "**/../libraries",
-                  "**/libraries/**"
+                  "**/libraries/**",
+                  "**/../*/dist",
+                  "**/../*/dist/**"
                 ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
@@ -440,7 +448,9 @@
                   "**/../harnesses",
                   "**/harnesses/**",
                   "**/../libraries",
-                  "**/libraries/**"
+                  "**/libraries/**",
+                  "**/../*/dist",
+                  "**/../*/dist/**"
                 ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
@@ -499,7 +509,9 @@
                   "**/../harnesses",
                   "**/harnesses/**",
                   "**/../libraries",
-                  "**/libraries/**"
+                  "**/libraries/**",
+                  "**/../*/dist",
+                  "**/../*/dist/**"
                 ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
@@ -558,7 +570,9 @@
                   "**/../harnesses",
                   "**/harnesses/**",
                   "**/../libraries",
-                  "**/libraries/**"
+                  "**/libraries/**",
+                  "**/../*/dist",
+                  "**/../*/dist/**"
                 ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
@@ -619,7 +633,9 @@
                   "**/../harnesses",
                   "**/harnesses/**",
                   "**/../libraries",
-                  "**/libraries/**"
+                  "**/libraries/**",
+                  "**/../*/dist",
+                  "**/../*/dist/**"
                 ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },

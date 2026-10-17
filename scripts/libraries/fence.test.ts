@@ -30,6 +30,9 @@ const app = [
   "../../../../application/runner/src/manager.ts",
   "../../../../harnesses/core/src/box.ts",
   "../../../../libraries/wire/src/index.ts",
+  // A sibling's build, which a declaration file lets typecheck, as no rootDir sees it.
+  "../../wire/dist/index.js",
+  "../../wire/dist",
   "../../../../atlas/src/index.ts",
   // A folder named alone, its package's entry.
   "../../../../atlas",
@@ -48,7 +51,16 @@ const browser = [
   "@novadeck/viewers/browser",
 ]
 // A module of its own may share a name with a workspace folder.
-const own = ["./sibling.ts", "../index.ts", "./atlas", "./application", "node:path", "@xterm/xterm"]
+const own = [
+  "./sibling.ts",
+  "../index.ts",
+  "./atlas",
+  "./application",
+  "node:path",
+  "@xterm/xterm",
+  // A package's own build, as its stylesheets are imported.
+  "katex/dist/katex.min.css",
+]
 
 /** How a probe writes an import: each form the fence must see. */
 type Form = "import" | "type" | "export" | "named" | "dynamic"
@@ -63,9 +75,9 @@ const write: Readonly<Record<Form, (name: string, index: number) => string>> = {
 
 /**
  * The probes: a file path, everything it imports and in what form, and what the fence must
- * refuse. A relative import into a sibling library that names no folder (`../../wire/src`)
- * isn't among them: the lint can't tell it from the library's own, and the library's
- * rootDir fails its typecheck instead.
+ * refuse. A relative import into a sibling library's sources that names no folder
+ * (`../../wire/src`) isn't among them: the lint can't tell it from the library's own, and
+ * the library's rootDir fails its typecheck instead.
  */
 const probes = [
   ...names.flatMap((name) => {

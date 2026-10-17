@@ -69,6 +69,7 @@ describe("a library's dependencies", () => {
           drive: "C:/novadeck/application/runner",
           relativeDrive: "C:../application/ui",
           share: "\\\\server\\share\\ui",
+          packed: "vendor/ui.tgz",
         },
       }),
     ).toEqual([
@@ -81,6 +82,7 @@ describe("a library's dependencies", () => {
       "devDependencies drive",
       "devDependencies relativeDrive",
       "devDependencies share",
+      "devDependencies packed",
     ])
   })
 

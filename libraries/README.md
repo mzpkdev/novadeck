@@ -32,17 +32,18 @@ the build rules and the test sandbox. The app keeps the product.
 ## What enforces them
 
 - **The import fence** in `.oxlintrc.json`: an override per library refuses app code by package
-  name, paths into `application/`, `harnesses/`, `libraries/` or `atlas/` or up to one of them
-  by name (`../atlas`, so a library's own module one folder up takes another name), and the
-  libraries outside its order; one on `application/ui/src` refuses
-  the libraries' Node subpaths (`/pty`, `/host`, `/server`, `/electron`, `/browser/host`,
-  `/shell`). oxlint takes `no-restricted-imports` from the last matching override alone, and a
-  `!` pattern in one group allows the name in every group, so each library's override repeats
-  the bans they all share as plain lists, and `scripts/libraries/fence.test.ts` lints probe files
-  with the real config to check what each file ends up refusing, in each form an import takes
-  (`import`, `import type`, `export … from`, `import()`). oxlint takes a folder's own config in
-  place of the root's, so the test also fails on any oxlint config but the root's. It refuses ES
-  imports, not `require()`, which the package graph and the typecheck stand behind.
+  name, paths into `application/`, `harnesses/`, `libraries/`, `atlas/` or a sibling's `dist/`
+  (`../../wire/dist`), or up to one of the first four by name (`../atlas`, so a library's own module
+  one folder up takes another name), and the libraries outside its order; one on
+  `application/ui/src` refuses the Node subpaths of any `@novadeck` package (`/pty`, `/host`,
+  `/server`, `/electron`, `/browser/host`, `/shell`). oxlint takes `no-restricted-imports` from the
+  last matching override alone, and a `!` pattern in one group allows the name in every group, so
+  each library's override repeats the bans they all share as plain lists, and
+  `scripts/libraries/fence.test.ts` lints probe files with the real config to check what each file
+  ends up refusing, in each form an import takes (`import`, `import type`, `export … from`,
+  `import()`). oxlint takes a folder's own config in place of the root's, so the test also fails on
+  any oxlint config but the root's. It refuses ES imports, not `require()`, which the package graph
+  and the typecheck stand behind.
 - **The package graph** (`scripts/libraries/graph.test.ts`): a library's package.json installs no
   workspace package but the libraries its design depends on, in any kind of dependency, under
   its own name or an alias, and nothing from a path (`link:`, `file:`, `portal:`, `workspace:`
@@ -51,8 +52,10 @@ the build rules and the test sandbox. The app keeps the product.
   declares. What the root installs (its dev tools, and the hoisted `electron`) still resolves
   from a library without being declared: nothing checks that a library declares those.
 - **The typecheck's `rootDir`**: a relative import that leaves the library's `src`, as
-  `../../wire/src` into a sibling, names no folder the lint knows, and fails `tsc` instead, tests
-  included.
+  `../../wire/src` into a sibling's sources, names no folder the lint knows, and fails `tsc`
+  instead, tests included. One into a sibling's build (`../../wire/dist`), whose declaration
+  files `rootDir` doesn't see, the lint refuses, as it does every relative path up into a
+  `dist`; a package's own `dist` (`katex/dist/katex.min.css`) is a package's import, and allowed.
 - **The browser build check** (`scripts/libraries/browser.test.ts`): the lint sees direct imports
   only, so each library's browser subpaths are bundled for the browser, and the check fails on
   any Node built-in, native module (by its `gypfile` or its `binding.gyp`) or unresolvable package
