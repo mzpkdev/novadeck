@@ -265,7 +265,11 @@ const write = (complete: boolean) => {
   const lines = [
     `${startedAt}${commit ? `, commit ${commit.slice(0, 12)}` : ""}${values.note ? `: ${values.note}` : ""}.`,
     "",
-    ...(complete ? [] : ["**In progress: the runs so far, written after each.**", ""]),
+    ...(stoppedBy
+      ? [`**Stopped by ${stoppedBy}: the runs it got before it stopped.**`, ""]
+      : complete
+        ? []
+        : ["**In progress: the runs so far, written after each.**", ""]),
     ...(software
       ? ["**Software rendering: a smoke test of the tooling, not the baseline.**", ""]
       : []),
@@ -405,5 +409,6 @@ for (let run = 1; run <= runs; run += 1)
     }
 // The builds' copies of the package are big, and made again each time.
 rmSync(join(output, "apps"), { recursive: true, force: true })
-write(true)
+// A profile stopped from outside didn't do all its runs.
+write(!stoppedBy)
 process.exitCode = stoppedBy || problems.length > 0 || results.some((run) => run.error) ? 1 : 0

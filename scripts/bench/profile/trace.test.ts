@@ -281,5 +281,7 @@ describe("breakdown", () => {
     expect(result.compositorFps).toBe(3)
     // A trace that names no compositor thread tells nothing of its frames.
     expect(breakdown(marks(0, 1000), none).compositorFps).toBeUndefined()
+    // A phase with no raster task had none: 0, not unknown.
+    expect(breakdown(marks(0, 1000), none).threads.raster).toEqual({ ms: 0, share: 0 })
   })
 })

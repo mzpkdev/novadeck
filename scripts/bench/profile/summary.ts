@@ -274,7 +274,7 @@ export const throttledPhases = (runs: readonly RunResult[]): readonly string[] =
 
 /**
  * Each build's scenarios' numbers across their runs: a throttled phase's are left out, and
- * a run with one is left out of the triggers, which take a run's phases together.
+ * the triggers, which take a run's phases together, count only runs that have them all.
  */
 export const summarize = (runs: readonly RunResult[]): Summary => {
   const summary: Partial<Record<Variant, Partial<Record<ScenarioName, ScenarioSummary>>>> = {}
@@ -299,15 +299,20 @@ export const summarize = (runs: readonly RunResult[]): Summary => {
         }
         phases[phase] = numbers
       }
+      // The triggers take a run's phases together, so only a run that has them all, each
+      // read and none throttled, counts: one that failed part way would read as its first.
+      const phaseCount = Math.max(0, ...these.map((run) => run.phases.length))
+      const whole = (run: RunResult) =>
+        run.error === undefined &&
+        run.phases.length === phaseCount &&
+        run.phases.every((one) => one.breakdown !== undefined && !throttled(one))
       const found: Partial<Record<Trigger, Spread>> = {}
       for (const [name, read] of Object.entries(triggers) as [
         Trigger,
         (run: RunResult) => number | undefined,
       ][]) {
         const each = spreadOf(
-          these.filter(
-            (run) => (!split.has(name) || run.attributed) && !run.phases.some(throttled),
-          ),
+          these.filter((run) => (!split.has(name) || run.attributed) && whole(run)),
           read,
         )
         if (each) found[name] = each

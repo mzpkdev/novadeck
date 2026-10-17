@@ -217,12 +217,12 @@ describe("throttled phases", () => {
       ]),
       // Slow but drawing: a main thread too busy for its own frames, the compositor still
       // drawing, isn't throttled.
-      run("heavy", 3, [{ ...phase("grid", 99), fps: 0, frames: 0 }]),
+      run("heavy", 3, [{ ...phase("grid", 99), fps: 0, frames: 0 }, phase("focus", 30)]),
     ]
     const summary = summarize(runs).production?.heavy
     // The second run's Grid counts, its Focus doesn't.
     expect(summary?.phases.grid?.mainThread?.values).toEqual([80, 40, 99])
-    expect(summary?.phases.focus?.mainThread?.values).toEqual([20])
+    expect(summary?.phases.focus?.mainThread?.values).toEqual([20, 30])
     expect(summary?.triggers.transportOfBusy?.values).toHaveLength(2)
     expect(throttledPhases(runs)).toEqual(["heavy, production, run 2: focus"])
     // Without a trace, the page's own frames tell.
@@ -230,6 +230,24 @@ describe("throttled phases", () => {
     expect(throttledPhases([run("heavy", 4, [untraced])])).toEqual([
       "heavy, production, run 4: grid",
     ])
+  })
+})
+
+describe("the triggers", () => {
+  it("count only runs that have every phase, each read", () => {
+    const unread = (name: PhaseResult["phase"]): PhaseResult => {
+      const { breakdown: _, ...rest } = phase(name, 20)
+      return { ...rest, traceError: "too long" }
+    }
+    const runs = [
+      run("heavy", 1, [phase("grid", 80), phase("focus", 20)]),
+      // Failed after Grid, the busiest phase, which alone would read high.
+      run("heavy", 2, [phase("grid", 80)], { error: "the app closed" }),
+      run("heavy", 3, [phase("grid", 80), unread("focus")]),
+    ]
+    expect(summarize(runs).production?.heavy?.triggers.transportOfBusy?.values).toEqual([6.25])
+    // Their phases still count in the tables.
+    expect(summarize(runs).production?.heavy?.phases.grid?.mainThread?.values).toEqual([80, 80, 80])
   })
 })
 

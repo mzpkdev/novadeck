@@ -459,7 +459,7 @@ export const breakdown = (events: readonly TraceEvent[], attribution: Attributio
     const us = matching.reduce((sum, each) => sum + busyTime(thread(each.pid, each.tid)), 0)
     if (matching.length > 0) threads[label] = part(us, windowUs)
   }
-  // The renderer's raster tasks off its main thread, each thread's time summed.
+  // The renderer's raster tasks off its main thread, each thread's time summed: none is 0.
   const rasterThreads = new Set(
     events
       .filter(
@@ -467,15 +467,14 @@ export const breakdown = (events: readonly TraceEvent[], attribution: Attributio
       )
       .map((event) => event.tid),
   )
-  if (rasterThreads.size > 0)
-    threads.raster = part(
-      [...rasterThreads].reduce(
-        (sum, tid) =>
-          sum + busyTime(thread(main.pid, tid).filter((span) => span.name === "RasterTask")),
-        0,
-      ),
-      windowUs,
-    )
+  threads.raster = part(
+    [...rasterThreads].reduce(
+      (sum, tid) =>
+        sum + busyTime(thread(main.pid, tid).filter((span) => span.name === "RasterTask")),
+      0,
+    ),
+    windowUs,
+  )
   const compositor = [...names.values()].find(
     (each) => each.pid === main.pid && each.name === "Compositor",
   )

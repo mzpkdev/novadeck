@@ -105,7 +105,8 @@ In the output folder:
 couldn't be made, a run didn't stop cleanly, or a trace couldn't be read (one past about 512 MB,
 Node's longest string, can't be). profile.json and profile.md are written again after each run,
 so a run that ends the profile early leaves what the runs before it got; until the last run is
-done they say they're in progress (`complete: false` in the JSON).
+done they say they're in progress (`complete: false` in the JSON), and a profile stopped by a
+signal says so, still `complete: false`.
 
 A run of the profile starts its output folder afresh: it removes the `traces/`, `apps/` and
 `maps/<variant>/` folders in it first. To keep a profile, give the next run another `--output`,
@@ -191,7 +192,9 @@ time.
 
 ## The triggers
 
-profile.md's first table gives what the plan reads, each run's phases together:
+profile.md's first table gives what the plan reads, each run's phases together, from the runs
+that have them all, each read and none throttled (a run that failed after Grid would read as Grid
+alone):
 
 - **state propagation**, of busy, step 4.0's number: the stores and React's render and commit,
   from the production build's samples; beside it **React render + commit** by three methods: the
