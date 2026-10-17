@@ -28,9 +28,11 @@ export const createHold = (root: HTMLElement, watched: () => readonly Element[])
     // Moved since it put it there, unless only cut short as what it holds shrank: a
     // scroll whose event may not have come yet.
     const moved = (): boolean => {
-      const { scrollTop: top, scrollLeft: left, scrollHeight, clientHeight } = root
-      const clamped = top < placed.top && top >= scrollHeight - clientHeight - 1
-      return (top !== placed.top && !clamped) || left !== placed.left
+      const { scrollTop: top, scrollLeft: left } = root
+      const { scrollHeight, clientHeight, scrollWidth, clientWidth } = root
+      const clampedTop = top < placed.top && top >= scrollHeight - clientHeight - 1
+      const clampedLeft = left < placed.left && left >= scrollWidth - clientWidth - 1
+      return (top !== placed.top && !clampedTop) || (left !== placed.left && !clampedLeft)
     }
     const observer = new Observer(() => {
       if (moved()) return release?.()
