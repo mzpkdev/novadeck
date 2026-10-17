@@ -1,8 +1,8 @@
 // An animation that never ends keeps running for as long as its element is on screen, so
 // it must be one the compositor can run alone: its keyframes change only `transform`,
 // `translate`, `rotate`, `scale`, `opacity` or `filter`. Anything else, as `content` or
-// `background-position`, repaints on the main thread every frame. An animation counted as `infinite` in so many
-// words is what it reads; a count held in a variable is beyond it.
+// `background-position`, repaints on the main thread every frame. The check sees only a
+// literal `infinite`; a count held in a variable escapes it.
 
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -31,7 +31,7 @@ const blockAt = (css: string, open: number): string => {
 // Every `@keyframes` in the stylesheets, with the properties its frames set.
 const definitions = stylesheets.flatMap((file) => {
   const css = read(file)
-  return [...css.matchAll(/@(?:-webkit-)?keyframes\s+([\w-]+)\s*\{/g)].map((match) => {
+  return [...css.matchAll(/@(?:-webkit-)?keyframes\s+([\w-]+)\s*\{/gi)].map((match) => {
     const body = blockAt(css, match.index + match[0].length - 1)
     const properties = new Set(
       [...body.matchAll(/([\w-]+)\s*:[^;{}]*[;}]/g)]
@@ -56,7 +56,8 @@ const nameOf = (tokens: readonly string[]): string | undefined => {
     (token) => !keywords.has(token.toLowerCase()) && !/^-?[\d.]/.test(token),
   )
   return (
-    words.find((token) => !token.includes("(")) ?? words.find((token) => token.startsWith("var("))
+    words.find((token) => !token.includes("(")) ??
+    words.find((token) => token.toLowerCase().startsWith("var("))
   )
 }
 
@@ -81,10 +82,10 @@ const layers = (value: string): string[] => {
 // Functions but `var()` are dropped before the layer is split into tokens, so `steps(1)` is
 // no name, while a name kept in a variable shows as one no keyframes define.
 const infinite = stylesheets.flatMap((file) =>
-  [...read(file).matchAll(/(?:^|[\s;{])(?:-webkit-)?animation\s*:([^;{}]+)/g)].flatMap((match) =>
+  [...read(file).matchAll(/(?:^|[\s;{])(?:-webkit-)?animation\s*:([^;{}]+)/gi)].flatMap((match) =>
     layers(match[1]!).flatMap((layer) => {
       const tokens = layer
-        .replace(/(?<![\w-])(?!var\()[\w-]*\([^()]*(?:\([^()]*\)[^()]*)*\)/g, " ")
+        .replace(/(?<![\w-])(?!var\()[\w-]*\([^()]*(?:\([^()]*\)[^()]*)*\)/gi, " ")
         .trim()
         .split(/\s+/)
       const repeats = tokens.some((token) => token.toLowerCase() === "infinite")
@@ -103,7 +104,7 @@ describe("animations that never end", () => {
     const longhands = stylesheets.flatMap((file) =>
       [
         ...read(file).matchAll(
-          /(?:^|[\s;{])((?:-webkit-)?animation-(?:name|iteration-count))\s*:/g,
+          /(?:^|[\s;{])((?:-webkit-)?animation-(?:name|iteration-count))\s*:/gi,
         ),
       ].map((match) => `${file}: ${match[1]}`),
     )
