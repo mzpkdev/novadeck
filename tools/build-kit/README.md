@@ -6,11 +6,13 @@ policy, so it needs no library fences.
 
 - `contentSecurityPolicy({ placeholder, connect, envPrefix })` fills the connect-src of the
   page's Content Security Policy. `placeholder`, in `index.html`, becomes the sources
-  `connect(build)` gives for the build's `mode`, `command` and environment (its variables with
-  `envPrefix`, `VITE_` by default, the process's before the env files'). A page without the
+  `connect(build)` gives for the build's `mode`, `command` and environment: the variables of
+  the env files the app's build reads, with `envPrefix` (the app's own by default; never
+  empty), the process's before the files'. A page without the
   placeholder fails the build. `contentSecurityPolicyName` names the plugin, for a test
   runner's config that leaves it out of its own page.
-- `connectSources({ api, runner, development })`, the sources of an app that talks to services
+- `connectSources({ api, runner, development })` (`/connect-sources`, with nothing of Vite, so
+  an app's tests can read its policy anywhere), the sources of an app that talks to services
   on loopback, and where configured to an HTTP(S) API (an absolute URL, or a relative path,
   which adds nothing) and a WebSocket runner elsewhere; while served, the development server's
   WebSocket on loopback too. Each URL comes with the setting that names it, for its errors.
@@ -23,7 +25,8 @@ policy, so it needs no library fences.
 - `fontsAsFiles`, a `build.assetsInlineLimit` that always ships fonts as files: a policy that
   loads fonts only from the app itself would block one inlined as a data: URL.
 
-Each is a subpath of its own (`@novadeck/build-kit/content-security-policy`, `/hosting-headers`,
-`/search-visibility`, `/fonts`). It ships as TypeScript source, with no build: Vite loads a
+Each is a subpath of its own (`@novadeck/build-kit/content-security-policy`, `/connect-sources`,
+`/hosting-headers`, `/search-visibility`, `/fonts`). It ships as TypeScript source, with no build: Vite loads a
 config's workspace packages in Node, which runs the source as it is, so no module imports
-another.
+another, and its syntax is erasable (`erasableSyntaxOnly`): no enums, namespaces or
+parameter properties, which Node can't strip.

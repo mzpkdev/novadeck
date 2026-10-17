@@ -1,4 +1,5 @@
-import { connectSources, type Build } from "@novadeck/build-kit/content-security-policy"
+import { connectSources } from "@novadeck/build-kit/connect-sources"
+import type { Build } from "@novadeck/build-kit/content-security-policy"
 import type { HeaderRule } from "@novadeck/build-kit/hosting-headers"
 
 // How the app's builds are deployed, as vite.config.ts hands it to the build kit: what

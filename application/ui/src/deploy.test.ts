@@ -1,4 +1,3 @@
-// @vitest-environment node -- the build kit loads Vite, whose esbuild needs Node's own TextEncoder
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 

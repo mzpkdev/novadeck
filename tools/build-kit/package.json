@@ -5,6 +5,7 @@
   "description": "The apps' Vite helpers: the Content Security Policy's sources, hosting headers, noindex and the font rule.",
   "type": "module",
   "exports": {
+    "./connect-sources": "./src/connect-sources.ts",
     "./content-security-policy": "./src/content-security-policy.ts",
     "./fonts": "./src/fonts.ts",
     "./hosting-headers": "./src/hosting-headers.ts",
