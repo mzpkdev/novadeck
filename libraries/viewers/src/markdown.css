@@ -22,8 +22,8 @@
    --md-codeblock-bg: a fenced block.
    --md-quote-fg (--md-muted-fg), --md-quote-border-color: a quote.
    --md-table-border-color, --md-table-head-bg, --md-body-size (0.95em): tables.
-   --md-cell-focus-bg (Canvas), --md-cell-focus-ring-color (--md-fg): the cell being edited.
-   --md-table-tools-bg (Canvas), --md-table-tools-border-color, --md-table-tools-shadow,
+   --md-cell-focus-bg (the text, faintly), --md-cell-focus-ring-color (--md-fg): the cell being edited.
+   --md-table-tools-bg (the text, faintly), --md-table-tools-border-color, --md-table-tools-shadow,
    --md-caption-size (0.8em): a table's tools.
    --md-table-tool-fg (--md-muted-fg), --md-table-tool-hover-bg, --md-table-tool-hover-fg
    (--md-fg), --md-table-tool-disabled-opacity (0.35): each tool.
@@ -31,7 +31,7 @@
    annotation, where its host sets them.
    --md-checkbox-bg (transparent), --md-checkbox-border-color, --md-checkbox-checked-bg
    (currentColor), --md-checkbox-checked-border-color (currentColor), --md-checkbox-check-fg
-   (Canvas): a task's checkbox.
+   (white): a task's checkbox.
    --md-radius (4px), --md-radius-large (6px), --md-border-width (1px), --md-motion (120ms),
    --md-ease (ease): the shapes and timing of the above. */
 
@@ -136,7 +136,7 @@
   border: var(--md-border-width, 1px) solid var(--_border-color);
   border-radius: var(--md-radius, 4px);
   background-color: var(--_bg);
-  color: var(--md-checkbox-check-fg, Canvas);
+  color: var(--md-checkbox-check-fg, white);
   text-indent: 0;
   cursor: pointer;
   vertical-align: baseline;
@@ -220,7 +220,7 @@
 }
 .cm-md-cell:focus {
   box-shadow: inset 0 0 0 1.5px var(--md-cell-focus-ring-color, var(--md-fg, currentColor));
-  background-color: var(--md-cell-focus-bg, Canvas);
+  background-color: var(--md-cell-focus-bg, var(--_soft));
 }
 .cm-md-table-tools {
   position: absolute;
@@ -231,7 +231,7 @@
   padding: 2px;
   border: var(--md-border-width, 1px) solid var(--md-table-tools-border-color, var(--_line));
   border-radius: var(--md-radius-large, 6px);
-  background-color: var(--md-table-tools-bg, Canvas);
+  background-color: var(--md-table-tools-bg, var(--_soft));
   box-shadow: var(--md-table-tools-shadow, 0 1px 3px rgb(0 0 0 / 0.15));
 }
 .cm-md-table-widget:focus-within .cm-md-table-tools {

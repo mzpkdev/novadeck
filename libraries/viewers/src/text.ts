@@ -1,9 +1,6 @@
-// What a Markdown text says, and how texts differ, without an editor: the markdown viewer
-// is a heavy import, and a host that only lists a document's headings, or merges two
-// versions of it, shouldn't load it.
-
-export { distance, lineChanges, merge } from "./markdown/sync.js"
-export type { Range } from "./markdown/ranges.js"
+// What a Markdown text says, without an editor: the markdown viewer is a heavy import, and
+// a host that only lists a document's headings shouldn't load it. Nothing here imports
+// CodeMirror, and nothing that does may be imported from here.
 
 /** A heading below the title, and where it starts in the text. */
 export type Heading = { readonly text: string; readonly at: number; readonly depth: 2 | 3 }

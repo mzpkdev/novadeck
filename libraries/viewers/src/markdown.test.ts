@@ -142,6 +142,37 @@ describe("the markdown viewer", () => {
     expect(first.edits.map((edit) => edit.text)).toEqual(["typed one\n"])
   })
 
+  it("restores a state on a live viewer, keeping the content it has", () => {
+    const first = mount({ text: "one\n" })
+    type(first.view, "typed ")
+    first.view.dispatch({ selection: { anchor: 3 } })
+    const saved = first.viewer.state()
+
+    // Meanwhile the host's text moved on: the saved edit is still in it, with more.
+    const live = mount({ text: "typed one\nmore\n" })
+    live.viewer.restore(saved)
+    expect(live.view.state.doc.toString()).toBe("typed one\nmore\n")
+    expect(live.view.state.selection.main.head).toBe(3)
+    // Nothing was the person's edit.
+    expect(live.edits).toEqual([])
+    undo(live.view)
+    expect(live.view.state.doc.toString()).toBe("one\nmore\n")
+  })
+
+  it("restores a state whose edits the content no longer has, as an outside change", () => {
+    const first = mount({ text: "one\n" })
+    type(first.view, "typed ")
+    const saved = first.viewer.state()
+
+    const live = mount({ text: "other\n" })
+    live.viewer.restore(saved)
+    expect(live.view.state.doc.toString()).toBe("other\n")
+    expect(live.edits).toEqual([])
+    // Its history held an edit the text doesn't have; undoing must not damage what does.
+    undo(live.view)
+    expect(live.view.state.doc.toString()).toBe("other\n")
+  })
+
   it("applies what changed outside while it was away, outside the history", () => {
     const first = mount({ text: "one\n" })
     const saved = first.viewer.state()

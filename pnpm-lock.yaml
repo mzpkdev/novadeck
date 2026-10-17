@@ -544,12 +544,6 @@ importers:
       '@codemirror/language':
         specifier: ^6.13.1
         version: 6.13.1
-      '@codemirror/state':
-        specifier: ^6.7.6
-        version: 6.7.6
-      '@codemirror/view':
-        specifier: ^6.43.14
-        version: 6.43.14
       '@lezer/common':
         specifier: ^1.5.3
         version: 1.5.3
@@ -593,6 +587,12 @@ importers:
         specifier: ^1.0.4
         version: 1.0.4
     devDependencies:
+      '@codemirror/state':
+        specifier: ^6.7.6
+        version: 6.7.6
+      '@codemirror/view':
+        specifier: ^6.43.14
+        version: 6.43.14
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5

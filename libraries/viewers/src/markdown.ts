@@ -52,7 +52,11 @@ export type MarkdownOptions = {
    * after the edit.
    */
   readonly onEdit?: (text: string, ranges: readonly ClassedRange[]) => void
-  /** More behaviour for the editor, which a restored state takes too. */
+  /**
+   * More behaviour for the editor, which a restored state takes too. A saved state holds
+   * the ones it was last given until the next viewer sets its own, so they shouldn't hold
+   * what the host can't let go of.
+   */
   readonly extensions?: readonly Extension[]
 }
 
@@ -70,10 +74,21 @@ const markdown = new LanguageSupport(
 // Marks changes that came in through `update()`, which are not the person's edits.
 const fromUpdate = Annotation.define<boolean>()
 
-// What changes with a mount rather than with the state: whether it takes edits, the
-// host's own extensions and the listener of the viewer showing the state now. A saved
-// state outlives the viewer that made it, so these are set again when it's opened.
+// What changes with a mount rather than with the state: whether it takes edits, its name
+// and the host's own extensions. A saved state outlives the viewer that made it, so these
+// are set again when it's opened.
 const live = new Compartment()
+
+// What follows an editor: its host's listener, and where its scroller is scrolled in the
+// text, moved along with every change to it. Kept apart from the state, which outlives the
+// viewer that made it, so a saved state holds none of a viewer's closures: its extensions
+// reach these through the view showing it now.
+type Followers = {
+  readonly onEdit: MarkdownOptions["onEdit"]
+  scroll: Scroll | null
+  restoring: ScrollRestore | null
+}
+const followersOf = new WeakMap<EditorView, Followers>()
 
 const base: Extension = [
   history(),
@@ -89,6 +104,27 @@ const base: Extension = [
   ),
   livePreview,
   theme,
+  EditorView.updateListener.of((update) => {
+    const followers = followersOf.get(update.view)
+    if (!followers) return
+    if (update.geometryChanged) followers.restoring?.layout()
+    if (!update.docChanged) return
+    const { scroll } = followers
+    // Inserted right above, the line stays; rewritten, the place is where the rewrite starts.
+    if (scroll)
+      followers.scroll = {
+        ...scroll,
+        at:
+          update.changes.mapPos(scroll.at, 1, MapMode.TrackDel) ??
+          update.changes.mapPos(scroll.at, -1),
+      }
+    if (
+      update.transactions.some(
+        (transaction) => transaction.docChanged && !transaction.annotation(fromUpdate),
+      )
+    )
+      followers.onEdit?.(update.state.doc.toString(), currentRanges(update.state))
+  }),
 ]
 
 // What the viewer holds of where it was: the parsed text with its undo history and
@@ -110,9 +146,7 @@ export const mountMarkdown: Mount<MarkdownContent, MarkdownOptions, MarkdownView
   root.className = "md-viewer"
   element.append(root)
 
-  // Where the scroller is scrolled in the text, moved along with every change to it.
-  let scroll: Scroll | null = null
-  let restoring: ScrollRestore | null = null
+  const followers: Followers = { onEdit, scroll: null, restoring: null }
   let stopFollowing = nothing
   let stopRestore = nothing
   let closing = false
@@ -122,24 +156,6 @@ export const mountMarkdown: Mount<MarkdownContent, MarkdownOptions, MarkdownView
     EditorState.readOnly.of(!taking),
     EditorView.contentAttributes.of({ "aria-label": label }),
     ...extensions,
-    EditorView.updateListener.of((update) => {
-      if (update.geometryChanged) restoring?.layout()
-      if (!update.docChanged) return
-      // Inserted right above, the line stays; rewritten, the place is where the rewrite starts.
-      if (scroll)
-        scroll = {
-          ...scroll,
-          at:
-            update.changes.mapPos(scroll.at, 1, MapMode.TrackDel) ??
-            update.changes.mapPos(scroll.at, -1),
-        }
-      if (
-        update.transactions.some(
-          (transaction) => transaction.docChanged && !transaction.annotation(fromUpdate),
-        )
-      )
-        onEdit?.(update.state.doc.toString(), currentRanges(update.state))
-    }),
   ]
 
   const first = isMarkdownState(saved) ? saved.markdown : undefined
@@ -149,6 +165,8 @@ export const mountMarkdown: Mount<MarkdownContent, MarkdownOptions, MarkdownView
       first?.state ??
       EditorState.create({ doc: content.text, extensions: [base, live.of(hosted())] }),
   })
+
+  followersOf.set(view, followers)
 
   // The text as the host has it now, applied as an outside change: not the person's to
   // undo, since undoing it would only write the old text back.
@@ -166,8 +184,8 @@ export const mountMarkdown: Mount<MarkdownContent, MarkdownOptions, MarkdownView
   const begin = (from: MarkdownState["markdown"] | undefined): void => {
     stopRestore()
     stopFollowing()
-    restoring = null
-    scroll = from?.scroll ?? null
+    followers.restoring = null
+    followers.scroll = from?.scroll ?? null
     // A state saved by another viewer takes this one's behaviour.
     if (from) view.dispatch({ effects: live.reconfigure(hosted()) })
     // Where the scroller is scrolled counts once it's back where it was left.
@@ -175,12 +193,12 @@ export const mountMarkdown: Mount<MarkdownContent, MarkdownOptions, MarkdownView
       // A restore ended by closing leaves the place it was restoring to.
       if (closing) return
       stopFollowing = followScroll(view, (at) => {
-        scroll = at
+        followers.scroll = at
       })
     }
-    if (scroll) {
-      restoring = restoreScroll(view, () => scroll, follow)
-      stopRestore = restoring.stop
+    if (followers.scroll) {
+      followers.restoring = restoreScroll(view, () => followers.scroll, follow)
+      stopRestore = followers.restoring.stop
     } else {
       stopRestore = nothing
       follow()
@@ -196,12 +214,21 @@ export const mountMarkdown: Mount<MarkdownContent, MarkdownOptions, MarkdownView
     update: sync,
     state: () =>
       ({
-        markdown: { state: view.state, scroll },
+        markdown: { state: view.state, scroll: followers.scroll },
       }) satisfies MarkdownState as unknown as ViewerState,
+    // Takes the saved history, selection and place, and keeps the content the viewer has:
+    // what differs applies as an outside change, as `update()`'s does, so the host hears
+    // nothing and nothing it changed meanwhile is lost.
     restore: (state) => {
       if (!isMarkdownState(state)) return
+      const current: MarkdownContent = {
+        text: view.state.doc.toString(),
+        ranges: currentRanges(view.state),
+      }
       view.setState(state.markdown.state)
       begin(state.markdown)
+      view.dispatch({ effects: setRanges.of(current.ranges ?? []) })
+      sync(current)
     },
     // A jump wins over a restore still under way.
     jumpTo: (target: Target) => {

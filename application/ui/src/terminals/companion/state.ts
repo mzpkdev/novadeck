@@ -285,7 +285,7 @@ const revise = async (
     session.pending.set(id, version)
     return
   }
-  const { distance, merge } = await import("@novadeck/viewers/text")
+  const { distance, merge } = await import("@novadeck/viewers/sync")
   const unconfirmed = session.unconfirmed.get(id) ?? []
   const echo = inFlight === theirs || unconfirmed.includes(theirs)
   withPlan(session, id, (plan) => {
