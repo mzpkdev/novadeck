@@ -257,6 +257,15 @@ describe("the code viewer", () => {
     expect(row.offsetTop + row.offsetHeight).toBeLessThan(listing.scrollTop + listing.clientHeight)
   })
 
+  it("stays where the person scrolled when the same lines come again, emphasis and all", () => {
+    const host = hostIn()
+    const content = { lines: numbered(300), firstLine: 1, emphasis: { from: 2, to: 3 } }
+    const viewer = mount(content, host)
+    listingOf(host).scrollTop = 3000
+    viewer.update({ ...content, lines: [...content.lines], emphasis: { from: 2, to: 3 } })
+    expect(listingOf(host).scrollTop).toBe(3000)
+  })
+
   it("still shows its emphasized lines once it has a size, though updated out of sight", async () => {
     const host = hostIn()
     host.style.display = "none"
