@@ -7,14 +7,14 @@ import { describe, expect, it } from "./test"
 // ("main.tsx"). Each layer lists what it may import from src. Every folder in
 // backend/ is an adapter layer; see `adapterRule`.
 // theme/ (the theme file and how its scheme is applied) is open to every layer that
-// composes the page; it imports nothing but itself. model/ takes only the scheme
-// types, for the appearance preferences hold, and adapters resolve colour tokens with
-// it for what they paint outside CSS, such as the terminal emulator.
+// composes the page; it imports nothing but itself and the model's types, for the scheme
+// preference they hold, and adapters resolve colour tokens with it for what they paint
+// outside CSS, such as the terminal emulator.
 const base = ["model/", "interaction/", "ui-toolkit/", "theme/"]
 const features = ["sidebar/", "projects/", "preferences/", "search/"]
 const rules: Record<string, readonly string[]> = {
-  "model/": ["model/", "theme/scheme.ts"],
-  "theme/": ["theme/"],
+  "model/": ["model/"],
+  "theme/": ["theme/", "model/types.ts"],
   "backend/": ["backend/", "model/"],
   "ui-toolkit/": ["ui-toolkit/", "class-name.ts"],
   "interaction/": ["interaction/", "model/"],

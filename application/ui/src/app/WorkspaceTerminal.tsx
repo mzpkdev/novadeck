@@ -2,6 +2,7 @@ import { memo, useCallback, useContext, useMemo, useSyncExternalStore, type Reac
 
 import { shortcutBindings } from "../interaction/shortcuts"
 import { agentStats } from "../model/agent-usage"
+import { handleNames, runningLeads, terminalOrigins } from "../model/derivations"
 import { isWindow } from "../model/roster"
 import { activeProject } from "../model/state"
 import type { CompanionWindowMeta, TerminalMetadata, Tile } from "../model/types"
@@ -29,11 +30,8 @@ import {
   currentContext,
   currentState,
   currentTarget,
-  handleNames,
-  runningLeads,
   sameTarget,
   shallowEqual,
-  terminalOrigins,
   windowedDestination,
 } from "./selectors"
 import { useTerminalBar } from "./terminal-bar"
