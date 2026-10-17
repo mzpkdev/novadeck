@@ -112,6 +112,7 @@ export const readLog = (log: string): LogReading => {
     const match = failedLine.exec(line)
     if (!match) {
       unreadable.push(`a failure this can't read: ${line}`)
+      group = []
       return
     }
     const rest = lines.slice(index + 1, index + blockLines)

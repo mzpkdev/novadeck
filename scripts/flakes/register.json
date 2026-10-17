@@ -143,7 +143,7 @@
       "test": "src/specs/murmur-offer.spec.tsx > ",
       "signature": "TypeError: expect\\.element is not a function",
       "status": "known",
-      "cause": "Unknown, not reproduced: every test of the file failed at its first expect.element (openWorkspace's), as if the file ran with a copy of vitest's expect the browser runner hadn't extended, such as a module loaded twice under two URLs. No other file of the run failed, and its rerun passed.",
+      "cause": "Unknown, not reproduced: every test of the file failed at its first expect.element (openWorkspace's), as if the file ran with a copy of vitest's expect the browser runner hadn't extended, such as a module loaded twice under two URLs. No other file of the run failed, and its rerun passed. Its test is the whole file, as the whole file fails.",
       "seen": ["#248 run 39073838168 attempt 1 job 117516789196 (Windows)"]
     }
   ]
