@@ -31,9 +31,14 @@ const app = [
   "../../../../harnesses/core/src/box.ts",
   "../../../../libraries/wire/src/index.ts",
   "../../../../atlas/src/index.ts",
+  // A folder named alone, its package's entry.
+  "../../../../atlas",
+  "../../../../application",
+  "../../../../harnesses",
+  "../../../../libraries",
 ]
 const library = (name: string) => [`@novadeck/${name}`, `@novadeck/${name}/sub`]
-const node = ["pty", "host", "server", "electron", "browser/host"].map(
+const node = ["pty", "host", "server", "electron", "browser/host", "shell"].map(
   (sub) => `@novadeck/terminal/${sub}`,
 )
 const browser = [
@@ -42,13 +47,17 @@ const browser = [
   "@novadeck/wire/client",
   "@novadeck/viewers/browser",
 ]
-const own = ["./sibling.ts", "../index.ts", "node:path", "@xterm/xterm"]
+// A module of its own may share a name with a workspace folder.
+const own = ["./sibling.ts", "../index.ts", "./atlas", "./application", "node:path", "@xterm/xterm"]
 
 /** How a probe writes an import: each form the fence must see. */
-type Form = "import" | "export" | "dynamic"
-const write: Readonly<Record<Form, (name: string) => string>> = {
+type Form = "import" | "type" | "export" | "named" | "dynamic"
+// Each binding its own, as a file that declares one twice doesn't parse, and isn't linted.
+const write: Readonly<Record<Form, (name: string, index: number) => string>> = {
   import: (name) => `import "${name}"\n`,
+  type: (name, index) => `import type * as types${index} from "${name}"\n`,
   export: (name) => `export * from "${name}"\n`,
+  named: (name) => `export { default } from "${name}"\n`,
   dynamic: (name) => `await import("${name}")\n`,
 }
 
@@ -66,7 +75,9 @@ const probes = [
     return (
       [
         [`libraries/${name}/src/probe.ts`, "import"],
+        [`libraries/${name}/src/types.ts`, "type"],
         [`libraries/${name}/src/deep/probe.test.ts`, "export"],
+        [`libraries/${name}/src/deep/named.ts`, "named"],
         [`libraries/${name}/src/deep/dynamic.ts`, "dynamic"],
       ] as const
     ).map(([file, form]) => ({ file, form, imports, refused }))
@@ -81,14 +92,23 @@ const probes = [
   ...(
     [
       ["application/ui/src/probe.ts", "import"],
+      ["application/ui/src/types.ts", "type"],
       ["application/ui/src/deep/probe.test.tsx", "export"],
+      ["application/ui/src/deep/named.ts", "named"],
       ["application/ui/src/deep/dynamic.ts", "dynamic"],
     ] as const
   ).map(([file, form]) => ({
     file,
     form,
-    imports: [...node, ...browser, "../../../../libraries/terminal/src/view.ts", ...own],
-    refused: [...node, "../../../../libraries/terminal/src/view.ts"],
+    imports: [
+      ...node,
+      ...browser,
+      "../../../../libraries/terminal/src/view.ts",
+      "../../../../libraries",
+      "./libraries",
+      ...own,
+    ],
+    refused: [...node, "../../../../libraries/terminal/src/view.ts", "../../../../libraries"],
   })),
 ]
 
@@ -141,6 +161,27 @@ describe("the libraries' lint fence", () => {
         )
       : []
     expect(names).toEqual(expect.arrayContaining(folders))
+  })
+
+  // oxlint takes a folder's own config in place of the root's, not on top of it, so one in
+  // a fenced folder or a folder above one would lift the fence there, which the probes, under
+  // the root's alone, can't see.
+  it("has no oxlint config but the root's to lift it", () => {
+    // The files git would track, as oxlint lints them: what .gitignore leaves out, as other
+    // checkouts and builds, holds no config of this tree's.
+    const configs = execFileSync("git", ["ls-files", "-z", "-co", "--exclude-standard"], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    })
+      // Each name as it is, unquoted, whatever it holds.
+      .split("\0")
+      .filter(
+        (path) =>
+          path !== ".oxlintrc.json" &&
+          /(?:^|\/)(?:\.oxlintrc[^/]*|oxlint\.config\.[^/]+)$/.test(path),
+      )
+    expect(configs).toEqual([])
   })
 
   it.each(probes.filter(({ file }) => file.startsWith("libraries/")))(

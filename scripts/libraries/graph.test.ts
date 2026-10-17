@@ -66,6 +66,9 @@ describe("a library's dependencies", () => {
           w: "workspace:../../application/runner",
           b: "../../application/host",
           home: "~/novadeck/application/ui",
+          drive: "C:/novadeck/application/runner",
+          relativeDrive: "C:../application/ui",
+          share: "\\\\server\\share\\ui",
         },
       }),
     ).toEqual([
@@ -75,6 +78,9 @@ describe("a library's dependencies", () => {
       "devDependencies w",
       "devDependencies b",
       "devDependencies home",
+      "devDependencies drive",
+      "devDependencies relativeDrive",
+      "devDependencies share",
     ])
   })
 

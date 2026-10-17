@@ -80,6 +80,12 @@ describe("the browser build check", () => {
     ])
   })
 
+  it("fails on a native module known by its binding.gyp alone", async () => {
+    expect(await checkLibrary(fixture("gyp"))).toEqual([
+      expect.objectContaining({ subpath: ".", problem: expect.stringContaining("native module") }),
+    ])
+  })
+
   it("fails on a package the browser bundle can't resolve", async () => {
     expect(await checkLibrary(fixture("unresolved"))).toEqual([
       expect.objectContaining({ problem: expect.stringContaining("missing-optional-peer") }),
@@ -89,6 +95,12 @@ describe("the browser build check", () => {
   it("fails a library with no exports, which can't tell browser from Node", async () => {
     expect(await checkLibrary(fixture("unexported"))).toEqual([
       expect.objectContaining({ problem: "package.json has no exports" }),
+    ])
+  })
+
+  it("fails a library whose every subpath is null, which exports nothing", async () => {
+    expect(await checkLibrary(fixture("null-exports"))).toEqual([
+      expect.objectContaining({ problem: "package.json exports nothing" }),
     ])
   })
 

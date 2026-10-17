@@ -205,7 +205,16 @@
                 "message": "A library never imports app code: product specifics come in as options."
               },
               {
-                "group": ["**/atlas/**", "**/application/**", "**/harnesses/**", "**/libraries/**"],
+                "group": [
+                  "**/../atlas",
+                  "**/atlas/**",
+                  "**/../application",
+                  "**/application/**",
+                  "**/../harnesses",
+                  "**/harnesses/**",
+                  "**/../libraries",
+                  "**/libraries/**"
+                ],
                 "message": "A library imports another library by its package name, and app code not at all."
               }
             ]
@@ -240,7 +249,16 @@
                 "message": "A library never imports app code: product specifics come in as options."
               },
               {
-                "group": ["**/atlas/**", "**/application/**", "**/harnesses/**", "**/libraries/**"],
+                "group": [
+                  "**/../atlas",
+                  "**/atlas/**",
+                  "**/../application",
+                  "**/application/**",
+                  "**/../harnesses",
+                  "**/harnesses/**",
+                  "**/../libraries",
+                  "**/libraries/**"
+                ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
               {
@@ -292,7 +310,16 @@
                 "message": "A library never imports app code: product specifics come in as options."
               },
               {
-                "group": ["**/atlas/**", "**/application/**", "**/harnesses/**", "**/libraries/**"],
+                "group": [
+                  "**/../atlas",
+                  "**/atlas/**",
+                  "**/../application",
+                  "**/application/**",
+                  "**/../harnesses",
+                  "**/harnesses/**",
+                  "**/../libraries",
+                  "**/libraries/**"
+                ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
               {
@@ -344,7 +371,16 @@
                 "message": "A library never imports app code: product specifics come in as options."
               },
               {
-                "group": ["**/atlas/**", "**/application/**", "**/harnesses/**", "**/libraries/**"],
+                "group": [
+                  "**/../atlas",
+                  "**/atlas/**",
+                  "**/../application",
+                  "**/application/**",
+                  "**/../harnesses",
+                  "**/harnesses/**",
+                  "**/../libraries",
+                  "**/libraries/**"
+                ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
               {
@@ -396,7 +432,16 @@
                 "message": "A library never imports app code: product specifics come in as options."
               },
               {
-                "group": ["**/atlas/**", "**/application/**", "**/harnesses/**", "**/libraries/**"],
+                "group": [
+                  "**/../atlas",
+                  "**/atlas/**",
+                  "**/../application",
+                  "**/application/**",
+                  "**/../harnesses",
+                  "**/harnesses/**",
+                  "**/../libraries",
+                  "**/libraries/**"
+                ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
               {
@@ -446,7 +491,16 @@
                 "message": "A library never imports app code: product specifics come in as options."
               },
               {
-                "group": ["**/atlas/**", "**/application/**", "**/harnesses/**", "**/libraries/**"],
+                "group": [
+                  "**/../atlas",
+                  "**/atlas/**",
+                  "**/../application",
+                  "**/application/**",
+                  "**/../harnesses",
+                  "**/harnesses/**",
+                  "**/../libraries",
+                  "**/libraries/**"
+                ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
               {
@@ -496,7 +550,16 @@
                 "message": "A library never imports app code: product specifics come in as options."
               },
               {
-                "group": ["**/atlas/**", "**/application/**", "**/harnesses/**", "**/libraries/**"],
+                "group": [
+                  "**/../atlas",
+                  "**/atlas/**",
+                  "**/../application",
+                  "**/application/**",
+                  "**/../harnesses",
+                  "**/harnesses/**",
+                  "**/../libraries",
+                  "**/libraries/**"
+                ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
               {
@@ -548,7 +611,16 @@
                 "message": "A library never imports app code: product specifics come in as options."
               },
               {
-                "group": ["**/atlas/**", "**/application/**", "**/harnesses/**", "**/libraries/**"],
+                "group": [
+                  "**/../atlas",
+                  "**/atlas/**",
+                  "**/../application",
+                  "**/application/**",
+                  "**/../harnesses",
+                  "**/harnesses/**",
+                  "**/../libraries",
+                  "**/libraries/**"
+                ],
                 "message": "A library imports another library by its package name, and app code not at all."
               },
               {
@@ -591,12 +663,14 @@
                   "@novadeck/*/electron",
                   "@novadeck/*/electron/**",
                   "@novadeck/*/browser/host",
-                  "@novadeck/*/browser/host/**"
+                  "@novadeck/*/browser/host/**",
+                  "@novadeck/*/shell",
+                  "@novadeck/*/shell/**"
                 ],
-                "message": "Browser code imports only a library's browser subpaths: /pty, /host, /server, /electron and /browser/host run in Node."
+                "message": "Browser code imports only a library's browser subpaths: /pty, /host, /server, /electron, /browser/host and /shell run in Node."
               },
               {
-                "group": ["**/libraries/**"],
+                "group": ["**/../libraries", "**/libraries/**"],
                 "message": "Import a library by its package name."
               }
             ]

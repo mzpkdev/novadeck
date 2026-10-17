@@ -32,27 +32,34 @@ the build rules and the test sandbox. The app keeps the product.
 ## What enforces them
 
 - **The import fence** in `.oxlintrc.json`: an override per library refuses app code by package
-  name, paths that name `application/`, `harnesses/`, `libraries/` or `atlas/`, and the libraries
-  outside its order; one on `application/ui/src` refuses the libraries' Node subpaths (`/pty`,
-  `/host`, `/server`, `/electron`, `/browser/host`). oxlint takes `no-restricted-imports` from the
-  last matching override alone, and a `!` pattern in one group allows the name in every group, so
-  each library's override repeats the bans they all share as plain lists, and
-  `scripts/libraries/fence.test.ts` lints probe files with the real config to check what each
-  file ends up refusing.
+  name, paths into `application/`, `harnesses/`, `libraries/` or `atlas/` or up to one of them
+  by name (`../atlas`, so a library's own module one folder up takes another name), and the
+  libraries outside its order; one on `application/ui/src` refuses
+  the libraries' Node subpaths (`/pty`, `/host`, `/server`, `/electron`, `/browser/host`,
+  `/shell`). oxlint takes `no-restricted-imports` from the last matching override alone, and a
+  `!` pattern in one group allows the name in every group, so each library's override repeats
+  the bans they all share as plain lists, and `scripts/libraries/fence.test.ts` lints probe files
+  with the real config to check what each file ends up refusing, in each form an import takes
+  (`import`, `import type`, `export … from`, `import()`). oxlint takes a folder's own config in
+  place of the root's, so the test also fails on any oxlint config but the root's. It refuses ES
+  imports, not `require()`, which the package graph and the typecheck stand behind.
 - **The package graph** (`scripts/libraries/graph.test.ts`): a library's package.json installs no
   workspace package but the libraries its design depends on, in any kind of dependency, under
-  its own name or an alias, and nothing from a path. pnpm links no workspace package at the
-  root, so a library imports only the workspace packages it declares. What the root installs
-  (its dev tools, and the hoisted `electron`) still resolves from a library without being
-  declared: nothing checks that a library declares those.
+  its own name or an alias, and nothing from a path (`link:`, `file:`, `portal:`, `workspace:`
+  with a path, or a bare path as pnpm reads one, a drive letter or a backslash included). pnpm
+  links no workspace package at the root, so a library imports only the workspace packages it
+  declares. What the root installs (its dev tools, and the hoisted `electron`) still resolves
+  from a library without being declared: nothing checks that a library declares those.
 - **The typecheck's `rootDir`**: a relative import that leaves the library's `src`, as
   `../../wire/src` into a sibling, names no folder the lint knows, and fails `tsc` instead, tests
   included.
 - **The browser build check** (`scripts/libraries/browser.test.ts`): the lint sees direct imports
   only, so each library's browser subpaths are bundled for the browser, and the check fails on
-  any Node built-in, native module or unresolvable package they pull in, and on a library with no
-  `exports`. It sees imports, not globals: `process`, `Buffer` or `__dirname` in browser code, an
-  import guarded by `try`, or one whose name is computed, get past it.
+  any Node built-in, native module (by its `gypfile` or its `binding.gyp`) or unresolvable package
+  they pull in, and on a library with no `exports` or whose every subpath is null (a null under a
+  condition or in a fallback array isn't looked for). It sees imports, not globals: `process`,
+  `Buffer` or `__dirname` in browser code, an import guarded by `try`, or one whose name is
+  computed, get past it.
 
 ## Adding a library
 
