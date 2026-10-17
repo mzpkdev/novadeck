@@ -116,6 +116,13 @@ export const checkLibrary = async (folder: string): Promise<readonly Problem[]> 
     (typeof exports === "object" && Object.keys(exports).length === 0)
   )
     return [{ library: manifest.name, subpath: ".", problem: "package.json has no exports" }]
+  // Subpaths that are every one null export nothing at all, which no import can reach.
+  if (
+    typeof exports === "object" &&
+    !Array.isArray(exports) &&
+    Object.values(exports).every((target) => target === null)
+  )
+    return [{ library: manifest.name, subpath: ".", problem: "package.json exports nothing" }]
   const results = await Promise.all(
     browserEntries(manifest).map(async (entry) =>
       (await checkEntry(folder, entry)).map((problem) => ({

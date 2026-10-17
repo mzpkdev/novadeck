@@ -66,6 +66,14 @@ describe("a library's dependencies", () => {
           w: "workspace:../../application/runner",
           b: "../../application/host",
           home: "~/novadeck/application/ui",
+          drive: "C:/novadeck/application/runner",
+          relativeDrive: "C:../application/ui",
+          share: "\\\\server\\share\\ui",
+          packed: "vendor/ui.tgz",
+          tarred: "vendor/ui.tar",
+          gzipped: "vendor/ui.tar.gz",
+          // A tarball fetched from an address is a package's, from no folder here.
+          fetched: "https://example.com/ui.tgz",
         },
       }),
     ).toEqual([
@@ -75,6 +83,12 @@ describe("a library's dependencies", () => {
       "devDependencies w",
       "devDependencies b",
       "devDependencies home",
+      "devDependencies drive",
+      "devDependencies relativeDrive",
+      "devDependencies share",
+      "devDependencies packed",
+      "devDependencies tarred",
+      "devDependencies gzipped",
     ])
   })
 
