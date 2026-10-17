@@ -1,8 +1,8 @@
 // Holding a viewer's place while its size arrives. A place set before the viewer has its
 // size, as when it mounts out of sight (a parked terminal), while its pane settles, or
 // before an image has loaded, is set again as the size of what it watches changes, until
-// a moment after the viewer first has a size, or until the person, or anything else,
-// scrolls it.
+// a moment after the viewer first has a size and what it holds is ready, or until the
+// person, or anything else, scrolls it.
 
 export type Hold = {
   /** Sets the place now, and again as the size arrives. */
@@ -11,7 +11,13 @@ export type Hold = {
   readonly release: () => void
 }
 
-export const createHold = (root: HTMLElement, watched: () => readonly Element[]): Hold => {
+export const createHold = (
+  root: HTMLElement,
+  watched: () => readonly Element[],
+  // Whether what it holds has all it needs for its size, as an image once it has loaded:
+  // the moment starts only then.
+  ready: () => boolean = () => true,
+): Hold => {
   let release: (() => void) | undefined
   const hold = (place: () => void): void => {
     release?.()
@@ -37,7 +43,8 @@ export const createHold = (root: HTMLElement, watched: () => readonly Element[])
     const observer = new Observer(() => {
       if (moved()) return release?.()
       put()
-      if (root.clientHeight && timer === undefined) timer = setTimeout(() => release?.(), 1000)
+      if (root.clientHeight && ready() && timer === undefined)
+        timer = setTimeout(() => release?.(), 1000)
     })
     const letGo = (): void => release?.()
     const scrolled = (): void => {

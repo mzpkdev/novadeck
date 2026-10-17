@@ -2,7 +2,7 @@ import { act, createElement, StrictMode, useEffect, useState } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { afterEach, describe, expect, it } from "vitest"
 
-import type { Mount, ViewerState } from "./index.js"
+import type { Mount, Viewer, ViewerState } from "./index.js"
 import { createKept } from "./kept.js"
 import { useViewer } from "./react.js"
 
@@ -11,7 +11,10 @@ import { useViewer } from "./react.js"
 
 // A viewer that writes down what happens to it, its state the content it last had.
 const calls: string[] = []
-const mountText: Mount<string> = (_element, { content, label, saved }) => {
+const mountText: Mount<string, Record<never, never>, Viewer<string> & { name: string }> = (
+  _element,
+  { content, label, saved },
+) => {
   calls.push(`mount ${label} ${content} saved:${(saved as unknown as string) ?? "none"}`)
   let shown = content
   return {
@@ -24,6 +27,7 @@ const mountText: Mount<string> = (_element, { content, label, saved }) => {
     jumpTo: () => undefined,
     focus: () => undefined,
     destroy: () => calls.push(`destroy ${label}`),
+    name: label,
   }
 }
 
@@ -49,7 +53,7 @@ const Host = () => {
 }
 const Shown = ({ id, content }: { id: string; content: string }) => {
   const { ref, viewer } = useViewer(mountText, { id, content, label: id, kept })
-  return createElement("div", { ref, id, "data-mounted": viewer ? "" : undefined })
+  return createElement("div", { ref, id, "data-viewer": viewer?.name })
 }
 
 const render = (strict = false) => {
@@ -95,10 +99,10 @@ describe("a viewer in React", () => {
     expect(calls).toEqual(["mount a first saved:none", "destroy a", "mount b other saved:none"])
   })
 
-  it("hands over the viewer once it's mounted, and none once it's gone", () => {
+  it("hands over the viewer once it's mounted, and the next one for the next thing", () => {
     render()
-    expect(document.querySelector("#a")?.hasAttribute("data-mounted")).toBe(true)
-    act(() => show(null))
-    expect(document.querySelector("#a")).toBeNull()
+    expect(document.querySelector("#a")?.getAttribute("data-viewer")).toBe("a")
+    act(() => show({ id: "b", content: "other" }))
+    expect(document.querySelector("#b")?.getAttribute("data-viewer")).toBe("b")
   })
 })

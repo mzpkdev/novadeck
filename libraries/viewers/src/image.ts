@@ -1,3 +1,4 @@
+import { hashOf } from "./hash.js"
 import { createHold } from "./hold.js"
 import type { Mount, Viewer, ViewerState } from "./index.js"
 
@@ -19,12 +20,16 @@ export type ImageOptions = {
 
 type ImageState = {
   readonly image: {
+    // A hash of the image's address, which may be a whole image as a data URL.
     readonly src: string
     readonly actual: boolean
     readonly top: number
     readonly left: number
   }
 }
+
+// What names an image's address in its state: its length and a hash.
+const keyOf = (src: string): string => `${src.length}:${hashOf(src)}`
 
 const isImageState = (state: unknown): state is ImageState => {
   const image = (state as Partial<ImageState> | null)?.image
@@ -53,7 +58,11 @@ export const mountImage: Mount<ImageContent, ImageOptions, ImageViewer> = (
 
   let shown = content
   let actual = false
-  const { hold, release } = createHold(root, () => [image])
+  const { hold, release } = createHold(
+    root,
+    () => [image],
+    () => image.complete,
+  )
 
   const show = (): void => {
     image.src = shown.src
@@ -68,7 +77,7 @@ export const mountImage: Mount<ImageContent, ImageOptions, ImageViewer> = (
 
   // A place in this image.
   const isPlace = (state: ViewerState | undefined): state is ImageState & ViewerState =>
-    isImageState(state) && state.image.src === shown.src
+    isImageState(state) && state.image.src === keyOf(shown.src)
 
   const restore = (state: ViewerState): void => {
     if (!isPlace(state)) return
@@ -97,7 +106,7 @@ export const mountImage: Mount<ImageContent, ImageOptions, ImageViewer> = (
     },
     state: () =>
       ({
-        image: { src: shown.src, actual, top: root.scrollTop, left: root.scrollLeft },
+        image: { src: keyOf(shown.src), actual, top: root.scrollTop, left: root.scrollLeft },
       }) satisfies ImageState as unknown as ViewerState,
     restore,
     // An image has no lines or text to jump to.
