@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+
 import { context, describe, expect, it } from "../test"
 import { timingComment, timingMarker, type TimingReport } from "./timing"
 import { besideMain } from "./timing-main"
@@ -23,6 +25,8 @@ const report: TimingReport = {
 describe("the timing run's comment", () => {
   it("is marked, so a later run updates it in place", () => {
     expect(timingComment(report).startsWith(timingMarker)).toBe(true)
+    // The workflow finds the comment to update by the same marker.
+    expect(readFileSync(".github/workflows/timing.yml", "utf8")).toContain(timingMarker)
   })
 
   it("reports the switch p90 and each layout by its name, not its place", () => {
@@ -48,7 +52,7 @@ describe("the timing run's comment", () => {
     it("says when main's own run stopped short", () => {
       const main = { ...report, error: "Agents never started\n    at run (main.ts:1)" }
       const comment = timingComment(report, { main })
-      expect(comment).toContain("> ⚠️ Main's run stopped short: Agents never started\n")
+      expect(comment).toContain("> ⚠️ Main's run: the run stopped short: Agents never started\n")
       expect(comment).not.toContain("main.ts:1")
     })
   })
@@ -62,7 +66,7 @@ describe("the timing run's comment", () => {
         error: "Chromium crashed",
       }
       const comment = timingComment(short, { label: "This pull request" })
-      expect(comment).toContain("This pull request stopped short: Chromium crashed")
+      expect(comment).toContain("This pull request: the run stopped short: Chromium crashed")
       expect(comment).toContain("1 problem(s)")
       expect(comment).toContain("heard 3 of 5 fake agents")
       expect(comment).toContain("| Switch p90 | – |")

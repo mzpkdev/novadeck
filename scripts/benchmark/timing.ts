@@ -48,14 +48,14 @@ const warningsOf = (report: TimingReport, whose: string): string[] => {
   const heard = report.summary?.agentsHeard
   const agents = report.scenario?.agents
   return [
-    ...(error ? [`${whose} stopped short: ${error}`] : []),
+    ...(error ? [`${whose}: the run stopped short: ${error}`] : []),
     ...(Array.isArray(report.problems) && report.problems.length
       ? [
-          `${whose} sandbox reported ${report.problems.length} problem(s): processes it had to reap or writes outside it. Look at the report artifact.`,
+          `${whose}: the sandbox reported ${report.problems.length} problem(s): processes it had to reap or writes outside it. Look at the report artifact.`,
         ]
       : []),
     ...(typeof heard === "number" && typeof agents === "number" && heard < agents
-      ? [`${whose} runner heard ${heard} of ${agents} fake agents, so less load was measured.`]
+      ? [`${whose}: the runner heard ${heard} of ${agents} fake agents, so less load was measured.`]
       : []),
   ]
 }
