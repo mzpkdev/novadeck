@@ -137,10 +137,10 @@ export const retainMs = 30 * 60 * 1000
 // out of sight cost nothing to draw. Shown again, it takes the runner's screen as it is then.
 export const parkMs = 5_000
 // How many parked screens stay before the one parked longest closes. Each holds its emulator's
-// buffer, so without a count a long session's grows without bound. 16 lets every screen a
-// Grid of up to 16 shows come back parked, not closed, after a trip to another session or view;
-// fewer would close some of them, and a closed screen costs a full snapshot resync when it is
-// shown again.
+// buffer, so without a count a long session's grows without bound. With 16, a Grid of up to 16
+// terminals finds every screen still parked, not closed, after a trip to another session or
+// view; a bigger one loses those parked first. Fewer would close some of a common Grid's, and
+// a closed screen costs a full snapshot resync when it is shown again.
 export const parkedCap = 16
 
 const id = ({ projectId, workspaceSessionId, terminalId }: TerminalKey): string =>
