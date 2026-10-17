@@ -94,7 +94,12 @@ describe("createWireClient", () => {
     await reachedServer
     const next = events.next()
     server.close()
-    await expect(next).rejects.toBeInstanceOf(Error)
+    const error = await next.then(
+      () => undefined,
+      (reason: unknown) => reason,
+    )
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(WireError)
     expect(channel.open).toBe(false)
   })
 
@@ -114,12 +119,14 @@ describe("createWireClient", () => {
     expect(fake.sent).toEqual([])
   })
 
-  it("fails a call whose send throws, rather than throwing out of oRPC", async () => {
+  it("fails calls whose send throws, rather than throwing out of oRPC", async () => {
     const fake = fakeChannel()
     const client = createWireClient<typeof contract>(fake.channel)
     fake.failSends(new Error("Broken pipe."))
     await expect(client.echo("ping")).rejects.toBeInstanceOf(Error)
     await expect(client.echo("ping")).rejects.toBeInstanceOf(Error)
+    // The peer is closed, but the channel isn't: nothing tells its owner to replace it.
+    expect(fake.channel.open).toBe(true)
   })
 
   it("fails its calls on a message it can't read", async () => {

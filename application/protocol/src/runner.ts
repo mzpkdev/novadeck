@@ -2,7 +2,7 @@ import { normalize, WireError, type Channel } from "@novadeck/wire"
 import { createWireClient, type Transport } from "@novadeck/wire/client"
 
 import type { contract, WireClient } from "./contract.js"
-import { hasCode } from "./errors.js"
+import { hasCode, type RunnerErrorCode } from "./errors.js"
 import type { AskAnswer, InboxLetter } from "./inbox.js"
 import {
   maxUploadBytes,
@@ -445,14 +445,18 @@ const asWireError = (error: unknown): WireError => {
   const failure = normalize(error)
   return failure instanceof WireError
     ? failure
-    : new WireError("DISCONNECTED", "Could not connect to the runner.", { cause: failure })
+    : new WireError<RunnerErrorCode>("DISCONNECTED", "Could not connect to the runner.", {
+        cause: failure,
+      })
 }
 
 /** Reports failures on a closed channel as `DISCONNECTED`, whatever oRPC raised. */
 const failure = (error: unknown, link: Link): unknown => {
   const normalized = normalize(error)
   if (normalized instanceof WireError || link.channel.open) return normalized
-  return new WireError("DISCONNECTED", "Runner connection was lost.", { cause: normalized })
+  return new WireError<RunnerErrorCode>("DISCONNECTED", "Runner connection was lost.", {
+    cause: normalized,
+  })
 }
 
 const sleep = (ms: number, signal: AbortSignal) =>
@@ -545,7 +549,10 @@ class Connection {
     this.retryDelay = options.retryDelay ?? backoff
     this.timeout = options.timeout ?? 10_000
     this.status = new Watched<RunnerStatus>(
-      { state: "reconnecting", error: new WireError("DISCONNECTED", "Not connected yet.") },
+      {
+        state: "reconnecting",
+        error: new WireError<RunnerErrorCode>("DISCONNECTED", "Not connected yet."),
+      },
       (status) => status.state === "closed",
     )
   }
@@ -591,9 +598,9 @@ class Connection {
   /** The live link, for operations that must not wait for a reconnection. */
   current(): Link {
     const status = this.status.value
-    if (status.state === "closed") throw status.error ?? new WireError("CLOSED")
+    if (status.state === "closed") throw status.error ?? new WireError<RunnerErrorCode>("CLOSED")
     if (status.state !== "connected" || !this.link?.channel.open) {
-      throw new WireError("DISCONNECTED", "Runner is reconnecting.")
+      throw new WireError<RunnerErrorCode>("DISCONNECTED", "Runner is reconnecting.")
     }
     return this.link
   }
@@ -627,7 +634,10 @@ class Connection {
       // eslint-disable-next-line no-await-in-loop -- One channel is live at a time.
       await this.link.channel.closed
       if (signal.aborted) return
-      let error: WireError = new WireError("DISCONNECTED", "Runner connection was lost.")
+      let error: WireError = new WireError<RunnerErrorCode>(
+        "DISCONNECTED",
+        "Runner connection was lost.",
+      )
       for (let attempt = 0; ; attempt += 1) {
         this.status.set({ state: "reconnecting", error })
         // eslint-disable-next-line no-await-in-loop -- Back off between attempts.
@@ -700,7 +710,10 @@ class Attachment implements AttachedTerminal {
       )
       const first = await events.next()
       if (first.done || first.value.type !== "attached") {
-        throw new WireError("DISCONNECTED", "Runner ended the attachment before granting it.")
+        throw new WireError<RunnerErrorCode>(
+          "DISCONNECTED",
+          "Runner ended the attachment before granting it.",
+        )
       }
       // Detached while attaching: release what the runner just granted.
       if (this.ended) return cancel.abort()
@@ -793,11 +806,11 @@ class Attachment implements AttachedTerminal {
   }
 
   private control(): Link {
-    if (this.ended === "exited") throw new WireError("TERMINAL_EXITED")
-    if (this.ended) throw new WireError("CLOSED", "Terminal is detached.")
-    if (this.mode !== "control") throw new WireError("CONTROL_REQUIRED")
+    if (this.ended === "exited") throw new WireError<RunnerErrorCode>("TERMINAL_EXITED")
+    if (this.ended) throw new WireError<RunnerErrorCode>("CLOSED", "Terminal is detached.")
+    if (this.mode !== "control") throw new WireError<RunnerErrorCode>("CONTROL_REQUIRED")
     if (!this.stream?.link.channel.open) {
-      throw new WireError("DISCONNECTED", "Terminal is reattaching.")
+      throw new WireError<RunnerErrorCode>("DISCONNECTED", "Terminal is reattaching.")
     }
     return this.stream.link
   }
@@ -1187,7 +1200,7 @@ export const connectRunner = async (
       rename: (terminalId, title) => call((wire) => wire.terminals.rename({ terminalId, title })),
       resetTitle: (terminalId) => call((wire) => wire.terminals.resetTitle({ terminalId })),
       async upload(terminalId, { name, data }) {
-        if (data.length > maxUploadBytes) throw new WireError("UPLOAD_TOO_LARGE")
+        if (data.length > maxUploadBytes) throw new WireError<RunnerErrorCode>("UPLOAD_TOO_LARGE")
         const [first = "", ...rest] = base64Parts(data, maxUploadPartLength)
         const started = await call((wire) =>
           wire.terminals.upload({ terminalId, name, data: first }),

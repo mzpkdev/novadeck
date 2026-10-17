@@ -29,7 +29,10 @@ const transport = (): Transport => {
   const url = import.meta.env.VITE_NOVADECK_RUNNER_URL
   const token = import.meta.env.VITE_NOVADECK_RUNNER_TOKEN
   if (!url || !token)
-    throw new WireError("CLOSED", "Set VITE_NOVADECK_RUNNER_URL and VITE_NOVADECK_RUNNER_TOKEN.")
+    throw new WireError<RunnerErrorCode>(
+      "CLOSED",
+      "Set VITE_NOVADECK_RUNNER_URL and VITE_NOVADECK_RUNNER_TOKEN.",
+    )
   return websocket(url, { token })
 }
 
@@ -74,7 +77,8 @@ export const loadListing = async (
   const loaded = listed.filter((item) => item !== undefined)
   if (loaded.length) return loaded
   const home = await load(await runner.projects.create({ id: newId(), name: "Home" }))
-  if (!home) throw new WireError("NOT_FOUND", "The runner removed the new Home project.")
+  if (!home)
+    throw new WireError<RunnerErrorCode>("NOT_FOUND", "The runner removed the new Home project.")
   return [home]
 }
 
