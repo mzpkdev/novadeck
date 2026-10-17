@@ -110,12 +110,20 @@ describe("E2E selection", () => {
       ".github/actions/e2e-harness-cache/save/action.yml",
       "scripts/e2e/plan/plan.ts",
       "scripts/e2e/install/main.ts",
+      "patches/node-pty@1.2.0-beta.14.patch",
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
       "turbo.json",
     ])("runs everything for %s", (file) => {
       expect(select(pullRequest([], ["README.md", file]), ids)).toEqual(ids)
+    })
+
+    it("leaves a patch for the UI alone to the lockfile's hash of it", () => {
+      expect(select(pullRequest([], ["patches/@xterm__xterm@6.0.0.patch"]), ids)).toEqual([])
+      expect(
+        selectSystems(pullRequest([], ["patches/@xterm__xterm@6.0.0.patch", "pnpm-lock.yaml"])),
+      ).toEqual([systems.linux])
     })
   })
 

@@ -36,7 +36,9 @@ const sharedFiles = new Set([
 const sharedFolders = [
   ".github/actions/e2e-harness-cache/",
   "application/runner/",
-  "patches/",
+  // node-pty's patch: the suite's pty. Other patches (xterm's, for the UI) reach the suite,
+  // if at all, through the lockfile's hash of them.
+  "patches/node-pty",
   "scripts/e2e/",
 ]
 
@@ -53,8 +55,8 @@ const sharedFolders = [
 //   the runner's and the terminal's own manifests, which run every system).
 // - Every system: the runner, `libraries/terminal` (the pty and the host), `libraries/wire`,
 //   the emulator's headless side, the harnesses, the relay, `libraries/sandbox` (the suite's
-//   own sandbox, whose process tables and Git Bash lookup differ on each system), `patches/`
-//   (node-pty's patch is Windows code alone), and the way CI runs the suite (`scripts/e2e/`,
+//   own sandbox, whose process tables and Git Bash lookup differ on each system), node-pty's
+//   patch (Windows code alone), and the way CI runs the suite (`scripts/e2e/`,
 //   the workflow, the harness cache's actions), which changes how each system runs it.
 //
 // The emulator has no folder yet; when it does, its browser-only view code is not the
@@ -70,7 +72,7 @@ const allSystemsFolders = [
   "libraries/sandbox/",
   "libraries/terminal/",
   "libraries/wire/",
-  "patches/",
+  "patches/node-pty",
   "scripts/e2e/",
 ]
 

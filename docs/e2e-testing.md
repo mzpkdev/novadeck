@@ -88,7 +88,7 @@ otherwise. Otherwise:
   runner runs everything until a rule says otherwise; an adapter not yet pinned counts as
   one; a package outside the paths that trigger this workflow, a new `application/<name>`
   say, needs its path added there for its changes to run anything), or a changed file is in
-  `application/runner/` (the suite and the pins), `patches/`, `scripts/e2e/`,
+  `application/runner/` (the suite and the pins), node-pty's patch, `scripts/e2e/`,
   `.github/actions/e2e-harness-cache/`, or is `.github/workflows/e2e.yml`, the root
   `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or `turbo.json`. The runner is
   judged by its files, not by turbo: turbo calls it affected by any adapter, which would
@@ -101,23 +101,21 @@ otherwise. Otherwise:
 Which systems those jobs run on is told by the changed files (`allSystemsFolders` in
 `plan.ts`, with the reasons beside it). Linux always runs them. Windows and macOS run them
 only for a change to the runner, `libraries/terminal`, `libraries/wire`,
-`libraries/sandbox`, the emulator's headless side, the harnesses, the relay, `patches/`, the
-workflow, `scripts/e2e/` or the harness cache's actions, as those are what can break on one
-system alone; the protocol, the engines, the lockfile and the dependency configuration run
-Linux alone. The
-nightly schedule and a manual dispatch run all three, as does a pull request when git's list
-can't be had. The quirks job runs when Windows does. macOS runners are the scarce ones (a
-free account runs about five at once), which is why a change reaches them only by one of
-the paths above.
+`libraries/sandbox`, the emulator's headless side, the harnesses, the relay, node-pty's
+patch, the workflow, `scripts/e2e/` or the harness cache's actions, as those are what can
+break on one system alone; the protocol, the engines, the lockfile and the dependency
+configuration run Linux alone. The nightly schedule and a manual dispatch run all three, as
+does a pull request when git's list can't be had. The quirks job runs when Windows does.
+macOS runners are the scarce ones (a free account runs about five at once), which is why a
+change reaches them only by one of the paths above.
 
 Each of these jobs runs, where the plan puts it, on Linux, on Windows (`windows-latest`,
-named `… (Windows)`) and
-on macOS (`macos-latest`, Apple silicon, named `… (macOS)`). A Windows job has 45 minutes
-and a macOS one 30, against Linux's 20, as both start processes slower, and both run
-without the network namespace, which neither has (see Isolation). A macOS job first turns
-off the image's Reduce motion (see Running). Every job sets `NOVADECK_E2E_TRACES`, and one
-whose tests failed or that was cancelled uploads the traces its failed tests wrote, as the
-`e2e-traces-<harness>-<os>` artifact, kept seven days.
+named `… (Windows)`) and on macOS (`macos-latest`, Apple silicon, named `… (macOS)`). A
+Windows job has 45 minutes and a macOS one 30, against Linux's 20, as both start processes
+slower, and both run without the network namespace, which neither has (see Isolation). A
+macOS job first turns off the image's Reduce motion (see Running). Every job sets
+`NOVADECK_E2E_TRACES`, and one whose tests failed or that was cancelled uploads the traces
+its failed tests wrote, as the `e2e-traces-<harness>-<os>` artifact, kept seven days.
 
 A `… (Windows quirks)` job per harness covers what those green Windows jobs can't, as
 people's machines differ from the runner's. It changes the runner's own machine, which
