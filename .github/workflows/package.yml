@@ -4,7 +4,7 @@ name: Package
 # with the version and the commit; Quality calls it for a pull request once its checks pass,
 # so no runner waits on them. A called workflow runs in its caller's context: for a pull
 # request, its event, its read-only token and no secrets, so it signs nothing. A draft marked
-# ready starts it here, as Quality ran already. Its Scope job skips a pull request's
+# ready starts it here, as Quality ran already. For a pull request, its Scope job skips the
 # packaging when the change can't affect the packaged app.
 on:
   workflow_call:
@@ -31,11 +31,12 @@ concurrency:
   cancel-in-progress: ${{ github.event.action == 'ready_for_review' }}
 
 jobs:
-  # Whether the change can affect the packaged app (scripts/package/plan): yes for anything
-  # but a pull request, and for one unless it changes tests, docs or what the app isn't
-  # built from alone.
+  # Whether a pull request's change can affect the packaged app (scripts/package/plan): yes
+  # unless it changes tests, docs or what the app isn't built from alone. Skipped for main,
+  # whose release depends on nothing but its packaging.
   scope:
     name: Scope
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -49,7 +50,6 @@ jobs:
 
       - name: Set Up Toolchain
         id: toolchain
-        if: github.event_name == 'pull_request'
         continue-on-error: true
         uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
         with:
@@ -77,15 +77,11 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
-            echo "package=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          node scripts/package/plan/main.ts
+        run: node scripts/package/plan/main.ts
 
   package:
-    # A failed Scope packages, as one that couldn't read the change does.
+    # A skipped Scope (main's) packages, and so does a failed one, as one that couldn't read
+    # the change does.
     if: "!cancelled() && needs.scope.outputs.package != 'false'"
     needs: scope
     name: ${{ matrix.name }}

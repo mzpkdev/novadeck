@@ -118,7 +118,10 @@ jobs:
 
   release:
     name: Publish Dev Release
-    if: github.event_name != 'pull_request' && needs.prepare.outputs.package == 'true'
+    # By the results it needs, not by skips inside Package (its Scope is skipped for main).
+    if: >-
+      !cancelled() && needs.prepare.outputs.package == 'true' &&
+      needs.prepare.result == 'success' && needs.package.result == 'success'
     needs: [prepare, package]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -252,7 +255,9 @@ jobs:
   # calls it here.
   try:
     name: Visitor Demo
-    if: github.event_name != 'pull_request' && needs.prepare.outputs.package == 'true'
+    if: >-
+      !cancelled() && needs.prepare.outputs.package == 'true' &&
+      needs.release.result == 'success'
     needs: [prepare, release]
     uses: ./.github/workflows/try.yml
     with:
