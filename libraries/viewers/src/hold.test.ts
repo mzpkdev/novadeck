@@ -43,16 +43,36 @@ describe("holding a place", () => {
     const { root, inner } = scroller()
     inner.style.height = "2000px"
     const { hold } = createHold(root, () => [inner])
+    let placed = 0
     hold(() => {
+      placed += 1
       root.scrollTop = 500
     })
     await new Promise((resolve) => setTimeout(resolve, 1200))
+    const before = placed
     root.style.height = "300px"
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    root.scrollTop = 0
-    inner.style.height = "2100px"
+    expect(placed).toBe(before)
+  })
+
+  it("sets it again when asked, as for something ready without a change of size", async () => {
+    const { root, inner } = scroller()
+    let ready = false
+    const { hold, refresh } = createHold(
+      root,
+      () => [inner],
+      () => ready,
+    )
+    let placed = 0
+    hold(() => {
+      placed += 1
+      root.scrollTop = 500
+    })
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    expect(root.scrollTop).toBe(0)
+    const before = placed
+    ready = true
+    refresh()
+    expect(placed).toBe(before + 1)
   })
 
   it("stops when released", async () => {

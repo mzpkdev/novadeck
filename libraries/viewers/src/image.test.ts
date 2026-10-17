@@ -82,6 +82,40 @@ describe("the image viewer", () => {
     expect(viewerOf(again).scrollLeft).toBe(300)
   })
 
+  it("holds its place until its image has loaded, however long that takes", async () => {
+    const first = hostIn()
+    const viewer = mount(large, first)
+    await loaded(first)
+    viewer.zoom(true)
+    viewerOf(first).scrollTop = 500
+    const state = viewer.state()
+    viewer.destroy()
+
+    // An image that takes longer to load than the moment a place is held for once ready.
+    const complete = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "complete")!
+    let done = false
+    Object.defineProperty(HTMLImageElement.prototype, "complete", {
+      configurable: true,
+      get: () => done,
+    })
+    try {
+      const host = hostIn()
+      mountImage(host, { content: large, label: "screenshot.png", saved: state })
+      await expect.poll(() => viewerOf(host).scrollTop).toBe(500)
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+      done = true
+      // Tall enough that nothing scrolls, then back: still held, the place comes back.
+      host.style.height = "3000px"
+      await expect.poll(() => viewerOf(host).scrollTop).toBe(0)
+      // Seen at that size before the next: a resize observer reports only what a frame saw.
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      host.style.height = "300px"
+      await expect.poll(() => viewerOf(host).scrollTop).toBe(500)
+    } finally {
+      Object.defineProperty(HTMLImageElement.prototype, "complete", complete)
+    }
+  })
+
   it("takes no zoom or place from another image's state", async () => {
     const first = hostIn()
     const viewer = mount(large, first)

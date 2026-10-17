@@ -58,13 +58,20 @@ export const mountImage: Mount<ImageContent, ImageOptions, ImageViewer> = (
 
   let shown = content
   let actual = false
-  const { hold, release } = createHold(
+  const { hold, release, refresh } = createHold(
     root,
     () => [image],
     () => image.complete,
   )
 
+  // An image may have its size before it has loaded, so loading counts on its own.
+  image.addEventListener("load", refresh)
+  image.addEventListener("error", refresh)
+
+  // Its address's key, kept while it shows: a data URL can be megabytes to hash.
+  let key = ""
   const show = (): void => {
+    key = keyOf(shown.src)
     image.src = shown.src
     image.alt = shown.alt
   }
@@ -77,7 +84,7 @@ export const mountImage: Mount<ImageContent, ImageOptions, ImageViewer> = (
 
   // A place in this image.
   const isPlace = (state: ViewerState | undefined): state is ImageState & ViewerState =>
-    isImageState(state) && state.image.src === keyOf(shown.src)
+    isImageState(state) && state.image.src === key
 
   const restore = (state: ViewerState): void => {
     if (!isPlace(state)) return
@@ -106,7 +113,7 @@ export const mountImage: Mount<ImageContent, ImageOptions, ImageViewer> = (
     },
     state: () =>
       ({
-        image: { src: keyOf(shown.src), actual, top: root.scrollTop, left: root.scrollLeft },
+        image: { src: key, actual, top: root.scrollTop, left: root.scrollLeft },
       }) satisfies ImageState as unknown as ViewerState,
     restore,
     // An image has no lines or text to jump to.
@@ -118,6 +125,8 @@ export const mountImage: Mount<ImageContent, ImageOptions, ImageViewer> = (
     },
     destroy: () => {
       release()
+      image.removeEventListener("load", refresh)
+      image.removeEventListener("error", refresh)
       root.remove()
     },
   }

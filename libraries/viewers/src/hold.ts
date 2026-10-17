@@ -9,6 +9,8 @@ export type Hold = {
   readonly hold: (place: () => void) => void
   /** Stops setting it. */
   readonly release: () => void
+  /** Sets it again, as a size change would: for what's ready without changing size. */
+  readonly refresh: () => void
 }
 
 export const createHold = (
@@ -19,6 +21,7 @@ export const createHold = (
   ready: () => boolean = () => true,
 ): Hold => {
   let release: (() => void) | undefined
+  let settle: (() => void) | undefined
   const hold = (place: () => void): void => {
     release?.()
     // Where it last put the viewer: a scroll anywhere else is someone else's.
@@ -40,12 +43,13 @@ export const createHold = (
       const clampedLeft = left < placed.left && left >= scrollWidth - clientWidth - 1
       return (top !== placed.top && !clampedTop) || (left !== placed.left && !clampedLeft)
     }
-    const observer = new Observer(() => {
+    settle = () => {
       if (moved()) return release?.()
       put()
       if (root.clientHeight && ready() && timer === undefined)
         timer = setTimeout(() => release?.(), 1000)
-    })
+    }
+    const observer = new Observer(settle)
     const letGo = (): void => release?.()
     const scrolled = (): void => {
       if (moved()) letGo()
@@ -57,10 +61,11 @@ export const createHold = (
       for (const input of inputs) root.removeEventListener(input, letGo)
       root.removeEventListener("scroll", scrolled)
       release = undefined
+      settle = undefined
     }
     for (const input of inputs) root.addEventListener(input, letGo, { passive: true })
     root.addEventListener("scroll", scrolled, { passive: true })
     for (const element of [root, ...watched()]) observer.observe(element)
   }
-  return { hold, release: () => release?.() }
+  return { hold, release: () => release?.(), refresh: () => settle?.() }
 }
