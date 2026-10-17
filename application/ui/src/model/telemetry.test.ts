@@ -92,7 +92,8 @@ describe("the telemetry store", () => {
     const store = createTelemetryStore()
     const heard: string[] = []
     store.entry({ context: "p/other", terminalId: "1" }).subscribe(() => heard.push("other"))
+    store.entry({ context: "p/s", terminalId: "1" }).subscribe(() => heard.push("mine"))
     store.update((held) => setUsage(held, "p/s", "1", usage(1_000)))
-    expect(heard).toEqual([])
+    expect(heard).toEqual(["mine"])
   })
 })
