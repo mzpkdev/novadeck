@@ -1,4 +1,9 @@
-import { FitAddon, Terminal } from "@novadeck/emulator/browser"
+import {
+  createRenderers,
+  createView,
+  type Drawing,
+  type Terminal as EmulatorTerminal,
+} from "@novadeck/emulator/browser"
 import type { TerminalEvent, TerminalExit } from "@novadeck/protocol"
 import { RunnerError, type AttachedTerminal } from "@novadeck/protocol/client"
 import { act, createElement, type ReactNode } from "react"
@@ -13,7 +18,6 @@ import { themeChangeEvent } from "../../theme/apply"
 import type { BackendConnectionState } from "../port"
 import type { SurfaceRuntime } from "./backend"
 import { ctrlVHoldMs } from "./paste"
-import { createRenderers, type Drawing } from "./renderer"
 import { createRunnerTerminal } from "./RunnerTerminal"
 import { createScreens, pasteNoticeMs } from "./screens"
 
@@ -37,6 +41,22 @@ vi.hoisted(() => {
     }),
   })
 })
+
+// The emulator's terminal class is not exported; the tests spy on its prototype.
+type Terminal = EmulatorTerminal
+const Terminal = {
+  prototype: (() => {
+    const view = createView(document.createElement("div"), {
+      fontSize: 13,
+      fontFamily: "monospace",
+      theme: {},
+      scrollback: 0,
+    })
+    const prototype = Object.getPrototypeOf(view.terminal) as Terminal
+    view.dispose()
+    return prototype
+  })(),
+}
 
 const mounted: Rendered[] = []
 // A screen closes once its session has stayed off screen for its retention; it closes
@@ -1273,7 +1293,22 @@ describe("a surface's renderer", () => {
       },
       renderers,
     )
-    vi.spyOn(FitAddon.prototype, "proposeDimensions").mockReturnValue({ cols: 100, rows: 30 })
+    // The fit addon is the view's own, so it is reached as the terminal loads it.
+    const loadAddon = Terminal.prototype.loadAddon
+    vi.spyOn(Terminal.prototype, "loadAddon").mockImplementation(function (
+      this: Terminal,
+      addon: Parameters<Terminal["loadAddon"]>[0],
+    ) {
+      if ("proposeDimensions" in addon && typeof addon.proposeDimensions === "function")
+        vi.spyOn(
+          addon as { proposeDimensions: () => unknown },
+          "proposeDimensions",
+        ).mockReturnValue({
+          cols: 100,
+          rows: 30,
+        })
+      return loadAddon.call(this, addon)
+    })
     const Surface = createRunnerTerminal(runtime, screens)
     const place = (terminalId: string, view: ViewMode) => {
       const terminalKey = { ...key, terminalId }
