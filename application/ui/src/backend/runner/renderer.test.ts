@@ -1,5 +1,7 @@
+import { vi } from "vitest"
+
 import { describe, expect, it } from "../../test"
-import { createRenderers, wantsWebgl, type Drawing } from "./renderer"
+import { createRenderers, probeWebgl, wantsWebgl, type Drawing } from "./renderer"
 
 const setup = ({ cap = 2, supported = true, failing = false } = {}) => {
   const state = { ligatures: false, failing, loads: 0 }
@@ -175,5 +177,114 @@ describe("the renderer budget", () => {
     a.take()
     a.refresh()
     expect(drawing("a").cleared).toBe(1)
+  })
+
+  describe("with screens nobody shows for the moment", () => {
+    it("keeps their contexts while no shown screen waits", () => {
+      const { pool, live } = setup()
+      const [a, b] = ["a", "b"].map((name) => pool.screen(name))
+      a!.take()
+      b!.take()
+      a!.idle()
+      b!.idle()
+      expect([live("a"), live("b")]).toEqual([true, true])
+      pool.screen("c").take(false)
+      expect([live("a"), live("b")]).toEqual([true, true])
+    })
+
+    it("gives a waiting screen the context of the one idle longest", () => {
+      const { pool, live } = setup()
+      const [a, b, c] = ["a", "b", "c"].map((name) => pool.screen(name))
+      a!.take()
+      b!.take()
+      b!.idle()
+      a!.idle()
+      c!.take()
+      expect([live("a"), live("b"), live("c")]).toEqual([true, false, true])
+    })
+
+    it("never takes the context of a shown screen for a waiter", () => {
+      const { pool, live } = setup()
+      const [a, b, c] = ["a", "b", "c"].map((name) => pool.screen(name))
+      a!.take()
+      b!.take()
+      c!.take()
+      expect([live("a"), live("b"), live("c")]).toEqual([true, true, false])
+    })
+
+    it("lets the screen that lost its context draw again when it is shown", () => {
+      const { pool, live } = setup()
+      const [a, b, c] = ["a", "b", "c"].map((name) => pool.screen(name))
+      a!.take()
+      b!.take()
+      a!.idle()
+      c!.take()
+      expect(live("a")).toBe(false)
+      c!.release()
+      a!.take()
+      expect(live("a")).toBe(true)
+    })
+
+    it("does not give a context to an idle screen that has none", () => {
+      const { pool, live } = setup()
+      const [a, b, c] = ["a", "b", "c"].map((name) => pool.screen(name))
+      a!.take()
+      b!.take()
+      c!.take()
+      c!.idle()
+      a!.release()
+      expect(live("c")).toBe(false)
+    })
+
+    it("does not churn when screens are released and taken again in one go", () => {
+      const { pool, live, state } = setup()
+      const told: string[] = []
+      const [a, b] = ["a", "b"].map((name) => pool.screen(name, () => told.push(name)))
+      a!.take()
+      b!.take()
+      told.length = 0
+      a!.idle()
+      b!.idle()
+      a!.take()
+      b!.take()
+      expect([live("a"), live("b")]).toEqual([true, true])
+      expect(state.loads).toBe(2)
+      expect(told).toEqual([])
+    })
+
+    it("tells the screen that loses its context", () => {
+      const { pool } = setup({ cap: 1 })
+      const told: string[] = []
+      const a = pool.screen("a", () => told.push("a"))
+      a.take()
+      a.idle()
+      pool.screen("b").take()
+      expect(told).toEqual(["a", "a"])
+    })
+  })
+})
+
+describe("probing for WebGL", () => {
+  it("frees the probe's context even when asking it throws", () => {
+    const lose = vi.fn<() => void>()
+    vi.stubGlobal("WebGL2RenderingContext", Object)
+    const context = {
+      RENDERER: 0,
+      getExtension: (name: string) =>
+        name === "WEBGL_lose_context" ? { loseContext: lose } : null,
+      getParameter: () => {
+        throw new Error("context lost")
+      },
+    }
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(context as never)
+    try {
+      expect(probeWebgl()).toBe(false)
+      expect(lose).toHaveBeenCalledTimes(1)
+    } finally {
+      getContext.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 })

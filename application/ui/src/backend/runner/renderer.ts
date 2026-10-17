@@ -7,10 +7,11 @@ import type { ViewMode } from "../../model/types"
 // fraction of the main thread's time on a busy Grid. This module is all the WebGL
 // handling: which screens hold a context, and when one goes back to the DOM renderer.
 
-// Chromium keeps about 16 live WebGL contexts per page and loses the oldest when a page
-// asks for more (it warns on the console and fires webglcontextlost), which would blank a
-// terminal that is still shown. Staying under that leaves room for the page's own
-// canvases; a shown screen past the cap draws with the DOM renderer until a slot frees.
+// Chromium keeps about 16 live WebGL contexts per renderer process, which is this page's,
+// and loses the oldest when more are asked for (it warns on the console and fires
+// webglcontextlost), which would blank a terminal that is still shown. Staying under that
+// leaves room for the page's own canvases; a shown screen past the cap draws with the DOM
+// renderer until a slot frees.
 export const contextCap = 12
 // Whether a view's screens draw with WebGL. Canvas zooms its windows with a CSS transform,
 // which the DOM renderer's text is drawn again at but WebGL's canvas is stretched by, soft
@@ -43,6 +44,9 @@ export type ScreenRenderer = {
   // The screen is shown: it takes a context when one is free, or waits for one. Shown
   // where WebGL isn't wanted, it stays on the DOM renderer and gives back one it holds.
   readonly take: (webgl?: boolean) => void
+  // Nothing shows the screen now, though it may be shown again at once, as in a view
+  // switch: it keeps its context unless a shown screen is waiting for one. `take` ends it.
+  readonly idle: () => void
   // The screen is parked and draws nothing: it gives its context back.
   readonly release: () => void
   // The font may have changed under glyphs already drawn.
@@ -55,6 +59,10 @@ type Member<Target> = {
   // Told when the screen changes renderer, either way.
   switched: () => void
   shown: boolean
+  // Shown by no surface for the moment; its context is the first to go to a waiter.
+  idle: boolean
+  // When it went idle; the longest idle goes first.
+  idleSince: number
   // Whether where it's shown wants WebGL.
   webgl: boolean
   drawing?: Drawing | undefined
@@ -88,16 +96,30 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
     member.switched()
   }
 
-  // Gives free slots to the shown screens on the DOM renderer, longest waiting first.
+  // Takes the context of the screen that has been idle longest, for a waiting one.
+  const steal = (): boolean => {
+    let victim: Member<Target> | undefined
+    for (const member of members) {
+      if (!member.idle || !member.drawing) continue
+      if (!victim || member.idleSince < victim.idleSince) victim = member
+    }
+    if (!victim) return false
+    drop(victim)
+    return true
+  }
+
+  // Gives free slots to the shown screens on the DOM renderer, longest waiting first. A
+  // screen nobody shows at the moment keeps its context until one of them has none to take.
   const fill = (): void => {
-    while (held < deps.cap && usable()) {
+    while (usable()) {
       let next: Member<Target> | undefined
       for (const member of members) {
-        if (!member.shown || !member.webgl || member.drawing || member.lost) continue
+        if (!member.shown || member.idle || !member.webgl || member.drawing || member.lost) continue
         if (member.losses >= lossesAllowed) continue
         if (!next || member.since < next.since) next = member
       }
       if (!next) return
+      if (held >= deps.cap && !steal()) return
       const member = next
       try {
         const drawing = deps.load(member.target)
@@ -130,6 +152,8 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
         target,
         switched,
         shown: false,
+        idle: false,
+        idleSince: 0,
         webgl: true,
         since: 0,
         losses: 0,
@@ -139,6 +163,7 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
       unwatch ??= deps.watchLigatures(changed)
       const leave = (): void => {
         member.shown = false
+        member.idle = false
         drop(member)
         fill()
       }
@@ -150,9 +175,15 @@ export const createRenderers = <Target>(deps: RendererDeps<Target>) => {
             member.lost = false
           }
           member.shown = true
+          member.idle = false
           member.webgl = webgl
           if (!webgl) drop(member)
           fill()
+        },
+        idle: () => {
+          if (!member.shown || member.idle) return
+          member.idle = true
+          member.idleSince = clock++
         },
         release: leave,
         refresh: () => member.drawing?.clearTextureAtlas(),
@@ -184,8 +215,9 @@ export const probeWebgl = (): boolean => {
   if (probed !== undefined) return probed
   probed = false
   if (typeof WebGL2RenderingContext === "undefined") return probed
+  let context: WebGL2RenderingContext | null | undefined
   try {
-    const context = document
+    context = document
       .createElement("canvas")
       .getContext("webgl2", { failIfMajorPerformanceCaveat: true })
     if (!context) return probed
@@ -194,9 +226,14 @@ export const probeWebgl = (): boolean => {
       info ? info.UNMASKED_RENDERER_WEBGL : context.RENDERER,
     )
     probed = !software.test(String(renderer))
-    context.getExtension("WEBGL_lose_context")?.loseContext()
   } catch {
     // No context, as without a GPU.
+  } finally {
+    try {
+      context?.getExtension("WEBGL_lose_context")?.loseContext()
+    } catch {
+      // A context that can't be asked has nothing more to give back.
+    }
   }
   return probed
 }

@@ -12,7 +12,7 @@ import { followTerminal, type FollowedTerminal, type Screen } from "./follow"
 import { linkTerminal } from "./links"
 import { clipboardAccess, takeCtrlV, takeFilePastes, type PasteTarget } from "./paste"
 import { silenceQueries } from "./queries"
-import { pageRenderers, type ScreenRenderer } from "./renderer"
+import { pageRenderers, type Renderers, type ScreenRenderer } from "./renderer"
 
 // The sizes the runner accepts.
 const clamp = (value: number, min: number, max: number): number =>
@@ -140,7 +140,7 @@ const id = ({ projectId, workspaceSessionId, terminalId }: TerminalKey): string 
 // while it shows it and releases it after. A released screen stays while its terminal
 // exists, so the other views, and later the other sessions and projects, find it ready; it
 // closes once its terminal does, or its session has stayed off screen for `retainMs`.
-export const createScreens = (runtime: SurfaceRuntime) => {
+export const createScreens = (runtime: SurfaceRuntime, renderers: Renderers = pageRenderers()) => {
   const entries = new Map<string, Entry>()
   // Whether Ctrl+V may read the clipboard, the same for every terminal.
   const readable = clipboardAccess(desktopHost() !== undefined)
@@ -209,7 +209,7 @@ export const createScreens = (runtime: SurfaceRuntime) => {
     })
     // The two renderers measure a cell apart (WebGL to whole device pixels), so a screen
     // that changes renderer fits its slot again.
-    const renderer = pageRenderers().screen(xterm, () => followed.refit())
+    const renderer = renderers.screen(xterm, () => followed.refit())
     const screen: RunnerScreen = {
       host: element,
       xterm,
@@ -412,6 +412,8 @@ export const createScreens = (runtime: SurfaceRuntime) => {
       entry.users -= 1
       if (entry.users > 0) return
       if (entry.timer === undefined) settle(key, entry)
+      // Until it parks it keeps its context, which a shown screen may take meanwhile.
+      entry.screen?.renderer.idle()
       clearTimeout(entry.parking)
       entry.parking = setTimeout(() => {
         entry.parking = undefined
