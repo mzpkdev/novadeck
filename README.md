@@ -158,7 +158,10 @@ Switching between Focus, Grid and Canvas mounts a new surface, which takes the s
 xterm and attachment from `backend/runner/screens.ts` instead of opening and attaching
 again. A terminal no view shows keeps them while its session is on screen, and for 30
 minutes after its session leaves the screen, so going back to a session or project finds
-its output in place; they go when that time passes or the terminal closes. Focus keeps
+its output in place; they go when that time passes or the terminal closes. Of the screens
+no view shows, `screens.ts` keeps at most the 16 parked most recently, closing the one
+parked longest first (a closed one resyncs from the runner's snapshot when shown again);
+screens a view shows, Focus's kept windows among them, don't count. Focus keeps
 the last four terminals it displayed mounted, parked out of sight with `display:none`,
 so switching back finds a terminal's companion pane as it was: a page still loaded, a
 plan's editor, where each was scrolled. A component that docks status, opens over the
@@ -1036,7 +1039,7 @@ Source lives in `application/ui/src/`, grouped in layers:
 | `model/roster.ts`                                  | A session's terminals and undocked windows, laid out as tiles, their order and status.  |
 | `model/layout/workspace-layout.ts`                 | Where each terminal sits and how big it is in each view.                                |
 | `terminals/`                                       | Terminal frame, tabs, rename state, and the recent-terminal switcher.                   |
-| `terminals/companion/`                             | Taskbar and pane: the panes' store, `bar.ts` rules, viewers, `plan-editor/`.            |
+| `terminals/companion/`                             | Taskbar and pane: the panes' store, `bar.ts` rules, viewers, `plan-editor/` (notes).    |
 | `terminals/drag-session.ts`                        | What's dragged off a taskbar, the views' drop spaces, and the windows it's over.        |
 | `terminals/chat/`                                  | The agent's chat: its blocks, markdown reader, tool rows, requests and the composer.    |
 | `layouts/canvas/`, `grid/`, `focus/`               | View adapters and colocated library styles.                                             |
@@ -1073,7 +1076,7 @@ libraries stay in their adapters: XYFlow in `layouts/canvas/`, React Grid Layout
 in `layouts/grid/`, Allotment in `shell/`, dnd kit in `terminals/`, Ark UI in
 `ui-toolkit/`, React Router in `app/` and `shell/`, and React DOM in
 `layouts/transition.ts`, `main.tsx`, and `test/`, and the runner client and
-xterm in `backend/runner/`. Other packages are denied
+the emulator's view in `backend/runner/`. Other packages are denied
 unless the test lists them: React and Lucide are allowed everywhere, while
 backend adapters and test code may use any package. `test/` may import
 `model/`, `backend/`, and what the command harness runs: `app/commands/`, the UI

@@ -9,10 +9,28 @@ character-width rule every emulator shares, and helpers that need only an emulat
   draws it, and `applyWidths(terminal)`, which sets a browser or headless emulator to count them
   so. Every emulator goes through `applyWidths`: one that counts otherwise puts a screen another
   gives back on different rows.
-- `./browser`: xterm's browser `Terminal` and its types, and the fit, web-links and WebGL addons.
+- `./browser`: `createView(element, options)`, xterm's browser `Terminal` opened in an element with
+  the width rule applied, the fit and web-links addons loaded, and links, theme, font and fit behind
+  a `View`, which tells of each change of renderer (`onRendererChange`) so its owner fits it again;
+  and the pool that draws views with WebGL (`webglRenderers`, `createRenderers`,
+  `ScreenRenderer`). The app resolves its theme, its link policy and which views want WebGL, and
+  passes them in. Types of xterm's `Terminal` and `ITheme` come from here too.
 - `./browser.css`: xterm's stylesheet, for the browser emulator's screens.
-- `./headless` (Node only): xterm's headless `Terminal`, the serialize addon, and `ScreenText`,
-  a screen read as text.
+- `./headless` (Node only): the emulator without a view, and what needs only it.
+  - `createScreen({ cols, rows, scrollback })`: a screen that counts widths as `./width` says and
+    has its serializer loaded; the type is `Screen`. Every headless emulator goes through it.
+  - `readScreen(screen)`: the screen as `ScreenText`: its rows, wrapping, the rows drawn full to
+    the last column, dim cells blanked, the cursor, bracketed paste and the alternate screen.
+  - `snapshot(screen, { fits, mouse })`: the screen serialized, with the mouse encoding the
+    serializer leaves out, and as much scrollback as `fits` accepts (halved until it does);
+    undefined when not even the visible screen fits. `trackMouse(screen)` follows that encoding
+    (`MouseEncoding`), and `mouseReporting(tracking, encoding)` says which reports a program reads.
+  - `matchReport(data, reporting)`: the terminal's own reply at the start of data (a query's
+    answer, a mouse or focus report), how long it is, and what it is to the program (`Reporting`).
+  - `transcript(screen, maxChars)`: the screen and its scrollback as text that draws them again,
+    null when blank or too large to keep; `replay(screen, text, separator?)` draws it on a fresh
+    screen, then the separator on the line below the last one drawn.
+  - `IMarker`: xterm's marker type, for a line kept track of as the screen scrolls.
 
 ## Pins
 
