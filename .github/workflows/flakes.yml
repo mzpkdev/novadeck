@@ -106,7 +106,7 @@ jobs:
           RERUN: ${{ steps.rerun.outcome }}
         run: |
           if [ ! -s "$RUNNER_TEMP/verdict.json" ]; then
-            printf '## Known flakes: %s\n\n**Not judged:** its failures could not be read, so it is not rerun; see the steps above. ([run](%s))\n' \
+            printf '## Known flakes: %s\n\n**Not judged:** the run could not be judged, so it is not rerun; see the steps above. ([run](%s))\n' \
               "$WORKFLOW" "$RUN_URL" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
