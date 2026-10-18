@@ -1278,24 +1278,32 @@ describe("a terminal in Windows' ConPTY", () => {
 
   // Rule 10's measure (architecture/performance.md): a draw sends its output as one event
   // per 4,096 characters, and output read while a draw waits joins it.
-  it("sends a draw's output as an event per 4,096 characters", async ({ terminals }) => {
+  it("sends a draw's output as an event per 4,096 characters, reads joined", async ({
+    terminals,
+  }) => {
     const { standIn, manager, create } = conpty(terminals)
     const terminal = await create()
     const stream = terminals.attach(manager, terminal.id, "owner")
     await read(manager, stream, "owner", (event) => event.type === "snapshot")
+    // The length of each output event, until `total` characters have come.
     const outputs = async (total: number) => {
       const events = await read(manager, stream, "owner", (_event, text) => text.length >= total)
-      return events.filter((event) => event.type === "output").length
+      return events.flatMap((event) => (event.type === "output" ? [event.data.length] : []))
     }
     standIn.draw("a".repeat(10_000))
-    expect(await outputs(10_000)).toBe(3)
+    expect(await outputs(10_000)).toEqual([4096, 4096, 1808])
     standIn.draw("b".repeat(4096))
-    expect(await outputs(4096)).toBe(1)
-    // Three reads, one draw: 3 × 3,000 characters in 3 events, not one per read.
-    standIn.draw("c".repeat(3000))
-    standIn.draw("c".repeat(3000))
-    standIn.draw("c".repeat(3000))
-    expect(await outputs(9000)).toBe(3)
+    expect(await outputs(4096)).toEqual([4096])
+    // Three reads in one draw: one event, not one a read.
+    standIn.draw("c".repeat(1000))
+    standIn.draw("c".repeat(1000))
+    standIn.draw("c".repeat(1000))
+    expect(await outputs(3000)).toEqual([3000])
+    // Chunked as one: not 3,000 a read.
+    standIn.draw("d".repeat(3000))
+    standIn.draw("d".repeat(3000))
+    standIn.draw("d".repeat(3000))
+    expect(await outputs(9000)).toEqual([4096, 4096, 808])
   })
 })
 

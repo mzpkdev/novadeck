@@ -51,7 +51,8 @@ const sharedFolders = [
 //   `pnpm-workspace.yaml`, `turbo.json`: a moved version that breaks one system shows on
 //   every system that installs it, and the next change to the runner, a harness or the
 //   nightly run finds it; node-pty, the one native module the suite loads, is pinned in
-//   the runner's and the terminal's own manifests, which run every system).
+//   the catalog here too, but its patch is named for its version under
+//   `libraries/terminal/`, so a bump renames or drops it there, which runs every system).
 // - Every system: the runner, `libraries/terminal` (the pty and the host), `libraries/wire`,
 //   the emulator's headless side, the harnesses, the relay, `libraries/sandbox` (the suite's
 //   own sandbox, whose process tables and Git Bash lookup differ on each system), node-pty's

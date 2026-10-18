@@ -158,6 +158,17 @@ describe("a pty", () => {
     }
   })
 
+  it("reads no tree on Windows once its program has exited, as its id may name another", async () => {
+    const standIn = nativeStandIn({ conpty: true })
+    const pty = start(standIn, "win32")
+    standIn.draw("C:\\> ")
+    standIn.exit(0)
+    const reads: unknown[] = []
+    const trees: ProcessTrees = { ...noTrees, read: async (root) => void reads.push(root) }
+    await pty.end({ graceMs: 1_000, treeGraceMs: 3_000, trees })
+    expect(reads).toEqual([])
+  })
+
   it("is taken as ended on Windows when its kill waits for a draw, as its id isn't known", async () => {
     vi.useFakeTimers()
     try {

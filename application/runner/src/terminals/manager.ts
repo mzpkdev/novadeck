@@ -326,9 +326,9 @@ export type TerminalOptions = {
    */
   relay?: string
   /**
-   * The pty a terminal runs in, as a test plays it: node-pty's `spawn`, the platform its
-   * ending follows, and the process trees a Windows terminal's programs are ended by. The
-   * runner's own when omitted.
+   * The pty as a test plays it: node-pty's `spawn`, the platform its ending follows (this
+   * system's when omitted, whatever `platform` says, as real shells run here), and the
+   * process trees a Windows terminal's programs are ended by.
    */
   pty?: {
     readonly native?: NativeSpawn
