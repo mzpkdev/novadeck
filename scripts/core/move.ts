@@ -86,38 +86,52 @@ const resolve = (from: string, specifier: string): Named | undefined => {
 }
 const withoutExtension = (file: string): string => file.replace(/\.(?:ts|tsx|mts)$/, "")
 
-// Every quoted relative specifier, whatever carries it. The form is the text before it:
-// `from`, `import(`, a bare `import`, `vi.mock(`... Anything else is reported to be looked at.
+// Every quoted relative path, whatever carries it. Only the module forms are rewritten: what
+// stands before the quote says which. A quoted path to a moved file in any other place (a
+// `readFileSync`, say) is no module specifier, and the run stops for a person to look.
 const literal = /(["'`])(\.{1,2}\/[^"'`\n]*)\1/g
-const formOf = (before: string): string => {
+const moduleCalls = new Set(["mock", "doMock", "unmock", "doUnmock", "importActual", "importMock"])
+const formOf = (before: string): string | undefined => {
   if (/\bfrom\s*$/.test(before)) return "from"
   if (/\bimport\s*\(\s*$/.test(before)) return "import()"
   if (/\bimport\s*$/.test(before)) return "import"
+  if (/\bimport\.meta\.resolve\s*\(\s*$/.test(before)) return "import.meta.resolve()"
   if (/\bnew\s+URL\s*\(\s*$/.test(before)) return "new URL()"
-  const call = /\b(\w+)\s*\(\s*$/.exec(before)
-  return call ? `${call[1]}()` : "other"
+  const call = /\b(\w+)\s*\(\s*$/.exec(before)?.[1]
+  return call && moduleCalls.has(call) ? `${call}()` : undefined
 }
 
-// A folder all of whose files move: a pattern that reaches into one (a template import, a
-// glob) can't be followed, so it stops the run.
-const trackedIn = (dir: string): string[] => tracked.filter((file) => file.startsWith(`${dir}/`))
-const movedFolders = new Set(
-  [...moves.keys()]
-    .map((file) => posix.dirname(file))
-    .filter((dir) => trackedIn(dir).every((file) => moves.has(file))),
-)
-const reachesMoved = (from: string, pattern: string): boolean => {
-  const prefix = pattern.split("${")[0]!.replace(/[*?{[].*$/, "")
-  const folder = posix.normalize(
-    posix.join(posix.dirname(from), prefix.slice(0, prefix.lastIndexOf("/") + 1) || "."),
-  )
-  return [...movedFolders].some((dir) => folder === dir || folder.startsWith(`${dir}/`))
+// A pattern that reaches files (a glob, a template import) can't be followed through the
+// move, but it may survive it: it does when every file it reaches keeps its place relative to
+// the file that holds it. Anything else stops the run.
+const relation = (file: string, other: string): string => posix.relative(posix.dirname(file), other)
+const survives = (file: string, pattern: string, extensions: boolean): boolean => {
+  const target = posix.normalize(posix.join(posix.dirname(file), pattern))
+  return tracked
+    .filter((each) =>
+      [
+        each,
+        ...(extensions ? [withoutExtension(each), each.replace(/\/index\.tsx?$/, "")] : []),
+      ].some((name) => posix.matchesGlob(name, target)),
+    )
+    .every((each) => relation(file, each) === relation(destination(file), destination(each)))
 }
+const globCall =
+  /\bimport\.meta\.glob\w*\s*(?:<[^>()]*>)?\s*\(\s*(\[[^\]]*\]|"[^"]*"|'[^']*'|`[^`]*`)/g
+const quoted = /(["'`])([^"'`]*)\1/g
 const patterns = [
-  { name: "template import", pattern: /\bimport\s*\(\s*`(\.{1,2}\/[^`]*\$\{[^`]*)`/g },
+  {
+    name: "template import",
+    extensions: true,
+    pattern: /\bimport\s*\(\s*`(\.{1,2}\/[^`]*\$\{[^`]*)`/g,
+    globs: (match: string): string[] => [match.replaceAll(/\$\{[^}]*\}/g, "*")],
+  },
   {
     name: "import.meta.glob",
-    pattern: /\bimport\.meta\.glob\w*\s*\(\s*\[?\s*["'`](\.{1,2}\/[^"'`]*)["'`]/g,
+    extensions: false,
+    pattern: globCall,
+    globs: (match: string): string[] =>
+      [...match.matchAll(quoted)].map((each) => each[2]!).filter((glob) => /^\.{1,2}\//.test(glob)),
   },
 ]
 
@@ -129,10 +143,11 @@ for (const file of tracked) {
   if (!sourceFile.test(file) || file.includes("node_modules/")) continue
   const text = readFileSync(join(root, file), "utf8")
   const to = destination(file)
-  for (const { name, pattern } of patterns)
+  for (const { name, extensions, pattern, globs } of patterns)
     for (const match of text.matchAll(pattern))
-      if (reachesMoved(file, match[1]!))
-        problems.push(`${file}: a ${name} reaches into the moved files: ${match[1]}`)
+      for (const glob of globs(match[1]!))
+        if (!survives(file, glob, extensions))
+          problems.push(`${file}: a ${name} reaches the moved files: ${glob}`)
   let changed = false
   const next = text.replace(literal, (whole, quote: string, specifier: string, offset: number) => {
     const target = resolve(file, specifier)
@@ -141,6 +156,10 @@ for (const file of tracked) {
     if (targetTo === target.file && to === file) return whole
     const query = /[?#].*$/.exec(specifier)?.[0] ?? ""
     const form = formOf(text.slice(Math.max(0, offset - 40), offset))
+    if (form === undefined) {
+      problems.push(`${file}: ${whole} names a moved file, but not as a module specifier`)
+      return whole
+    }
     const viaCore =
       inCore(targetTo) && to.startsWith(`${ui}/`) && !inCore(to) && form !== "new URL()"
     let written: string
@@ -166,20 +185,48 @@ for (const file of tracked) {
     }
     if (`${written}${query}` === specifier) return whole
     forms.set(form, (forms.get(form) ?? 0) + 1)
-    if (form === "other") console.warn(`look at ${file}: ${whole}`)
     changed = true
     return `${quote}${written}${query}${quote}`
   })
   if (changed) rewrites.set(file, next)
 }
 
-// Paths written out in full in scripts, docs and tests, anchored at the UI's folder so a
-// same-named path in another package is left alone: `ui/src/model/` and the moved files.
-const textual = [...moves].map(
-  ([from, to]) => [from.slice(from.indexOf("ui/src/")), to.slice(to.indexOf("ui/src/"))] as const,
-)
-const anchored = (path: string): RegExp =>
-  new RegExp(`(?<![\\w.-])${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g")
+// Paths written out in full in scripts, docs and tests, built from what moves: the moved
+// files, and the folders that move whole. Anchored at the UI's folder (`application/ui/src/`,
+// or `ui/src/` where the text is relative to application/), with a right boundary, so a
+// same-named path in another package, or `registry.tsx`, is left alone.
+const uiPath = (path: string): string => path.slice(path.indexOf("ui/src/"))
+// The folders that move whole, with where they go.
+const trackedIn = (dir: string): string[] => tracked.filter((file) => file.startsWith(`${dir}/`))
+const wholeFolders = [...new Set([...moves.keys()].map((file) => posix.dirname(file)))]
+  .filter((dir) => trackedIn(dir).every((file) => moves.has(file)))
+  .map((dir) => {
+    const places = new Set(
+      tracked
+        .filter((file) => posix.dirname(file) === dir)
+        .map((file) => posix.dirname(destination(file))),
+    )
+    return [dir, places] as const
+  })
+  .filter(([, places]) => places.size === 1)
+  .map(([dir, places]) => [`${dir}/`, `${[...places][0]!}/`] as const)
+const textual = [
+  ...[...moves].map(([from, to]) => [from, to, true] as const),
+  ...wholeFolders.map(([from, to]) => [from, to, false] as const),
+]
+  .map(([from, to, file]) => [uiPath(from), uiPath(to), file] as const)
+  .toSorted((a, b) => b[0].length - a[0].length)
+// How a path reads in a file: plainly, or escaped for a regular expression (`ui\/src\/a\.ts`).
+const written = (path: string, regexp: boolean): string =>
+  regexp ? path.replaceAll(".", "\\.").replaceAll("/", "\\/") : path
+const escapeRegExp = (text: string): string => text.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")
+const anchored = (path: string, file: boolean, regexp: boolean): RegExp => {
+  const rest = escapeRegExp(written(path.slice("ui/src/".length), regexp))
+  const full = escapeRegExp(written("application/ui/src/", regexp))
+  const bare = escapeRegExp(written("ui/src/", regexp))
+  const right = file ? "(?![\\w-]|\\.\\w)" : ""
+  return new RegExp(`(?:(?<![\\w.-])${full}|(?<![\\w./-])${bare})${rest}${right}`, "g")
+}
 const ignored =
   /(?:^|\/)(?:pnpm-lock\.yaml|node_modules|scripts\/core\/)|\.(?:png|jpe?g|webp|ico|woff2?|zip)$/
 
@@ -189,10 +236,13 @@ const outside = (file: string): boolean =>
   !ignored.test(file) && !moved.has(file) && !file.startsWith(`${ui}/`)
 for (const file of tracked.filter(outside)) {
   const text = rewrites.get(file) ?? readFileSync(join(root, file), "utf8")
-  let next = text.replaceAll(anchored("ui/src/model/"), "ui/src/core/")
-  for (const [from, to] of textual) next = next.replaceAll(anchored(from), to)
-  // The same paths written for a regular expression.
-  next = next.replaceAll("ui\\/src\\/model\\/", "ui\\/src\\/core\\/")
+  let next = text
+  for (const [from, to, isFile] of textual)
+    for (const regexp of [false, true])
+      next = next.replaceAll(anchored(from, isFile, regexp), (whole) => {
+        const prefix = whole.startsWith("application") ? "application/ui/src/" : "ui/src/"
+        return written(prefix + to.slice("ui/src/".length), regexp)
+      })
   if (next !== text) rewrites.set(file, next)
 }
 
@@ -234,12 +284,24 @@ console.log(
 )
 // What still names a moved path, outside the UI's source, is for a person to look at.
 let found = ""
+const old = [...moves.keys()].map((file) => file.slice(file.indexOf("src/")))
+const needles = [
+  ...new Set([...old, ...wholeFolders.map(([dir]) => dir.slice(dir.indexOf("src/"))), "ui/model"]),
+]
 try {
-  found = git("grep", "-nE", "src/model/|ui/model", "--", ".", ":!scripts/core", ":!pnpm-lock.yaml")
+  found = git(
+    "grep",
+    "-nF",
+    ...needles.flatMap((needle) => ["-e", needle]),
+    "--",
+    ".",
+    ":!scripts/core",
+    ":!pnpm-lock.yaml",
+  )
 } catch {
   // No match is the good case.
 }
-const leftovers = found.split("\n").filter((line) => line && !line.includes("src/e2e/model/"))
+const leftovers = found.split("\n").filter(Boolean)
 if (leftovers.length > 0)
   console.warn(`look at these mentions of the old folder:\n${leftovers.join("\n")}`)
 console.log("Next: pnpm typecheck && pnpm lint && pnpm test (see scripts/core/README.md).")
