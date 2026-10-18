@@ -208,8 +208,9 @@ const resolveFile = (file: string, specifier: string): string | undefined => {
     existsSync(join(src, path)) && statSync(join(src, path)).isFile()
   // `#core/*` maps to `src/core/*.ts` (see the UI's package.json), and nothing else.
   if (isCoreSpecifier(bare)) {
-    const mapped = `core/${bare.slice(coreSpecifier.length)}.ts`
-    return isFile(mapped) ? mapped : undefined
+    // As the mapping does: one .ts file, and never out of the core by `..`.
+    const mapped = posix.normalize(`core/${bare.slice(coreSpecifier.length)}.ts`)
+    return mapped.startsWith("core/") && isFile(mapped) ? mapped : undefined
   }
   const target = posix.normalize(posix.join(posix.dirname(file), bare))
   const candidates = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"].map(
@@ -307,14 +308,18 @@ describe("UI architecture", () => {
 
   it("keeps the core to itself and to the library and protocol entries listed as data only", () => {
     const dataEntries = new Set(Object.values(protocolData))
+    // The core's own tests may import what tests need, as every layer's tests may.
     const found = files
       .filter((file) => file.startsWith("core/") && !isTest(file))
       .flatMap((file) =>
         imports(file).flatMap(({ specifier }) => {
-          if (specifier.startsWith("."))
-            return resolveFile(file, specifier)?.startsWith("core/")
+          // Only another .ts file of the core, with no query that makes it a worker or text.
+          if (specifier.startsWith(".")) {
+            const target = resolveFile(file, specifier)
+            return !specifier.includes("?") && target?.startsWith("core/") && target.endsWith(".ts")
               ? []
               : [`${file} -> ${specifier}`]
+          }
           if (dataEntries.has(specifier)) return []
           // The protocol isn't a library, so only its data entries pass; its `/client` and `/wire` don't.
           return coreLibrary(specifier) ? [] : [`${file} -> ${specifier}`]
