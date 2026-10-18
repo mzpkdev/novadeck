@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
-import { join, posix } from "node:path"
+import { join, posix, relative } from "node:path"
 
 import { describe, expect, it } from "./test"
 
@@ -130,7 +130,8 @@ const hookOwners = ["core/store.ts", counterRun, "architecture.test.ts"]
 const adapterSelectionExports = ["debugPanelFor", "selectBackend"]
 // Packages are denied unless listed here, owned through `vendors`, or used by an
 // adapter or test code. theme/, interaction/ and app/commands/ use none; backend/ uses React
-// types only. The core takes the workspace's libraries, and the protocol's data entries
+// types only. The core takes only the library entries `coreLibraryEntries` lists and the
+// protocol's data entries
 // that `protocolData` names, and no other package.
 const everywherePackages = new Set(["react", "lucide-react"])
 const typeOnlyPackages: Record<string, readonly string[]> = {
@@ -182,22 +183,11 @@ const vendors: Record<string, readonly string[]> = {
 }
 
 const src = join(process.cwd(), "src")
-// The workspace's libraries, which the core may import beside the protocol's data entries.
-const libraryFolder = join(process.cwd(), "..", "..", "libraries")
-const libraries = new Set(
-  readdirSync(libraryFolder).flatMap((name) => {
-    const manifest = join(libraryFolder, name, "package.json")
-    return existsSync(manifest)
-      ? [(JSON.parse(readFileSync(manifest, "utf8")) as { name: string }).name]
-      : []
-  }),
-)
-// What of a library the core may take: entries that run anywhere and need no framework, not
-// a React binding, browser views or styles, nor a subpath only Node may load.
-const outsideCore = /\/(react|browser|server|electron|pty|host|shell|reap|tripwire)(\/|$)|\.css$/
-const coreLibrary = (specifier: string): boolean =>
-  libraries.has(packageName(specifier)) &&
-  !outsideCore.test(specifier.slice(packageName(specifier).length))
+// The library entries the core may import, each one data only: no DOM, no framework, nothing
+// only Node may load. None yet; add an entry when the core needs one, as `protocolData` does
+// for the protocol. Everything else of a library is refused, whatever its subpath.
+const coreLibraryEntries = new Set<string>([])
+const coreLibrary = (specifier: string): boolean => coreLibraryEntries.has(specifier)
 const files = (readdirSync(src, { recursive: true }) as string[])
   .map((file) => file.split("\\").join("/"))
   .filter((file) => /\.tsx?$/.test(file))
@@ -256,7 +246,7 @@ const importViolation = (file: string, layer: string | undefined) => {
     if (!specifier.startsWith(".") && !isCoreSpecifier(specifier)) {
       if (protocolData[file] === specifier) return []
       if (isTest(file) || (layer && (adapterOf(layer) || testLayers.has(layer)))) return []
-      // The core takes the libraries and, through `protocolData`, the protocol's data entries.
+      // The core takes the listed library entries and, through `protocolData`, the protocol's.
       if (layer === "core/") return coreLibrary(specifier) ? [] : [`${file} -> ${specifier}`]
       const limited = layer ? typeOnlyPackages[layer] : undefined
       const ok = limited
@@ -308,10 +298,14 @@ describe("UI architecture", () => {
   })
 
   it("holds only .ts files in the core, which #core/* maps to", () => {
-    expect(files.filter((file) => file.startsWith("core/") && !file.endsWith(".ts"))).toEqual([])
+    // Every file, not only scripts: a .tsx, .js or stylesheet there is as much out of place.
+    const core = readdirSync(join(src, "core"), { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => relative(src, join(entry.parentPath, entry.name)).split("\\").join("/"))
+    expect(core.filter((file) => !file.endsWith(".ts"))).toEqual([])
   })
 
-  it("keeps the core to itself, the libraries and the protocol's data-only entries", () => {
+  it("keeps the core to itself and to the library and protocol entries listed as data only", () => {
     const dataEntries = new Set(Object.values(protocolData))
     const found = files
       .filter((file) => file.startsWith("core/") && !isTest(file))

@@ -1058,8 +1058,9 @@ Source lives in `application/ui/src/`, grouped in layers:
 
 Imports point down the layers. `core/` (what `model/` was, with the backends'
 shared registry and the workspace-only derivations) imports nothing else: no UI layer, no
-React, and only the protocol's data-only entries (`/harnesses`, `/pages`, `/text`) and the
-libraries among packages. Everything outside it reaches it as `#core/*`, the UI package's
+React, and among packages only the protocol's data-only entries (`/harnesses`, `/pages`,
+`/text`) and the library entries `architecture.test.ts` lists as data only (none yet).
+Everything outside it reaches it as `#core/*`, the UI package's
 own `imports`; inside it files import one another by relative path. `theme/` imports
 nothing but itself and the core's types; every layer that composes the page may use it, adapters included, and
 [docs/theming.md](docs/theming.md) is its contract with components.
