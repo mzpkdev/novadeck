@@ -62,6 +62,8 @@ type Open<C extends AnyContractRouter, T> = {
 
 const done = { value: undefined, done: true } as const
 
+const noop = (): void => {}
+
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve) => {
     const wake = () => {
@@ -168,7 +170,7 @@ class Follower<C extends AnyContractRouter, T> implements Following<C, T> {
     const signal = this.stopping.signal
     if (signal.aborted) return undefined
     // A listener of its own, removed after: a long stream's reads leave nothing behind.
-    let stop = () => {}
+    let stop: () => void = noop
     const stopped = new Promise<undefined>((resolve) => {
       stop = () => resolve(undefined)
     })
