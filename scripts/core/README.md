@@ -10,17 +10,31 @@ It moves:
 - `backend/registry.ts` and `backend/portable-card-raised.ts`, and their tests, into `core/`;
 - `backend/boot-rehearsal.ts` and its test into `backend/demo/debug/`.
 
-It stops before changing anything, listing what it can't write for `#core/*` (a folder's index,
-a `?raw` query, a template-literal `import()` or `import.meta.glob` into the moved folders). It rewrites
-every quoted relative specifier in a tracked `.ts`/`.tsx` file that resolves to a file it
-moved (`from`, `import()`, `import "x"`, `vi.mock("x")`, and the same with a `?raw` or `?worker`
-query): importers in `ui/src` get `#core/<path>`, the package's own `imports` (`"#core/*":
-"./src/core/*.ts"` in `application/ui/package.json`); files inside `core/` and files outside `ui/src`
-get relative paths; the moved files' imports of what stayed behind are made relative to their new
-place. A specifier it doesn't recognise as an import (a quoted path that is none of the forms
-above) is printed for a look. Paths written out in scripts and docs (`ui/src/model/...`) are
-rewritten as text (a regular expression's `ui\/src\/model\/` too). It runs `oxfmt` over what it touched, refuses a dirty tree, and refuses to run
-when `ui/src/core/` exists.
+It rewrites a quoted relative path only where it is a module specifier: `from`, a bare `import`,
+`import()`, `vi.mock`/`doMock`/`unmock`/`doUnmock`/`importActual`/`importMock`, `import.meta.resolve`
+and `new URL` (kept relative), with or without a `?raw`/`?worker` query. Importers in `ui/src` get
+`#core/<path>`, the package's own `imports` (`"#core/*": "./src/core/*.ts"` in
+`application/ui/package.json`), written without an extension; files inside `core/` and files outside
+`ui/src` get relative paths, in the form they had (`.ts`, `.js`, extensionless); the moved files'
+imports of what stayed behind are made relative to their new place.
+
+It stops, changing nothing, and lists what it can't write: a folder's index or a `?raw` query as
+`#core/*`; a quoted path to a moved file in any other place (a `readFileSync("../model/x.ts")`);
+and a template-literal `import()` or an `import.meta.glob` (every element of an array too, matched
+with `path.matchesGlob`) that reaches a moved file, unless every file it reaches keeps its place
+relative to the file holding it (a moved file's pattern into its own moved folder survives).
+
+Paths written out in full outside `ui/src` (scripts, docs, tests) are rewritten as text, built from
+the moved files' old paths and the folders that move whole: anchored at `application/ui/src/` or
+`ui/src/` (not after a `/`, so another package's `ui/src/...` is left alone), with a right boundary
+(`registry.ts` doesn't match `registry.tsx`), and in the regular-expression form (`ui\/src\/...`)
+too. The script ends by listing the mentions of any old path it left (a path without `ui/` in front,
+or `ui/model`); the docs commit fixes those. It runs `oxfmt` over what it touched (and checks it can
+run first), refuses a dirty tree, and refuses to run when `ui/src/core/` exists.
+
+Not handled: an alias that reaches a moved file by other means than a relative specifier, and text
+that spells a moved path in a way the anchors don't match (a path split over lines); the leftover
+list is the net for those.
 
 ## Redoing the move on a fresh main
 
