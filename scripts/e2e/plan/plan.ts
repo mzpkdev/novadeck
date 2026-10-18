@@ -36,7 +36,8 @@ const sharedFiles = new Set([
 const sharedFolders = [
   ".github/actions/e2e-harness-cache/",
   "application/runner/",
-  // The terminal library, with node-pty's patch: the suite's pty.
+  // The terminal library, with node-pty's patch: the suite's pty. The emulator's patches
+  // belong to its package, which reaches the suite as an affected package like any other.
   "libraries/terminal/",
   "scripts/e2e/",
 ]
@@ -59,10 +60,16 @@ const sharedFolders = [
 //   patch (Windows code alone, in `libraries/terminal`), and the way CI runs the suite (`scripts/e2e/`,
 //   the workflow, the harness cache's actions), which changes how each system runs it.
 //
-// The emulator has no folder yet; when it does, its browser-only view code is not the
-// headless side, so only the folders named here run macOS and Windows: add a folder of the
-// emulator to the list when it is Node-side or shared, and leave a browser-only one out.
+// The emulator's browser-only side (its view, renderer and the patch of xterm's browser
+// package) is not the headless side the suite runs, so it stays off them
+// (`browserOnlyFiles`); the rest of the emulator, new files included, runs every system.
 const allSystemsFiles = new Set([".github/workflows/e2e.yml"])
+const browserOnlyFiles = [
+  "libraries/emulator/patches/@xterm__xterm@",
+  "libraries/emulator/src/browser.",
+  "libraries/emulator/src/renderer.",
+  "libraries/emulator/src/view.",
+]
 const allSystemsFolders = [
   ".github/actions/e2e-harness-cache/",
   "application/relay/",
@@ -112,7 +119,10 @@ export const selectSystems = (facts: Facts): readonly string[] => {
   const { files } = facts
   if (!files) return everySystem
   return files.some(
-    (file) => allSystemsFiles.has(file) || allSystemsFolders.some((f) => file.startsWith(f)),
+    (file) =>
+      allSystemsFiles.has(file) ||
+      (allSystemsFolders.some((f) => file.startsWith(f)) &&
+        !browserOnlyFiles.some((f) => file.startsWith(f))),
   )
     ? everySystem
     : [systems.linux]
